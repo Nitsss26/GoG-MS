@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, Role } from "@/context/AuthContext";
 import { Search, Mail, Phone, MapPin, Download, Plus, ShieldAlert, FileText, Filter, X, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -20,11 +20,12 @@ export default function EmployeesPage() {
         email: "",
         dept: "Engineering",
         designation: "",
-        role: "FACULTY" as any,
+        role: "FACULTY" as Role, // Using Role type from context
         salary: 0,
         location: "Bhopal Hub",
-        status: "Active" as any,
-        joiningDate: new Date().toISOString().split('T')[0]
+        status: "Active" as "Active" | "On Leave" | "On Site" | "Resigned",
+        joiningDate: new Date().toISOString().split('T')[0],
+        chancesRemaining: 3
     });
 
     if (!user) return null;
@@ -33,7 +34,7 @@ export default function EmployeesPage() {
         e.preventDefault();
         addEmployee(formData);
         setShowModal(false);
-        setFormData({ name: "", email: "", dept: "Engineering", designation: "", role: "FACULTY", salary: 0, location: "Bhopal Hub", status: "Active", joiningDate: new Date().toISOString().split('T')[0] });
+        setFormData({ name: "", email: "", dept: "Engineering", designation: "", role: "FACULTY", salary: 0, location: "Bhopal Hub", status: "Active", joiningDate: new Date().toISOString().split('T')[0], chancesRemaining: 3 });
     };
 
     // Strict Role-Based Access Control

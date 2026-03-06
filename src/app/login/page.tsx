@@ -6,7 +6,7 @@ import { User, LogIn, ChevronDown, Lock, Key, LayoutDashboard, ShieldCheck, Zap 
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 
 const ROLE_OPTIONS = [
-    { key: "FOUNDER", label: "Institutional Founder" },
+    { key: "FOUNDER", label: "Founder" },
     { key: "HR", label: "Human Resources (HR)" },
     { key: "AD", label: "Associate Director (AD)" },
     { key: "TL", label: "Tech Lead (TL)" },

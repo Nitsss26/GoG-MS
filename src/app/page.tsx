@@ -38,13 +38,13 @@ function AttendanceCalendar({ records, holidays }: { records: any[]; holidays: a
     if (!calData) return <div className="h-60 flex items-center justify-center text-xs text-zinc-500">Synchronizing...</div>;
 
     const fl: Record<string, { label: string; emoji: string; dot: string }> = {
-        late: { label: "Late Clock-in", emoji: "ðŸŸ¡", dot: "bg-yellow-400" },
-        earlyOut: { label: "Early Clock-out", emoji: "ðŸŸ¡", dot: "bg-yellow-400" },
-        locationDiff: { label: "Diff Location", emoji: "ðŸŸ¡", dot: "bg-yellow-400" },
-        misconduct: { label: "Misconduct", emoji: "ðŸ”´", dot: "bg-red-500" },
-        dressCode: { label: "Dress Code", emoji: "ðŸŸ ", dot: "bg-orange-500" },
-        meetingAbsent: { label: "Meeting Absent", emoji: "âš«", dot: "bg-zinc-900 border border-zinc-600" },
-        performance: { label: "Performance", emoji: "ðŸ”µ", dot: "bg-blue-500" },
+        late: { label: "Late Clock-in", emoji: "🟡", dot: "bg-yellow-400" },
+        earlyOut: { label: "Early Clock-out", emoji: "🟡", dot: "bg-yellow-400" },
+        locationDiff: { label: "Diff Location", emoji: "🟡", dot: "bg-yellow-400" },
+        misconduct: { label: "Misconduct", emoji: "🔴", dot: "bg-red-500" },
+        dressCode: { label: "Dress Code", emoji: "🟠", dot: "bg-orange-500" },
+        meetingAbsent: { label: "Meeting Absent", emoji: "⚫", dot: "bg-[#0a0a0a] border border-zinc-700" },
+        performance: { label: "Performance", emoji: "🔵", dot: "bg-blue-500" },
     };
 
     const isCurrentMonth = calData.month === calData.todayMonth && calData.year === calData.todayYear;
@@ -325,16 +325,19 @@ export default function Home() {
                     </div>
 
                     <div className="space-y-4 flex-1 overflow-y-auto custom-scrollbar pr-1 scroll-smooth" style={{ maxHeight: '420px' }}>
-                        {/* OM of the Month */}
+                        {/* Operation Manager of the Month */}
                         <div className="space-y-3">
                             <div className="flex justify-between items-end border-b border-border/50 pb-1.5">
-                                <h4 className="text-[10px] font-black text-primary uppercase tracking-[0.1em]">OM of the Month</h4>
-                                <span className="text-[8px] text-muted-foreground font-bold">FEBRUARY 2026</span>
+                                <h4 className="text-[10px] font-black text-primary uppercase tracking-[0.1em]">Operation Manager of the Month</h4>
+                                <span className="text-[8px] text-muted-foreground font-bold">MARCH 2026</span>
                             </div>
                             <div className="grid gap-2">
                                 {performanceStars
-                                    .filter(s => employees.find(e => e.id === s.employeeId)?.role === "OM")
-                                    .sort((a, b) => b.stars - a.stars)
+                                    .filter(s => {
+                                        const emp = employees.find(e => e.id === s.employeeId);
+                                        return emp?.role === "OM";
+                                    })
+                                    .sort((a, b) => b.rating - a.rating)
                                     .slice(0, 3)
                                     .map((s, i) => {
                                         const emp = employees.find(e => e.id === s.employeeId);
@@ -376,21 +379,21 @@ export default function Home() {
                             </div>
                         </div>
 
-                        {/* Faculty of the Month */}
+                        {/* Professor of the Month */}
                         <div className="space-y-3">
                             <div className="flex justify-between items-end border-b border-border/50 pb-1.5">
-                                <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.1em]">Faculty of the Month</h4>
-                                <span className="text-[8px] text-muted-foreground font-bold">FEBRUARY 2026</span>
+                                <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.1em]">Professor of the Month</h4>
+                                <span className="text-[8px] text-muted-foreground font-bold">MARCH 2026</span>
                             </div>
                             <div className="grid gap-2">
                                 {performanceStars
                                     .filter(s => {
                                         const emp = employees.find(e => e.id === s.employeeId);
                                         if (!emp) return false;
-                                        // Include Faculty and Professors, but exclude leadership
-                                        return (emp.role === "FACULTY" || emp.role === "PROFESSOR") && !["AD", "HOI", "TL", "HR", "FOUNDER"].includes(emp.role);
+                                        // Include Professors and Faculty
+                                        return (emp.role === "PROFESSOR" || emp.role === "FACULTY");
                                     })
-                                    .sort((a, b) => b.stars - a.stars)
+                                    .sort((a, b) => b.rating - a.rating)
                                     .slice(0, 3)
                                     .map((s, i) => {
                                         const emp = employees.find(e => e.id === s.employeeId);

@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-    title: "GoG HR-MS | Modern HR Management",
-    description: "Advanced Human Resource Management System with a modern UI",
+    title: "GoG OMS",
+    description: "Advanced Operations Management System with a modern UI",
     icons: {
         icon: "/favicon.ico",
     },

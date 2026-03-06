@@ -95,6 +95,7 @@ const ROLE_COLORS: Record<Role, { bg: string; text: string; label: string }> = {
     HOI: { bg: "bg-orange-500/20", text: "text-orange-400", label: "Head of Inst." },
     OM: { bg: "bg-cyan-500/20", text: "text-cyan-400", label: "Ops Manager" },
     FACULTY: { bg: "bg-pink-500/20", text: "text-pink-400", label: "Faculty" },
+    PROFESSOR: { bg: "bg-pink-500/20", text: "text-pink-400", label: "Professor" },
 };
 
 export default function Sidebar() {

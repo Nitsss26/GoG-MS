@@ -89,9 +89,14 @@ function mapRole(designation) {
     if (d.includes("AD") || d.includes("ASSOCIATE DIRECTOR")) return "AD";
     if (d.includes("TL") || d.includes("TEAM LEAD")) return "TL";
     if (d.includes("HOI") || d.includes("HEAD OF INSTITUTE")) return "HOI";
-    if (d.includes("OM") || d.includes("OPERATION MANAGER")) return "OM";
-    if (d.includes("ACADEMIC LEAD") || d.includes("PROFESSOR") || d.includes("FACULTY") || d.includes("SDE")) return "PROFESSOR";
-    return "PROFESSOR"; // default
+
+    // Operation Manager Mapping
+    if (d.includes("OM") || d.includes("OPERATION MANAGER") || d === "OPERATION MANAGER") return "OM";
+
+    // Professor/Faculty Mapping - Includes SDE (Professors), Professors, Academics
+    if (d.includes("PROFESSOR") || d.includes("FACULTY") || d.includes("SDE") || d.includes("ACADEMIC")) return "PROFESSOR";
+
+    return "PROFESSOR"; // default academic fallback
 }
 
 async function seed() {
@@ -116,7 +121,7 @@ async function seed() {
         const headers = parseCSVLine(lines[0]);
 
         const founders = [
-            { id: "FND001", name: "CEO", email: "ceo@geeksofgurukul.com", role: "FOUNDER", dept: "C-Suite", designation: "Chief Executive Officer", joiningDate: "2023-01-01", salary: 500000, location: "Bhopal", password: "26082001" },
+            { id: "FND001", name: "CEO", email: "ceo@geeksofgurkul.com", role: "FOUNDER", dept: "C-Suite", designation: "Chief Executive Officer", joiningDate: "2023-01-01", salary: 500000, location: "Bhopal", password: "26082001" },
             { id: "FND002", name: "CTO", email: "cto@geeksofgurukul.com", role: "FOUNDER", dept: "C-Suite", designation: "Chief Technology Officer", joiningDate: "2023-01-01", salary: 450000, location: "Bhopal", password: "26082001" },
             { id: "FND003", name: "COO", email: "coo@geeksofgurukul.com", role: "FOUNDER", dept: "C-Suite", designation: "Chief Operating Officer", joiningDate: "2023-01-01", salary: 450000, location: "Bhopal", password: "26082001" },
         ];
@@ -163,12 +168,17 @@ async function seed() {
             const role = mapRole(designation);
             const dob = formatDOB(dobRaw);
 
+            // Fix department and designation for UI
+            let dept = "Institutional";
+            if (role === "PROFESSOR") dept = "Professors";
+            else if (role === "OM") dept = "Operation Manager";
+
             realEmployees.push({
                 id: `EMP${String(i).padStart(3, '0')}`,
                 name,
                 email: email.toLowerCase(),
                 role,
-                dept: "Institutional",
+                dept,
                 designation,
                 joiningDate: "2024-01-01",
                 salary: 25000,
@@ -206,39 +216,60 @@ async function seed() {
         const allEmployees = [...founders, ...realEmployees];
         await Employee.insertMany(allEmployees);
 
-        // Sample Stars for Leaderboard
-        const stars = allEmployees.map(emp => ({
-            employeeId: emp.id,
-            stars: Math.floor(Math.random() * 5) + 1,
-            rating: (Math.random() * 2 + 3).toFixed(1),
-            badges: ["Institutional"]
-        }));
+        // Generate Performance Stars for ALL employees
+        const stars = allEmployees.map(emp => {
+            // All have exactly 3 stars as requested
+            return {
+                employeeId: emp.id,
+                stars: 3,
+                rating: "3.0",
+                badges: ["Institutional"]
+            };
+        });
         await PerformanceStar.insertMany(stars);
 
-        // Attendance data (Feb 2026)
+        // Attendance data (Feb & March 2026) for ALL employees
         const attendance = [];
         const FEB_DAYS = ["02", "03", "04", "05", "06", "07", "09", "10", "11", "12", "13", "14", "16", "17", "18", "19", "20", "21", "23", "24", "25", "26", "27", "28"];
+        const MAR_DAYS = ["02", "03", "04", "05"];
 
-        for (const emp of allEmployees.slice(0, 50)) { // Just first 50 for performance
-            for (const d of FEB_DAYS) {
-                const hasFlags = Math.random() < 0.2;
+        for (const emp of allEmployees) {
+            const daysToSeed = [...FEB_DAYS.map(d => `2026-02-${d}`), ...MAR_DAYS.map(d => `2026-03-${d}`)];
+
+            for (const dateStr of daysToSeed) {
+                // No flags for anyone as requested
                 attendance.push({
                     employeeId: emp.id,
-                    date: `2026-02-${d}`,
+                    date: dateStr,
                     clockIn: "09:00",
                     clockOut: "18:00",
-                    location: emp.location,
+                    location: emp.location || "Bhopal",
                     status: "Present",
-                    flags: hasFlags ? {
-                        late: Math.random() < 0.5,
-                        dressCode: Math.random() < 0.3,
-                        misconduct: Math.random() < 0.1
-                    } : {},
+                    flags: {},
                     isApprovedByHR: true
                 });
             }
         }
         await Attendance.insertMany(attendance);
+
+        // Sample Additional Responsibilities for some OMs and Professors
+        const extraResp = [];
+        const eligible = allEmployees.filter(e => e.role === "OM" || e.role === "PROFESSOR").slice(0, 30);
+        for (const emp of eligible) {
+            if (Math.random() < 0.5) {
+                extraResp.push({
+                    id: `AR-${emp.id}`,
+                    employeeId: emp.id,
+                    employeeName: emp.name,
+                    addedBy: "FND001",
+                    description: "Lead Institutional Workshop / Research Project",
+                    date: "2026-02-15",
+                    status: "Approved",
+                    points: Math.floor(Math.random() * 10) + 10
+                });
+            }
+        }
+        await AdditionalResponsibility.insertMany(extraResp);
 
         console.log(`Database seeded successfully with ${allEmployees.length} real employees!`);
     } catch (error) {
