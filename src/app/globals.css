@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #10b981;
+  --color-primary-foreground: #022c22;
+  --color-background: #0a0a0a;
+  --color-foreground: #e4e4e7;
+  --color-surface: #111111;
+  --color-surface-light: #161616;
+  --color-border: #1e1e1e;
+  --color-muted: #71717a;
+  --color-muted-foreground: #a1a1aa;
+}
+
+:root {
+  --background: #0a0a0a;
+  --foreground: #e4e4e7;
+  --primary: #10b981;
+  --primary-foreground: #022c22;
+  --surface: #111111;
+  --surface-light: #161616;
+  --border: #1e1e1e;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer base {
+  * { @apply border-border; }
+}
+
+/* Utility classes */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.card-hover:hover {
+  border-color: rgba(16, 185, 129, 0.15);
+  background: var(--surface-light);
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.badge-green {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.15);
+}
+
+.badge-amber {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.15);
+}
+
+.badge-zinc {
+  background: rgba(113, 113, 122, 0.1);
+  color: #a1a1aa;
+  border: 1px solid rgba(113, 113, 122, 0.15);
+}
+
+/* Subtle glow for primary buttons only */
+.btn-primary {
+  background: #10b981;
+  color: #022c22;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.btn-primary:hover { opacity: 0.85; }
+
+.btn-outline {
+  background: transparent;
+  color: var(--foreground);
+  font-weight: 600;
+  font-size: 12px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-outline:hover {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: var(--surface-light);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--background); }
+::-webkit-scrollbar-thumb { background: #1e1e1e; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #333; }
