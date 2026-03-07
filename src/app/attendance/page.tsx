@@ -46,6 +46,13 @@ export default function AttendancePage() {
         return () => clearInterval(timer);
     }, []);
 
+    // Move all hooks ABOVE the early return!
+    const [selectedGlobalDate, setSelectedGlobalDate] = useState<string>("");
+
+    useEffect(() => {
+        if (currentDate && !selectedGlobalDate) setSelectedGlobalDate(currentDate);
+    }, [currentDate]);
+
     if (!user || !currentTime || !currentDate) return null;
     const emp = user as Employee;
 
@@ -142,15 +149,15 @@ export default function AttendancePage() {
     const myLogs = attendanceRecords.filter(r => r.employeeId === user.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const isHRorFounder = emp.role === "HR" || emp.role === "FOUNDER";
-    const [selectedGlobalDate, setSelectedGlobalDate] = useState<string>("");
+    const reportees = employees.filter(e => e.reportsTo === user.id);
+    const showsTeamRoster = isHRorFounder || reportees.length > 0;
 
-    useEffect(() => {
-        if (currentDate && !selectedGlobalDate) setSelectedGlobalDate(currentDate);
-    }, [currentDate]);
+    // Choose which employees to display in the roster
+    const employeesToShow = isHRorFounder ? employees : reportees;
 
-    // Compute global attendance for HR/Founder
-    const computeGlobalAttendance = () => {
-        return employees.map(employee => {
+    // Compute attendance for the chosen list
+    const computeTeamAttendance = () => {
+        return employeesToShow.map(employee => {
             const record = attendanceRecords.find(r => r.employeeId === employee.id && r.date === selectedGlobalDate);
             const status = record ? (record.clockOut ? "Clocked Out" : "Working") : "Absent";
             return {
@@ -165,7 +172,7 @@ export default function AttendancePage() {
         });
     };
 
-    const globalAttendanceList = isHRorFounder ? computeGlobalAttendance() : [];
+    const teamAttendanceList = showsTeamRoster ? computeTeamAttendance() : [];
 
     return (
         <div className="p-6 space-y-6 max-w-5xl mx-auto w-full">
@@ -178,12 +185,14 @@ export default function AttendancePage() {
                 </div>
             </header>
 
-            {isHRorFounder && (
-                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-5">
+            {showsTeamRoster && (
+                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-5 mb-5 block">
                     <div className="flex justify-between items-center pb-2 border-b border-zinc-800/50">
                         <div className="flex items-center gap-2">
-                            <Users size={16} className="text-blue-400" />
-                            <h2 className="text-sm font-bold text-white">Global Attendance Roster</h2>
+                            <Users size={16} className={isHRorFounder ? "text-blue-400" : "text-purple-400"} />
+                            <h2 className="text-sm font-bold text-white">
+                                {isHRorFounder ? "Global Attendance Roster" : "My Team's Attendance"}
+                            </h2>
                         </div>
                         <input
                             type="date"
@@ -196,16 +205,16 @@ export default function AttendancePage() {
 
                     <div className="grid grid-cols-3 gap-3">
                         <div className="bg-zinc-800/30 border border-zinc-700/50 p-3 rounded-xl flex items-center justify-between">
-                            <span className="text-xs font-bold text-zinc-400 block">Total Staff</span>
-                            <span className="text-lg font-black text-white">{employees.length}</span>
+                            <span className="text-xs font-bold text-zinc-400 block">{isHRorFounder ? "Total Staff" : "Team Size"}</span>
+                            <span className="text-lg font-black text-white">{employeesToShow.length}</span>
                         </div>
                         <div className="bg-green-500/5 border border-green-500/20 p-3 rounded-xl flex items-center justify-between">
                             <span className="text-xs font-bold text-green-400 block">Present Today</span>
-                            <span className="text-lg font-black text-white">{globalAttendanceList.filter(l => l.status !== "Absent").length}</span>
+                            <span className="text-lg font-black text-white">{teamAttendanceList.filter(l => l.status !== "Absent").length}</span>
                         </div>
                         <div className="bg-red-500/5 border border-red-500/20 p-3 rounded-xl flex items-center justify-between">
                             <span className="text-xs font-bold text-red-400 block">Absent Today</span>
-                            <span className="text-lg font-black text-white">{globalAttendanceList.filter(l => l.status === "Absent").length}</span>
+                            <span className="text-lg font-black text-white">{teamAttendanceList.filter(l => l.status === "Absent").length}</span>
                         </div>
                     </div>
 
@@ -221,7 +230,7 @@ export default function AttendancePage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-zinc-800/50">
-                                {globalAttendanceList.map(({ employee, record, status }) => (
+                                {teamAttendanceList.map(({ employee, record, status }) => (
                                     <tr key={employee.id} className="hover:bg-zinc-800/30 transition-colors text-xs">
                                         <td className="px-4 py-3">
                                             <p className="font-bold text-white">{employee.name}</p>
@@ -264,7 +273,7 @@ export default function AttendancePage() {
                                 ))}
                             </tbody>
                         </table>
-                        {globalAttendanceList.length === 0 && (
+                        {teamAttendanceList.length === 0 && (
                             <div className="p-8 text-center text-zinc-500 text-sm">No employee data found.</div>
                         )}
                     </div>
