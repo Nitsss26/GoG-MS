@@ -2,6 +2,24 @@
 import { COLLEGES as INITIAL_COLLEGES, College } from "@/lib/colleges";
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import {
+    sendMail,
+    getAuthorityEmails,
+    getTicketTemplate,
+    getLeaveTemplate,
+    getMisbehaviourTemplate,
+    getPIPAddTemplate,
+    getReimbursementTemplate,
+    getMoMTemplate,
+    getAdditionalResponsibilityTemplate,
+    getDressCodeWarningTemplate,
+    getMarkAsPresentTemplate,
+    getWorkScheduleTemplate,
+    getHolidayTemplate,
+    getRatingTemplate,
+    getAnnouncementTemplate,
+    getSOPUpdateTemplate
+} from "@/lib/mail";
 
 // ─── TYPES ───
 export type Role = "FOUNDER" | "HR" | "AD" | "TL" | "HOI" | "OM" | "FACULTY" | "PROFESSOR";
@@ -78,6 +96,7 @@ export interface LeaveRequest {
     lossOfPayDays?: number;
     emergencyCategory?: "Accident" | "Death" | "In Hospital";
     appliedAt?: string;
+    reasonForAction?: string;
 }
 export interface MeetingRequest {
     id: string; employeeId: string; employeeName: string; targetName: string;
@@ -165,7 +184,7 @@ export interface AdditionalResponsibility {
     points: number;
 }
 export interface OrgNode {
-    id: string; name: string; designation: string; level: "C-Suite" | "Leadership" | "HOI" | "OM" | "Faculty";
+    id: string; name: string; designation: string; level: "C-Suite" | "Management" | "Leadership" | "OM" | "Faculty";
     parentId?: string; photoInitial: string; dept: string;
 }
 // ─── LEGACY INTERFACES (for backward compat) ───
@@ -178,7 +197,7 @@ export interface AssetRequest { id: string; employeeId: string; employeeName: st
 // ─── INITIAL DATA ───
 const INITIAL_EMPLOYEES: Employee[] = [
     // ─── FOUNDERS (Superadmins) ───
-    { id: "FND001", name: "CEO", email: "ceo@gog.com", role: "FOUNDER", isOnboarded: true, dept: "C-Suite", designation: "Chief Executive Officer", status: "Active", joiningDate: "2023-01-01", salary: 500000, location: "Bhopal", dateOfBirth: "1980-01-15", phone: "9000000001", gender: "Male", bloodGroup: "O+", chancesRemaining: 3 },
+    { id: "FND001", name: "CEO", email: "niteshduttmishra@geeksofgurukul.com", role: "FOUNDER", isOnboarded: true, dept: "C-Suite", designation: "Chief Executive Officer", status: "Active", joiningDate: "2023-01-01", salary: 500000, location: "Bhopal", dateOfBirth: "1980-01-15", phone: "9000000001", gender: "Male", bloodGroup: "O+", chancesRemaining: 3 },
     { id: "FND002", name: "CTO", email: "cto@gog.com", role: "FOUNDER", isOnboarded: true, dept: "C-Suite", designation: "Chief Technology Officer", status: "Active", joiningDate: "2023-01-01", salary: 450000, location: "Bhopal", dateOfBirth: "1982-05-20", phone: "9000000002", gender: "Male", bloodGroup: "A+", chancesRemaining: 3 },
     { id: "FND003", name: "COO", email: "coo@gog.com", role: "FOUNDER", isOnboarded: true, dept: "C-Suite", designation: "Chief Operating Officer", status: "Active", joiningDate: "2023-01-01", salary: 450000, location: "Bhopal", dateOfBirth: "1983-08-10", phone: "9000000003", gender: "Male", bloodGroup: "B+", chancesRemaining: 3 },
     // ─── HR ───
@@ -192,16 +211,16 @@ const INITIAL_EMPLOYEES: Employee[] = [
     { id: "HOI002", name: "Sachin Kumar Gupta", email: "sachin@gog.com", role: "HOI", isOnboarded: true, dept: "Admissions", designation: "Head of Institute", status: "Active", joiningDate: "2024-04-05", salary: 90000, location: "Bhopal", dateOfBirth: "1994-08-22", phone: "9876543214", gender: "Male", bloodGroup: "O-", managerLevel: "HOI", chancesRemaining: 3 },
     { id: "HOI003", name: "Sidhartha Paikaray", email: "sidhartha@gog.com", role: "HOI", isOnboarded: true, dept: "Operations", designation: "Head of Institute", status: "Active", joiningDate: "2024-03-15", salary: 88000, location: "Bhopal", dateOfBirth: "1999-11-30", phone: "9876543215", gender: "Male", bloodGroup: "B-", managerLevel: "HOI", chancesRemaining: 3 },
     // ─── OMs ───
-    { id: "OM001", name: "Arjun Sharma", email: "arjun@gog.com", role: "OM", isOnboarded: true, dept: "Engineering", designation: "Operations Manager", status: "Active", joiningDate: "2024-01-10", salary: 70000, location: "Bhopal", dateOfBirth: "1995-02-24", phone: "9876543216", gender: "Male", bloodGroup: "A-", reportsTo: "HOI003", chancesRemaining: 3 },
-    { id: "OM002", name: "Kavitha Nair", email: "kavitha@gog.com", role: "OM", isOnboarded: true, dept: "HR", designation: "Operations Manager", status: "Active", joiningDate: "2024-03-15", salary: 55000, location: "Bhopal", dateOfBirth: "1997-07-18", phone: "9876543217", gender: "Female", bloodGroup: "O+", reportsTo: "HOI001", chancesRemaining: 3 },
-    { id: "OM003", name: "Amit Patel", email: "amit@gog.com", role: "OM", isOnboarded: true, dept: "Product", designation: "Operations Manager", status: "Active", joiningDate: "2024-01-20", salary: 65000, location: "Bhopal", dateOfBirth: "1992-05-15", phone: "9876543218", gender: "Male", bloodGroup: "AB-", reportsTo: "HOI002", chancesRemaining: 3 },
-    // ─── FACULTY ───
-    { id: "FAC001", name: "Anil Kumar", email: "anil@gog.com", role: "FACULTY", isOnboarded: true, dept: "Academics", designation: "Senior Faculty", status: "Active", joiningDate: "2024-04-01", salary: 45000, location: "Bhopal", dateOfBirth: "1993-09-12", phone: "9876543219", gender: "Male", bloodGroup: "B+", reportsTo: "OM001", panNumber: "ANILK1234H", aadhaarNumber: "3456-7890-1234", bankName: "ICICI Bank", accountNumber: "40200567890123", ifscCode: "ICIC0003456", education: [{ degree: "M.Tech", institution: "NIT Bhopal", yearOfPassing: "2018", percentage: "85%" }, { degree: "B.Tech", institution: "RGPV", yearOfPassing: "2015", percentage: "78%" }], experience: [{ company: "Infosys", role: "Software Engineer", duration: "3 years", lastSalary: 35000 }], chancesRemaining: 3 },
-    { id: "FAC002", name: "Meera Das", email: "meera@gog.com", role: "FACULTY", isOnboarded: true, dept: "Academics", designation: "Associate Faculty", status: "Active", joiningDate: "2024-05-10", salary: 38000, location: "Bhopal", dateOfBirth: "1996-01-22", phone: "9876543220", gender: "Female", bloodGroup: "A+", reportsTo: "OM001", chancesRemaining: 3 },
-    { id: "FAC003", name: "Priya Singh", email: "priya@gog.com", role: "FACULTY", isOnboarded: true, dept: "Design", designation: "Senior Faculty", status: "Active", joiningDate: "2024-03-20", salary: 42000, location: "Bhopal", dateOfBirth: "1994-04-05", phone: "9876543221", gender: "Female", bloodGroup: "O+", reportsTo: "OM002", chancesRemaining: 3 },
-    { id: "FAC004", name: "Rahul Das", email: "rahul@gog.com", role: "FACULTY", isOnboarded: true, dept: "Marketing", designation: "Associate Faculty", status: "Active", joiningDate: "2024-06-01", salary: 36000, location: "Bhopal", dateOfBirth: "1997-08-14", phone: "9876543222", gender: "Male", bloodGroup: "B-", reportsTo: "OM002", chancesRemaining: 3 },
-    { id: "FAC005", name: "Sneha Reddy", email: "sneha@gog.com", role: "FACULTY", isOnboarded: true, dept: "Engineering", designation: "Senior Faculty", status: "Active", joiningDate: "2024-02-15", salary: 44000, location: "Bhopal", dateOfBirth: "1995-12-28", phone: "9876543223", gender: "Female", bloodGroup: "AB+", reportsTo: "OM003", chancesRemaining: 3 },
-    { id: "FAC006", name: "Vikram Deshmukh", email: "vikram@gog.com", role: "FACULTY", isOnboarded: true, dept: "Engineering", designation: "Associate Faculty", status: "Active", joiningDate: "2024-07-01", salary: 35000, location: "Bhopal", dateOfBirth: "1998-03-17", phone: "9876543224", gender: "Male", bloodGroup: "O-", reportsTo: "OM003", chancesRemaining: 3 },
+    { id: "OM001", name: "Arjun Sharma", email: "arjun@gog.com", role: "OM", isOnboarded: true, dept: "Engineering", designation: "Operations Manager", status: "Active", joiningDate: "2024-01-10", salary: 70000, location: "Bhopal", dateOfBirth: "1995-03-15", phone: "9876543216", gender: "Male", bloodGroup: "A-", reportsTo: "HOI003", chancesRemaining: 3 },
+    { id: "OM002", name: "Kavitha Nair", email: "kavitha@gog.com", role: "OM", isOnboarded: true, dept: "HR", designation: "Operations Manager", status: "Active", joiningDate: "2024-03-15", salary: 55000, location: "Bhopal", dateOfBirth: "1997-03-12", phone: "9876543217", gender: "Female", bloodGroup: "O+", reportsTo: "HOI001", chancesRemaining: 3 },
+    { id: "OM003", name: "Amit Patel", email: "amit@gog.com", role: "OM", isOnboarded: true, dept: "Product", designation: "Operations Manager", status: "Active", joiningDate: "2024-01-20", salary: 65000, location: "Bhopal", dateOfBirth: "1992-03-25", phone: "9876543218", gender: "Male", bloodGroup: "AB-", reportsTo: "HOI002", chancesRemaining: 3 },
+    // ─── FACULTY / PROFESSORS (Reporting to HOIs for location management) ───
+    { id: "FAC001", name: "Anil Kumar", email: "anil@gog.com", role: "FACULTY", isOnboarded: true, dept: "Academics", designation: "Senior Faculty", status: "Active", joiningDate: "2024-04-01", salary: 45000, location: "Bhopal", dateOfBirth: "1993-03-20", phone: "9876543219", gender: "Male", bloodGroup: "B+", reportsTo: "HOI003", panNumber: "ANILK1234H", aadhaarNumber: "3456-7890-1234", bankName: "ICICI Bank", accountNumber: "40200567890123", ifscCode: "ICIC0003456", education: [{ degree: "M.Tech", institution: "NIT Bhopal", yearOfPassing: "2018", percentage: "85%" }, { degree: "B.Tech", institution: "RGPV", yearOfPassing: "2015", percentage: "78%" }], experience: [{ company: "Infosys", role: "Software Engineer", duration: "3 years", lastSalary: 35000 }], chancesRemaining: 3 },
+    { id: "FAC002", name: "Meera Das", email: "meera@gog.com", role: "FACULTY", isOnboarded: true, dept: "Academics", designation: "Associate Faculty", status: "Active", joiningDate: "2024-05-10", salary: 38000, location: "Bhopal", dateOfBirth: "1996-01-22", phone: "9876543220", gender: "Female", bloodGroup: "A+", reportsTo: "HOI003", chancesRemaining: 3 },
+    { id: "FAC003", name: "Priya Singh", email: "priya@gog.com", role: "FACULTY", isOnboarded: true, dept: "Design", designation: "Senior Faculty", status: "Active", joiningDate: "2024-03-20", salary: 42000, location: "Bhopal", dateOfBirth: "1994-04-05", phone: "9876543221", gender: "Female", bloodGroup: "O+", reportsTo: "HOI001", chancesRemaining: 3 },
+    { id: "FAC004", name: "Rahul Das", email: "rahul@gog.com", role: "FACULTY", isOnboarded: true, dept: "Marketing", designation: "Associate Faculty", status: "Active", joiningDate: "2024-06-01", salary: 36000, location: "Bhopal", dateOfBirth: "1997-08-14", phone: "9876543222", gender: "Male", bloodGroup: "B-", reportsTo: "HOI001", chancesRemaining: 3 },
+    { id: "FAC005", name: "Sneha Reddy", email: "sneha@gog.com", role: "FACULTY", isOnboarded: true, dept: "Engineering", designation: "Senior Faculty", status: "Active", joiningDate: "2024-02-15", salary: 44000, location: "Bhopal", dateOfBirth: "1995-12-28", phone: "9876543223", gender: "Female", bloodGroup: "AB+", reportsTo: "HOI002", chancesRemaining: 3 },
+    { id: "FAC006", name: "Vikram Deshmukh", email: "vikram@gog.com", role: "FACULTY", isOnboarded: true, dept: "Engineering", designation: "Associate Faculty", status: "Active", joiningDate: "2024-07-01", salary: 35000, location: "Bhopal", dateOfBirth: "1998-03-17", phone: "9876543224", gender: "Male", bloodGroup: "O-", reportsTo: "HOI002", chancesRemaining: 3 },
 ];
 
 const INITIAL_NOTICES: Notice[] = [
@@ -214,26 +233,7 @@ const INITIAL_NOTICES: Notice[] = [
     { id: "n8", title: "System Maintenance Notice", content: "HRMS portal will be under maintenance on 2nd March from 11 PM to 5 AM. Please plan accordingly.", category: "Update", createdBy: "Raj Kumar Sahoo", createdAt: "2024-02-26" },
 ];
 
-const INITIAL_HIERARCHY: OrgNode[] = [
-    { id: "FND001", name: "CEO", designation: "Chief Executive Officer", level: "C-Suite", photoInitial: "C", dept: "C-Suite" },
-    { id: "FND002", name: "CTO", designation: "Chief Technology Officer", level: "C-Suite", photoInitial: "C", dept: "C-Suite" },
-    { id: "FND003", name: "COO", designation: "Chief Operating Officer", level: "C-Suite", photoInitial: "C", dept: "C-Suite" },
-    { id: "AD001", name: "Raj Kumar Sahoo", designation: "Associate Director", level: "Leadership", parentId: "FND001", photoInitial: "R", dept: "Management" },
-    { id: "TL001", name: "Nitesh", designation: "Tech Lead", level: "Leadership", parentId: "FND002", photoInitial: "N", dept: "Engineering" },
-    { id: "HR001", name: "Vivek Yadav", designation: "HR Manager", level: "Leadership", parentId: "FND001", photoInitial: "V", dept: "HR" },
-    { id: "HOI001", name: "Ayush Chauhan", designation: "Head of Institute", level: "HOI", parentId: "AD001", photoInitial: "A", dept: "Academics" },
-    { id: "HOI002", name: "Sachin Kumar Gupta", designation: "Head of Institute", level: "HOI", parentId: "AD001", photoInitial: "S", dept: "Admissions" },
-    { id: "HOI003", name: "Sidhartha Paikaray", designation: "Head of Institute", level: "HOI", parentId: "AD001", photoInitial: "S", dept: "Operations" },
-    { id: "OM001", name: "Arjun Sharma", designation: "Operations Manager", level: "OM", parentId: "HOI003", photoInitial: "A", dept: "Engineering" },
-    { id: "OM002", name: "Kavitha Nair", designation: "Operations Manager", level: "OM", parentId: "HOI001", photoInitial: "K", dept: "HR" },
-    { id: "OM003", name: "Amit Patel", designation: "Operations Manager", level: "OM", parentId: "HOI002", photoInitial: "A", dept: "Product" },
-    { id: "FAC001", name: "Anil Kumar", designation: "Senior Faculty", level: "Faculty", parentId: "OM001", photoInitial: "A", dept: "Academics" },
-    { id: "FAC002", name: "Meera Das", designation: "Associate Faculty", level: "Faculty", parentId: "OM001", photoInitial: "M", dept: "Academics" },
-    { id: "FAC003", name: "Priya Singh", designation: "Senior Faculty", level: "Faculty", parentId: "OM002", photoInitial: "P", dept: "Design" },
-    { id: "FAC004", name: "Rahul Das", designation: "Associate Faculty", level: "Faculty", parentId: "OM002", photoInitial: "R", dept: "Marketing" },
-    { id: "FAC005", name: "Sneha Reddy", designation: "Senior Faculty", level: "Faculty", parentId: "OM003", photoInitial: "S", dept: "Engineering" },
-    { id: "FAC006", name: "Vikram Deshmukh", designation: "Associate Faculty", level: "Faculty", parentId: "OM003", photoInitial: "V", dept: "Engineering" },
-];
+// INITIAL_HIERARCHY array removed in favor of dynamic generation
 
 const MASTER_SOP_CONTENT = `# Standard Operating Procedure (SOP) || Geeks of Gurukul
 
@@ -241,138 +241,138 @@ const MASTER_SOP_CONTENT = `# Standard Operating Procedure (SOP) || Geeks of Gur
 
 ## 1. Purpose
 
-The purpose of this SOP is to establish clear and professional guidelines for all employees regarding dress code, attendance, conduct, leaves and other office-related policies. It aims to create a respectful, productive, and organized environment at Geeks of Gurukul.
+The purpose of this SOP is to establish clear and professional guidelines for all employees regarding dress code, attendance, conduct, leaves and other office - related policies.It aims to create a respectful, productive, and organized environment at Geeks of Gurukul.
 
 ## 2. Scope
 
-This SOP applies to all employees *(which includes SDE & Professors, Operation Manager, HoI, Interns and other employees of different dept.)* at Geeks of Gurukul, including those engaged in administrative roles, academic staff, support staff etc.
+This SOP applies to all employees * (which includes SDE & Professors, Operation Manager, HoI, Interns and other employees of different dept.)* at Geeks of Gurukul, including those engaged in administrative roles, academic staff, support staff etc.
 
 ## 3.1 Dress Code Policy
 
-**Mandatory Dress Code**
+    ** Mandatory Dress Code **
 
-All employees must strictly adhere to the following dress code during working hours:
+        All employees must strictly adhere to the following dress code during working hours:
 
-- **White formal shirt with collar**
-- **Black Pant with Belt**
-- **Black formal blazer**
-- **Formal shoes**
+- ** White formal shirt with collar **
+- ** Black Pant with Belt **
+- ** Black formal blazer **
+- ** Formal shoes **
 
-Casual attire is **strictly prohibited** unless specifically approved by Management for official events.
+    Casual attire is ** strictly prohibited ** unless specifically approved by Management for official events.
 
-### Dress Code Violation \u2013 Disciplinary Process (For All Professors)
+### Dress Code Violation \u2013 Disciplinary Process(For All Professors)
 
-Non-compliance with the prescribed dress code will result in **progressive disciplinary action**, applicable to **all Professors**, and will be recorded in HR records:
+Non - compliance with the prescribed dress code will result in ** progressive disciplinary action **, applicable to ** all Professors **, and will be recorded in HR records:
 
-1. **1st Instance** \u2013 First warning via email. Entry recorded in HR records.
-2. **2nd Instance** \u2013 Second warning via email. Entry recorded in HR records.
-3. **3rd Instance** \u2013 Third warning via email. **10% fine deducted from one day\u2019s gross salary.**
-4. **4th Instance** \u2013 Fourth warning via email. **20% fine deducted from one day\u2019s gross salary.**
-5. **5th Instance and Subsequent Violations** \u2013 Fifth warning via email. **30% fine deducted from one day\u2019s gross salary.** Further disciplinary action may be initiated at the Management\u2019s discretion.
+1. ** 1st Instance ** \u2013 First warning via email.Entry recorded in HR records.
+2. ** 2nd Instance ** \u2013 Second warning via email.Entry recorded in HR records.
+3. ** 3rd Instance ** \u2013 Third warning via email. ** 10 % fine deducted from one day\u2019s gross salary.**
+    4. ** 4th Instance ** \u2013 Fourth warning via email. ** 20 % fine deducted from one day\u2019s gross salary.**
+        5. ** 5th Instance and Subsequent Violations ** \u2013 Fifth warning via email. ** 30 % fine deducted from one day\u2019s gross salary.** Further disciplinary action may be initiated at the Management\u2019s discretion.
 
-> **Important Notes:** Penalties will be applied per day of non-compliance. Repeated violations may adversely impact performance reviews and disciplinary records. The Management reserves the right to take strict disciplinary action in cases of habitual non-compliance.
+> ** Important Notes:** Penalties will be applied per day of non - compliance.Repeated violations may adversely impact performance reviews and disciplinary records.The Management reserves the right to take strict disciplinary action in cases of habitual non - compliance.
 
 ## 3.2 Attendance Timing
 
-- **General Attendance Requirements:** All faculty members are required to post their geotag attendance in their respective Attendance Channel within the office premises at the official office hours, as per the schedule shared by the HR department. A grace period of 2 minutes will be allowed. Any attendance marked beyond this will be considered late.
+    - ** General Attendance Requirements:** All faculty members are required to post their geotag attendance in their respective Attendance Channel within the office premises at the official office hours, as per the schedule shared by the HR department.A grace period of 2 minutes will be allowed.Any attendance marked beyond this will be considered late.
 
-- **Late Arrival Procedure:** If an employee is unable to post their attendance at office time, they must submit a separate attendance post with a valid reason explaining the delay.
+- ** Late Arrival Procedure:** If an employee is unable to post their attendance at office time, they must submit a separate attendance post with a valid reason explaining the delay.
 
-**Late Arrivals Policy:**
-- **4th instance** \u2013 Half-day pay cut
-- **5th instance** \u2013 Full-day pay cut
-- **6th instance and onwards** \u2013 2 days\u2019 pay cut
+** Late Arrivals Policy:**
+- ** 4th instance ** \u2013 Half - day pay cut
+    - ** 5th instance ** \u2013 Full - day pay cut
+        - ** 6th instance and onwards ** \u2013 2 days\u2019 pay cut
 
-**Additional Rules & Penalties:**
-- If any employee forgets to upload attendance (Clock-in and Clock-out), a **fine of Rs. 500** will be charged.
-- A photo must be uploaded on Slack within **30 minutes of Clock-in**. Failure more than 2 instances in a month without proper reason will result in a **fine of Rs. 100** for each instance thereafter.
-- Clock-in and Clock-out photos must be taken inside the college premises.
+            ** Additional Rules & Penalties:**
+                - If any employee forgets to upload attendance(Clock -in and Clock - out), a ** fine of Rs. 500 ** will be charged.
+- A photo must be uploaded on Slack within ** 30 minutes of Clock -in**.Failure more than 2 instances in a month without proper reason will result in a ** fine of Rs. 100 ** for each instance thereafter.
+- Clock -in and Clock - out photos must be taken inside the college premises.
 
 ## 3.3 Office Premises and Hours
 
-- All employees have to be present within the office premises during working hours, unless permission for an exception is granted.
-- Employees are allowed to leave the premises **only** during the designated lunch break.
-- If Employees are going out during lunch break, they need to mention: **"Going for Lunch"** and **"Returned to college after Lunch"** in the attendance channel thread.
+    - All employees have to be present within the office premises during working hours, unless permission for an exception is granted.
+- Employees are allowed to leave the premises ** only ** during the designated lunch break.
+- If Employees are going out during lunch break, they need to mention: ** "Going for Lunch" ** and ** "Returned to college after Lunch" ** in the attendance channel thread.
 
 ## 3.4 Office Work and Conduct
 
-- During office hours, employees must remain focused on official tasks, such as preparing lecture notes, assignments, or any other work-related duties.
-- Employees should refrain from engaging in any personal or non-work-related activities within the office premises.
+    - During office hours, employees must remain focused on official tasks, such as preparing lecture notes, assignments, or any other work - related duties.
+- Employees should refrain from engaging in any personal or non - work - related activities within the office premises.
 - Faculty members must maintain professional boundaries with students.
 
 ## 3.5 Professionalism with College Administration
 
-- Employees must maintain professionalism when interacting with the college administration.
+    - Employees must maintain professionalism when interacting with the college administration.
 - Employees are prohibited from spreading negativity about the organization.
 - Any instances of office politics or rumours must be reported directly to HR.
 
 ## 3.6 Availability during Office Hours
 
-- During office hours, all faculty members must be available for communication via phone calls, Slack and emails.
-- If unable to join a scheduled Google Meet, inform **at least 10 minutes in advance** in their respective college channel on Slack by tagging the reporting manager and HR.
-- If absent in the meeting without informing, **disciplinary action will be taken**.
+    - During office hours, all faculty members must be available for communication via phone calls, Slack and emails.
+- If unable to join a scheduled Google Meet, inform ** at least 10 minutes in advance ** in their respective college channel on Slack by tagging the reporting manager and HR.
+- If absent in the meeting without informing, ** disciplinary action will be taken **.
 
 ## 3.7 Leave Policy for SDE & Professor & HoI\u2019s
 
-- **Total 12 Paid Leave** provided in **1 Year** that starts from date of joining.
-- They can avail **1 Paid Leave in 1 Month**. More than 1 Leave will be considered as Un-Paid Leave.
+    - ** Total 12 Paid Leave ** provided in ** 1 Year ** that starts from date of joining.
+- They can avail ** 1 Paid Leave in 1 Month **.More than 1 Leave will be considered as Un - Paid Leave.
 
-**1. Casual Leave:** The employee must obtain permission from the HoI at least 18 hours in advance. After receiving approval, send email to HR (hr@geeksofgurukul.com) with CC to HoI, Academic Lead, CTO, COO before 6pm.
+** 1. Casual Leave:** The employee must obtain permission from the HoI at least 18 hours in advance.After receiving approval, send email to HR(hr@geeksofgurukul.com) with CC to HoI, Academic Lead, CTO, COO before 6pm.
 
-**2. Emergency Leave:** In case of emergency, inform reporting manager via call first. After recovering, send emergency leave email to HR with valid proof. If proof not provided, leave will be unpaid and fine of Rs. 500 applicable.
+** 2. Emergency Leave:** In case of emergency, inform reporting manager via call first.After recovering, send emergency leave email to HR with valid proof.If proof not provided, leave will be unpaid and fine of Rs. 500 applicable.
 
-**3. College Employee Leave Criteria:** Only one professor from each college shall be permitted to take leave on the same day. Unauthorized leave = two-days unpaid leave for every one day.
+** 3. College Employee Leave Criteria:** Only one professor from each college shall be permitted to take leave on the same day.Unauthorized leave = two - days unpaid leave for every one day.
 
 ## 3.8 Leave Policy for Operation Manager & Associate
 
-- **Total 12 Paid Leave** provided in **1 Year** that starts from date of joining.
-- They can avail **1 Paid Leave in 1 Month**. More than 1 Leave = Un-Paid Leave.
+    - ** Total 12 Paid Leave ** provided in ** 1 Year ** that starts from date of joining.
+- They can avail ** 1 Paid Leave in 1 Month **.More than 1 Leave = Un - Paid Leave.
 
-**1. Casual Leave:** Submit application via mail to HoI at least 24 hours in advance. After HOI approval, email HR with CC HoI, CTO, COO before 6pm.
+** 1. Casual Leave:** Submit application via mail to HoI at least 24 hours in advance.After HOI approval, email HR with CC HoI, CTO, COO before 6pm.
 
-**2. Emergency Leave:** Send leave request via email to HR with CC to HoI, CTO, COO. After emergency, reply in same email thread with valid proof.
+** 2. Emergency Leave:** Send leave request via email to HR with CC to HoI, CTO, COO.After emergency, reply in same email thread with valid proof.
 
-## 3.9 Work from Home (WFH) Policy for Operation Manager & Associate
+## 3.9 Work from Home(WFH) Policy for Operation Manager & Associate
 
-- OM may be permitted to work from home in case of emergencies with evidence.
+    - OM may be permitted to work from home in case of emergencies with evidence.
 - HoI will assign specific tasks; if not completed, day will be marked as leave.
 - All tasks must be submitted by 9:00 PM on the day of WFH.
 - Each employee is required to attend at least one Ops meeting during WFH.
-- Must inform HR and Reporting Manager at least 15 hours before (before 6:00 PM previous day).
-- OMs who WFH will receive **half-day pay**.
+- Must inform HR and Reporting Manager at least 15 hours before(before 6:00 PM previous day).
+- OMs who WFH will receive ** half - day pay **.
 
-## 3.10 General Mandatory Protocols for OM/Interns
+## 3.10 General Mandatory Protocols for OM / Interns
 
-1. **Meeting Communication:** Inform HoI at least 10 minutes in advance via call or Slack if unable to join scheduled Ops meeting.
-2. **Minutes of Meeting (MoM):** Mandatory to mention presence/absence of OM in MoM.
-3. **Dashboard Updates:** Every OM must regularly and accurately update their respective dashboard channel.
+1. ** Meeting Communication:** Inform HoI at least 10 minutes in advance via call or Slack if unable to join scheduled Ops meeting.
+2. ** Minutes of Meeting(MoM):** Mandatory to mention presence / absence of OM in MoM.
+3. ** Dashboard Updates:** Every OM must regularly and accurately update their respective dashboard channel.
 
 ## 3.11 Prohibition of Smoking and Chewing Tobacco
 
-Smoking and the use of chewing tobacco are strictly prohibited within the office premises. Violation will result in disciplinary action, including possible suspension.
+Smoking and the use of chewing tobacco are strictly prohibited within the office premises.Violation will result in disciplinary action, including possible suspension.
 
-## 3.12 Harassment-Free Workplace
+## 3.12 Harassment - Free Workplace
 
-- **Zero Tolerance for Harassment:** All employees must maintain a respectful, harassment-free work environment.
+    - ** Zero Tolerance for Harassment:** All employees must maintain a respectful, harassment - free work environment.
 - Employees must immediately report any harassment incidents to HR.
 - Employees found guilty will face strict disciplinary actions, including suspension or termination.
 
 ## 3.13 Probation & Notice Period
 
-- All new employees will be on a **6-month probation period**. Notice period will be either 7 days or 30 days.
-- **Full and Final (FNF) Settlement:** Completed within a maximum of 45 calendar days from last working day. Disbursement between the 15th and 20th of the following month.
+    - All new employees will be on a ** 6 - month probation period **.Notice period will be either 7 days or 30 days.
+- ** Full and Final(FNF) Settlement:** Completed within a maximum of 45 calendar days from last working day.Disbursement between the 15th and 20th of the following month.
 
-## 3.14 Performance-Based Termination Policy for SDEs & Professors
+## 3.14 Performance - Based Termination Policy for SDEs & Professors
 
-- If student rating below 4.2 for three consecutive weeks \u2192 three formal warnings.
-- If no improvement \u2192 may be terminated with a 7-day notice period.
+    - If student rating below 4.2 for three consecutive weeks \u2192 three formal warnings.
+- If no improvement \u2192 may be terminated with a 7 - day notice period.
 - Decision jointly taken by HoI and HR.
 
 ## 4. Responsibility
 
-- **Employees:** Follow all policies outlined in this SOP.
-- **HR Department:** Enforce this SOP, handle disciplinary actions.
-- **Reporting Managers:** Ensure all employees adhere to the SOP.
+    - ** Employees:** Follow all policies outlined in this SOP.
+- ** HR Department:** Enforce this SOP, handle disciplinary actions.
+- ** Reporting Managers:** Ensure all employees adhere to the SOP.
 
 ## 5. Review and Revision
 
@@ -380,11 +380,11 @@ This SOP will be reviewed quarterly by the HR department and the administration.
 
 ## 6. Effective Date
 
-This SOP will be effective as of: **1st April 2025**
+This SOP will be effective as of: ** 1st April 2025 **
 
----
+    ---
 
-*Approved by: **Ajay Katana**, Co-Founder & CTO, Geeks of Gurukul*`;
+* Approved by: ** Ajay Katana **, Co - Founder & CTO, Geeks of Gurukul * `;
 
 const INITIAL_SOPS: SOP[] = [
     { id: "sop1", title: "Dress Code Policy (3.1)", version: "2.1", content: "All employees must wear formal attire. White shirt, black pant, black blazer, formal shoes. Smart casuals not allowed except with Management approval. Progressive fines: 1st-2nd warning, 3rd=10%, 4th=20%, 5th+=30% of daily salary.", lastUpdated: "2024-02-25", updatedBy: "Vivek Yadav", changeType: "updated", changelog: "Updated fine percentages for dress code violations" },
@@ -402,10 +402,10 @@ const INITIAL_SOP_NOTIFICATIONS: SOPNotification[] = [
 
 // Helper to generate Feb 2026 attendance (Mon-Sat working, Sun off)
 const FEB26_WORKING = ["02", "03", "04", "05", "06", "07", "09", "10", "11", "12", "13", "14", "16", "17", "18", "19", "20", "21", "23", "24", "25", "26", "27", "28"];
-const _a = (id: string, eid: string, day: string, ci: string, co: string, loc: string, fl: any): AttendanceRecord => ({ id, employeeId: eid, date: `2026-02-${day}`, clockIn: ci, clockOut: co, location: loc, status: "Present", flags: fl, isApprovedByHR: true });
+const _a = (id: string, eid: string, day: string, ci: string, co: string, loc: string, fl: any): AttendanceRecord => ({ id, employeeId: eid, date: `2026-02 - ${day} `, clockIn: ci, clockOut: co, location: loc, status: "Present", flags: fl, isApprovedByHR: true });
 const INITIAL_ATTENDANCE: AttendanceRecord[] = [
     // FAC001 - Anil Kumar (SAGE Bhopal) — has late, earlyOut, dressCode flags
-    ...FEB26_WORKING.map((d, i) => _a(`a1_${i}`, "FAC001", d,
+    ...FEB26_WORKING.map((d, i) => _a(`a1_${i} `, "FAC001", d,
         ["10", "17"].includes(d) ? "10:20" : "09:05",
         ["06", "20"].includes(d) ? "16:00" : "18:10",
         "SAGE Bhopal", {
@@ -415,7 +415,7 @@ const INITIAL_ATTENDANCE: AttendanceRecord[] = [
         misconduct: d === "25",
     })),
     // FAC002 - Meera Das (SAGE Indore, Wed WFH) — has performance, meetingAbsent
-    ...FEB26_WORKING.filter(d => d !== "11").map((d, i) => _a(`a2_${i}`, "FAC002", d,
+    ...FEB26_WORKING.filter(d => d !== "11").map((d, i) => _a(`a2_${i} `, "FAC002", d,
         d === "16" ? "10:45" : "09:00",
         d === "19" ? "16:30" : "18:00",
         ["04", "11", "18", "25"].includes(d) ? "WFH" : "SAGE Indore", {
@@ -425,7 +425,7 @@ const INITIAL_ATTENDANCE: AttendanceRecord[] = [
         meetingAbsent: d === "09",
     })),
     // FAC003 - Priya Singh (Barkatullah, Fri WFH) — has misconduct, locationDiff
-    ...FEB26_WORKING.filter(d => d !== "17").map((d, i) => _a(`a3_${i}`, "FAC003", d,
+    ...FEB26_WORKING.filter(d => d !== "17").map((d, i) => _a(`a3_${i} `, "FAC003", d,
         d === "03" ? "10:30" : "09:00",
         d === "24" ? "15:30" : "17:10",
         ["06", "13", "20", "27"].includes(d) ? "WFH" : "BU Bhopal", {
@@ -435,7 +435,7 @@ const INITIAL_ATTENDANCE: AttendanceRecord[] = [
         misconduct: d === "18",
     })),
     // FAC004 - Rahul Das — has dressCode, performance, meetingAbsent
-    ...FEB26_WORKING.filter(d => !["14", "21"].includes(d)).map((d, i) => _a(`a4_${i}`, "FAC004", d,
+    ...FEB26_WORKING.filter(d => !["14", "21"].includes(d)).map((d, i) => _a(`a4_${i} `, "FAC004", d,
         d === "05" ? "10:15" : "09:10",
         d === "26" ? "16:00" : "18:00",
         "SAGE Bhopal", {
@@ -446,7 +446,7 @@ const INITIAL_ATTENDANCE: AttendanceRecord[] = [
         meetingAbsent: d === "12",
     })),
     // FAC005 - Sneha Reddy — has late, misconduct
-    ...FEB26_WORKING.map((d, i) => _a(`a5_${i}`, "FAC005", d,
+    ...FEB26_WORKING.map((d, i) => _a(`a5_${i} `, "FAC005", d,
         ["04", "18"].includes(d) ? "10:40" : "08:55",
         d === "13" ? "15:45" : "18:05",
         "SAGE Indore", {
@@ -455,7 +455,7 @@ const INITIAL_ATTENDANCE: AttendanceRecord[] = [
         misconduct: d === "27",
     })),
     // FAC006 - Vikram Deshmukh — has dressCode, meetingAbsent
-    ...FEB26_WORKING.filter(d => d !== "07").map((d, i) => _a(`a6_${i}`, "FAC006", d,
+    ...FEB26_WORKING.filter(d => d !== "07").map((d, i) => _a(`a6_${i} `, "FAC006", d,
         d === "23" ? "10:10" : "09:00",
         "18:00", "Centurion", {
         late: d === "23",
@@ -463,7 +463,7 @@ const INITIAL_ATTENDANCE: AttendanceRecord[] = [
         meetingAbsent: d === "20",
     })),
     // OM001 - Arjun Sharma (Centurion, Sat WFH) — has late, performance
-    ...FEB26_WORKING.map((d, i) => _a(`a7_${i}`, "OM001", d,
+    ...FEB26_WORKING.map((d, i) => _a(`a7_${i} `, "OM001", d,
         d === "02" ? "10:00" : "09:30",
         d === "27" ? "16:30" : "18:30",
         ["07", "14", "21", "28"].includes(d) ? "WFH" : "Centurion", {
@@ -472,7 +472,7 @@ const INITIAL_ATTENDANCE: AttendanceRecord[] = [
         performance: d === "16",
     })),
     // OM002 - Kavitha Nair (Scope Global) — has dressCode, late
-    ...FEB26_WORKING.map((d, i) => _a(`a8_${i}`, "OM002", d,
+    ...FEB26_WORKING.map((d, i) => _a(`a8_${i} `, "OM002", d,
         ["06", "19"].includes(d) ? "10:25" : "09:00",
         d === "12" ? "16:15" : "18:00",
         "Scope Global", {
@@ -481,7 +481,7 @@ const INITIAL_ATTENDANCE: AttendanceRecord[] = [
         dressCode: d === "24",
     })),
     // OM003 - Amit Patel — has meetingAbsent, locationDiff
-    ...FEB26_WORKING.filter(d => d !== "28").map((d, i) => _a(`a9_${i}`, "OM003", d,
+    ...FEB26_WORKING.filter(d => d !== "28").map((d, i) => _a(`a9_${i} `, "OM003", d,
         d === "10" ? "10:35" : "09:05",
         "18:00", "SAGE Bhopal", {
         late: d === "10",
@@ -489,27 +489,27 @@ const INITIAL_ATTENDANCE: AttendanceRecord[] = [
         locationDiff: d === "05",
     })),
     // HOI001 - Ayush Chauhan — has late
-    ...FEB26_WORKING.map((d, i) => _a(`a10_${i}`, "HOI001", d,
+    ...FEB26_WORKING.map((d, i) => _a(`a10_${i} `, "HOI001", d,
         d === "11" ? "10:00" : "09:00",
         "19:00", "SAGE Bhopal", {
         late: d === "11",
     })),
     // HOI002 - Sachin Kumar — has earlyOut
-    ...FEB26_WORKING.map((d, i) => _a(`a11_${i}`, "HOI002", d,
+    ...FEB26_WORKING.map((d, i) => _a(`a11_${i} `, "HOI002", d,
         "09:00",
         d === "20" ? "15:00" : "18:30",
         "SAGE Indore", {
         earlyOut: d === "20",
     })),
     // HOI003 - Sidhartha Paikaray — clean month
-    ...FEB26_WORKING.map((d, i) => _a(`a12_${i}`, "HOI003", d, "09:00", "18:30", "Centurion", {})),
+    ...FEB26_WORKING.map((d, i) => _a(`a12_${i} `, "HOI003", d, "09:00", "18:30", "Centurion", {})),
     // HR001 - Vivek Yadav — has late
-    ...FEB26_WORKING.map((d, i) => _a(`a13_${i}`, "HR001", d,
+    ...FEB26_WORKING.map((d, i) => _a(`a13_${i} `, "HR001", d,
         d === "09" ? "10:15" : "09:00", "18:00", "SAGE Bhopal", { late: d === "09" })),
     // AD001 - Raj Kumar Sahoo — clean
-    ...FEB26_WORKING.map((d, i) => _a(`a14_${i}`, "AD001", d, "08:50", "19:00", "SAGE Bhopal", {})),
+    ...FEB26_WORKING.map((d, i) => _a(`a14_${i} `, "AD001", d, "08:50", "19:00", "SAGE Bhopal", {})),
     // TL001 - Nitesh — has dressCode, performance
-    ...FEB26_WORKING.map((d, i) => _a(`a15_${i}`, "TL001", d,
+    ...FEB26_WORKING.map((d, i) => _a(`a15_${i} `, "TL001", d,
         d === "13" ? "10:20" : "09:00", "18:00", "SAGE Bhopal", {
         late: d === "13",
         dressCode: d === "21",
@@ -575,11 +575,14 @@ const INITIAL_PIP: PIPRecord[] = [
 
 const INITIAL_STARS: PerformanceStar[] = [
     { employeeId: "FAC001", stars: 4, rating: 4.5, badges: ["On Time", "Good Dress Code", "0 Flags"] },
+    { employeeId: "FAC002", stars: 3, rating: 3.5, badges: [] },
     { employeeId: "FAC003", stars: 3, rating: 4.2, badges: ["On Time", "Good Dress Code"] },
+    { employeeId: "FAC004", stars: 2, rating: 2.8, badges: [] },
+    { employeeId: "FAC005", stars: 4, rating: 4.3, badges: ["On Time", "0 Flags"] },
+    { employeeId: "FAC006", stars: 3, rating: 3.8, badges: [] },
     { employeeId: "OM001", stars: 5, rating: 4.8, badges: ["On Time", "Good Dress Code", "0 Flags", "Additional Responsibilities"] },
     { employeeId: "OM002", stars: 3, rating: 3.9, badges: ["Good Dress Code"] },
-    { employeeId: "FAC005", stars: 4, rating: 4.3, badges: ["On Time", "0 Flags"] },
-    { employeeId: "FAC002", stars: 2, rating: 3.5, badges: [] },
+    { employeeId: "OM003", stars: 4, rating: 4.1, badges: ["On Time"] },
     { employeeId: "HOI001", stars: 5, rating: 4.7, badges: ["On Time", "0 Flags", "Good Dress Code"] },
     { employeeId: "HOI002", stars: 4, rating: 4.1, badges: ["On Time"] },
     { employeeId: "HOI003", stars: 4, rating: 4.4, badges: ["On Time", "Good Dress Code"] },
@@ -634,8 +637,8 @@ interface AuthContextType {
     raiseTicket: (targetCategory: string, subject: string, content: string, routeTo?: string, cc?: string[], proofUrls?: string[], targetEmployeeId?: string, targetDate?: string) => void;
     resolveTicket: (id: string, notes: string) => void;
     addLeaveRequest: (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName">) => void;
-    approveLeave: (id: string) => void;
-    rejectLeave: (id: string, applyLOP?: boolean) => void;
+    approveLeave: (id: string, reason?: string) => void;
+    rejectLeave: (id: string, applyLOP?: boolean, reason?: string) => void;
     addReimbursement: (claim: Omit<ReimbursementClaim, "id" | "status" | "date" | "employeeId" | "employeeName">) => void;
     updateReimbursementStatus: (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string) => void;
     proposeHoliday: (h: Omit<Holiday, "id" | "proposedBy" | "status" | "proposedByName">) => void;
@@ -652,7 +655,8 @@ interface AuthContextType {
     deductChance: (employeeId: string, reason: string) => void;
     resetChances: (employeeId: string) => void;
     markAttendanceOverride: (employeeId: string, date: string, reason: string) => void;
-    reportMisbehaviour: (employeeId: string, type: MisbehaviourReport["type"], description: string) => void;
+    giveCredit: (employeeId: string, reason: string) => void;
+    reportMisbehaviour: (employeeId: string, type: MisbehaviourReport["type"], description: string, ccList: string[], propagationChain: any[]) => void;
     addRating: (employeeId: string, ratedBy: string, score: number, period: string, comment?: string) => void;
     assignWorkSchedule: (schedule: WorkSchedule) => void;
     approveWorkSchedule: (employeeId: string) => void;
@@ -708,7 +712,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [performanceStars, setPerformanceStars] = useState<PerformanceStar[]>(INITIAL_STARS);
     const [moms, setMoms] = useState<MOM[]>([]);
     const [reimbursements, setReimbursements] = useState<ReimbursementClaim[]>(INITIAL_REIMBURSEMENTS);
-    const [orgHierarchy] = useState<OrgNode[]>(INITIAL_HIERARCHY);
+    const orgHierarchy = useMemo<OrgNode[]>(() => {
+        return employees.map(emp => {
+            let level: OrgNode["level"] = "Faculty"; // Default
+            if (emp.role === "FOUNDER") level = "C-Suite";
+            else if (emp.role === "AD" || emp.role === "HR" || emp.role === "TL") level = "Management";
+            else if (emp.role === "HOI") level = "Leadership";
+            else if (emp.role === "OM") level = "OM";
+            else if (emp.role === "FACULTY" || emp.role === "PROFESSOR") level = "Faculty";
+
+            return {
+                id: emp.id,
+                name: emp.name,
+                designation: emp.designation || emp.role,
+                level,
+                parentId: emp.reportsTo,
+                photoInitial: emp.name[0]?.toUpperCase() || "U",
+                dept: emp.dept || "Unassigned"
+            };
+        });
+    }, [employees]);
     const [ratings, setRatings] = useState<Rating[]>(INITIAL_RATINGS);
     const [misbehaviourReports, setMisbehaviourReports] = useState<MisbehaviourReport[]>(INITIAL_MISBEHAVIOURS);
     const [additionalResponsibilities, setAdditionalResponsibilities] = useState<AdditionalResponsibility[]>(INITIAL_RESPONSIBILITIES);
@@ -733,7 +756,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const keysToRemove = ["gog_user", "gog_employees", "gog_leaves", "gog_meetings", "gog_notices", "gog_payroll", "gog_sops", "gog_attendance", "gog_tickets", "gog_holidays", "gog_pip", "gog_schedules", "gog_stars", "gog_moms", "gog_reimbursements", "gog_ratings", "gog_misbehaviours", "gog_responsibilities", "gog_notifications", "gog_mark_present", "gog_hierarchy"];
             keysToRemove.forEach(k => localStorage.removeItem(k));
             localStorage.setItem("gog_data_version", DATA_VERSION);
-            return; // Use initial data from the constants
         }
         const su = s("gog_user"); if (su) setUser(su);
         const se = s("gog_employees"); if (se) setEmployees(se);
@@ -755,6 +777,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const sar = s("gog_responsibilities"); if (sar) setAdditionalResponsibilities(sar);
         const sno = s("gog_notifications"); if (sno) setNotifications(sno);
         const smpr = s("gog_mark_present"); if (smpr) setMarkAsPresentRequests(smpr);
+    }, []);
+
+    // ─── FETCH FROM DB ───
+    useEffect(() => {
+        const fetchEmployees = async () => {
+            try {
+                const res = await fetch("/api/employees");
+                const result = await res.json();
+                if (result.success) {
+                    setEmployees(result.data);
+                }
+            } catch (err) {
+                console.error("Failed to fetch employees from database:", err);
+            }
+        };
+        fetchEmployees();
     }, []);
 
     useEffect(() => {
@@ -780,6 +818,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem("gog_mark_present", JSON.stringify(markAsPresentRequests));
     }, [user, employees, leaves, meetings, notices, payrollRecords, sops, attendanceRecords, tickets, holidays, pipRecords, workSchedules, performanceStars, moms, reimbursements, ratings, misbehaviourReports, additionalResponsibilities, notifications, markAsPresentRequests]);
 
+    // Sync performanceStars for all OMs and Professors
+    useEffect(() => {
+        const eligible = employees.filter(e => ["OM", "PROFESSOR", "FACULTY"].includes(e.role));
+        setPerformanceStars(prev => {
+            const next = [...prev];
+            let changed = false;
+            eligible.forEach(emp => {
+                if (!next.find(s => s.employeeId === emp.id)) {
+                    next.push({ employeeId: emp.id, stars: 3, rating: 0, badges: [] });
+                    changed = true;
+                }
+            });
+            return changed ? next : prev;
+        });
+    }, [employees]);
+
     // ─── HELPERS ───
     const uid = () => Math.random().toString(36).substr(2, 8).toUpperCase();
     const getReportees = (managerId: string) => employees.filter(e => e.reportsTo === managerId);
@@ -793,10 +847,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // ─── AUTH ───
     const login = (email: string, password?: string, role?: string) => {
-        const emp = employees.find(e => e.email.toLowerCase() === email.toLowerCase());
+        const emp = employees.find(e => e.email.toLowerCase().trim() === email.toLowerCase().trim());
         if (!emp) return { success: false, msg: "Institutional account not found." };
-        if (password && emp.password !== password) return { success: false, msg: "Incorrect passkey." };
-        if (role && emp.role !== role) return { success: false, msg: "Institutional role mismatch." };
+        if (password && emp.password !== password) return { success: false, msg: `Incorrect passkey.Expected: ${emp.password} ` }; // Temporary debug info
+        if (role && emp.role !== role) return { success: false, msg: `Institutional role mismatch.Got: ${role}, Expected: ${emp.role} ` };
 
         setUser(emp);
         router.push("/");
@@ -808,14 +862,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (user?.id === userId) setUser(prev => prev ? { ...prev, ...data, isOnboarded: true } : null);
     };
     const addEmployee = (emp: Omit<Employee, "id" | "isOnboarded">) => {
-        setEmployees(prev => [...prev, { ...emp, id: `EMP${uid()}`, isOnboarded: false }]);
+        setEmployees(prev => [...prev, { ...emp, id: `EMP${uid()} `, isOnboarded: false }]);
     };
 
     // ─── NOTICES ───
     const addNotice = (notice: Omit<Notice, "id" | "createdBy" | "createdAt">) => {
         if (!user) return;
-        const newNotice: Notice = { ...notice, id: `N${uid()}`, createdBy: user.name, createdAt: new Date().toISOString().split("T")[0], readBy: [] };
+        const newNotice: Notice = { ...notice, id: `N${uid()} `, createdBy: user.name, createdAt: new Date().toISOString().split("T")[0], readBy: [] };
         setNotices(prev => [newNotice, ...prev]);
+
+        // --- EMAIL NOTIFICATION ---
+        const allEmails = employees.filter(e => e.email && e.status === "Active").map(e => e.email);
+        const { subject: mailSub, html: mailHtml } = getAnnouncementTemplate(newNotice);
+        sendMail({ to: allEmails, subject: mailSub, html: mailHtml });
+
         try { localStorage.setItem("announcement_update", JSON.stringify({ id: newNotice.id, ts: Date.now() })); } catch { }
     };
     const addAnnouncement = addNotice;
@@ -836,7 +896,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!user) return;
         const today = new Date().toISOString().split("T")[0];
         setAttendanceRecords(prev => [...prev, {
-            id: `ATT${uid()}`, employeeId: user.id, date: today, clockIn: time, location,
+            id: `ATT${uid()} `, employeeId: user.id, date: today, clockIn: time, location,
             status: "Present", flags: { late: parseInt(time.split(":")[0]) >= 10, locationDiff: location !== "Main Office" },
             isApprovedByHR: false, dressCodeImageUrl,
             dressCodeStatus: dressCodeImageUrl ? "Pending" : "N/A"
@@ -853,22 +913,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAttendanceRecords(prev => {
             const existing = prev.find(r => r.employeeId === employeeId && r.date === date);
             if (existing) return prev.map(r => r.id === existing.id ? { ...r, status: "Present", isApprovedByHR: true } : r);
-            return [...prev, { id: `ATT${uid()}`, employeeId, date, clockIn: "09:00", location: "Override", status: "Present" as any, flags: {}, isApprovedByHR: true }];
+            return [...prev, { id: `ATT${uid()} `, employeeId, date, clockIn: "09:00", location: "Override", status: "Present" as any, flags: {}, isApprovedByHR: true }];
         });
     };
 
     const addMarkAsPresentRequest = (req: Omit<MarkAsPresentRequest, "id" | "status" | "appliedAt" | "employeeName">) => {
         if (!user) return;
-        setMarkAsPresentRequests(prev => [{ ...req, id: `MAP${uid()}`, employeeName: user.name, status: "Pending", appliedAt: new Date().toISOString() }, ...prev]);
-        setAttendanceRecords(prev => [...prev, { id: `ATT${uid()}`, employeeId: user.id, date: req.date, clockIn: "-", location: "Appealed", status: "Mark As Present Request" as any, flags: {}, isApprovedByHR: false }]);
+        const newReq: MarkAsPresentRequest = { ...req, id: `MAP${uid()} `, employeeName: user.name, status: "Pending", appliedAt: new Date().toISOString() };
+        setMarkAsPresentRequests(prev => [newReq, ...prev]);
+        setAttendanceRecords(prev => [...prev, { id: `ATT${uid()} `, employeeId: user.id, date: req.date, clockIn: "-", location: "Appealed", status: "Mark As Present Request" as any, flags: {}, isApprovedByHR: false }]);
+
+        // --- EMAIL NOTIFICATION ---
+        const raiser = employees.find(e => e.id === user.id);
+        const ccEmails = getAuthorityEmails(raiser, employees);
+        const { subject: mailSub, html: mailHtml } = getMarkAsPresentTemplate(newReq, "Pending");
+        const hr = employees.find(e => e.role === "HR");
+
+        if (hr?.email) {
+            sendMail({
+                to: hr.email,
+                cc: ccEmails,
+                subject: mailSub,
+                html: mailHtml
+            });
+        }
     };
 
     const resolveMarkAsPresentRequest = (id: string, status: "Approved" | "Rejected") => {
         setMarkAsPresentRequests(prev => {
             const req = prev.find(r => r.id === id);
-            if (req && status === "Approved") {
-                markAttendanceOverride(req.employeeId, req.date, req.reason);
-                setEmployees(emps => emps.map(e => e.id === req.employeeId ? { ...e, markPresentUsed: (e.markPresentUsed || 0) + 1 } : e));
+            if (req) {
+                if (status === "Approved") {
+                    markAttendanceOverride(req.employeeId, req.date, req.reason);
+                    setEmployees(emps => emps.map(e => e.id === req.employeeId ? { ...e, markPresentUsed: (e.markPresentUsed || 0) + 1 } : e));
+                }
+
+                // --- EMAIL NOTIFICATION ---
+                const emp = employees.find(e => e.id === req.employeeId);
+                const ccEmails = getAuthorityEmails(emp, employees);
+                const { subject: mailSub, html: mailHtml } = getMarkAsPresentTemplate(req, status);
+
+                if (emp?.email) {
+                    sendMail({
+                        to: emp.email,
+                        cc: ccEmails,
+                        subject: mailSub,
+                        html: mailHtml
+                    });
+                }
             }
             return prev.map(r => r.id === id ? { ...r, status } : r);
         });
@@ -878,7 +970,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAttendanceRecords(prev => {
             const record = prev.find(r => r.id === recordId);
             if (record && status === "Rejected") {
-                setEmployees(emps => emps.map(e => e.id === record.employeeId ? { ...e, dressCodeDefaults: (e.dressCodeDefaults || 0) + 1 } : e));
+                setEmployees(emps => emps.map(e => {
+                    if (e.id === record.employeeId) {
+                        const newDefaults = (e.dressCodeDefaults || 0) + 1;
+                        // --- EMAIL NOTIFICATION FOR WARNING ---
+                        const ccEmails = getAuthorityEmails(e, employees);
+                        const { subject: mailSub, html: mailHtml } = getDressCodeWarningTemplate(e, newDefaults);
+
+                        sendMail({
+                            to: e.email,
+                            cc: ccEmails,
+                            subject: mailSub,
+                            html: mailHtml
+                        });
+
+                        return { ...e, dressCodeDefaults: newDefaults };
+                    }
+                    return e;
+                }));
             }
             return prev.map(r => r.id === recordId ? { ...r, dressCodeStatus: status, flags: { ...r.flags, dressCode: status === "Rejected" } } : r);
         });
@@ -889,55 +998,182 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAttendanceRecords(prev => prev.map(r => r.employeeId === employeeId ? { ...r, flags: { ...r.flags, late: false, earlyOut: false, locationDiff: false, dressCode: false } } : r));
     };
 
+    const giveCredit = (employeeId: string, reason: string) => {
+        setEmployees(prev => prev.map(emp => {
+            if (emp.id === employeeId) {
+                const currentUsed = emp.markPresentUsed || 0;
+                // Reduce the used counter by 1 to effectively "give" a credit back, max 0
+                const updatedUsed = Math.max(0, currentUsed - 1);
+
+                // Determine founders email
+                const founders = prev.filter(e => e.role === "FOUNDER" && e.email).map(e => e.email!);
+
+                // Email employee and CC founders
+                if (emp.email) {
+                    sendMail({
+                        to: emp.email,
+                        cc: founders,
+                        subject: `Attendance Override Credit Granted - ${emp.name} `,
+                        html: `
+    < div style = "font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;" >
+                                <h2 style="color: #10b981;">Credit Allotted</h2>
+                                <p>Hi ${emp.name},</p>
+                                <p>You have been granted an attendance override credit by HR.</p>
+                                <p><strong>Reason:</strong> ${reason}</p>
+                                <p>Your used credits have been reduced, giving you an additional chance this month.</p>
+                                <p style="font-size: 12px; color: #6b7280; margin-top: 30px;">Geeks of Gurukul HRMS</p>
+                            </div >
+    `
+                    });
+                }
+
+                return { ...emp, markPresentUsed: updatedUsed };
+            }
+            return emp;
+        }));
+    };
+
     // ─── LEAVES ───
     const addLeaveRequest = (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName">) => {
         if (!user) return;
         const now = new Date();
         const appliedAt = now.toISOString();
 
-        setLeaves(prev => [{
+        const newLeave: LeaveRequest = {
             ...req,
-            id: `LV${uid()}`,
+            id: `LV${uid()} `,
             status: "Pending",
             employeeId: user.id,
             employeeName: user.name,
             lossOfPayDays: 0,
             appliedAt
-        }, ...prev]);
+        };
+
+        setLeaves(prev => [newLeave, ...prev]);
+
+        // --- EMAIL NOTIFICATION ---
+        const raiser = employees.find(e => e.id === user.id);
+        const ccEmails = getAuthorityEmails(raiser, employees);
+        const hr = employees.find(e => e.role === "HR");
+        const rm = raiser?.reportsTo ? employees.find(e => e.id === raiser.reportsTo) : null;
+
+        const { subject: mailSub, html: mailHtml } = getLeaveTemplate(newLeave, "Pending");
+
+        // Ensure HOI and AD are also emailed 
+        const chain = getManagerChain(user.id);
+        const hoi = employees.find(e => e.role === "HOI" && chain.some(c => c.id === e.id));
+        const ad = employees.find(e => e.role === "AD" && chain.some(c => c.id === e.id));
+
+        const toList = [hr?.email, rm?.email, hoi?.email, ad?.email].filter(Boolean) as string[];
+
+        if (toList.length > 0) {
+            sendMail({
+                to: toList,
+                cc: ccEmails,
+                subject: mailSub,
+                html: mailHtml
+            });
+        }
     };
-    const approveLeave = (id: string) => setLeaves(prev => prev.map(l => l.id === id ? { ...l, status: "Approved" } : l));
-    const rejectLeave = (id: string, applyLOP: boolean = false) => setLeaves(prev => prev.map(l => l.id === id ? { ...l, status: "Rejected", lossOfPayDays: applyLOP ? 2 : (l.lossOfPayDays || 0) } : l));
+    const approveLeave = (id: string, reason?: string) => setLeaves(prev => {
+        return prev.map(l => {
+            if (l.id === id) {
+                const updated = { ...l, status: "Approved" as const, reasonForAction: reason };
+
+                // --- EMAIL NOTIFICATION ---
+                const emp = employees.find(e => e.id === l.employeeId);
+                const ccEmails = getAuthorityEmails(emp, employees);
+                const { subject: mailSub, html: mailHtml } = getLeaveTemplate(updated, "Approved");
+
+                if (emp?.email) {
+                    sendMail({
+                        to: emp.email,
+                        cc: ccEmails,
+                        subject: mailSub,
+                        html: mailHtml
+                    });
+                }
+                return updated;
+            }
+            return l;
+        });
+    });
+    const rejectLeave = (id: string, applyLOP: boolean = false, reason?: string) => setLeaves(prev => {
+        return prev.map(l => {
+            if (l.id === id) {
+                const updated = { ...l, status: "Rejected" as const, lossOfPayDays: applyLOP ? 2 : (l.lossOfPayDays || 0), reasonForAction: reason };
+
+                // --- EMAIL NOTIFICATION ---
+                const emp = employees.find(e => e.id === l.employeeId);
+                const ccEmails = getAuthorityEmails(emp, employees);
+                const { subject: mailSub, html: mailHtml } = getLeaveTemplate(updated, "Rejected");
+
+                if (emp?.email) {
+                    sendMail({
+                        to: emp.email,
+                        cc: ccEmails,
+                        subject: mailSub,
+                        html: mailHtml
+                    });
+                }
+                return updated;
+            }
+            return l;
+        });
+    });
 
     // ─── TICKETS ───
     const raiseTicket = (targetCategory: string, subject: string, content: string, routeTo?: string, cc?: string[], proofUrls?: string[], targetEmployeeId?: string, targetDate?: string) => {
         if (!user) return;
 
+        const targetCategoryNormalized = targetCategory.toLowerCase();
+
         let finalRouteTo = routeTo;
         let finalCC = cc || [];
 
-        // Automatic routing and CC logic based on Req.md
+        // Enhanced Automatic routing and CC logic based on Req.md
         const managerChain = getManagerChain(user.id);
         const empRecord = employees.find(e => e.id === user.id);
         const rm = empRecord?.reportsTo;
+        const hrEmployees = employees.filter(e => e.role === "HR");
+        const hrId = hrEmployees[0]?.id || "HR001";
+        const hrEmails = hrEmployees.map(h => h.email!).filter(Boolean);
         const founders = employees.filter(e => e.role === "FOUNDER").map(f => f.id);
-        const hr = employees.filter(e => e.role === "HR").map(h => h.id);
+        const founderEmails = employees.filter(e => e.role === "FOUNDER" && e.email).map(f => f.email!);
 
-        if (targetCategory === "HR Desk" || targetCategory === "Attendance Override Request") {
-            finalRouteTo = hr[0] || "HR001";
+        const isEmployee = ["OM", "FACULTY", "PROFESSOR", "BDE"].includes(user.role);
+        const isHOI = user.role === "HOI";
+        const isAD = user.role === "AD";
+
+        if (targetCategoryNormalized.includes("hr") || targetCategoryNormalized.includes("account") || targetCategoryNormalized.includes("attendance")) {
+            // HR issues [Accounts/HR] - To HR, CC: Founders
+            finalRouteTo = hrId;
             finalCC = [...new Set([...finalCC, ...founders])];
-        } else if (targetCategory === "Misconduct" || targetCategory === "Academic") {
-            finalRouteTo = rm || hr[0];
-            // CC all above RM + HR
+        } else if (targetCategoryNormalized.includes("misconduct") || targetCategoryNormalized.includes("academic") || targetCategoryNormalized.includes("student")) {
+            // Misconduct/Institute Issues/Academic - To RM, CC: All above RM, HR
+            finalRouteTo = rm || hrId;
             const aboveRM = managerChain.slice(1).map(m => m.id);
-            finalCC = [...new Set([...finalCC, ...aboveRM, ...hr])];
-        } else if (targetCategory === "Technical") {
+            finalCC = [...new Set([...finalCC, ...aboveRM, ...hrEmployees.map(h => h.id)])];
+        } else if (targetCategoryNormalized.includes("technical")) {
+            // Technical Issues - To TL, CC: RM, All above RM, HR
             const tl = employees.find(e => e.role === "TL")?.id;
-            finalRouteTo = tl || rm;
-            finalCC = [...new Set([...finalCC, rm || "", ...managerChain.slice(1).map(m => m.id), ...hr].filter(Boolean))];
+            finalRouteTo = tl || rm || hrId;
+            finalCC = [...new Set([...finalCC, rm || "", ...managerChain.slice(1).map(m => m.id), ...hrEmployees.map(h => h.id)].filter(Boolean))];
+        } else {
+            // Default ticket routing
+            finalRouteTo = rm || hrId;
+            finalCC = [...new Set([...finalCC])];
         }
 
-        setTickets(prev => [{
-            id: `TKT${uid()}`,
+        // Enforce resolution authority rules based on raiser
+        // If employee raises, resolvable by HOI/AD/HR. Target is RM (usually HOI)
+        // If HOI raises, resolvable by HR/AD. Target is AD or HR
+        if (isHOI && finalRouteTo && !employees.find(e => e.id === finalRouteTo && ["HR", "AD", "FOUNDER"].includes(e.role))) {
+            finalRouteTo = employees.find(e => e.role === "AD")?.id || hrId;
+        }
+
+        const newTicket: Ticket = {
+            id: `TKT${uid()} `,
             raisedBy: user.id,
             employeeName: user.name,
             targetCategory,
@@ -950,7 +1186,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             proofUrls,
             targetEmployeeId,
             targetDate
-        }, ...prev]);
+        };
+
+        setTickets(prev => [newTicket, ...prev]);
+
+        // --- EMAIL NOTIFICATION ---
+        const targetEmp = employees.find(e => e.id === finalRouteTo);
+        const raiser = employees.find(e => e.id === user.id);
+        const ccEmails = getAuthorityEmails(raiser, employees);
+        const { subject: mailSub, html: mailHtml } = getTicketTemplate(newTicket, 'raised');
+
+        if (targetEmp?.email) {
+            sendMail({
+                to: targetEmp.email,
+                cc: ccEmails,
+                subject: mailSub,
+                html: mailHtml
+            });
+        }
     };
     const resolveTicket = (id: string, notes: string) => {
         setTickets(prev => {
@@ -965,7 +1218,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                     if (targetEmpId && targetDate) {
                         // Auto-override attendance
-                        markAttendanceOverride(targetEmpId, targetDate, `Approved via Ticket ${id}`);
+                        markAttendanceOverride(targetEmpId, targetDate, `Approved via Ticket ${id} `);
 
                         // Reverse PIP warnings if any
                         setPipRecords(pips => pips.map(p =>
@@ -976,31 +1229,109 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     }
                 }
             }
-            return prev.map(t => t.id === id ? { ...t, status: "Resolved", resolvedAt: new Date().toISOString(), resolutionNotes: notes } : t);
+            return prev.map(t => {
+                if (t.id === id) {
+                    const updated = { ...t, status: "Resolved" as const, resolvedAt: new Date().toISOString(), resolutionNotes: notes };
+
+                    // --- EMAIL NOTIFICATION ---
+                    const raiser = employees.find(e => e.id === t.raisedBy);
+                    const ccEmails = getAuthorityEmails(raiser, employees);
+                    const { subject: mailSub, html: mailHtml } = getTicketTemplate(updated, 'resolved');
+
+                    if (raiser?.email) {
+                        sendMail({
+                            to: raiser.email,
+                            cc: ccEmails,
+                            subject: mailSub,
+                            html: mailHtml
+                        });
+                    }
+
+                    return updated;
+                }
+                return t;
+            });
         });
     };
 
     // ─── REIMBURSEMENTS ───
     const addReimbursement = (claim: Omit<ReimbursementClaim, "id" | "status" | "date" | "employeeId" | "employeeName">) => {
         if (!user) return;
-        setReimbursements(prev => [{ ...claim, id: `RMB${uid()}`, employeeId: user.id, employeeName: user.name, status: "Pending", date: new Date().toISOString().split("T")[0] }, ...prev]);
+        setReimbursements(prev => [{ ...claim, id: `RMB${uid()} `, employeeId: user.id, employeeName: user.name, status: "Pending", date: new Date().toISOString().split("T")[0] }, ...prev]);
     };
     const updateReimbursementStatus = (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string) => {
-        setReimbursements(prev => prev.map(r => r.id === id ? { ...r, status, rejectionReason: reason || r.rejectionReason, hrRemarks: remarks || r.hrRemarks } : r));
+        setReimbursements(prev => prev.map(r => {
+            if (r.id === id) {
+                const updated = { ...r, status, rejectionReason: reason || r.rejectionReason, hrRemarks: remarks || r.hrRemarks };
+
+                // --- EMAIL NOTIFICATION ---
+                const emp = employees.find(e => e.id === r.employeeId);
+                const ccEmails = getAuthorityEmails(emp, employees);
+                const { subject: mailSub, html: mailHtml } = getReimbursementTemplate(updated);
+
+                if (emp?.email) {
+                    sendMail({
+                        to: emp.email,
+                        cc: ccEmails,
+                        subject: mailSub,
+                        html: mailHtml
+                    });
+                }
+                return updated;
+            }
+            return r;
+        }));
     };
 
     // ─── HOLIDAYS ───
     const proposeHoliday = (h: Omit<Holiday, "id" | "proposedBy" | "status" | "proposedByName">) => {
         if (!user) return;
-        setHolidays(prev => [...prev, { ...h, id: `HOL${uid()}`, proposedBy: user.id, proposedByName: user.name, status: "Proposed" }]);
+        const newHol: Holiday = { ...h, id: `HOL${uid()} `, proposedBy: user.id, proposedByName: user.name, status: "Proposed" };
+        setHolidays(prev => [...prev, newHol]);
+
+        // --- EMAIL NOTIFICATION ---
+        const ccEmails = getAuthorityEmails(user, employees);
+        const { subject: mailSub, html: mailHtml } = getHolidayTemplate(newHol, "Proposed");
+        const hr = employees.find(e => e.role === "HR");
+
+        if (hr?.email) {
+            sendMail({
+                to: hr.email,
+                cc: ccEmails,
+                subject: mailSub,
+                html: mailHtml
+            });
+        }
     };
     const approveHoliday = (id: string, customMessage?: string) => {
-        setHolidays(prev => prev.map(h => h.id === id ? { ...h, status: "Approved" as const, customMessage: customMessage || h.customMessage } : h));
+        setHolidays(prev => prev.map(h => {
+            if (h.id === id) {
+                const updated = { ...h, status: "Approved" as const, customMessage: customMessage || h.customMessage };
+
+                // --- EMAIL NOTIFICATION ---
+                const ccEmails = getAuthorityEmails(user, employees);
+                const { subject: mailSub, html: mailHtml } = getHolidayTemplate(updated, "Approved");
+
+                // All employees should technically be notified, but for now we'll send to RM/HOIs or just founders
+                const founders = employees.filter(e => e.role === "FOUNDER").map(f => f.email).filter(Boolean) as string[];
+
+                sendMail({
+                    to: founders,
+                    cc: ccEmails,
+                    subject: mailSub,
+                    html: mailHtml
+                });
+
+                return updated;
+            }
+            return h;
+        }));
+
         // Auto-announce
         const hol = holidays.find(h => h.id === id);
         if (hol) {
             const msg = customMessage || `${hol.name} on ${hol.date} has been approved as an official holiday.`;
-            setNotices(prev => [{ id: `N${uid()}`, title: `Holiday: ${hol.name}`, content: msg, category: "General" as const, createdBy: user?.name || "HR", createdAt: new Date().toISOString().split("T")[0] }, ...prev]);
+            setNotices(prev => [{ id: `N${uid()} `, title: `Holiday: ${hol.name} `, content: msg, category: "General" as const, createdBy: user?.name || "HR", createdAt: new Date().toISOString().split("T")[0] }, ...prev]);
         }
     };
 
@@ -1008,7 +1339,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updateSOP = (sop: Omit<SOP, "id" | "lastUpdated">) => {
         if (!user) return;
         const existing = sops.find(s => s.title === sop.title);
-        const newId = existing ? existing.id : `SOP${uid()}`;
+        const newId = existing ? existing.id : `SOP${uid()} `;
         const updatedSop: SOP = {
             ...sop,
             id: newId,
@@ -1018,11 +1349,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
         setSops(prev => existing ? prev.map(s => s.id === newId ? updatedSop : s) : [updatedSop, ...prev]);
         const notif: SOPNotification = {
-            id: `sopn${uid()}`, sopId: newId, title: sop.title,
+            id: `sopn${uid()} `, sopId: newId, title: sop.title,
             changeType: existing ? "updated" : "new",
             changedBy: user.name, changedAt: new Date().toISOString().split("T")[0], readBy: [],
         };
         setSopNotifications(prev => [notif, ...prev]);
+
+        // --- EMAIL NOTIFICATION ---
+        const allEmails = employees.filter(e => e.email && e.status === "Active").map(e => e.email).filter(Boolean) as string[];
+        const { subject: mailSub, html: mailHtml } = getSOPUpdateTemplate({
+            title: updatedSop.title,
+            version: updatedSop.version,
+            changelog: updatedSop.changelog || (existing ? 'Updated SOP' : 'New SOP'),
+            changedBy: user.name
+        }, existing ? 'updated' : 'new');
+        sendMail({ to: allEmails, subject: mailSub, html: mailHtml });
+
         // Inter-portal communication via localStorage
         try { localStorage.setItem("sop_update", JSON.stringify({ ...notif, ts: Date.now() })); } catch { }
     };
@@ -1033,11 +1375,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!sop) return;
         setSops(prev => prev.filter(s => s.id !== id));
         const notif: SOPNotification = {
-            id: `sopn${uid()}`, sopId: id, title: sop.title,
+            id: `sopn${uid()} `, sopId: id, title: sop.title,
             changeType: "deleted", changedBy: user.name,
             changedAt: new Date().toISOString().split("T")[0], readBy: [],
         };
         setSopNotifications(prev => [notif, ...prev]);
+
+        // --- EMAIL NOTIFICATION ---
+        const allEmails = employees.filter(e => e.email && e.status === "Active").map(e => e.email).filter(Boolean) as string[];
+        const { subject: mailSub, html: mailHtml } = getSOPUpdateTemplate({
+            title: sop.title,
+            version: sop.version,
+            changedBy: user.name
+        }, 'deleted');
+        sendMail({ to: allEmails, subject: mailSub, html: mailHtml });
+
         try { localStorage.setItem("sop_update", JSON.stringify({ ...notif, ts: Date.now() })); } catch { }
     };
 
@@ -1056,7 +1408,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const oldContent = masterSopContent;
         setMasterSopContent(content);
         const notif: SOPNotification = {
-            id: `sopn${uid()}`, sopId: "master", title: "Full SOP Document",
+            id: `sopn${uid()} `, sopId: "master", title: "Full SOP Document",
             changeType: "updated", changedBy: user.name,
             changedAt: new Date().toISOString().split("T")[0], readBy: [],
             changelog: changelog || "SOP document updated",
@@ -1064,6 +1416,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             newContent: content.slice(0, 800),
         };
         setSopNotifications(prev => [notif, ...prev]);
+
+        // --- EMAIL NOTIFICATION ---
+        const allEmails = employees.filter(e => e.email && e.status === "Active").map(e => e.email).filter(Boolean) as string[];
+        const { subject: mailSub, html: mailHtml } = getSOPUpdateTemplate({
+            title: notif.title,
+            version: "Master",
+            changelog: notif.changelog,
+            changedBy: user.name
+        }, 'updated');
+        sendMail({ to: allEmails, subject: mailSub, html: mailHtml });
+
         try {
             localStorage.setItem("sop_update", JSON.stringify({ ...notif, ts: Date.now() }));
             localStorage.setItem("master_sop_content", content);
@@ -1074,7 +1437,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const addToPIP = (employeeId: string, reason: string) => {
         const emp = employees.find(e => e.id === employeeId);
         if (!emp) return;
-        setPipRecords(prev => [...prev, { id: `PIP${uid()}`, employeeId, employeeName: emp.name, reason, startDate: new Date().toISOString().split("T")[0], status: "Active", warnings: 0, disclaimer: "You are currently under Performance Improvement Plan." }]);
+        const pip = { id: `PIP${uid()} `, employeeId, employeeName: emp.name, reason, startDate: new Date().toISOString().split("T")[0], status: "Active" as const, warnings: 0, disclaimer: "You are currently under Performance Improvement Plan." };
+        setPipRecords(prev => [...prev, pip]);
+
+        // --- EMAIL NOTIFICATION ---
+        const ccEmails = getAuthorityEmails(emp, employees);
+        const { subject: mailSub, html: mailHtml } = getPIPAddTemplate(pip);
+
+        if (emp.email) {
+            sendMail({
+                to: emp.email,
+                cc: ccEmails,
+                subject: mailSub,
+                html: mailHtml
+            });
+        }
     };
 
     const removeFromPIP = (pipId: string, reason: string, proofs?: string[]) => {
@@ -1097,7 +1474,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const newChances = Math.max(0, e.chancesRemaining - 1);
                 if (newChances === 0) {
                     // Auto enroll in PIP if chances hit 0
-                    setTimeout(() => addToPIP(employeeId, `Automated PIP: Chances exhausted. Last reason: ${reason}`), 0);
+                    setTimeout(() => addToPIP(employeeId, `Automated PIP: Chances exhausted.Last reason: ${reason} `), 0);
                 }
                 return { ...e, chancesRemaining: newChances };
             }
@@ -1109,22 +1486,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, chancesRemaining: 3 } : e));
     };
 
-    // ─── MISBEHAVIOUR ───
-    const reportMisbehaviour = (employeeId: string, type: MisbehaviourReport["type"], description: string) => {
+    const reportMisbehaviour = (employeeId: string, type: MisbehaviourReport["type"], description: string, ccList: string[], propagationChain: any[]) => {
         if (!user) return;
         const emp = employees.find(e => e.id === employeeId);
         if (!emp) return;
-        const chain = getManagerChain(employeeId);
-        const ccList = [...chain.map(c => c.id), "HR001"];
-        // Build propagation chain: HOI → AD → HR
-        const propagationChain: { level: string; name: string; notified: boolean }[] = [];
-        const hoi = chain.find(c => c.managerLevel === "HOI");
-        const ad = chain.find(c => c.managerLevel === "AD");
-        const hr = employees.find(e => e.role === "HR");
-        if (hoi) propagationChain.push({ level: "HOI", name: hoi.name, notified: true });
-        if (ad) propagationChain.push({ level: "AD", name: ad.name, notified: true });
-        if (hr) propagationChain.push({ level: "HR", name: hr.name, notified: true });
-        setMisbehaviourReports(prev => [...prev, { id: `MB${uid()}`, reportedBy: user.id, reportedByName: user.name, employeeId, employeeName: emp.name, type, description, date: new Date().toISOString().split("T")[0], ccList, propagationChain }]);
+
+        const report: MisbehaviourReport = {
+            id: `MB${uid()} `,
+            reportedBy: user.id,
+            reportedByName: user.name,
+            employeeId,
+            employeeName: emp.name,
+            type,
+            description,
+            date: new Date().toISOString().split("T")[0],
+            ccList,
+            propagationChain
+        };
+
+        setMisbehaviourReports(prev => [...prev, report]);
+
+        // --- EMAIL NOTIFICATION ---
+        const ccEmails = getAuthorityEmails(emp, employees);
+        const { subject: mailSub, html: mailHtml } = getMisbehaviourTemplate(report);
+
+        if (emp.email) {
+            sendMail({
+                to: emp.email,
+                cc: ccEmails,
+                subject: mailSub,
+                html: mailHtml
+            });
+        }
     };
 
     const recalculatePerformance = (employeeId: string) => {
@@ -1184,7 +1577,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!emp) return;
 
         const newRating: Rating = {
-            id: `RT${uid()}`,
+            id: `RT${uid()} `,
             employeeId,
             employeeName: emp.name,
             ratedBy: user.id,
@@ -1194,6 +1587,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             comment,
             date: new Date().toISOString().split("T")[0]
         };
+
+        // Send Email Notification
+        const { subject, html } = getRatingTemplate(newRating);
+        const authorities = getAuthorityEmails(emp, employees);
+        sendMail({ to: emp.email, cc: authorities, subject, html });
 
         setRatings(prev => {
             const next = [...prev, newRating];
@@ -1211,6 +1609,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (existing >= 0) { const nw = [...prev]; nw[existing] = enriched; return nw; }
             return [...prev, enriched];
         });
+
+        // --- EMAIL NOTIFICATION ---
+        const emp = employees.find(e => e.id === schedule.employeeId);
+        const ccEmails = getAuthorityEmails(emp, employees);
+        const { subject: mailSub, html: mailHtml } = getWorkScheduleTemplate(enriched, false);
+
+        if (emp?.email) {
+            sendMail({
+                to: emp.email,
+                cc: ccEmails,
+                subject: mailSub,
+                html: mailHtml
+            });
+        }
     };
     const approveWorkSchedule = (employeeId: string) => {
         setWorkSchedules(prev => prev.map(s => s.employeeId === employeeId ? { ...s, approvedByHR: true } : s));
@@ -1230,16 +1642,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!user) return;
         const emp = employees.find(e => e.id === employeeId);
         if (!emp) return;
-        setAdditionalResponsibilities(prev => [...prev, {
-            id: `AR${uid()}`,
+        const resp = {
+            id: `AR${uid()} `,
             employeeId,
             employeeName: emp.name,
             addedBy: user.id,
             description,
             date: new Date().toISOString().split("T")[0],
-            status: "Pending",
+            status: "Pending" as const,
             points
-        }]);
+        };
+        setAdditionalResponsibilities(prev => [...prev, resp]);
+
+        // --- EMAIL NOTIFICATION ---
+        const ccEmails = getAuthorityEmails(emp, employees);
+        const { subject: mailSub, html: mailHtml } = getAdditionalResponsibilityTemplate(resp);
+
+        if (emp.email) {
+            sendMail({
+                to: emp.email,
+                cc: ccEmails,
+                subject: mailSub,
+                html: mailHtml
+            });
+        }
     };
 
     const approveAdditionalResponsibility = (id: string, status: "Approved" | "Rejected") => {
@@ -1257,7 +1683,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!user) return;
         const newMeeting: MeetingRequest = {
             ...req,
-            id: `MTG${uid()}`,
+            id: `MTG${uid()} `,
             status: "Pending",
             employeeId: user.id,
             employeeName: user.name,
@@ -1267,13 +1693,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Notify attendees
         req.attendees?.forEach(att => {
-            addNotification(att.id, att.name, `New meeting scheduled: ${req.purpose}`, "ticket");
+            addNotification(att.id, att.name, `New meeting scheduled: ${req.purpose} `, "ticket");
         });
 
         // Notify management chain
         const chain = getManagerChain(user.id);
         chain.forEach(mgr => {
-            addNotification(mgr.id, mgr.name, `${user.name} scheduled a meeting: ${req.purpose}`, "ticket");
+            addNotification(mgr.id, mgr.name, `${user.name} scheduled a meeting: ${req.purpose} `, "ticket");
         });
     };
 
@@ -1283,17 +1709,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const updated = { ...m, status, ...MOMData };
 
             if (status === "Completed" && MOMData) {
-                // When completed, notify the management chain of the reporter
-                const chain = getManagerChain(m.employeeId);
-                chain.forEach(mgr => {
-                    addNotification(mgr.id, mgr.name, `Meeting MOM Uploaded: ${m.purpose}`, "ticket");
-                });
+                // --- EMAIL NOTIFICATION ---
+                const reportee = employees.find(e => e.id === m.attendees?.[0]?.id || m.employeeId);
+                const ccEmails = getAuthorityEmails(reportee, employees);
+                const { subject: mailSub, html: mailHtml } = getMoMTemplate(m, { content: "Meeting successfully completed and MoM uploaded.", decision: "Please refer to the dashboard for detailed decisions." });
 
-                // Also notify HR and Founders
-                const hrAndFounders = employees.filter(e => e.role === "HR" || e.role === "FOUNDER");
-                hrAndFounders.forEach(ef => {
-                    addNotification(ef.id, ef.name, `Meeting MOM Uploaded: ${m.purpose}`, "ticket");
-                });
+                if (reportee?.email) {
+                    sendMail({
+                        to: reportee.email,
+                        cc: ccEmails,
+                        subject: mailSub,
+                        html: mailHtml
+                    });
+                }
             }
 
             return updated;
@@ -1304,18 +1732,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const generatePayroll = (month: string, year: string) => {
         const newRecords: PayrollRecord[] = employees.map(emp => {
             const basic = emp.salary / 12; const tax = basic * 0.1; const pf = basic * 0.12;
-            return { id: `PR${uid()}`, employeeId: emp.id, month, year, amount: basic, deductions: { tax, pf, other: 0 }, reimbursements: 0, generatedAt: new Date().toISOString().split("T")[0] };
+            return { id: `PR${uid()} `, employeeId: emp.id, month, year, amount: basic, deductions: { tax, pf, other: 0 }, reimbursements: 0, generatedAt: new Date().toISOString().split("T")[0] };
         });
         setPayrollRecords(prev => [...newRecords, ...prev]);
     };
 
     // ─── LEGACY METHODS ───
-    const addJobPosting = (job: Omit<JobPosting, "id" | "postedBy" | "postedAt" | "status">) => { if (!user) return; setJobPostings(prev => [{ ...job, id: `JP${uid()}`, postedBy: user.name, postedAt: new Date().toISOString().split("T")[0], status: "Active" }, ...prev]); };
+    const addJobPosting = (job: Omit<JobPosting, "id" | "postedBy" | "postedAt" | "status">) => { if (!user) return; setJobPostings(prev => [{ ...job, id: `JP${uid()} `, postedBy: user.name, postedAt: new Date().toISOString().split("T")[0], status: "Active" }, ...prev]); };
     const closeJobPosting = (id: string) => setJobPostings(prev => prev.map(j => j.id === id ? { ...j, status: "Closed" as const } : j));
-    const generateCertificate = (employeeId: string, type: string, description: string) => { if (!user) return; const emp = employees.find(e => e.id === employeeId); setCertificates(prev => [...prev, { id: `CERT${uid()}`, employeeId, employeeName: emp?.name || "", type, description, issuedAt: new Date().toISOString().split("T")[0], issuedBy: user.name }]); };
-    const submitResignation = (reason: string, lastWorkingDate: string) => { if (!user) return; setResignationRequests(prev => [...prev, { id: `RES${uid()}`, employeeId: user.id, employeeName: user.name, reason, lastWorkingDate, status: "Pending", appliedAt: new Date().toISOString().split("T")[0], noticePeriod: 30 }]); };
+    const generateCertificate = (employeeId: string, type: string, description: string) => { if (!user) return; const emp = employees.find(e => e.id === employeeId); setCertificates(prev => [...prev, { id: `CERT${uid()} `, employeeId, employeeName: emp?.name || "", type, description, issuedAt: new Date().toISOString().split("T")[0], issuedBy: user.name }]); };
+    const submitResignation = (reason: string, lastWorkingDate: string) => { if (!user) return; setResignationRequests(prev => [...prev, { id: `RES${uid()} `, employeeId: user.id, employeeName: user.name, reason, lastWorkingDate, status: "Pending", appliedAt: new Date().toISOString().split("T")[0], noticePeriod: 30 }]); };
     const approveResignation = (id: string) => setResignationRequests(prev => prev.map(r => r.id === id ? { ...r, status: "Approved" as const } : r));
-    const requestAsset = (assetType: string, reason: string) => { if (!user) return; setAssetRequests(prev => [...prev, { id: `AR${uid()}`, employeeId: user.id, employeeName: user.name, assetType, reason, status: "Pending", requestedAt: new Date().toISOString().split("T")[0] }]); };
+    const requestAsset = (assetType: string, reason: string) => { if (!user) return; setAssetRequests(prev => [...prev, { id: `AR${uid()} `, employeeId: user.id, employeeName: user.name, assetType, reason, status: "Pending", requestedAt: new Date().toISOString().split("T")[0] }]); };
     const assignAsset = (assetId: string, employeeId: string) => setAssets(prev => prev.map(a => a.id === assetId ? { ...a, assignedTo: employeeId, status: "Assigned" as const } : a));
     const updateAssetRequestStatus = (id: string, status: AssetRequest["status"]) => setAssetRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
 
@@ -1328,7 +1756,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // ─── NOTIFICATIONS ───
     const addNotification = (to: string, toName: string, message: string, type: PortalNotification["type"]) => {
         if (!user) return;
-        setNotifications(prev => [{ id: `NTF${uid()}`, from: user.id, fromName: user.name, to, toName, message, type, read: false, createdAt: new Date().toISOString() }, ...prev]);
+        setNotifications(prev => [{ id: `NTF${uid()} `, from: user.id, fromName: user.name, to, toName, message, type, read: false, createdAt: new Date().toISOString() }, ...prev]);
     };
     const markNotificationRead = (id: string) => {
         setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
@@ -1356,7 +1784,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             addJobPosting, closeJobPosting, generateCertificate, submitResignation, approveResignation,
             requestAsset, assignAsset, updateAssetRequestStatus,
             addNotification, markNotificationRead, getMyNotifications,
-            markAsPresentRequests, addMarkAsPresentRequest, resolveMarkAsPresentRequest, resolveDressCodeCheck, restoreAttendanceCredits
+            markAsPresentRequests, addMarkAsPresentRequest, resolveMarkAsPresentRequest, resolveDressCodeCheck, restoreAttendanceCredits, giveCredit
         }}>
             {children}
         </AuthContext.Provider>

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { AlertCircle, Clock, CheckCircle2, MessageSquare, Plus, FileText, ArrowRight, Upload, Loader2, X, Image as ImageIcon, Users } from "lucide-react";
 
 export default function TicketsPage() {
-    const { user, raiseTicket, resolveTicket, tickets, getReportees, employees, restoreAttendanceCredits } = useAuth();
+    const { user, raiseTicket, resolveTicket, tickets, getReportees, employees, restoreAttendanceCredits, pipRecords } = useAuth();
     const [showNewTicketModal, setShowNewTicketModal] = useState(false);
     const [ticketForm, setTicketForm] = useState({
         targetCategory: "HR Desk",
@@ -24,6 +24,7 @@ export default function TicketsPage() {
 
     const myReportees = getReportees(user.id);
     const isManager = ["AD", "HOI", "TL", "FOUNDER"].includes(user.role);
+    const isUserInPIP = pipRecords.some(p => p.employeeId === user.id && p.status === "Active");
 
     const myTickets = tickets.filter(t => t.raisedBy === user.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     const hrTickets = tickets.filter(t => t.targetCategory === "HR Desk" || t.targetCategory === "Attendance Override Request").sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -90,6 +91,18 @@ export default function TicketsPage() {
                     </button>
                 )}
             </header>
+
+            {isUserInPIP && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-3">
+                    <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={18} />
+                    <div>
+                        <h3 className="text-xs font-bold text-red-400 uppercase tracking-widest">Notice: Performance Improvement Plan (PIP) Active</h3>
+                        <p className="text-[10px] text-red-300 mt-1 leading-relaxed">
+                            You are currently enrolled in a Performance Improvement Plan. Any Misconduct or Academic concerns raised against you will be monitored strictly. Additional discrepancies may lead to severe administrative actions.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* Dashboard Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

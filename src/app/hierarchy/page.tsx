@@ -14,7 +14,10 @@ import {
     ZoomIn,
     ZoomOut,
     RotateCcw,
-    Maximize2
+    Maximize2,
+    Briefcase,
+    GraduationCap,
+    Users
 } from "lucide-react";
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -26,7 +29,7 @@ export default function HierarchyPage() {
     const [zoomScale, setZoomScale] = useState(1);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    const rootNode = orgHierarchy.find(node => !node.parentId);
+    const cSuiteNodes = orgHierarchy.filter(node => node.level === "C-Suite");
 
     const filteredNodes = searchQuery
         ? orgHierarchy.filter(n =>
@@ -72,7 +75,7 @@ export default function HierarchyPage() {
                 </div>
             )}
 
-            <div className="flex justify-center pt-8 overflow-auto min-h-[600px] pb-20 custom-scrollbar relative bg-zinc-950/50 rounded-3xl border border-zinc-900" ref={containerRef}>
+            <div className="flex justify-center pt-8 overflow-hidden min-h-[600px] h-[75vh] pb-20 cursor-grab active:cursor-grabbing touch-none relative bg-zinc-950/50 rounded-3xl border border-zinc-900" ref={containerRef}>
                 {/* Floating Zoom Controls */}
                 <div className="fixed bottom-10 right-10 flex flex-col gap-2 z-[100]">
                     <button onClick={() => setZoomScale(s => Math.min(s + 0.1, 2))} className="w-10 h-10 bg-zinc-900 border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl">
@@ -86,14 +89,17 @@ export default function HierarchyPage() {
                     </button>
                 </div>
 
-                {rootNode && (
+                {cSuiteNodes.length > 0 && (
                     <motion.div
+                        drag
+                        dragConstraints={containerRef}
+                        dragElastic={0.1}
                         initial={false}
                         animate={{ scale: zoomScale }}
-                        className="flex flex-col items-center origin-top py-20"
+                        className="flex flex-col items-center origin-top py-20 z-10"
                         style={{ width: "max-content", paddingLeft: "100px", paddingRight: "100px" }}
                     >
-                        <OrgTree node={rootNode} allNodes={orgHierarchy} />
+                        <OrgTree node={cSuiteNodes[0]} allNodes={orgHierarchy} overrideRoot={cSuiteNodes} />
                     </motion.div>
                 )}
             </div>
@@ -101,85 +107,164 @@ export default function HierarchyPage() {
     );
 }
 
-function OrgTree({ node, allNodes }: { node: OrgNode, allNodes: OrgNode[] }) {
+function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: OrgNode[], overrideRoot?: OrgNode[] }) {
     const children = allNodes.filter(n => n.parentId === node.id);
     const [isExpanded, setIsExpanded] = useState(true);
 
-    // Special handling for Shared Leadership Matrix (C-Suite -> Leadership -> HOIs)
-    if (node.level === "C-Suite") {
-        const leadershipNodes = allNodes.filter(n => n.level === "Leadership");
-        const hoiNodes = allNodes.filter(n => n.level === "HOI");
+    // Special handling for the very top level (CEO, COO, CTO)
+    if (overrideRoot && node.id === overrideRoot[0].id) {
+        const leadershipNodes = allNodes.filter(n => n.level === "Management");
+        const hoiNodes = allNodes.filter(n => n.level === "Leadership");
 
         return (
             <div className="flex flex-col items-center gap-16 relative">
-                <NodeCard node={node} hasChildren />
 
-                {/* Vertical line from CEO */}
-                <div className="w-0.5 h-16 bg-zinc-700/50" />
+                {/* Top Level Roots Container */}
+                <div className="flex gap-12 relative">
+                    {/* Horizontal Connector Line for Roots */}
+                    {overrideRoot.length > 1 && (
+                        <div className="absolute -bottom-16 left-0 right-0 h-0.5 bg-zinc-700/50"
+                            style={{ width: `calc(100% - ${100 / overrideRoot.length}%)`, left: `${50 / overrideRoot.length}%` }} />
+                    )}
 
-                {/* Horizontal line connecting all Leadership nodes */}
-                <div className="relative flex gap-32 pt-16 -mt-16">
-                    <div className="absolute top-0 left-0 right-0 h-0.5 bg-zinc-700/50"
-                        style={{ width: `calc(100% - ${100 / leadershipNodes.length}%)`, left: `${50 / leadershipNodes.length}%` }} />
-
-                    {leadershipNodes.map(ln => (
-                        <div key={ln.id} className="relative flex flex-col items-center">
-                            {/* Vertical line from shared CEO bar to this leader */}
-                            <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-0.5 h-16 bg-zinc-700/50" />
-                            <NodeCard node={ln} />
-                            {/* Vertical line from leader to the shared HOI matrix bar */}
+                    {overrideRoot.map((root, i) => (
+                        <div key={root.id} className="relative flex flex-col items-center">
+                            <NodeCard node={root} hasChildren />
+                            {/* Vertical Line Drop from Root to Connector */}
                             <div className="w-0.5 h-16 bg-zinc-700/50" />
                         </div>
                     ))}
+
+                    {/* Master Vertical Line Dropping To Next Level */}
+                    <div className="absolute -bottom-32 left-1/2 -translate-x-1/2 w-0.5 h-16 bg-zinc-700/50" />
                 </div>
+
+                <div className="h-16" /> {/* Spacer for lines */}
+
+                {/* Horizontal line connecting all Leadership nodes */}
+                {(leadershipNodes.length > 0) && (
+                    <div className="relative flex gap-32 relative">
+                        {leadershipNodes.length > 1 && (
+                            <div className="absolute top-0 left-0 right-0 h-0.5 bg-zinc-700/50"
+                                style={{ width: `calc(100% - ${100 / leadershipNodes.length}%)`, left: `${50 / leadershipNodes.length}%` }} />
+                        )}
+
+                        {leadershipNodes.map(ln => (
+                            <div key={ln.id} className="relative flex flex-col items-center">
+                                <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-0.5 h-16 bg-zinc-700/50" />
+                                <NodeCard node={ln} />
+                                <div className="w-0.5 h-16 bg-zinc-700/50" />
+                            </div>
+                        ))}
+
+                        {/* If no HOIs, stop here. If HOIs, drop a master line if needed, but handled next */}
+                    </div>
+                )}
+
 
                 {/* THE MATRIX BRIDGE: A shared horizontal bar for all HOIs */}
-                <div className="relative -mt-16 pt-16 flex gap-32">
-                    <div className="absolute top-0 left-0 right-0 h-0.5 bg-zinc-700/50"
-                        style={{ width: `calc(100% - ${100 / hoiNodes.length}%)`, left: `${50 / hoiNodes.length}%` }} />
-
-                    {hoiNodes.map(hn => (
-                        <div key={hn.id} className="relative">
+                {hoiNodes.length > 0 && (
+                    <div className="relative flex gap-16 md:gap-32 pt-16">
+                        {/* If no leadership, we need the master drop to hit this bar */}
+                        {leadershipNodes.length === 0 && (
                             <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-0.5 h-16 bg-zinc-700/50" />
-                            <OrgTree node={hn} allNodes={allNodes} />
-                        </div>
-                    ))}
-                </div>
+                        )}
+
+                        {hoiNodes.length > 1 && (
+                            <div className="absolute top-0 left-0 right-0 h-0.5 bg-zinc-700/50"
+                                style={{ width: `calc(100% - ${100 / hoiNodes.length}%)`, left: `${50 / hoiNodes.length}%` }} />
+                        )}
+
+                        {hoiNodes.map(hn => (
+                            <div key={hn.id} className="relative">
+                                <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-0.5 h-16 bg-zinc-700/50" />
+                                <OrgTree node={hn} allNodes={allNodes} />
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         );
     }
 
-    // Default recursive rendering for HOI -> OM -> Faculty
+    // Skip rendering if this is a C-Suite that isn't the primary one handled by overrideRoot
+    if (node.level === "C-Suite" && !overrideRoot) return null;
+
+    // Default recursive rendering for HOI -> OM / Faculty
+    const omChildren = children.filter(c => c.level === "OM");
+    const facultyChildren = children.filter(c => c.level === "Faculty");
+
+    // Grouping layout if both exist
+    const showsGroupedView = isExpanded && node.level === "Leadership" && (omChildren.length > 0 || facultyChildren.length > 0);
+
     return (
         <div className="flex flex-col items-center gap-12 relative">
-            <div className="relative">
+            <div className="relative z-10">
                 <NodeCard node={node} hasChildren={children.length > 0} isExpanded={isExpanded} onToggle={() => setIsExpanded(!isExpanded)} />
 
                 {isExpanded && children.length > 0 && (
-                    <div className="absolute left-1/2 -bottom-12 w-0.5 h-12 bg-zinc-700/50" />
+                    <div className="absolute left-1/2 -bottom-12 w-0.5 h-12 bg-zinc-700/50 -z-10" />
                 )}
             </div>
 
-            {isExpanded && children.length > 0 && (
-                <div className="flex gap-24 relative pt-12">
-                    {/* Horizontal Connector Line */}
-                    {children.length > 1 && (
-                        <div className="absolute top-0 left-0 right-0 flex justify-center">
-                            <div className="h-0.5 bg-zinc-700/50" style={{
-                                width: `calc(100% - ${100 / children.length}%)`,
-                                left: `${50 / children.length}%`
-                            }} />
+            {showsGroupedView ? (
+                <div className="flex gap-16 relative pt-12">
+                    {/* Horizontal Connector Line mapping across both groups */}
+                    <div className="absolute top-0 left-0 right-0 flex justify-center h-0.5 bg-zinc-700/50"
+                        style={{ width: 'calc(100% - 200px)', left: '100px' }} />
+
+                    {/* Operation Managers Group */}
+                    {omChildren.length > 0 && (
+                        <div className="relative border border-indigo-500/20 bg-indigo-500/5 rounded-3xl p-6 pt-10 flex flex-col items-center">
+                            <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-0.5 h-12 bg-zinc-700/50" />
+                            <div className="absolute -top-3 px-4 py-1.5 bg-zinc-950 border border-indigo-500/30 text-indigo-400 text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg">Operation Managers</div>
+                            <div className="flex gap-8">
+                                {omChildren.map(child => (
+                                    <div key={child.id} className="relative">
+                                        <OrgTree node={child} allNodes={allNodes} />
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
 
-                    {children.map((child, index) => (
-                        <div key={child.id} className="relative">
-                            {/* Vertical line to child */}
+                    {/* Faculty Group */}
+                    {facultyChildren.length > 0 && (
+                        <div className="relative border border-rose-500/20 bg-rose-500/5 rounded-3xl p-6 pt-10 flex flex-col items-center">
                             <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-0.5 h-12 bg-zinc-700/50" />
-                            <OrgTree node={child} allNodes={allNodes} />
+                            <div className="absolute -top-3 px-4 py-1.5 bg-zinc-950 border border-rose-500/30 text-rose-400 text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg">Professors & Faculty</div>
+                            <div className="flex gap-8">
+                                {facultyChildren.map(child => (
+                                    <div key={child.id} className="relative">
+                                        <OrgTree node={child} allNodes={allNodes} />
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                    ))}
+                    )}
                 </div>
+            ) : (
+                isExpanded && children.length > 0 && (
+                    <div className="flex gap-12 relative pt-12">
+                        {/* Standard Horizontal Connector Line */}
+                        {children.length > 1 && (
+                            <div className="absolute top-0 left-0 right-0 flex justify-center">
+                                <div className="h-0.5 bg-zinc-700/50" style={{
+                                    width: `calc(100% - ${100 / children.length}%)`,
+                                    left: `${50 / children.length}%`
+                                }} />
+                            </div>
+                        )}
+
+                        {children.map((child, index) => (
+                            <div key={child.id} className="relative">
+                                {/* Vertical line to child */}
+                                <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-0.5 h-12 bg-zinc-700/50" />
+                                <OrgTree node={child} allNodes={allNodes} />
+                            </div>
+                        ))}
+                    </div>
+                )
             )}
         </div>
     );
@@ -194,18 +279,18 @@ function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
 }) {
     const colors = {
         "C-Suite": "from-amber-400/30 to-amber-600/30 border-amber-500/40 text-amber-500",
-        "Leadership": "from-blue-400/30 to-blue-600/30 border-blue-500/40 text-blue-400",
-        "HOI": "from-emerald-400/30 to-emerald-600/30 border-emerald-500/40 text-emerald-400",
+        "Management": "from-blue-400/30 to-blue-600/30 border-blue-500/40 text-blue-400",
+        "Leadership": "from-emerald-400/30 to-emerald-600/30 border-emerald-500/40 text-emerald-400",
         "OM": "from-indigo-400/30 to-indigo-600/30 border-indigo-500/40 text-indigo-400",
         "Faculty": "from-rose-400/30 to-pink-600/30 border-rose-500/40 text-rose-400"
     };
 
     const levelIcon = {
         "C-Suite": <Star size={10} />,
-        "Leadership": <Shield size={10} />,
-        "HOI": <Building2 size={10} />,
+        "Management": <Shield size={10} />,
+        "Leadership": <Briefcase size={10} />,
         "OM": <Network size={10} />,
-        "Faculty": <User size={10} />
+        "Faculty": <GraduationCap size={10} />
     };
 
     return (

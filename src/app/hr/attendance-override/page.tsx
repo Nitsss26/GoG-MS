@@ -1,20 +1,56 @@
 "use client";
-import { useState } from "react";
-import { useAuth, MarkAsPresentRequest } from "@/context/AuthContext";
-import { CheckCircle, XCircle, Search, Clock, FileText, CheckCircle2 } from "lucide-react";
+import { useState, useMemo } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { CheckCircle2, Search, Clock, ShieldCheck, Ticket, AlertCircle, RefreshCw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function AttendanceOverridePage() {
-    const { user, markAsPresentRequests, employees, resolveMarkAsPresentRequest } = useAuth();
+    const { user, employees, attendanceRecords, tickets, resolveTicket, giveCredit } = useAuth();
     const [searchQuery, setSearchQuery] = useState("");
-    const [statusFilter, setStatusFilter] = useState<"All" | "Pending" | "Approved" | "Rejected">("Pending");
+    const [creditModalEmp, setCreditModalEmp] = useState<string | null>(null);
+    const [creditReason, setCreditReason] = useState("");
 
     if (!user || user.role !== "HR") return null;
 
-    const relevantRequests = markAsPresentRequests
-        .filter(r => statusFilter === "All" || r.status === statusFilter)
-        .filter(r => r.employeeName.toLowerCase().includes(searchQuery.toLowerCase()) || r.employeeId.toLowerCase().includes(searchQuery.toLowerCase()))
-        .sort((a, b) => new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime());
+    const todayDate = new Date().toISOString().split("T")[0];
+
+    const mappedEmployees = useMemo(() => {
+        return employees.map(emp => {
+            const todayRecord = attendanceRecords.find(r => r.employeeId === emp.id && r.date === todayDate);
+            const status = todayRecord ? todayRecord.status : "Absent";
+
+            // Check if there is an open ticket for attendance override for this employee today
+            const activeTickets = tickets.filter(t =>
+                t.status !== "Resolved" &&
+                t.targetCategory === "Attendance Override Request" &&
+                t.targetEmployeeId === emp.id
+            );
+
+            const creditsUsed = emp.markPresentUsed || 0;
+            const creditsRemaining = Math.max(0, 3 - creditsUsed);
+
+            return {
+                ...emp,
+                todayStatus: status,
+                activeTickets,
+                creditsUsed,
+                creditsRemaining
+            };
+        }).filter(emp =>
+            emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            emp.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            emp.role.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    }, [employees, attendanceRecords, tickets, searchQuery, todayDate]);
+
+    const handleGiveCredit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (creditModalEmp && creditReason) {
+            giveCredit(creditModalEmp, creditReason);
+            setCreditModalEmp(null);
+            setCreditReason("");
+        }
+    };
 
     return (
         <div className="p-6 space-y-6 max-w-7xl mx-auto w-full">
@@ -22,147 +58,142 @@ export default function AttendanceOverridePage() {
                 <div className="space-y-1">
                     <div className="flex items-center gap-2">
                         <div className="p-2 bg-blue-500/10 rounded-lg">
-                            <Clock size={20} className="text-blue-400" />
+                            <ShieldCheck size={20} className="text-blue-400" />
                         </div>
-                        <h1 className="text-2xl font-black text-white tracking-tight">Attendance Overrides</h1>
+                        <h1 className="text-2xl font-black text-white tracking-tight">Attendance Control Center</h1>
                     </div>
-                    <p className="text-xs text-zinc-400">Review "Mark As Present" requests from employees who couldn't clock in normally.</p>
-                </div>
-
-                <div className="flex bg-zinc-900 border border-zinc-800 rounded-xl p-1 shadow-lg">
-                    {["All", "Pending", "Approved", "Rejected"].map(filter => (
-                        <button
-                            key={filter}
-                            onClick={() => setStatusFilter(filter as any)}
-                            className={cn(
-                                "px-4 py-2 rounded-lg text-xs font-bold transition-all",
-                                statusFilter === filter ? "bg-zinc-800 text-white shadow" : "text-zinc-500 hover:text-zinc-300"
-                            )}
-                        >
-                            {filter}
-                        </button>
-                    ))}
+                    <p className="text-xs text-zinc-400">Master view of all employees, their active tickets, and credit management.</p>
                 </div>
             </header>
 
-            <div className="flex items-center gap-4 bg-zinc-900/50 border border-zinc-800/50 p-3 rounded-2xl w-full max-w-md backdrop-blur-sm">
+            <div className="flex items-center gap-4 bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-3 shadow-lg">
                 <Search size={16} className="text-zinc-500 ml-2" />
                 <input
                     type="text"
-                    placeholder="Search by name or ID..."
-                    title="Search query"
+                    placeholder="Search by name, ID, or role..."
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                     className="bg-transparent border-none outline-none text-xs text-white w-full placeholder:text-zinc-600 font-medium"
                 />
             </div>
 
-            <div className="space-y-4">
-                {relevantRequests.length === 0 ? (
-                    <div className="p-12 text-center flex flex-col items-center justify-center space-y-3 bg-zinc-900/30 border border-zinc-800/30 rounded-2xl border-dashed">
-                        <CheckCircle size={32} className="text-zinc-700" />
-                        <p className="text-sm font-bold text-zinc-500">No {statusFilter.toLowerCase()} override requests found.</p>
-                    </div>
-                ) : (
-                    relevantRequests.map(req => {
-                        const emp = employees.find(e => e.id === req.employeeId);
-                        const creditsUsed = emp?.markPresentUsed || 0;
-                        const dateFormatted = new Date(req.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-
-                        return (
-                            <div key={req.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl flex flex-col md:flex-row">
-                                <div className="p-5 md:w-1/3 border-b md:border-b-0 md:border-r border-zinc-800/50 bg-zinc-800/20 flex flex-col justify-between space-y-4">
-                                    <div>
-                                        <div className="flex items-center gap-3 mb-2">
-                                            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold shadow-inner border border-primary/20 shrink-0">
-                                                {emp?.name?.[0] || "?"}
+            <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-2xl overflow-hidden shadow-2xl">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs whitespace-nowrap">
+                        <thead className="bg-zinc-800/30 border-b border-zinc-800">
+                            <tr className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">
+                                <th className="px-6 py-4 rounded-tl-2xl">Employee</th>
+                                <th className="px-6 py-4">Today's Status</th>
+                                <th className="px-6 py-4">Credits</th>
+                                <th className="px-6 py-4">Active Ticket</th>
+                                <th className="px-6 py-4 text-right rounded-tr-2xl">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-800/50">
+                            {mappedEmployees.map(emp => (
+                                <tr key={emp.id} className="hover:bg-zinc-800/20 transition-colors">
+                                    <td className="px-6 py-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center text-primary font-bold shadow-inner border border-white/5">
+                                                {emp.name[0]}
                                             </div>
                                             <div>
-                                                <p className="text-sm font-black text-white">{emp?.name}</p>
-                                                <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">{emp?.id} &middot; {emp?.designation}</p>
+                                                <p className="font-bold text-white">{emp.name}</p>
+                                                <p className="text-[9px] text-zinc-500 font-bold tracking-wider">{emp.id} &middot; {emp.role}</p>
                                             </div>
                                         </div>
+                                    </td>
+                                    <td className="px-6 py-4">
                                         <span className={cn(
-                                            "inline-block px-2.5 py-1 rounded border text-[9px] font-black uppercase tracking-widest",
-                                            req.status === "Pending" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
-                                                req.status === "Approved" ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
-                                                    "bg-red-500/10 text-red-500 border-red-500/20"
+                                            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-[9px] font-black uppercase tracking-widest",
+                                            emp.todayStatus === "Present" ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
+                                                emp.todayStatus === "Absent" ? "bg-red-500/10 text-red-500 border-red-500/20" :
+                                                    "bg-amber-500/10 text-amber-500 border-amber-500/20"
                                         )}>
-                                            {req.status}
+                                            {emp.todayStatus === "Present" ? <CheckCircle2 size={10} /> : <AlertCircle size={10} />}
+                                            {emp.todayStatus}
                                         </span>
-                                    </div>
-                                    <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
-                                        <p className="text-[10px] text-zinc-500 font-medium">Monthly Override Credits Used</p>
-                                        <div className="flex items-end gap-1 mt-1">
-                                            <span className={cn("text-lg font-black", creditsUsed >= 3 ? "text-red-400" : "text-white")}>{creditsUsed}</span>
-                                            <span className="text-zinc-500 text-xs font-bold mb-1">/ 3</span>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <div className="flex items-center gap-2">
+                                            <span className={cn("text-sm font-black", emp.creditsRemaining === 0 ? "text-red-500" : "text-primary")}>
+                                                {emp.creditsRemaining}
+                                            </span>
+                                            <span className="text-zinc-600 font-bold">/ 3</span>
                                         </div>
-                                    </div>
-                                </div>
-
-                                <div className="p-5 flex-1 flex flex-col space-y-4">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Target Date</p>
-                                            <p className="text-sm font-bold text-blue-400">{dateFormatted}</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mb-1">Applied At</p>
-                                            <p className="text-[10px] text-zinc-400">{new Date(req.appliedAt).toLocaleString()}</p>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Reason / Justification</p>
-                                        <div className="bg-zinc-800/50 p-3 rounded-xl border border-zinc-700/50 text-sm text-zinc-300 leading-relaxed">
-                                            {req.reason}
-                                        </div>
-                                    </div>
-
-                                    {req.proofUrls && req.proofUrls.length > 0 && (
-                                        <div className="space-y-2">
-                                            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Attached Proofs</p>
-                                            <div className="flex gap-3 overflow-x-auto pb-2">
-                                                {req.proofUrls.map((url, i) => (
-                                                    <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="shrink-0 relative group">
-                                                        <div className="w-16 h-16 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center overflow-hidden">
-                                                            {url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
-                                                                <img src={url} alt={`proof ${i}`} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
-                                                            ) : (
-                                                                <FileText size={20} className="text-zinc-500 group-hover:text-blue-400 transition-colors" />
-                                                            )}
-                                                        </div>
-                                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-lg">
-                                                            <span className="text-[8px] font-bold text-white uppercase tracking-widest">View</span>
-                                                        </div>
-                                                    </a>
-                                                ))}
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        {emp.activeTickets.length > 0 ? (
+                                            <div className="flex items-center gap-2 opacity-100 transition-opacity">
+                                                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-500 px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1.5 animate-pulse">
+                                                    <Ticket size={12} /> Ticket Raised
+                                                </div>
                                             </div>
-                                        </div>
-                                    )}
+                                        ) : (
+                                            <span className="text-[9px] text-zinc-600 font-bold uppercase tracking-widest opacity-50">No Ticket</span>
+                                        )}
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                            <button
+                                                onClick={() => setCreditModalEmp(emp.id)}
+                                                className="px-3 py-1.5 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 rounded-lg text-[10px] font-bold transition-colors"
+                                            >
+                                                Give Credit
+                                            </button>
 
-                                    {req.status === "Pending" && (
-                                        <div className="flex gap-3 pt-2 mt-auto">
                                             <button
-                                                onClick={() => resolveMarkAsPresentRequest(req.id, "Rejected")}
-                                                className="flex-1 py-3 bg-zinc-800 hover:bg-red-500/10 border border-zinc-700 hover:border-red-500/30 text-zinc-400 hover:text-red-400 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 group/btn"
+                                                disabled={emp.activeTickets.length === 0}
+                                                // Resolve the first active ticket, which automatically triggers markAttendanceOverride and credit usage in AuthContext
+                                                onClick={() => resolveTicket(emp.activeTickets[0].id, "Attendance Overridden by HR")}
+                                                className="px-3 py-1.5 bg-green-500 text-white hover:bg-green-600 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed rounded-lg text-[10px] font-bold transition-all shadow-lg shadow-green-500/20 disabled:shadow-none flex items-center gap-1.5"
                                             >
-                                                <XCircle size={16} className="group-hover/btn:scale-110 transition-transform" /> Reject Request
-                                            </button>
-                                            <button
-                                                onClick={() => resolveMarkAsPresentRequest(req.id, "Approved")}
-                                                className="flex-1 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20 group/btn"
-                                            >
-                                                <CheckCircle2 size={16} className="group-hover/btn:scale-110 transition-transform" /> Grant Mark Present
+                                                <RefreshCw size={12} /> Mark as Present
                                             </button>
                                         </div>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })
-                )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
+
+            {/* Credit Modal */}
+            {creditModalEmp && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setCreditModalEmp(null)} />
+                    <div className="card w-full max-w-md p-6 relative z-10 shadow-2xl space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-base font-bold text-white flex items-center gap-2">
+                                <ShieldCheck size={16} className="text-blue-400" /> Manually Allot Credit
+                            </h2>
+                            <button onClick={() => setCreditModalEmp(null)} className="text-muted hover:text-white transition-colors">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-[10px] text-blue-200 leading-relaxed">
+                            Restoring a credit will increase their available overrides by 1. This action will be logged and Founders will be automatically CC'd.
+                        </div>
+                        <form onSubmit={handleGiveCredit} className="space-y-4">
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Reason / Justification</label>
+                                <textarea
+                                    required
+                                    rows={3}
+                                    className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-blue-500 resize-none"
+                                    placeholder="e.g. Approved due to genuine technical app issue. Verified with proof."
+                                    value={creditReason}
+                                    onChange={e => setCreditReason(e.target.value)}
+                                />
+                            </div>
+                            <button type="submit" className="w-full bg-blue-500 text-white hover:bg-blue-600 rounded-lg py-2.5 text-xs font-bold transition-colors">
+                                Confirm & Allot Credit
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

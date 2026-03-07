@@ -5,7 +5,7 @@ import { useAuth, Employee } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { resolveLocationToCollege, FLAG_CONFIG } from "@/lib/colleges";
 import { cn } from "@/lib/utils";
-import { Clock, MapPin, CheckCircle2, LogIn, LogOut, History, AlertTriangle, Camera, Upload, X, Navigation, Loader2, Image as ImageIcon, Home, FileText } from "lucide-react";
+import { Clock, MapPin, CheckCircle2, LogIn, LogOut, History, AlertTriangle, Camera, Upload, X, Navigation, Loader2, Image as ImageIcon, Home, FileText, Users } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -17,7 +17,7 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 export default function AttendancePage() {
-    const { user, clockIn, clockOut, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests } = useAuth();
+    const { user, employees, clockIn, clockOut, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests } = useAuth();
     const [currentTime, setCurrentTime] = useState<string | null>(null);
     const [currentDate, setCurrentDate] = useState<string | null>(null);
     const [geoStatus, setGeoStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
@@ -141,14 +141,136 @@ export default function AttendancePage() {
 
     const myLogs = attendanceRecords.filter(r => r.employeeId === user.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+    const isHRorFounder = emp.role === "HR" || emp.role === "FOUNDER";
+    const [selectedGlobalDate, setSelectedGlobalDate] = useState<string>("");
+
+    useEffect(() => {
+        if (currentDate && !selectedGlobalDate) setSelectedGlobalDate(currentDate);
+    }, [currentDate]);
+
+    // Compute global attendance for HR/Founder
+    const computeGlobalAttendance = () => {
+        return employees.map(employee => {
+            const record = attendanceRecords.find(r => r.employeeId === employee.id && r.date === selectedGlobalDate);
+            const status = record ? (record.clockOut ? "Clocked Out" : "Working") : "Absent";
+            return {
+                employee,
+                record,
+                status
+            };
+        }).sort((a, b) => {
+            // Sort by Working > Clocked Out > Absent
+            const w: Record<string, number> = { "Working": 2, "Clocked Out": 1, "Absent": 0 };
+            return w[b.status] - w[a.status];
+        });
+    };
+
+    const globalAttendanceList = isHRorFounder ? computeGlobalAttendance() : [];
+
     return (
         <div className="p-6 space-y-6 max-w-5xl mx-auto w-full">
             <header className="flex justify-between items-center">
-                <div><h1 className="text-xl font-bold text-white tracking-tight">Attendance</h1><p className="text-xs text-zinc-400 mt-1">Clock in/out with location & dress code verification.</p></div>
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-lg text-primary">
-                    <Clock size={14} /><span className="text-[11px] font-bold font-mono">{currentTime}</span>
+                <div><h1 className="text-xl font-bold text-white tracking-tight">Attendance Management</h1><p className="text-xs text-zinc-400 mt-1">Clock in/out with location & dress code verification.</p></div>
+                <div className="flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-lg text-primary">
+                        <Clock size={14} /><span className="text-[11px] font-bold font-mono">{currentTime}</span>
+                    </div>
                 </div>
             </header>
+
+            {isHRorFounder && (
+                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-5">
+                    <div className="flex justify-between items-center pb-2 border-b border-zinc-800/50">
+                        <div className="flex items-center gap-2">
+                            <Users size={16} className="text-blue-400" />
+                            <h2 className="text-sm font-bold text-white">Global Attendance Roster</h2>
+                        </div>
+                        <input
+                            type="date"
+                            value={selectedGlobalDate}
+                            onChange={(e) => setSelectedGlobalDate(e.target.value)}
+                            max={currentDate || undefined}
+                            className="bg-zinc-800 text-xs text-white px-3 py-1.5 rounded-lg border border-zinc-700 outline-none"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-zinc-800/30 border border-zinc-700/50 p-3 rounded-xl flex items-center justify-between">
+                            <span className="text-xs font-bold text-zinc-400 block">Total Staff</span>
+                            <span className="text-lg font-black text-white">{employees.length}</span>
+                        </div>
+                        <div className="bg-green-500/5 border border-green-500/20 p-3 rounded-xl flex items-center justify-between">
+                            <span className="text-xs font-bold text-green-400 block">Present Today</span>
+                            <span className="text-lg font-black text-white">{globalAttendanceList.filter(l => l.status !== "Absent").length}</span>
+                        </div>
+                        <div className="bg-red-500/5 border border-red-500/20 p-3 rounded-xl flex items-center justify-between">
+                            <span className="text-xs font-bold text-red-400 block">Absent Today</span>
+                            <span className="text-lg font-black text-white">{globalAttendanceList.filter(l => l.status === "Absent").length}</span>
+                        </div>
+                    </div>
+
+                    <div className="overflow-x-auto max-h-[400px] custom-scrollbar rounded-xl border border-zinc-800/50">
+                        <table className="w-full text-left">
+                            <thead className="bg-zinc-800/80 sticky top-0 z-10 text-[9px] uppercase tracking-widest text-zinc-400">
+                                <tr>
+                                    <th className="px-4 py-3 font-bold">Employee</th>
+                                    <th className="px-4 py-3 font-bold">Status</th>
+                                    <th className="px-4 py-3 font-bold">In / Out</th>
+                                    <th className="px-4 py-3 font-bold">Location</th>
+                                    <th className="px-4 py-3 font-bold">Flags Issued</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-800/50">
+                                {globalAttendanceList.map(({ employee, record, status }) => (
+                                    <tr key={employee.id} className="hover:bg-zinc-800/30 transition-colors text-xs">
+                                        <td className="px-4 py-3">
+                                            <p className="font-bold text-white">{employee.name}</p>
+                                            <p className="text-[10px] text-zinc-500">{employee.designation || employee.role}</p>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold border",
+                                                status === "Working" ? "bg-green-500/10 text-green-400 border-green-500/20" :
+                                                    status === "Clocked Out" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
+                                                        "bg-zinc-800 text-zinc-500 border-zinc-700"
+                                            )}>
+                                                {status}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-[10px] text-zinc-300">
+                                            {record ? (
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span className="text-green-400">In: {record.clockIn}</span>
+                                                    {record.clockOut && <span className="text-orange-400">Out: {record.clockOut}</span>}
+                                                </div>
+                                            ) : <span className="text-zinc-600">—</span>}
+                                        </td>
+                                        <td className="px-4 py-3 text-[10px] text-zinc-400">
+                                            {record ? record.location : "—"}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex gap-1 flex-wrap">
+                                                {record ? (
+                                                    Object.entries(record.flags).filter(([_, v]) => v).length > 0 ? (
+                                                        Object.entries(record.flags).filter(([_, v]) => v).map(([k]) => (
+                                                            <span key={k} className={cn("text-[8.5px] font-bold px-1.5 py-0.5 rounded-sm flex items-center gap-1", FLAG_CONFIG[k]?.color || "text-zinc-400 bg-zinc-800")}>
+                                                                {FLAG_CONFIG[k]?.emoji} {FLAG_CONFIG[k]?.label || k}
+                                                            </span>
+                                                        ))
+                                                    ) : <span className="text-[10px] text-zinc-600">Clean</span>
+                                                ) : <span className="text-[10px] text-zinc-600">—</span>}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        {globalAttendanceList.length === 0 && (
+                            <div className="p-8 text-center text-zinc-500 text-sm">No employee data found.</div>
+                        )}
+                    </div>
+                </div>
+            )}
+
 
             <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-4">
                 {/* Employee Info */}

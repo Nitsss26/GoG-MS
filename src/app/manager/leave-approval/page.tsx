@@ -79,6 +79,7 @@ export default function LeaveApprovalPage() {
                                         <p className="text-[10px] text-zinc-500">{l.type} · {l.leaveType} · {l.days} day(s)</p>
                                         <p className="text-[10px] text-zinc-400">{l.startDate} → {l.endDate}</p>
                                         {l.reason && <p className="text-[10px] text-zinc-500 italic mt-1">Reason: {l.reason}</p>}
+                                        {l.reasonForAction && <p className="text-[10px] text-amber-500/80 italic mt-1">Action Note: {l.reasonForAction}</p>}
                                     </div>
                                     <span className={cn("text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border",
                                         l.status === "Pending" ? "text-amber-400 bg-amber-500/10 border-amber-500/20" :
@@ -88,11 +89,11 @@ export default function LeaveApprovalPage() {
                                 </div>
                                 {tab === "reportees" && l.status === "Pending" && (
                                     <div className="flex flex-wrap gap-2 mt-2">
-                                        <button onClick={() => approveLeave(l.id)} className="px-4 py-1.5 text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 rounded-lg hover:bg-green-500/20 transition-colors">Approve</button>
-                                        <button onClick={() => rejectLeave(l.id)} className="px-4 py-1.5 text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/20 transition-colors">Reject</button>
+                                        <button onClick={() => { const reason = window.prompt("Reason for approval (Optional):"); approveLeave(l.id, reason || undefined); }} className="px-4 py-1.5 text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 rounded-lg hover:bg-green-500/20 transition-colors">Approve</button>
+                                        <button onClick={() => { const reason = window.prompt("Reason for rejection:"); rejectLeave(l.id, false, reason || undefined); }} className="px-4 py-1.5 text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/20 transition-colors">Reject</button>
                                         {l.leaveType === "Emergency" && (
                                             <button
-                                                onClick={() => { if (confirm("Are you sure you want to reject this emergency request and apply a 2-Day LOP penalty for invalid proof?")) rejectLeave(l.id, true); }}
+                                                onClick={() => { const reason = window.prompt("Reason for invalid proof / LOP:"); if (confirm("Are you sure you want to reject this emergency request and apply a 2-Day LOP penalty for invalid proof?")) rejectLeave(l.id, true, reason || undefined); }}
                                                 className="px-4 py-1.5 text-[10px] font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-lg hover:bg-orange-500/20 transition-colors"
                                             >
                                                 Reject (Invalid Proof - 2 Day LOP)

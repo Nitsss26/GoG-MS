@@ -15,7 +15,7 @@ export default function MisbehaviourPage() {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        reportMisbehaviour(form.employeeId, form.type, form.description);
+        reportMisbehaviour(form.employeeId, form.type, form.description, [], []);
         setForm({ employeeId: "", type: "Behavioral", description: "" });
         setShowForm(false);
     };

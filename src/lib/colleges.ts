@@ -129,6 +129,6 @@ export const FLAG_CONFIG: Record<string, { label: string; emoji: string; color: 
     locationDiff: { label: "Location Diff", emoji: "🟡", color: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20", dotColor: "bg-yellow-400" },
     misconduct: { label: "Misconduct", emoji: "🔴", color: "text-red-400 bg-red-500/10 border-red-500/20", dotColor: "bg-red-500" },
     dressCode: { label: "Dress Code", emoji: "🟠", color: "text-orange-400 bg-orange-500/10 border-orange-500/20", dotColor: "bg-orange-400" },
-    meetingAbsent: { label: "Meeting Absent", emoji: "⚫", color: "text-zinc-300 bg-zinc-700/50 border-zinc-600/30", dotColor: "bg-zinc-400" },
+    meetingAbsent: { label: "Meeting Absent", emoji: "⚫", color: "text-zinc-300 bg-zinc-700/50 border-zinc-600/30", dotColor: "bg-zinc-800 border border-zinc-700" },
     performance: { label: "Performance", emoji: "🔵", color: "text-blue-400 bg-blue-500/10 border-blue-500/20", dotColor: "bg-blue-400" },
 };

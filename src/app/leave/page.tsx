@@ -106,7 +106,7 @@ export default function LeavePage() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="card p-4 space-y-1">
                     <p className="text-[9px] text-muted font-bold uppercase tracking-widest">Monthly Quota</p>
-                    <p className="text-lg font-bold text-white">2.0 Days</p>
+                    <p className="text-lg font-bold text-white">1.0 Days</p>
                 </div>
                 <div className="card p-4 space-y-1">
                     <p className="text-[9px] text-muted font-bold uppercase tracking-widest">Used This Month</p>
@@ -114,7 +114,7 @@ export default function LeavePage() {
                 </div>
                 <div className="card p-4 space-y-1">
                     <p className="text-[9px] text-muted font-bold uppercase tracking-widest">Available This Month</p>
-                    <p className="text-lg font-bold text-primary">{Math.max(0, 2 - usedLeavesThisMonth).toFixed(1)} Days</p>
+                    <p className="text-lg font-bold text-primary">{Math.max(0, 1 - usedLeavesThisMonth).toFixed(1)} Days</p>
                 </div>
                 <div className="card p-4 space-y-1">
                     <p className="text-[9px] text-muted font-bold uppercase tracking-widest">Pending This Month</p>
@@ -187,6 +187,11 @@ export default function LeavePage() {
                                                         })()}
                                                     </div>
                                                 )}
+                                                {req.reasonForAction && (
+                                                    <div className="mt-1 text-[9px] text-amber-500/80 italic break-words">
+                                                        Note: {req.reasonForAction}
+                                                    </div>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="px-5 py-4">
@@ -216,10 +221,10 @@ export default function LeavePage() {
 
                                                 {user.role === "HR" && req.status === "Pending" ? (
                                                     <div className="flex gap-2">
-                                                        <button onClick={() => approveLeave(req.id)} className="h-8 w-8 flex items-center justify-center bg-primary/10 text-primary border border-primary/20 rounded-lg hover:bg-primary transition-colors hover:text-white">
+                                                        <button onClick={() => { const reason = window.prompt("Reason for approval (Optional):"); approveLeave(req.id, reason || undefined); }} className="h-8 w-8 flex items-center justify-center bg-primary/10 text-primary border border-primary/20 rounded-lg hover:bg-primary transition-colors hover:text-white">
                                                             <CheckCircle2 size={14} />
                                                         </button>
-                                                        <button onClick={() => rejectLeave(req.id)} className="h-8 w-8 flex items-center justify-center bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg hover:bg-red-500 transition-colors hover:text-white">
+                                                        <button onClick={() => { const reason = window.prompt("Reason for rejection:"); rejectLeave(req.id, false, reason || undefined); }} className="h-8 w-8 flex items-center justify-center bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg hover:bg-red-500 transition-colors hover:text-white">
                                                             <XCircle size={14} />
                                                         </button>
                                                     </div>

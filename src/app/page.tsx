@@ -2,7 +2,7 @@
 import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { INDIAN_HOLIDAYS_2026 } from "@/lib/colleges";
+import { INDIAN_HOLIDAYS_2026, FLAG_CONFIG } from "@/lib/colleges";
 import {
     Calendar, Star, Megaphone, FileText, MessageSquare, Send, X, Clock, AlertTriangle, Users,
     ChevronRight, Gift, Trophy, Receipt, Ticket, Shield, Bot, Cake, Flag, Bell, Eye, ExternalLink, Activity
@@ -37,15 +37,7 @@ function AttendanceCalendar({ records, holidays }: { records: any[]; holidays: a
 
     if (!calData) return <div className="h-60 flex items-center justify-center text-xs text-zinc-500">Synchronizing...</div>;
 
-    const fl: Record<string, { label: string; emoji: string; dot: string }> = {
-        late: { label: "Late Clock-in", emoji: "🟡", dot: "bg-yellow-400" },
-        earlyOut: { label: "Early Clock-out", emoji: "🟡", dot: "bg-yellow-400" },
-        locationDiff: { label: "Diff Location", emoji: "🟡", dot: "bg-yellow-400" },
-        misconduct: { label: "Misconduct", emoji: "🔴", dot: "bg-red-500" },
-        dressCode: { label: "Dress Code", emoji: "🟠", dot: "bg-orange-500" },
-        meetingAbsent: { label: "Meeting Absent", emoji: "⚫", dot: "bg-[#0a0a0a] border border-zinc-700" },
-        performance: { label: "Performance", emoji: "🔵", dot: "bg-blue-500" },
-    };
+
 
     const isCurrentMonth = calData.month === calData.todayMonth && calData.year === calData.todayYear;
 
@@ -97,7 +89,7 @@ function AttendanceCalendar({ records, holidays }: { records: any[]; holidays: a
                             {activeFlags.length > 0 && (
                                 <div className="absolute bottom-0.5 left-0 right-0 flex items-center justify-center gap-[2px]">
                                     {activeFlags.map(([k]) => (
-                                        <div key={k} title={fl[k]?.label || k} className={cn("w-[5px] h-[5px] rounded-full shrink-0", fl[k]?.dot || "bg-zinc-500")} />
+                                        <div key={k} title={FLAG_CONFIG[k]?.label || k} className={cn("w-[5px] h-[5px] rounded-full shrink-0", FLAG_CONFIG[k]?.dotColor || "bg-zinc-500")} />
                                     ))}
                                 </div>
                             )}
@@ -290,10 +282,10 @@ export default function Home() {
                 {isManagerRole && <>
                     <StatCard label="Reportees" value={reportees.length.toString()} color="text-blue-400" icon={<Users size={14} />} />
                     <StatCard label="Pending Leaves" value={pendingLeaves.length.toString()} color="text-amber-400" icon={<Calendar size={14} />} />
-                    <StatCard label="Flags" value={attendanceRecords.filter(r => reporteeIds.includes(r.employeeId) && Object.values(r.flags).some(Boolean)).length.toString()} color="text-red-400" icon={<Flag size={14} />} />
+                    <StatCard label="Team Tickets" value={tickets.filter(t => reporteeIds.includes(t.raisedBy) && t.status !== "Resolved").length.toString()} color="text-purple-400" icon={<Ticket size={14} />} />
                     <StatCard label="Active PIPs" value={pipRecords.filter(p => reporteeIds.includes(p.employeeId) && p.status === "Active").length.toString()} color="text-orange-400" icon={<AlertTriangle size={14} />} />
                 </>}
-                {role === "HR" && <>
+                {(role === "HR" || role === "FOUNDER") && <>
                     <StatCard label="Pending Leaves" value={leaves.filter(l => l.status === "Pending").length.toString()} color="text-cyan-400" icon={<Calendar size={14} />} />
                     <StatCard label="Open Tickets" value={tickets.filter(t => t.status === "Open").length.toString()} color="text-amber-400" icon={<Ticket size={14} />} />
                     <StatCard label="Pending Holidays" value={holidays.filter(h => h.status === "Proposed").length.toString()} color="text-blue-400" icon={<Calendar size={14} />} />
@@ -328,7 +320,7 @@ export default function Home() {
                         {/* Operation Manager of the Month */}
                         <div className="space-y-3">
                             <div className="flex justify-between items-end border-b border-border/50 pb-1.5">
-                                <h4 className="text-[10px] font-black text-primary uppercase tracking-[0.1em]">Operation Manager of the Month</h4>
+                                <h4 className="text-[10px] font-black text-yellow-500 uppercase tracking-[0.1em]">OM of the Month</h4>
                                 <span className="text-[8px] text-muted-foreground font-bold">MARCH 2026</span>
                             </div>
                             <div className="grid gap-2">
@@ -342,7 +334,13 @@ export default function Home() {
                                     .map((s, i) => {
                                         const emp = employees.find(e => e.id === s.employeeId);
                                         const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉";
-                                        const medalColor = i === 0 ? "text-yellow-400" : i === 1 ? "text-zinc-300" : "text-amber-600";
+                                        const att = attendanceRecords.filter(r => r.employeeId === s.employeeId);
+
+                                        const red = att.filter(r => r.flags?.misconduct).length;
+                                        const orange = att.filter(r => r.flags?.dressCode).length;
+                                        const yellow = att.filter(r => r.flags?.late || r.flags?.earlyOut || r.flags?.locationDiff).length;
+                                        const black = att.filter(r => r.flags?.meetingAbsent).length;
+                                        const blue = att.filter(r => r.flags?.performance).length;
 
                                         return (
                                             <div key={s.employeeId} className={cn("relative p-2.5 rounded-xl border transition-all flex items-center gap-3 overflow-hidden",
@@ -364,13 +362,25 @@ export default function Home() {
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <p className="text-[11px] font-bold text-white truncate">{emp?.name}</p>
-                                                    <p className="text-[9px] text-muted truncate">{emp?.dept}</p>
+                                                    <p className="text-[9px] text-muted truncate">{emp?.designation || emp?.role}</p>
                                                 </div>
                                                 <div className="text-right">
                                                     <div className="flex gap-0.5 justify-end">
-                                                        {Array.from({ length: 5 }).map((_, j) => <Star key={j} size={8} className={j < s.stars ? "text-yellow-400 fill-yellow-400" : "text-zinc-700"} />)}
+                                                        {Array.from({ length: 5 }).map((_, j) => (
+                                                            <Star key={j} size={8} className={j < Math.floor(s.stars || 0) ? "text-yellow-500 fill-yellow-500" : "text-zinc-700"} />
+                                                        ))}
                                                     </div>
-                                                    <p className="text-[10px] font-black text-white mt-0.5">{s.rating}</p>
+
+                                                    {/* Flags Indicator - MOVED BELOW STARS */}
+                                                    <div className="flex gap-0.5 justify-end mt-1 flex-wrap" style={{ maxWidth: '70px' }}>
+                                                        {Array.from({ length: red }).map((_, idx) => <span key={`r${idx}`} title="Misconduct"><Flag size={10} className="text-red-500 fill-red-500/20" /></span>)}
+                                                        {Array.from({ length: orange }).map((_, idx) => <span key={`o${idx}`} title="Dress Code"><Flag size={10} className="text-orange-500 fill-orange-500/20" /></span>)}
+                                                        {Array.from({ length: yellow }).map((_, idx) => <span key={`y${idx}`} title="Late/Timeline"><Flag size={10} className="text-yellow-500 fill-yellow-500/20" /></span>)}
+                                                        {Array.from({ length: black }).map((_, idx) => <span key={`b${idx}`} title="Meeting Absent"><Flag size={10} className="text-zinc-600 fill-zinc-900" /></span>)}
+                                                        {Array.from({ length: blue }).map((_, idx) => <span key={`bl${idx}`} title="Performance"><Flag size={10} className="text-blue-500 fill-blue-500/20" /></span>)}
+                                                    </div>
+
+                                                    <p className="text-[10px] font-black text-white mt-1">{s.rating || 0}</p>
                                                 </div>
                                             </div>
                                         );
@@ -390,7 +400,6 @@ export default function Home() {
                                     .filter(s => {
                                         const emp = employees.find(e => e.id === s.employeeId);
                                         if (!emp) return false;
-                                        // Include Professors and Faculty
                                         return (emp.role === "PROFESSOR" || emp.role === "FACULTY");
                                     })
                                     .sort((a, b) => b.rating - a.rating)
@@ -398,6 +407,13 @@ export default function Home() {
                                     .map((s, i) => {
                                         const emp = employees.find(e => e.id === s.employeeId);
                                         const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉";
+                                        const att = attendanceRecords.filter(r => r.employeeId === s.employeeId);
+
+                                        const red = att.filter(r => r.flags?.misconduct).length;
+                                        const orange = att.filter(r => r.flags?.dressCode).length;
+                                        const yellow = att.filter(r => r.flags?.late || r.flags?.earlyOut || r.flags?.locationDiff).length;
+                                        const black = att.filter(r => r.flags?.meetingAbsent).length;
+                                        const blue = att.filter(r => r.flags?.performance).length;
 
                                         return (
                                             <div key={s.employeeId} className={cn("relative p-2.5 rounded-xl border transition-all flex items-center gap-3 overflow-hidden",
@@ -419,15 +435,27 @@ export default function Home() {
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <p className="text-[11px] font-bold text-white truncate">{emp?.name}</p>
-                                                    <p className="text-[9px] text-muted truncate">{emp?.designation}</p>
+                                                    <p className="text-[9px] text-muted truncate">{emp?.designation || emp?.role}</p>
                                                 </div>
                                                 <div className="text-right">
                                                     <div className="flex gap-0.5 justify-end">
-                                                        {Array.from({ length: 5 }).map((_, j) => <Star key={j} size={8} className={j < s.stars ? "text-yellow-400 fill-yellow-400" : "text-zinc-700"} />)}
+                                                        {Array.from({ length: 5 }).map((_, j) => (
+                                                            <Star key={j} size={8} className={j < Math.floor(s.stars || 0) ? "text-yellow-400 fill-yellow-400" : "text-zinc-700"} />
+                                                        ))}
                                                     </div>
-                                                    <div className="flex items-center justify-end gap-1 mt-0.5">
+
+                                                    {/* Flags Indicator - MOVED BELOW STARS */}
+                                                    <div className="flex gap-0.5 justify-end mt-1 flex-wrap" style={{ maxWidth: '70px' }}>
+                                                        {Array.from({ length: red }).map((_, idx) => <span key={`r${idx}`} title="Misconduct"><Flag size={10} className="text-red-500 fill-red-500/20" /></span>)}
+                                                        {Array.from({ length: orange }).map((_, idx) => <span key={`o${idx}`} title="Dress Code"><Flag size={10} className="text-orange-500 fill-orange-500/20" /></span>)}
+                                                        {Array.from({ length: yellow }).map((_, idx) => <span key={`y${idx}`} title="Late/Timeline"><Flag size={10} className="text-yellow-500 fill-yellow-500/20" /></span>)}
+                                                        {Array.from({ length: black }).map((_, idx) => <span key={`b${idx}`} title="Meeting Absent"><Flag size={10} className="text-zinc-600 fill-zinc-900" /></span>)}
+                                                        {Array.from({ length: blue }).map((_, idx) => <span key={`bl${idx}`} title="Performance"><Flag size={10} className="text-blue-500 fill-blue-500/20" /></span>)}
+                                                    </div>
+
+                                                    <div className="flex items-center justify-end gap-1 mt-1">
                                                         <Activity size={8} className="text-emerald-400" />
-                                                        <span className="text-[9px] font-black text-white">{s.rating}</span>
+                                                        <span className="text-[9px] font-black text-white">{s.rating || 0}</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -633,7 +661,7 @@ export default function Home() {
             </AnimatePresence>
 
             <FloatingChatbot sops={sops} />
-        </div>
+        </div >
     );
 }
 

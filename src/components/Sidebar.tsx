@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Users, Calendar, LogOut, ShieldCheck, User, Clock,
     Briefcase, Award, Network, Megaphone, Ticket, Receipt,
     FileText, CalendarCheck, AlertTriangle, UserCog, Star, MapPin, ClipboardList,
-    Crown, Bell, Activity, Flag, ShieldAlert
+    Crown, Bell, Activity, Flag, ShieldAlert, Trophy
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -16,6 +16,7 @@ const coreMenu = [
     { label: "Dashboard", icon: LayoutDashboard, path: "/" },
     { label: "Attendance", icon: Clock, path: "/attendance" },
     { label: "Leave", icon: Calendar, path: "/leave" },
+    { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
     { label: "Tickets", icon: Ticket, path: "/tickets" },
     { label: "Reimbursement", icon: Receipt, path: "/reimbursement" },
 ];
@@ -54,7 +55,7 @@ const hrMenu = [
 
 const founderMenu = [
     { label: "Founder Console", icon: Crown, path: "/founder" },
-    { label: "Activity Logs", icon: Activity, path: "/founder" },
+    { label: "Communications Log", icon: Activity, path: "/founder/communications" },
     { label: "Workforce", icon: Users, path: "/employees" },
 ];
 
