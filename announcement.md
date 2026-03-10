@@ -1,12 +1,11 @@
-﻿"use client";
+"use client";
 import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { INDIAN_HOLIDAYS_2026, FLAG_CONFIG } from "@/lib/colleges";
 import {
     Calendar, Star, Megaphone, FileText, MessageSquare, Send, X, Clock, AlertTriangle, Users,
-    ChevronRight, Gift, Trophy, Receipt, Ticket, Shield, Bot, Cake, Flag, Bell, Eye, ExternalLink, Activity,
-    PartyPopper, AlertCircle, UserPlus, MapPin
+    ChevronRight, Gift, Trophy, Receipt, Ticket, Shield, Bot, Cake, Flag, Bell, Eye, ExternalLink, Activity
 } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -81,20 +80,20 @@ function AttendanceCalendar({ records, holidays }: { records: any[]; holidays: a
                     else if (isSunday) { bg = "bg-red-500/5"; textColor = "text-red-400/60"; }
                     else if (rec?.status === "Present") { bg = "bg-green-500/10"; textColor = "text-green-400"; }
                     else if (rec?.status === "Absent") { bg = "bg-red-500/10"; textColor = "text-red-400"; }
-                    else if (rec?.status === "On Leave") { bg = "bg-pink-500/10"; textColor = "text-pink-400"; }
+                    else if (rec?.status === "On Leave") { bg = "bg-blue-500/10"; textColor = "text-blue-400"; }
                     const ring = isToday ? "ring-2 ring-primary shadow-[0_0_8px_rgba(16,185,129,0.3)]" : "";
 
                     return (
                         <div key={day} title={isHoliday ? `🎉 ${holidayName}` : isSunday ? "Sunday" : rec?.status || ""} className={cn("relative w-full aspect-square rounded-lg flex flex-col items-center justify-center text-[10px] font-bold transition-all group overflow-hidden cursor-default", bg, textColor, ring)}>
                             <span className="z-10">{day}</span>
                             {activeFlags.length > 0 && (
-                                <div className="absolute bottom-1 left-0 right-0 flex items-center justify-center gap-[1px]">
-                                    {activeFlags.slice(0, 3).map(([k]) => (
-                                        <div key={k} title={FLAG_CONFIG[k]?.label || k} className={cn("w-[9px] h-[9px] rounded-full shrink-0 shadow-sm", FLAG_CONFIG[k]?.dotColor || "bg-zinc-500")} />
+                                <div className="absolute bottom-0.5 left-0 right-0 flex items-center justify-center gap-[2px]">
+                                    {activeFlags.map(([k]) => (
+                                        <div key={k} title={FLAG_CONFIG[k]?.label || k} className={cn("w-[5px] h-[5px] rounded-full shrink-0", FLAG_CONFIG[k]?.dotColor || "bg-zinc-500")} />
                                     ))}
                                 </div>
                             )}
-                            {isHoliday && <div className="absolute bottom-0.5 left-0 right-0 flex items-center justify-center gap-[2px]"><div className="w-[10px] h-[10px] rounded-full bg-green-500 shrink-0 shadow-sm" /></div>}
+                            {isHoliday && <div className="absolute bottom-0.5 left-0 right-0 flex items-center justify-center gap-[2px]"><div className="w-[5px] h-[5px] rounded-full bg-green-500 shrink-0" /></div>}
                         </div>
                     );
                 })}
@@ -103,17 +102,17 @@ function AttendanceCalendar({ records, holidays }: { records: any[]; holidays: a
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-2 border-t border-zinc-800/50">
                 <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-green-500" /><span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider">Present</span></div>
                 <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider">Absent</span></div>
-                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-pink-500" /><span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider">On Leave</span></div>
+                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-500" /><span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider">On Leave</span></div>
                 <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-purple-500" /><span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider">Holiday</span></div>
             </div>
             <div className="pt-2 border-t border-zinc-800/50 space-y-1.5">
                 <p className="text-[8px] text-zinc-400 font-bold uppercase tracking-widest">Flag Dots</p>
                 <div className="grid grid-cols-2 gap-1">
-                    <div className="flex items-center gap-2"><span className="text-[8px] text-zinc-500">🟡 Late/Early/Location</span></div>
-                    <div className="flex items-center gap-2"><span className="text-[8px] text-zinc-500">🔴 Misconduct</span></div>
-                    <div className="flex items-center gap-2"><span className="text-[8px] text-zinc-500">🟠 Dress Code</span></div>
-                    <div className="flex items-center gap-2"><span className="text-[8px] text-zinc-500">⚫ Meeting Absent</span></div>
-                    <div className="flex items-center gap-2"><span className="text-[8px] text-zinc-500">🔵 Performance</span></div>
+                    <div className="flex items-center gap-2"><span className="text-[7px] text-zinc-500">🟡 Late/Early/Location</span></div>
+                    <div className="flex items-center gap-2"><span className="text-[7px] text-zinc-500">🔴 Misconduct</span></div>
+                    <div className="flex items-center gap-2"><span className="text-[7px] text-zinc-500">🟠 Dress Code</span></div>
+                    <div className="flex items-center gap-2"><span className="text-[7px] text-zinc-500">⚫ Meeting Absent</span></div>
+                    <div className="flex items-center gap-2"><span className="text-[7px] text-zinc-500">🔵 Performance</span></div>
                 </div>
             </div>
             <Link href="/flag-calendar" className="flex items-center gap-1.5 text-[9px] text-primary font-bold hover:underline pt-1">
@@ -216,7 +215,7 @@ function FloatingChatbot({ sops }: { sops: any[] }) {
 
 // â”€â”€â”€ MAIN DASHBOARD â”€â”€â”€
 export default function Home() {
-    const { user, employees, notices, sops, attendanceRecords, holidays, performanceStars, leaves, pipRecords, reimbursements, tickets, getReportees, sopNotifications, getExpectedTiming } = useAuth();
+    const { user, employees, notices, sops, attendanceRecords, holidays, performanceStars, leaves, pipRecords, reimbursements, tickets, getReportees, sopNotifications } = useAuth();
     const [mounted, setMounted] = useState(false);
     const [todayStr, setTodayStr] = useState("");
     const [selectedNotice, setSelectedNotice] = useState<any>(null);
@@ -234,22 +233,15 @@ export default function Home() {
 
     // Birthdays
     const today = new Date();
-    // Improved Birthday Logic (Handles Year Wrap)
     const upcomingBirthdays = employees.filter(e => {
         if (!e.dateOfBirth) return false;
-        const [d, m, y] = e.dateOfBirth.split("-").map(Number);
-        const dobDate = new Date(today.getFullYear(), m - 1, d);
-        if (dobDate < today) dobDate.setFullYear(today.getFullYear() + 1);
-        const diff = (dobDate.getTime() - today.getTime()) / (1000 * 3600 * 24);
+        const dob = new Date(e.dateOfBirth);
+        const bday = new Date(today.getFullYear(), dob.getMonth(), dob.getDate());
+        const diff = (bday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
         return diff >= 0 && diff <= 30;
     }).sort((a, b) => {
-        const [da, ma] = a.dateOfBirth!.split("-").map(Number);
-        const [db, mb] = b.dateOfBirth!.split("-").map(Number);
-        const nextA = new Date(today.getFullYear(), ma - 1, da);
-        if (nextA < today) nextA.setFullYear(today.getFullYear() + 1);
-        const nextB = new Date(today.getFullYear(), mb - 1, db);
-        if (nextB < today) nextB.setFullYear(today.getFullYear() + 1);
-        return nextA.getTime() - nextB.getTime();
+        const da = new Date(a.dateOfBirth!), db = new Date(b.dateOfBirth!);
+        return new Date(today.getFullYear(), da.getMonth(), da.getDate()).getTime() - new Date(today.getFullYear(), db.getMonth(), db.getDate()).getTime();
     });
 
     // Manager stats
@@ -257,7 +249,6 @@ export default function Home() {
     const reportees = (isManagerRole || role === "HR") ? getReportees(user.id) : [];
     const reporteeIds = reportees.map(r => r.id);
     const pendingLeaves = leaves.filter(l => reporteeIds.includes(l.employeeId) && l.status === "Pending");
-    const expected = getExpectedTiming(user.id);
 
     return (
         <div className="p-6 space-y-6 max-w-6xl mx-auto w-full">
@@ -280,49 +271,13 @@ export default function Home() {
                 <span className="text-[9px] text-zinc-500">{todayStr}</span>
             </header>
 
-            {/* Today's Schedule Banner */}
-            {!isManagerRole && role !== "HR" && role !== "FOUNDER" && (
-                <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-3xl p-6 flex flex-wrap items-center justify-between gap-6 animate-in fade-in slide-in-from-top-4 duration-700">
-                    <div className="flex items-center gap-5">
-                        <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shadow-inner">
-                            <Clock size={28} />
-                        </div>
-                        <div>
-                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-1">Shift Duration Today</p>
-                            <p className="text-xl font-bold text-white tracking-tight">{expected.in} — {expected.out}</p>
-                        </div>
-                    </div>
-
-                    <div className="h-10 w-px bg-zinc-800 hidden md:block" />
-
-                    <div className="flex items-center gap-5">
-                        <div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-400 shadow-inner">
-                            <MapPin size={28} />
-                        </div>
-                        <div>
-                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-1">Assigned Work Location</p>
-                            <p className="text-xl font-bold text-white tracking-tight">{expected.location}</p>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-col items-end gap-2">
-                        <span className={cn("text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest border",
-                            expected.location === "WFH" ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : "text-green-400 bg-green-500/10 border-green-500/20"
-                        )}>
-                            {expected.location === "WFH" ? "Remote Work" : "Campus Presence"}
-                        </span>
-                        {/* <p className="text-[10px] text-zinc-500 italic">Grace period: 2 mins</p> */}
-                    </div>
-                </div>
-            )}
-
             {/* Quick Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {!isManagerRole && role !== "HR" && role !== "FOUNDER" && <>
                     <StatCard label="Days Present" value={myAttendance.filter(r => r.status === "Present").length.toString()} color="text-green-400" icon={<Clock size={14} />} />
                     <StatCard label="Leaves Used" value={myLeaves.filter(l => l.status === "Approved").length.toString()} color="text-blue-400" icon={<Calendar size={14} />} />
                     <StatCard label="Open Tickets" value={tickets.filter(t => t.raisedBy === user.id && t.status !== "Resolved").length.toString()} color="text-amber-400" icon={<Ticket size={14} />} />
-                    <StatCard label="Reimbursements" value={user.role === "TL" ? "₹2,000" : `₹${reimbursements.filter(r => r.employeeId === user.id && r.status === "Pending").reduce((a, r) => a + r.amount, 0).toLocaleString()}`} color="text-purple-400" icon={<Receipt size={14} />} />
+                    <StatCard label="Reimbursements" value={`â‚¹${reimbursements.filter(r => r.employeeId === user.id && r.status === "Pending").reduce((a, r) => a + r.amount, 0).toLocaleString()}`} color="text-purple-400" icon={<Receipt size={14} />} />
                 </>}
                 {isManagerRole && <>
                     <StatCard label="Reportees" value={reportees.length.toString()} color="text-blue-400" icon={<Users size={14} />} />
@@ -354,7 +309,7 @@ export default function Home() {
                             Leaderboard
                         </h3>
                         <div className="flex items-center gap-2">
-
+                            <span className="text-[8px] font-bold text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700">V.2.0</span>
                             <Link href="/leaderboard" className="bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-bold px-3 py-1 rounded-lg border border-primary/20 transition-all flex items-center gap-1">
                                 View More <ChevronRight size={10} />
                             </Link>
@@ -524,7 +479,7 @@ export default function Home() {
                         <Link href="/announcements" className="text-[9px] text-primary font-bold hover:underline shrink-0">View All</Link>
                     </div>
                     <div className="space-y-1.5 flex-1">
-                        {notices.slice(0, 8).map(n => {
+                        {notices.slice(0, 7).map(n => {
                             const isToday = n.createdAt === new Date().toISOString().split("T")[0];
                             return (
                                 <div key={n.id} className="flex items-center gap-2 p-2 bg-zinc-800/30 rounded-xl hover:bg-zinc-800/50 transition-colors">
@@ -558,7 +513,7 @@ export default function Home() {
                 </div>
 
                 {/* SOPs */}
-                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-3 lg:col-span-1">
+                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-3">
                     <div className="flex justify-between items-center">
                         <h3 className="text-sm font-bold text-white flex items-center gap-2">
                             <FileText size={16} className="text-purple-400" /> Latest SOPs
@@ -616,17 +571,14 @@ export default function Home() {
                     </div>
                 </div>
 
-                {/* Birthdays Section */}
-                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-3 lg:col-span-1">
+                {/* Upcoming Birthdays */}
+                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-3">
                     <h3 className="text-sm font-bold text-white flex items-center gap-2"><Cake size={16} className="text-pink-400" /> Upcoming Birthdays</h3>
                     <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
                         {upcomingBirthdays.length === 0 ? <p className="text-[10px] text-zinc-500 italic">No upcoming birthdays</p> :
                             upcomingBirthdays.map(e => {
-                                const dobParts = e.dateOfBirth?.split("-").map(Number);
-                                const d = dobParts?.[0] || 1;
-                                const m = dobParts?.[1] || 1;
-                                const bday = new Date(today.getFullYear(), m - 1, d);
-                                if (bday < today) bday.setFullYear(today.getFullYear() + 1);
+                                const dob = new Date(e.dateOfBirth!);
+                                const bday = new Date(today.getFullYear(), dob.getMonth(), dob.getDate());
                                 const daysUntil = Math.ceil((bday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
                                 return (
                                     <div key={e.id} className="flex items-center gap-3 p-2.5 bg-zinc-800/30 rounded-xl">
@@ -634,54 +586,29 @@ export default function Home() {
                                             {e.photoUrl ? <img src={e.photoUrl} alt="" className="w-full h-full object-cover" /> : e.name[0]}
                                         </div>
                                         <div className="flex-1"><p className="text-[11px] font-bold text-white">{e.name}</p><p className="text-[9px] text-zinc-500">{e.designation}</p></div>
-                                        <span className="text-[9px] font-bold text-pink-400">{daysUntil === 0 ? "🎉 Today!" : `${daysUntil}d`}</span>
+                                        <span className="text-[9px] font-bold text-pink-400">{daysUntil === 0 ? "ðŸŽ‰ Today!" : `${daysUntil}d`}</span>
                                     </div>
                                 );
                             })}
                     </div>
                 </div>
 
-                {/* Bi-Weekly Performance Section - PLACED RIGHT OF BIRTHDAYS */}
-                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-3 lg:col-span-1">
-                    <div className="flex justify-between items-center">
-                        <h3 className="text-sm font-bold text-white flex items-center gap-2"><Star size={16} className="text-blue-400" /> Bi-Weekly Performance</h3>
-                        <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">Recent Scores</span>
-                    </div>
-                    <div className="overflow-x-auto rounded-xl border border-zinc-800/50">
-                        <table className="w-full text-left">
-                            <thead className="bg-zinc-800/50 text-[9px] uppercase tracking-widest text-zinc-400">
-                                <tr>
-                                    <th className="px-4 py-2.5 font-bold">Period</th>
-                                    <th className="px-4 py-2.5 font-bold text-center">Score</th>
-                                    <th className="px-4 py-2.5 font-bold text-center">Points</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-zinc-800/50">
-                                {emp.biWeeklyScores && emp.biWeeklyScores.length > 0 ? (
-                                    emp.biWeeklyScores.slice(0, 3).map((s: any, i: number) => (
-                                        <tr key={i} className="hover:bg-zinc-800/30 transition-colors text-xs border-zinc-800/50">
-                                            <td className="px-4 py-3 font-medium text-white">{s.period}</td>
-                                            <td className="px-4 py-3 text-center">
-                                                <div className="flex justify-center">
-                                                    <div className="flex gap-0.5">
-                                                        {Array.from({ length: 5 }).map((_, j) => (
-                                                            <Star key={j} size={12} className={j < Math.floor(s.score || 0) ? "text-yellow-400 fill-yellow-400" : "text-zinc-700"} />
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3 text-center font-bold text-blue-400">{s.points}</td>
-                                        </tr>
-                                    ))
-                                ) : (
-                                    <tr>
-                                        <td colSpan={3} className="px-4 py-8 text-center text-zinc-500 italic text-[10px]">No performance data recorded for this period.</td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                {/* Manager: Pending Leave Approval */}
+                {
+                    (isManagerRole || role === "HR") && pendingLeaves.length > 0 && (
+                        <div className="bg-zinc-900/80 border border-amber-500/20 rounded-2xl p-5 space-y-3">
+                            <div className="flex justify-between items-center"><h3 className="text-sm font-bold text-amber-400 flex items-center gap-2"><Calendar size={16} /> Pending Approvals</h3><Link href="/manager/leave-approval" className="text-[9px] text-primary font-bold">View All â†’</Link></div>
+                            <div className="space-y-2">
+                                {pendingLeaves.slice(0, 3).map(l => (
+                                    <div key={l.id} className="flex items-center gap-3 p-2.5 bg-zinc-800/30 rounded-xl">
+                                        <Clock size={14} className="text-amber-400" />
+                                        <div className="flex-1"><p className="text-[11px] font-bold text-white">{l.employeeName}</p><p className="text-[9px] text-zinc-500">{l.type} Â· {l.days}d Â· {l.startDate}</p></div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )
+                }
             </div>
 
             {/* Announcement View Modal */}
@@ -743,6 +670,438 @@ function StatCard({ label, value, color, icon }: { label: string; value: string;
         <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2"><span className={cn("opacity-60", color)}>{icon}</span><p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">{label}</p></div>
             <p className={cn("text-xl font-bold", color)}>{value}</p>
+        </div>
+    );
+}
+
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import { useAuth, Notice } from "@/context/AuthContext";
+import { uploadToCloudinary } from "@/lib/cloudinary";
+import {
+    Megaphone, Plus, Calendar, User, Send, Image as ImageIcon, FileText,
+    Heart, AlertCircle, PartyPopper, Search, Edit3, X, CheckCheck, Cake,
+    UserPlus, Upload, Eye, Trash2, Loader2
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
+
+export default function AnnouncementsPage() {
+    const { user, notices, employees, addAnnouncement, editNotice, markAnnouncementRead } = useAuth();
+    const [showModal, setShowModal] = useState(false);
+    const [editingNotice, setEditingNotice] = useState<Notice | null>(null);
+    const [filter, setFilter] = useState("All");
+    const [form, setForm] = useState({ title: "", content: "", category: "General" as any });
+    const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
+    const [uploading, setUploading] = useState(false);
+    const [viewNotice, setViewNotice] = useState<Notice | null>(null);
+
+    // Birthday / Joinee poster modals
+    const [showBirthdayModal, setShowBirthdayModal] = useState(false);
+    const [showJoineeModal, setShowJoineeModal] = useState(false);
+    const [bdayForm, setBdayForm] = useState({ message: "" });
+    const [bdayUrls, setBdayUrls] = useState<string[]>([]);
+    const [bdayUploading, setBdayUploading] = useState(false);
+    const [joineeForm, setJoineeForm] = useState({ names: "", message: "" });
+    const [joineeUrls, setJoineeUrls] = useState<string[]>([]);
+    const [joineeUploading, setJoineeUploading] = useState(false);
+
+    const fileRef = useRef<HTMLInputElement>(null);
+    const bdayFileRef = useRef<HTMLInputElement>(null);
+    const joineeFileRef = useRef<HTMLInputElement>(null);
+
+    if (!user) return null;
+
+    const isHROrFounder = user.role === "HR" || user.role === "FOUNDER";
+    const categories = ["All", "General", "Policy", "Event", "Urgent", "Update", "HR", "Achievement", "Training", "Birthday", "Welcome"];
+    const filteredNotices = notices.filter(n => filter === "All" || n.category === filter);
+
+    useEffect(() => {
+        if (!user) return;
+        notices.forEach(n => { if (!(n.readBy || []).includes(user.id)) markAnnouncementRead(n.id); });
+    }, [notices.length]);
+
+    // Generic file upload handler
+    const handleFileUpload = async (files: FileList | null, setUrls: React.Dispatch<React.SetStateAction<string[]>>, setLoading: React.Dispatch<React.SetStateAction<boolean>>) => {
+        if (!files || files.length === 0) return;
+        setLoading(true);
+        try {
+            for (const file of Array.from(files)) {
+                const result = await uploadToCloudinary(file);
+                setUrls(prev => [...prev, result.secure_url]);
+            }
+        } catch (err) { console.error("Upload failed:", err); }
+        setLoading(false);
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (editingNotice) {
+            editNotice(editingNotice.id, { title: form.title, content: form.content, category: form.category });
+        } else {
+            addAnnouncement({ ...form, imageUrls: uploadedUrls.length > 0 ? uploadedUrls : undefined } as any);
+        }
+        setForm({ title: "", content: "", category: "General" });
+        setUploadedUrls([]);
+        setEditingNotice(null);
+        setShowModal(false);
+    };
+
+    const handleBirthdaySubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        addAnnouncement({
+            title: "🎂 Birthday Celebration!",
+            content: bdayForm.message,
+            category: "Birthday",
+            imageUrls: bdayUrls.length > 0 ? bdayUrls : undefined
+        } as any);
+        setBdayForm({ message: "" });
+        setBdayUrls([]);
+        setShowBirthdayModal(false);
+    };
+
+    const handleJoineeSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        addAnnouncement({
+            title: `🎉 Welcome New Joinee${joineeForm.names.includes(",") ? "s" : ""}: ${joineeForm.names}`,
+            content: joineeForm.message,
+            category: "Welcome",
+            imageUrls: joineeUrls.length > 0 ? joineeUrls : undefined
+        } as any);
+        setJoineeForm({ names: "", message: "" });
+        setJoineeUrls([]);
+        setShowJoineeModal(false);
+    };
+
+    const openEdit = (notice: Notice) => {
+        setEditingNotice(notice);
+        setForm({ title: notice.title, content: notice.content, category: notice.category });
+        setUploadedUrls(notice.imageUrls || []);
+        setShowModal(true);
+    };
+
+    const openNew = () => {
+        setEditingNotice(null);
+        setForm({ title: "", content: "", category: "General" });
+        setUploadedUrls([]);
+        setShowModal(true);
+    };
+
+    const catColor = (cat: string) =>
+        cat === "Urgent" ? "bg-red-500" : cat === "Policy" ? "bg-amber-500" :
+            cat === "Event" ? "bg-purple-500" : cat === "Birthday" ? "bg-pink-500" :
+                cat === "Welcome" ? "bg-sky-500" : cat === "Achievement" ? "bg-amber-500" :
+                    cat === "Training" ? "bg-cyan-500" : cat === "HR" ? "bg-pink-500" :
+                        cat === "Update" ? "bg-emerald-500" : "bg-primary";
+
+    const catBadge = (cat: string) =>
+        cat === "Urgent" ? "text-red-300 bg-red-500/20 border-red-500/30" :
+            cat === "Policy" ? "text-blue-300 bg-blue-500/20 border-blue-500/30" :
+                cat === "Event" ? "text-purple-300 bg-purple-500/20 border-purple-500/30" :
+                    cat === "Birthday" ? "text-pink-300 bg-pink-500/20 border-pink-500/30" :
+                        cat === "Welcome" ? "text-sky-300 bg-sky-500/20 border-sky-500/30" :
+                            cat === "Update" ? "text-emerald-300 bg-emerald-500/20 border-emerald-500/30" :
+                                cat === "HR" ? "text-pink-300 bg-pink-500/20 border-pink-500/30" :
+                                    cat === "Achievement" ? "text-amber-300 bg-amber-500/20 border-amber-500/30" :
+                                        cat === "Training" ? "text-cyan-300 bg-cyan-500/20 border-cyan-500/30" :
+                                            "text-zinc-300 bg-zinc-700/40 border-zinc-600/30";
+
+    // Reusable image upload section component
+    const ImageUploadSection = ({ urls, setUrls, uploading: isUploading, inputRef, color = "primary" }: {
+        urls: string[], setUrls: React.Dispatch<React.SetStateAction<string[]>>, uploading: boolean, inputRef: React.RefObject<HTMLInputElement | null>, color?: string
+    }) => (
+        <div className="space-y-2">
+            <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Upload Images</label>
+            <input ref={inputRef} type="file" accept="image/*" multiple className="hidden" onChange={e => handleFileUpload(e.target.files, setUrls, color === "pink" ? setBdayUploading : color === "sky" ? setJoineeUploading : setUploading)} />
+            <button type="button" onClick={() => inputRef.current?.click()} disabled={isUploading}
+                className={cn("w-full border-2 border-dashed rounded-xl p-4 flex flex-col items-center gap-2 transition-colors",
+                    isUploading ? "border-zinc-700 bg-zinc-900/50 cursor-wait" : "border-zinc-700 hover:border-primary/50 bg-zinc-900/30 cursor-pointer"
+                )}>
+                {isUploading ? (
+                    <><Loader2 size={18} className="text-primary animate-spin" /><p className="text-[10px] text-primary font-bold">Uploading to Cloudinary...</p></>
+                ) : (
+                    <><Upload size={18} className="text-zinc-500" /><p className="text-[10px] text-zinc-500">Click to upload images (JPG, PNG, WEBP)</p><p className="text-[8px] text-zinc-600">Multiple files supported</p></>
+                )}
+            </button>
+            {urls.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                    {urls.map((url, i) => (
+                        <div key={i} className="relative group">
+                            <img src={url} alt="" className="w-16 h-16 object-cover rounded-lg border border-zinc-800" />
+                            <button type="button" onClick={() => setUrls(urls.filter((_, j) => j !== i))}
+                                className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <X size={8} className="text-white" />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+
+    return (
+        <div className="p-8 space-y-8 max-w-6xl mx-auto">
+            <header className="flex justify-between items-end flex-wrap gap-3">
+                <div>
+                    <h1 className="text-2xl font-bold text-white tracking-tight">Communication Hub</h1>
+                    <p className="text-sm text-zinc-400 mt-1 italic">Institutional Broadcast Node &amp; Strategic Signaling</p>
+                </div>
+                {isHROrFounder && (
+                    <button onClick={openNew} className="btn-primary flex items-center gap-2 px-6 shadow-[0_0_20px_rgba(16,185,129,0.2)]">
+                        <Plus size={16} /> New Broadcast
+                    </button>
+                )}
+            </header>
+
+            {/* Filter Chips */}
+            <div className="flex gap-1.5 p-1 bg-zinc-900 border border-zinc-800 rounded-2xl w-fit flex-wrap">
+                {categories.map(cat => (
+                    <button key={cat} onClick={() => setFilter(cat)}
+                        className={cn("px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all",
+                            filter === cat ? "bg-zinc-800 text-primary shadow-inner" : "text-zinc-500 hover:text-zinc-300"
+                        )}>{cat}</button>
+                ))}
+            </div>
+
+            {/* Feed */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <AnimatePresence mode="popLayout">
+                    {filteredNotices.map((notice) => (
+                        <motion.div key={notice.id} layout
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            className="card group hover:border-primary/30 transition-all p-0 flex flex-col relative">
+                            <div className={cn("h-2 w-full rounded-t-3xl shadow-[0_0_12px_rgba(0,0,0,0.3)]", catColor(notice.category))} />
+
+                            <div className="p-5 space-y-3 flex-1 flex flex-col">
+                                <div className="flex justify-between items-start">
+                                    <div className="flex items-center gap-2">
+                                        <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center",
+                                            notice.category === "Urgent" ? "bg-red-500/10 text-red-500" :
+                                                notice.category === "Birthday" ? "bg-pink-500/10 text-pink-500" :
+                                                    notice.category === "Welcome" ? "bg-sky-500/10 text-sky-500" :
+                                                        "bg-zinc-900 text-zinc-400"
+                                        )}>
+                                            {notice.category === "Event" ? <PartyPopper size={14} /> :
+                                                notice.category === "Urgent" ? <AlertCircle size={14} /> :
+                                                    notice.category === "Birthday" ? <Cake size={14} /> :
+                                                        notice.category === "Welcome" ? <UserPlus size={14} /> :
+                                                            <FileText size={14} />}
+                                        </div>
+                                        <span className={cn("text-[8px] font-bold px-1.5 py-0.5 rounded-full border uppercase", catBadge(notice.category))}>{notice.category}</span>
+                                        {notice.isEdited && <span className="text-[7px] font-bold text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700/50">edited</span>}
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-[9px] font-bold text-zinc-600 font-mono">{notice.createdAt}</span>
+                                        {isHROrFounder && (
+                                            <button onClick={() => openEdit(notice)} className="p-1 rounded-lg hover:bg-zinc-800 text-zinc-600 hover:text-primary transition-colors" title="Edit">
+                                                <Edit3 size={11} />
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1.5 flex-1">
+                                    <h3 className="text-sm font-bold text-white group-hover:text-primary transition-colors leading-tight">{notice.title}</h3>
+                                    <p className="text-[11px] text-zinc-400 leading-relaxed line-clamp-3">{notice.content}</p>
+                                </div>
+
+                                {notice.imageUrls && notice.imageUrls.length > 0 && (
+                                    <div className="flex gap-1.5">
+                                        {notice.imageUrls.slice(0, 3).map((url, i) => (
+                                            <img key={i} src={url} alt="" className="w-16 h-12 object-cover rounded-lg border border-zinc-800" />
+                                        ))}
+                                        {notice.imageUrls.length > 3 && <span className="text-[9px] text-zinc-500 self-center">+{notice.imageUrls.length - 3} more</span>}
+                                    </div>
+                                )}
+
+                                <div className="pt-3 border-t border-zinc-900 flex justify-between items-center">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-400">{notice.createdBy[0]}</div>
+                                        <span className="text-[10px] font-bold text-zinc-500">{notice.createdBy}</span>
+                                    </div>
+                                    <button onClick={() => setViewNotice(notice)} className="text-[9px] text-primary font-bold hover:underline flex items-center gap-1"><Eye size={10} /> View</button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    ))}
+                </AnimatePresence>
+            </div>
+
+            {/* Birthday + Joinee Poster Section */}
+            {isHROrFounder && (
+                <div className="mt-8 space-y-6 pt-8 border-t border-zinc-900/50">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-pink-500/10 rounded-xl text-pink-500"><Megaphone size={24} /></div>
+                        <div>
+                            <h2 className="text-xl font-bold text-white">Poster & Announcement Studio</h2>
+                            <p className="text-sm text-zinc-400 italic">Create birthday posters, welcome new joinees, and visual announcements.</p>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div onClick={() => setShowBirthdayModal(true)} className="card bg-zinc-950 border-zinc-800 border-dashed border-2 p-8 text-center space-y-3 hover:border-pink-500/50 transition-all cursor-pointer group">
+                            <div className="w-14 h-14 bg-pink-500/10 rounded-2xl flex items-center justify-center mx-auto text-pink-500/50 group-hover:text-pink-500 transition-colors"><Cake size={28} /></div>
+                            <div>
+                                <h4 className="text-sm font-bold text-white">Birthday Poster</h4>
+                                <p className="text-[11px] text-zinc-500 mt-1">Upload birthday poster(s) from your laptop and write a birthday wishing message. Auto-tagged as Birthday.</p>
+                            </div>
+                        </div>
+                        <div onClick={() => setShowJoineeModal(true)} className="card bg-zinc-950 border-zinc-800 border-dashed border-2 p-8 text-center space-y-3 hover:border-sky-500/50 transition-all cursor-pointer group">
+                            <div className="w-14 h-14 bg-sky-500/10 rounded-2xl flex items-center justify-center mx-auto text-sky-500/50 group-hover:text-sky-500 transition-colors"><UserPlus size={28} /></div>
+                            <div>
+                                <h4 className="text-sm font-bold text-white">New Joinee Announcement</h4>
+                                <p className="text-[11px] text-zinc-500 mt-1">Upload new joinee poster(s) with welcome message. Multiple joinees supported. Auto-tagged as Welcome.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* View Full Announcement Modal */}
+            <AnimatePresence>
+                {viewNotice && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setViewNotice(null)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-lg relative z-10 shadow-2xl overflow-hidden max-h-[85vh] overflow-y-auto">
+                            <div className={cn("h-1.5 w-full sticky top-0", catColor(viewNotice.category))} />
+                            <div className="p-6 space-y-4">
+                                <div className="flex justify-between items-start">
+                                    <div className="flex items-center gap-2">
+                                        <span className={cn("text-[8px] font-bold px-2 py-0.5 rounded-full border uppercase", catBadge(viewNotice.category))}>{viewNotice.category}</span>
+                                        {viewNotice.isEdited && <span className="text-[7px] font-bold text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700/50">edited {viewNotice.editedAt}</span>}
+                                    </div>
+                                    <button onClick={() => setViewNotice(null)} className="text-zinc-500 hover:text-white transition-colors"><X size={16} /></button>
+                                </div>
+                                <h2 className="text-lg font-bold text-white leading-tight">{viewNotice.title}</h2>
+                                <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">{viewNotice.content}</p>
+                                {viewNotice.imageUrls && viewNotice.imageUrls.length > 0 && (
+                                    <div className="space-y-2">
+                                        {viewNotice.imageUrls.map((url, i) => (
+                                            <img key={i} src={url} alt={`Poster ${i + 1}`} className="w-full rounded-xl border border-zinc-800 object-contain max-h-80" />
+                                        ))}
+                                    </div>
+                                )}
+                                <div className="pt-3 border-t border-zinc-800 flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-400">{viewNotice.createdBy[0]}</div>
+                                    <span className="text-[10px] font-bold text-zinc-500">{viewNotice.createdBy}</span>
+                                    <span className="text-[9px] text-zinc-600 ml-auto">{viewNotice.createdAt}</span>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Compose / Edit Modal */}
+            <AnimatePresence>
+                {showModal && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setShowModal(false); setEditingNotice(null); }} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="card w-full max-w-xl p-8 relative z-10 space-y-6 shadow-2xl overflow-hidden border-zinc-800 max-h-[85vh] overflow-y-auto">
+                            <div className={cn("absolute top-0 left-0 w-full h-1", editingNotice ? "bg-amber-500" : "bg-primary")} />
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h2 className="text-xl font-bold text-white tracking-tight">{editingNotice ? "Edit Announcement" : "New Broadcast"}</h2>
+                                    <p className="text-xs text-zinc-500 mt-1">{editingNotice ? "Update the announcement details" : "Create a new announcement for all employees"}</p>
+                                </div>
+                                <button onClick={() => { setShowModal(false); setEditingNotice(null); }} className="p-2 hover:bg-zinc-900 rounded-xl transition-colors"><X size={16} className="text-zinc-500" /></button>
+                            </div>
+                            <form onSubmit={handleSubmit} className="space-y-5">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Category</label>
+                                    <select className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-xs text-white" value={form.category} onChange={e => setForm({ ...form, category: e.target.value as any })}>
+                                        {["General", "Policy", "Event", "Urgent", "Update", "HR", "Achievement", "Training", "Birthday", "Welcome"].map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Title</label>
+                                    <input type="text" required className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-xs text-white focus:border-primary/50 font-bold placeholder:font-normal" placeholder="Announcement title..." value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Content</label>
+                                    <textarea required rows={4} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-xs text-white resize-none focus:border-primary/50 leading-relaxed" placeholder="Announcement content..." value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} />
+                                </div>
+                                <ImageUploadSection urls={uploadedUrls} setUrls={setUploadedUrls} uploading={uploading} inputRef={fileRef} />
+                                <button type="submit" disabled={uploading} className={cn("w-full py-3.5 text-xs font-bold rounded-2xl flex items-center justify-center gap-2 transition-colors",
+                                    editingNotice ? "bg-amber-500 hover:bg-amber-600 text-black" : "btn-primary"
+                                )}>
+                                    {editingNotice ? <><Edit3 size={14} /> UPDATE ANNOUNCEMENT</> : <><Megaphone size={16} /> BROADCAST TO ALL</>}
+                                </button>
+                            </form>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Birthday Poster Modal */}
+            <AnimatePresence>
+                {showBirthdayModal && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowBirthdayModal(false)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="card w-full max-w-xl p-8 relative z-10 space-y-6 shadow-2xl overflow-hidden border-zinc-800 max-h-[85vh] overflow-y-auto">
+                            <div className="absolute top-0 left-0 w-full h-1 bg-pink-500" />
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-pink-500/10 rounded-xl text-pink-500"><Cake size={20} /></div>
+                                    <div>
+                                        <h2 className="text-lg font-bold text-white">Birthday Poster</h2>
+                                        <p className="text-[11px] text-zinc-500">Upload poster(s) from your laptop and write a birthday message</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowBirthdayModal(false)} className="p-2 hover:bg-zinc-900 rounded-xl"><X size={16} className="text-zinc-500" /></button>
+                            </div>
+                            <form onSubmit={handleBirthdaySubmit} className="space-y-5">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Birthday Wishing Message</label>
+                                    <textarea required rows={4} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-xs text-white resize-none leading-relaxed" placeholder="Write a heartfelt birthday message..." value={bdayForm.message} onChange={e => setBdayForm({ ...bdayForm, message: e.target.value })} />
+                                </div>
+                                <ImageUploadSection urls={bdayUrls} setUrls={setBdayUrls} uploading={bdayUploading} inputRef={bdayFileRef} color="pink" />
+                                <button type="submit" disabled={bdayUploading} className="w-full py-3.5 text-xs font-bold rounded-2xl flex items-center justify-center gap-2 bg-pink-500 hover:bg-pink-600 text-white shadow-[0_0_20px_rgba(236,72,153,0.3)] disabled:opacity-50">
+                                    <Cake size={14} /> PUBLISH BIRTHDAY POSTER
+                                </button>
+                            </form>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* New Joinee Modal */}
+            <AnimatePresence>
+                {showJoineeModal && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowJoineeModal(false)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="card w-full max-w-xl p-8 relative z-10 space-y-6 shadow-2xl overflow-hidden border-zinc-800 max-h-[85vh] overflow-y-auto">
+                            <div className="absolute top-0 left-0 w-full h-1 bg-sky-500" />
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-sky-500/10 rounded-xl text-sky-500"><UserPlus size={20} /></div>
+                                    <div>
+                                        <h2 className="text-lg font-bold text-white">New Joinee Announcement</h2>
+                                        <p className="text-[11px] text-zinc-500">Upload poster(s) and welcome message for new joinees</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowJoineeModal(false)} className="p-2 hover:bg-zinc-900 rounded-xl"><X size={16} className="text-zinc-500" /></button>
+                            </div>
+                            <form onSubmit={handleJoineeSubmit} className="space-y-5">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Joinee Name(s) — comma-separated for multiple</label>
+                                    <input type="text" required className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-xs text-white font-bold placeholder:font-normal" placeholder="Arjun Sharma, Priya Gupta" value={joineeForm.names} onChange={e => setJoineeForm({ ...joineeForm, names: e.target.value })} />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Welcome Message</label>
+                                    <textarea required rows={4} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-xs text-white resize-none leading-relaxed" placeholder="Write a warm welcome message..." value={joineeForm.message} onChange={e => setJoineeForm({ ...joineeForm, message: e.target.value })} />
+                                </div>
+                                <ImageUploadSection urls={joineeUrls} setUrls={setJoineeUrls} uploading={joineeUploading} inputRef={joineeFileRef} color="sky" />
+                                <button type="submit" disabled={joineeUploading} className="w-full py-3.5 text-xs font-bold rounded-2xl flex items-center justify-center gap-2 bg-sky-500 hover:bg-sky-600 text-white shadow-[0_0_20px_rgba(14,165,233,0.3)] disabled:opacity-50">
+                                    <UserPlus size={14} /> PUBLISH WELCOME POSTER
+                                </button>
+                            </form>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

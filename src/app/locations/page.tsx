@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { MapPin, Building2, Users, Plus, Edit2, Search, X, Loader2 } from "lucide-react";
+import { MapPin, Building2, Users, Plus, Edit2, Search, X, Loader2, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
@@ -12,7 +12,7 @@ const MapComponent = dynamic(() => import("@/components/MapComponent"), {
 });
 
 export default function LocationsPage() {
-    const { user, colleges, addCollege, updateCollege, employees } = useAuth();
+    const { user, colleges, addCollege, updateCollege, employees, getExpectedTiming } = useAuth();
     const [selectedCollege, setSelectedCollege] = useState<string | null>(null);
     const [search, setSearch] = useState("");
     const [mapSearchQuery, setMapSearchQuery] = useState("");
@@ -143,13 +143,28 @@ export default function LocationsPage() {
                                                     <div className="bg-zinc-800/50 p-1.5 rounded-lg">Lat: {college.lat.toFixed(4)}</div>
                                                     <div className="bg-zinc-800/50 p-1.5 rounded-lg">Lng: {college.lng.toFixed(4)}</div>
                                                 </div>
-                                                <div className="space-y-1">
-                                                    {selectedEmps.length > 0 ? selectedEmps.map(s => (
-                                                        <div key={s.id} className="flex items-center gap-2 text-[10px] bg-zinc-800/30 p-1.5 rounded-lg">
-                                                            <div className="w-4 h-4 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[7px] font-bold">{s.name[0]}</div>
-                                                            <span className="text-zinc-300 truncate">{s.name}</span>
-                                                        </div>
-                                                    )) : <p className="text-[9px] text-zinc-600 italic">No employees assigned</p>}
+                                                <div className="pt-2 border-t border-zinc-800/50 space-y-2">
+                                                    <p className="text-[10px] font-bold text-zinc-400 flex items-center gap-1.5 uppercase tracking-wider"><Clock size={10} /> Shift Schedules</p>
+                                                    <div className="space-y-1.5">
+                                                        {selectedEmps.length > 0 ? selectedEmps.map(s => {
+                                                            const timing = getExpectedTiming(s.id);
+                                                            return (
+                                                                <div key={s.id} className="flex items-center justify-between gap-2 bg-zinc-900/50 border border-zinc-800/50 p-2 rounded-xl group hover:border-primary/20 transition-all">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="w-5 h-5 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-[8px] font-bold">{s.name[0]}</div>
+                                                                        <div className="min-w-0">
+                                                                            <p className="text-[10px] text-zinc-200 font-bold leading-none truncate">{s.name}</p>
+                                                                            <p className="text-[8px] text-zinc-500 mt-1 uppercase tracking-tighter">{timing.location}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-right shrink-0">
+                                                                        <p className="text-[9px] font-mono font-bold text-primary/80">{timing.in}</p>
+                                                                        <p className="text-[9px] font-mono text-zinc-500">{timing.out}</p>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        }) : <p className="text-[9px] text-zinc-600 italic px-2">No employees assigned</p>}
+                                                    </div>
                                                 </div>
                                             </motion.div>
                                         )}
@@ -167,6 +182,7 @@ export default function LocationsPage() {
                         selectedCollege={selectedCollege}
                         setSelectedCollege={setSelectedCollege}
                         mapRef={(map: any) => { mapRef.current = map; }}
+                        employees={employees}
                     />
                 </div>
             </div>

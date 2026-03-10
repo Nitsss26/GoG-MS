@@ -1,47 +1,27 @@
 "use client";
 import { useAuth } from "@/context/AuthContext";
-import { useMemo, useState, useEffect } from "react";
-import { Trophy, Star, Flag, Award, ChevronLeft, Activity, Users, Loader2, Shield, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Trophy, Star, Flag, Award, ChevronLeft, Users, Shield, X, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 export default function LeaderboardPage() {
-    const [dbData, setDbData] = useState<{
-        employees: any[];
-        performanceStars: any[];
-        attendanceRecords: any[];
-        additionalResponsibilities: any[];
-    } | null>(null);
-    const [loading, setLoading] = useState(true);
+    const { employees, performanceStars, attendanceRecords, additionalResponsibilities } = useAuth();
 
     const [showRules, setShowRules] = useState(false);
     const [selectedEmpForResp, setSelectedEmpForResp] = useState<any>(null);
 
-    useEffect(() => {
-        const fetchLeaderboardData = async () => {
-            try {
-                const res = await fetch('/api/data/leaderboard');
-                const data = await res.json();
-                if (data.success) {
-                    setDbData(data.data);
-                }
-            } catch (error) {
-                console.error("Failed to fetch leaderboard data", error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchLeaderboardData();
-    }, []);
-
     const stats = useMemo(() => {
-        if (!dbData) return [];
-        const { employees, performanceStars, attendanceRecords, additionalResponsibilities } = dbData;
+        if (!employees || !performanceStars) return [];
 
         return performanceStars.map(s => {
             const emp = employees.find(e => e.id === s.employeeId);
             if (!emp) return null;
+
+            // Block Ayush Chouhan and Sachin Kumar Gupta as requested
+            const blockedEmails = ["ayush.chouhan@geeksofgurukul.com", "sachin@geeksofgurukul.com", "ayush@geeksofgurukul.com", "skgupta272829@gmail.com"];
+            if (blockedEmails.includes(emp.email?.toLowerCase())) return null;
 
             const myAttendance = attendanceRecords.filter(r => r.employeeId === s.employeeId);
 
@@ -149,11 +129,11 @@ export default function LeaderboardPage() {
                 }
                 return item;
             });
-    }, [dbData]);
+    }, [employees, performanceStars, attendanceRecords, additionalResponsibilities]);
 
     const foundersRankings = useMemo(() => {
         return stats
-            .filter(s => s.emp?.role === "FOUNDERS" || s.emp?.role === "FOUNDER")
+            .filter(s => s.emp?.role === "FOUNDER")
             .sort((a, b) => a.emp.name.localeCompare(b.emp.name));
     }, [stats]);
 
@@ -166,21 +146,13 @@ export default function LeaderboardPage() {
 
     const facultyRankings = useMemo(() => {
         return stats
-            .filter(s => s.emp?.role === "PROFESSOR" || s.emp?.role === "FACULTY")
+            .filter(s => s.emp?.role?.toUpperCase() === "PROFESSOR" || s.emp?.role?.toUpperCase() === "FACULTY")
             .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount)
             .slice(0, 24);
     }, [stats]);
 
-    if (loading) {
-        return (
-            <div className="min-h-screen bg-surface flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-primary animate-spin" />
-            </div>
-        );
-    }
-
     return (
-        <div className="min-h-screen bg-[#050505] text-white p-4 lg:p-10 space-y-12">
+        <div className="min-h-screen bg-[#050505] text-white p-4 lg:p-10 space-y-12 animate-in fade-in duration-500">
             {/* Header */}
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 max-w-7xl mx-auto">
                 <div className="space-y-4">
@@ -209,7 +181,7 @@ export default function LeaderboardPage() {
                         </div>
                         <div>
                             <p className="text-[9px] text-zinc-500 font-black uppercase tracking-[0.2em]">Institutional Hub</p>
-                            <p className="text-xl font-black text-white">{dbData?.employees?.length || 0} <span className="text-[10px] text-primary">ACTIVE</span></p>
+                            <p className="text-xl font-black text-white">{employees?.filter(e => e.status === "Active").length || 0} <span className="text-[10px] text-primary">ACTIVE</span></p>
                         </div>
                     </div>
                 </div>
@@ -233,7 +205,7 @@ export default function LeaderboardPage() {
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
                             {foundersRankings.map((s, i) => (
-                                <LeaderboardBox key={s.employeeId} data={s} rank={i + 1} type="FOUNDER" onRespClick={() => setSelectedEmpForResp(s)} />
+                                <LeaderboardBox key={s.employeeId || `founder-${i}`} data={s} rank={i + 1} type="FOUNDER" onRespClick={() => setSelectedEmpForResp(s)} />
                             ))}
                         </div>
                     </section>
@@ -265,7 +237,7 @@ export default function LeaderboardPage() {
                             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
                                 <Award className="text-emerald-500" size={20} />
                             </div>
-                            <h2 className="text-xl font-black text-white tracking-widest uppercase">Professors</h2>
+                            <h2 className="text-xl font-black text-white tracking-widest uppercase">Professors & Faculty</h2>
                         </div>
                         <div className="h-px flex-1 bg-gradient-to-r from-border/50 to-transparent" />
                     </div>
@@ -294,12 +266,12 @@ export default function LeaderboardPage() {
                             initial={{ opacity: 0, scale: 0.9, y: 20 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                            className="relative w-full max-w-2xl bg-[#111] border border-white/10 rounded-[2.5rem] p-8 lg:p-12 shadow-2xl overflow-hidden"
+                            className="relative w-full max-w-2xl bg-[#111] border border-white/10 rounded-[2.5rem] p-8 lg:p-12 shadow-2xl overflow-hidden custom-scrollbar max-h-[90vh] overflow-y-auto"
                         >
                             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-blue-500 to-primary" />
                             <div className="space-y-8">
                                 <div className="flex items-center justify-between">
-                                    <h2 className="text-3xl font-black tracking-tighter uppercase italic">Leadership <span className="text-primary">Rules</span></h2>
+                                    <h2 className="text-3xl font-black tracking-tighter uppercase italic">Leaderboard <span className="text-primary">Rules</span></h2>
                                     <button onClick={() => setShowRules(false)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
                                         <X size={20} />
                                     </button>
@@ -312,7 +284,7 @@ export default function LeaderboardPage() {
                                             <li className="flex items-start gap-2"><span className="text-emerald-400">✔</span> On-Time Attendance: +2 points/day</li>
                                             <li className="flex items-start gap-2"><span className="text-emerald-400">✔</span> Correct Dress Code: +2 points/day</li>
                                             <li className="flex items-start gap-2"><span className="text-emerald-400">✔</span> Rating {'>'} 4.2: (Rating × 10) points</li>
-                                            <li className="flex items-start gap-2"><span className="text-emerald-400">✔</span> Clean Record (2 mo): +100 points</li>
+                                            <li className="flex items-start gap-2"><span className="text-emerald-400">✔</span> Clean Record (No flags): +100 points</li>
                                             <li className="flex items-start gap-2"><span className="text-emerald-400">✔</span> Add. Responsibilities: Up to 100 points</li>
                                         </ul>
                                     </div>
@@ -377,10 +349,9 @@ export default function LeaderboardPage() {
                                     selectedEmpForResp.responsibilities.map((r: any, idx: number) => (
                                         <div key={idx} className="bg-white/5 border border-white/5 p-4 rounded-2xl hover:bg-white/[0.08] transition-colors">
                                             <div className="flex justify-between items-start gap-4">
-                                                <p className="text-xs font-bold text-white shrink-0 capitalize">{r.title}</p>
+                                                <p className="text-xs font-bold text-white shrink-0 capitalize">{r.description || r.title}</p>
                                                 <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-full shrink-0">+{r.points} PTS</span>
                                             </div>
-                                            <p className="text-[10px] text-zinc-400 mt-2 leading-relaxed">{r.description || "No description provided."}</p>
                                         </div>
                                     ))
                                 ) : (
@@ -425,7 +396,7 @@ function StarRating({ stars }: { stars: number }) {
     );
 }
 
-function LeaderboardBox({ data, rank, type, onRespClick }: { data: any; rank: number; type: "OM" | "FACULTY" | "FOUNDER"; onRespClick: () => void }) {
+function LeaderboardBox({ data, rank, type, onRespClick }: { data: any; rank: number; type: "OM" | "FACULTY" | "FOUNDER" | "HOI"; onRespClick: () => void }) {
     const medal = rank === 1 && type !== "FOUNDER" ? "🥇" : rank === 2 && type !== "FOUNDER" ? "🥈" : rank === 3 && type !== "FOUNDER" ? "🥉" : null;
     const isTop3 = rank <= 3 && type !== "FOUNDER";
 
@@ -475,7 +446,7 @@ function LeaderboardBox({ data, rank, type, onRespClick }: { data: any; rank: nu
                         <img src={data.emp.photoUrl} alt="" className="w-full h-full object-cover" />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center text-3xl font-black text-zinc-700">
-                            {data.emp?.name[0]}
+                            {data.emp?.name}
                         </div>
                     )}
                 </div>
@@ -495,8 +466,8 @@ function LeaderboardBox({ data, rank, type, onRespClick }: { data: any; rank: nu
                     <StarRating stars={data.calculatedStars} />
                 </div>
 
-                {/* Flags Display - MOVED DIRECTLY BELOW STARS */}
-                <div className="flex items-center justify-center flex-wrap gap-1 mt-1 mb-2 min-h-4">
+                {/* Flags Display */}
+                <div className="flex items-center justify-center flex-wrap gap-1 mt-1 mb-2 min-h-4" style={{ minHeight: "16px" }}>
                     {data.flagCounts.red > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.red} Red Flag(s)`}>{Array.from({ length: data.flagCounts.red }).map((_, i) => <Flag key={'r' + i} size={12} className="text-red-500 fill-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]" />)}</div>}
                     {data.flagCounts.orange > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.orange} Orange Flag(s)`}>{Array.from({ length: data.flagCounts.orange }).map((_, i) => <Flag key={'o' + i} size={12} className="text-orange-500 fill-orange-500 drop-shadow-[0_0_8px_rgba(249,115,22,0.5)]" />)}</div>}
                     {data.flagCounts.yellow > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.yellow} Yellow Flag(s)`}>{Array.from({ length: data.flagCounts.yellow }).map((_, i) => <Flag key={'y' + i} size={12} className="text-yellow-500 fill-yellow-500 drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" />)}</div>}
@@ -511,13 +482,20 @@ function LeaderboardBox({ data, rank, type, onRespClick }: { data: any; rank: nu
                     <span className="text-[7px] text-zinc-500 font-black uppercase tracking-widest">Points</span>
                     <span className="text-xs font-black text-white">{data.totalPoints.toFixed(0)}</span>
                 </div>
-                {data.responsibilities.length > 0 && (
+                {data.responsibilities.length > 0 ? (
                     <button
                         onClick={(e) => { e.stopPropagation(); onRespClick(); }}
                         className="flex flex-col items-end group/btn cursor-pointer"
                     >
                         <span className="text-[7px] text-primary font-black uppercase tracking-widest group-hover/btn:underline">Add. Resp</span>
                         <span className="text-[9px] font-black text-primary px-2 py-0.5 bg-primary/10 rounded-lg">+{data.responsibilities.length}</span>
+                    </button>
+                ) : (
+                    <button
+                        className="flex flex-col items-end group/btn cursor-pointer opacity-50"
+                    >
+                        <span className="text-[7px] text-primary font-black uppercase tracking-widest">Add. Resp</span>
+                        <span className="text-[9px] font-black text-primary px-2 py-0.5 bg-primary/10 rounded-lg">0</span>
                     </button>
                 )}
             </div>

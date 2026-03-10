@@ -26,8 +26,15 @@ import { cn } from "@/lib/utils";
 export default function HierarchyPage() {
     const { orgHierarchy } = useAuth();
     const [searchQuery, setSearchQuery] = useState("");
-    const [zoomScale, setZoomScale] = useState(1);
+    const [zoomScale, setZoomScale] = useState(0.8);
     const containerRef = useRef<HTMLDivElement>(null);
+    const [canvasPos, setCanvasPos] = useState({ x: 0, y: 0 });
+    const dragControls = useRef(null);
+
+    const recenter = () => {
+        setCanvasPos({ x: 0, y: 0 });
+        setZoomScale(0.8);
+    };
 
     const cSuiteNodes = orgHierarchy.filter(node => node.level === "C-Suite");
 
@@ -75,16 +82,16 @@ export default function HierarchyPage() {
                 </div>
             )}
 
-            <div className="flex justify-center pt-8 overflow-hidden min-h-[600px] h-[75vh] pb-20 cursor-grab active:cursor-grabbing touch-none relative bg-zinc-950/50 rounded-3xl border border-zinc-900" ref={containerRef}>
-                {/* Floating Zoom Controls */}
+            <div className="flex justify-center pt-8 overflow-hidden min-h-[600px] h-[80vh] pb-20 cursor-grab active:cursor-grabbing touch-none relative bg-zinc-950/50 rounded-3xl border border-zinc-900" ref={containerRef}>
+                {/* Floating Canvas Controls */}
                 <div className="fixed bottom-10 right-10 flex flex-col gap-2 z-[100]">
-                    <button onClick={() => setZoomScale(s => Math.min(s + 0.1, 2))} className="w-10 h-10 bg-zinc-900 border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl">
+                    <button onClick={() => setZoomScale(s => Math.min(s + 0.1, 2))} className="w-10 h-10 bg-zinc-950/80 backdrop-blur border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl" title="Zoom In">
                         <ZoomIn size={18} />
                     </button>
-                    <button onClick={() => setZoomScale(s => Math.max(s - 0.1, 0.4))} className="w-10 h-10 bg-zinc-900 border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl">
+                    <button onClick={() => setZoomScale(s => Math.max(s - 0.1, 0.4))} className="w-10 h-10 bg-zinc-950/80 backdrop-blur border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl" title="Zoom Out">
                         <ZoomOut size={18} />
                     </button>
-                    <button onClick={() => setZoomScale(1)} className="w-10 h-10 bg-zinc-900 border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl">
+                    <button onClick={recenter} className="w-10 h-10 bg-zinc-950/80 backdrop-blur border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl" title="Recenter View">
                         <RotateCcw size={16} />
                     </button>
                 </div>
@@ -92,12 +99,21 @@ export default function HierarchyPage() {
                 {cSuiteNodes.length > 0 && (
                     <motion.div
                         drag
-                        dragConstraints={containerRef}
-                        dragElastic={0.1}
+                        dragMomentum={false}
                         initial={false}
-                        animate={{ scale: zoomScale }}
+                        animate={{ 
+                            scale: zoomScale,
+                            x: canvasPos.x,
+                            y: canvasPos.y 
+                        }}
+                        onDragEnd={(e, info) => {
+                            setCanvasPos(prev => ({
+                                x: prev.x + info.offset.x,
+                                y: prev.y + info.offset.y
+                            }));
+                        }}
                         className="flex flex-col items-center origin-top py-20 z-10"
-                        style={{ width: "max-content", paddingLeft: "100px", paddingRight: "100px" }}
+                        style={{ width: "max-content" }}
                     >
                         <OrgTree node={cSuiteNodes[0]} allNodes={orgHierarchy} overrideRoot={cSuiteNodes} />
                     </motion.div>
@@ -115,15 +131,20 @@ function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: Or
     if (overrideRoot && node.id === overrideRoot[0].id) {
         const leadershipNodes = allNodes.filter(n => n.level === "Management");
         const hoiNodes = allNodes.filter(n => n.level === "Leadership");
+        
+        // --- MATRIX AGGREGATION ---
+        // All OMs and Faculty report to ALL HOIs now
+        const sharedOMs = allNodes.filter(n => n.level === "OM");
+        const sharedFaculty = allNodes.filter(n => n.level === "Faculty");
 
         return (
-            <div className="flex flex-col items-center gap-16 relative">
+            <div className="flex flex-col items-center gap-12 relative">
 
                 {/* Top Level Roots Container */}
-                <div className="flex gap-12 relative">
+                <div className="flex gap-4 relative">
                     {/* Horizontal Connector Line for Roots */}
                     {overrideRoot.length > 1 && (
-                        <div className="absolute -bottom-16 left-0 right-0 h-0.5 bg-zinc-700/50"
+                        <div className="absolute -bottom-8 left-0 right-0 h-0.5 bg-zinc-700/40"
                             style={{ width: `calc(100% - ${100 / overrideRoot.length}%)`, left: `${50 / overrideRoot.length}%` }} />
                     )}
 
@@ -131,143 +152,112 @@ function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: Or
                         <div key={root.id} className="relative flex flex-col items-center">
                             <NodeCard node={root} hasChildren />
                             {/* Vertical Line Drop from Root to Connector */}
-                            <div className="w-0.5 h-16 bg-zinc-700/50" />
+                            <div className="w-0.5 h-8 bg-zinc-700/40" />
                         </div>
                     ))}
 
                     {/* Master Vertical Line Dropping To Next Level */}
-                    <div className="absolute -bottom-32 left-1/2 -translate-x-1/2 w-0.5 h-16 bg-zinc-700/50" />
+                    <div className="absolute -bottom-16 left-1/2 -translate-x-1/2 w-0.5 h-8 bg-zinc-700/40" />
                 </div>
 
-                <div className="h-16" /> {/* Spacer for lines */}
+                <div className="h-8" /> {/* Spacer for lines */}
 
                 {/* Horizontal line connecting all Leadership nodes */}
                 {(leadershipNodes.length > 0) && (
-                    <div className="relative flex gap-32 relative">
+                    <div className="relative flex gap-12 relative">
                         {leadershipNodes.length > 1 && (
-                            <div className="absolute top-0 left-0 right-0 h-0.5 bg-zinc-700/50"
+                            <div className="absolute top-0 left-0 right-0 h-0.5 bg-zinc-700/40"
                                 style={{ width: `calc(100% - ${100 / leadershipNodes.length}%)`, left: `${50 / leadershipNodes.length}%` }} />
                         )}
 
                         {leadershipNodes.map(ln => (
                             <div key={ln.id} className="relative flex flex-col items-center">
-                                <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-0.5 h-16 bg-zinc-700/50" />
+                                <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-0.5 h-8 bg-zinc-700/40" />
                                 <NodeCard node={ln} />
-                                <div className="w-0.5 h-16 bg-zinc-700/50" />
+                                <div className="w-0.5 h-8 bg-zinc-700/40" />
                             </div>
                         ))}
-
-                        {/* If no HOIs, stop here. If HOIs, drop a master line if needed, but handled next */}
                     </div>
                 )}
 
 
-                {/* THE MATRIX BRIDGE: A shared horizontal bar for all HOIs */}
+                {/* THE MATRIX BRIDGE: Connecting all HOIs to a shared block */}
                 {hoiNodes.length > 0 && (
-                    <div className="relative flex gap-16 md:gap-32 pt-16">
-                        {/* If no leadership, we need the master drop to hit this bar */}
-                        {leadershipNodes.length === 0 && (
-                            <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-0.5 h-16 bg-zinc-700/50" />
-                        )}
+                    <div className="flex flex-col items-center relative gap-8 pt-8">
+                        {/* Horizontal Bridge Line Connecting all HOIs */}
+                        <div className="absolute top-0 left-0 right-0 flex items-center justify-center">
+                             <div className="h-0.5 bg-zinc-700/40" 
+                                style={{ 
+                                    width: `calc(100% - ${100 / hoiNodes.length}%)`, 
+                                    left: `${50 / hoiNodes.length}%` 
+                                }} />
+                        </div>
 
-                        {hoiNodes.length > 1 && (
-                            <div className="absolute top-0 left-0 right-0 h-0.5 bg-zinc-700/50"
-                                style={{ width: `calc(100% - ${100 / hoiNodes.length}%)`, left: `${50 / hoiNodes.length}%` }} />
-                        )}
+                        {/* HOI Row */}
+                        <div className="flex gap-8 items-center justify-center">
+                            {hoiNodes.map(hn => (
+                                <div key={hn.id} className="relative flex flex-col items-center">
+                                    {/* Vertical line up to bridge/leadership */}
+                                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-0.5 h-8 bg-zinc-700/40" />
+                                    <NodeCard node={hn} />
+                                    {/* Vertical line down to Shared Matrix Bar */}
+                                    <div className="w-0.5 h-8 bg-zinc-700/40" />
+                                </div>
+                            ))}
+                        </div>
 
-                        {hoiNodes.map(hn => (
-                            <div key={hn.id} className="relative">
-                                <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-0.5 h-16 bg-zinc-700/50" />
-                                <OrgTree node={hn} allNodes={allNodes} />
-                            </div>
-                        ))}
+                        {/* SHARED MATRIX CONNECTOR BAR */}
+                        <div className="relative w-full flex justify-center">
+                            <div className="absolute top-0 left-0 right-0 h-0.5 bg-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
+                                style={{ 
+                                    width: `calc(100% - ${100 / hoiNodes.length}%)`, 
+                                    left: `${50 / hoiNodes.length}%` 
+                                }} />
+                            {/* Master central drop from bridge to reportees */}
+                            <div className="w-0.5 h-8 bg-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)]" />
+                        </div>
+
+                        {/* THE SHARED REPORTEES BLOCK (Centered & Symmetric) */}
+                        <div className="flex lg:flex-row flex-col gap-8 items-start relative pb-20">
+                            {/* Operation Managers Group */}
+                            {sharedOMs.length > 0 && (
+                                <div className="relative border border-indigo-500/20 bg-indigo-500/5 rounded-2xl p-4 pt-8 flex flex-col items-center shadow-[0_10px_40px_rgba(79,70,229,0.05)]">
+                                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-0.5 h-8 bg-zinc-700/40" />
+                                    <div className="absolute -top-3 px-3 py-1 bg-zinc-950 border border-indigo-500/30 text-indigo-400 text-[8px] font-black uppercase tracking-widest rounded-full shadow-lg z-20">Operation Managers</div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {sharedOMs.map(child => (
+                                            <div key={child.id} className="relative">
+                                                <NodeCard node={child} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Faculty Group */}
+                            {sharedFaculty.length > 0 && (
+                                <div className="relative border border-rose-500/20 bg-rose-500/5 rounded-2xl p-4 pt-8 flex flex-col items-center shadow-[0_10px_40px_rgba(244,63,94,0.05)]">
+                                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-0.5 h-8 bg-zinc-700/40" />
+                                    <div className="absolute -top-3 px-3 py-1 bg-zinc-950 border border-rose-500/30 text-rose-400 text-[8px] font-black uppercase tracking-widest rounded-full shadow-lg z-20">Professors & Faculty</div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                                        {sharedFaculty.map(child => (
+                                            <div key={child.id} className="relative">
+                                                <NodeCard node={child} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>
         );
     }
 
-    // Skip rendering if this is a C-Suite that isn't the primary one handled by overrideRoot
-    if (node.level === "C-Suite" && !overrideRoot) return null;
-
-    // Default recursive rendering for HOI -> OM / Faculty
-    const omChildren = children.filter(c => c.level === "OM");
-    const facultyChildren = children.filter(c => c.level === "Faculty");
-
-    // Grouping layout if both exist
-    const showsGroupedView = isExpanded && node.level === "Leadership" && (omChildren.length > 0 || facultyChildren.length > 0);
-
-    return (
-        <div className="flex flex-col items-center gap-12 relative">
-            <div className="relative z-10">
-                <NodeCard node={node} hasChildren={children.length > 0} isExpanded={isExpanded} onToggle={() => setIsExpanded(!isExpanded)} />
-
-                {isExpanded && children.length > 0 && (
-                    <div className="absolute left-1/2 -bottom-12 w-0.5 h-12 bg-zinc-700/50 -z-10" />
-                )}
-            </div>
-
-            {showsGroupedView ? (
-                <div className="flex gap-16 relative pt-12">
-                    {/* Horizontal Connector Line mapping across both groups */}
-                    <div className="absolute top-0 left-0 right-0 flex justify-center h-0.5 bg-zinc-700/50"
-                        style={{ width: 'calc(100% - 200px)', left: '100px' }} />
-
-                    {/* Operation Managers Group */}
-                    {omChildren.length > 0 && (
-                        <div className="relative border border-indigo-500/20 bg-indigo-500/5 rounded-3xl p-6 pt-10 flex flex-col items-center">
-                            <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-0.5 h-12 bg-zinc-700/50" />
-                            <div className="absolute -top-3 px-4 py-1.5 bg-zinc-950 border border-indigo-500/30 text-indigo-400 text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg">Operation Managers</div>
-                            <div className="flex gap-8">
-                                {omChildren.map(child => (
-                                    <div key={child.id} className="relative">
-                                        <OrgTree node={child} allNodes={allNodes} />
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Faculty Group */}
-                    {facultyChildren.length > 0 && (
-                        <div className="relative border border-rose-500/20 bg-rose-500/5 rounded-3xl p-6 pt-10 flex flex-col items-center">
-                            <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-0.5 h-12 bg-zinc-700/50" />
-                            <div className="absolute -top-3 px-4 py-1.5 bg-zinc-950 border border-rose-500/30 text-rose-400 text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg">Professors & Faculty</div>
-                            <div className="flex gap-8">
-                                {facultyChildren.map(child => (
-                                    <div key={child.id} className="relative">
-                                        <OrgTree node={child} allNodes={allNodes} />
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            ) : (
-                isExpanded && children.length > 0 && (
-                    <div className="flex gap-12 relative pt-12">
-                        {/* Standard Horizontal Connector Line */}
-                        {children.length > 1 && (
-                            <div className="absolute top-0 left-0 right-0 flex justify-center">
-                                <div className="h-0.5 bg-zinc-700/50" style={{
-                                    width: `calc(100% - ${100 / children.length}%)`,
-                                    left: `${50 / children.length}%`
-                                }} />
-                            </div>
-                        )}
-
-                        {children.map((child, index) => (
-                            <div key={child.id} className="relative">
-                                {/* Vertical line to child */}
-                                <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-0.5 h-12 bg-zinc-700/50" />
-                                <OrgTree node={child} allNodes={allNodes} />
-                            </div>
-                        ))}
-                    </div>
-                )
-            )}
-        </div>
-    );
+    // If it's a leaf node that was already aggregated, return null.
+    // Otherwise, this should not be reached in the new Matrix structure.
+    return null;
 }
 
 function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
@@ -297,32 +287,32 @@ function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
         <motion.div
             layout
             className={cn(
-                "group relative bg-zinc-950 border rounded-2xl transition-all shadow-xl hover:shadow-primary/5 min-w-[260px]",
-                isCompact ? "p-3 border-zinc-800" : "p-5 border-zinc-800/80 hover:border-primary/50",
-                node.level === "C-Suite" ? "animate-pulse-slow border-amber-500/40 shadow-[0_0_30px_rgba(245,158,11,0.1)]" : ""
+                "group relative bg-zinc-950 border rounded-xl transition-all shadow-xl hover:shadow-primary/5 min-w-[210px]",
+                isCompact ? "p-2 border-zinc-800" : "p-3 border-zinc-800/80 hover:border-primary/50",
+                node.level === "C-Suite" ? "animate-pulse-slow border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.1)]" : ""
             )}
         >
             <div className={cn(
-                "absolute inset-0 bg-gradient-to-br opacity-5 rounded-2xl",
+                "absolute inset-0 bg-gradient-to-br opacity-5 rounded-xl",
                 colors[node.level]
             )} />
 
-            <div className="relative flex items-center gap-3">
+            <div className="relative flex items-center gap-2">
                 <div className={cn(
-                    "w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg border",
+                    "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-base border",
                     node.level === "C-Suite" ? "bg-amber-500/10 border-amber-500/20 text-amber-500" : "bg-zinc-900 border-zinc-800 text-primary"
                 )}>
                     {node.photoInitial}
                 </div>
                 <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 break-all">
-                        <h3 className="text-xs font-bold text-white uppercase tracking-tight line-clamp-1">{node.name}</h3>
+                    <div className="flex items-center gap-1 break-all">
+                        <h3 className="text-[10px] font-bold text-white uppercase tracking-tight line-clamp-1">{node.name}</h3>
                         {/* Mock PIP Indicator */}
                         {node.dept === "Sales" && node.level === "Faculty" && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)] animate-pulse" title="Under Performance Improvement Plan (PIP)" />
+                            <span className="w-1 h-1 rounded-full bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)] animate-pulse" title="Under Performance Improvement Plan (PIP)" />
                         )}
                     </div>
-                    <p className="text-[10px] text-zinc-400 font-medium truncate">{node.designation}</p>
+                    <p className="text-[9px] text-zinc-400 font-medium truncate">{node.designation}</p>
                 </div>
 
                 {/* Action Menu for Admin/HR */}

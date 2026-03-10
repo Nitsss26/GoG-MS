@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth, Employee } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
-import { resolveLocationToCollege, FLAG_CONFIG } from "@/lib/colleges";
+import { FLAG_CONFIG } from "@/lib/colleges";
 import { cn } from "@/lib/utils";
 import { Clock, MapPin, CheckCircle2, LogIn, LogOut, History, AlertTriangle, Camera, Upload, X, Navigation, Loader2, Image as ImageIcon, Home, FileText, Users } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -17,7 +17,7 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 export default function AttendancePage() {
-    const { user, employees, clockIn, clockOut, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests } = useAuth();
+    const { user, employees, clockIn, clockOut, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests, colleges, resolveDressCodeCheck, getExpectedTiming } = useAuth();
     const [currentTime, setCurrentTime] = useState<string | null>(null);
     const [currentDate, setCurrentDate] = useState<string | null>(null);
     const [geoStatus, setGeoStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
@@ -63,15 +63,14 @@ export default function AttendancePage() {
     const isDefaulter = (emp.dressCodeDefaults || 0) >= 3;
     const markPresentCreditsLeft = Math.max(0, 3 - (emp.markPresentUsed || 0));
 
-    const mySchedule = workSchedules.find(s => s.employeeId === user.id && s.approvedByHR);
-    const todayDay = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date().getDay()];
-    const assignedLocationId = mySchedule?.dayWise?.[todayDay]?.location || "sage-bhopal";
-    const assignedClockIn = mySchedule?.dayWise?.[todayDay]?.clockInTime || "09:00";
-    const assignedClockOut = mySchedule?.dayWise?.[todayDay]?.clockOutTime || "18:00";
+    const expected = getExpectedTiming(user.id);
+    const assignedLocationId = expected.location;
+    const assignedClockIn = expected.in;
+    const assignedClockOut = expected.out;
 
     // Resolve college from location ID
     const isWFH = assignedLocationId.toLowerCase() === "wfh";
-    const college = isWFH ? null : resolveLocationToCollege(assignedLocationId);
+    const college = isWFH ? null : colleges.find(c => c.id === assignedLocationId || c.shortName === assignedLocationId || c.name === assignedLocationId);
     const displayLocation = isWFH ? "Work From Home" : college?.shortName || assignedLocationId;
 
     const requestLocation = () => {
@@ -149,7 +148,7 @@ export default function AttendancePage() {
     const myLogs = attendanceRecords.filter(r => r.employeeId === user.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const isHRorFounder = emp.role === "HR" || emp.role === "FOUNDER";
-    const reportees = employees.filter(e => e.reportsTo === user.id);
+    const reportees = employees.filter(e => Array.isArray(e.reportsTo) ? e.reportsTo.includes(user.id) : e.reportsTo === user.id);
     const showsTeamRoster = isHRorFounder || reportees.length > 0;
 
     // Choose which employees to display in the roster
@@ -257,16 +256,35 @@ export default function AttendancePage() {
                                             {record ? record.location : "—"}
                                         </td>
                                         <td className="px-4 py-3">
-                                            <div className="flex gap-1 flex-wrap">
+                                            <div className="flex flex-col gap-1.5 min-w-[120px]">
                                                 {record ? (
-                                                    Object.entries(record.flags).filter(([_, v]) => v).length > 0 ? (
-                                                        Object.entries(record.flags).filter(([_, v]) => v).map(([k]) => (
-                                                            <span key={k} className={cn("text-[8.5px] font-bold px-1.5 py-0.5 rounded-sm flex items-center gap-1", FLAG_CONFIG[k]?.color || "text-zinc-400 bg-zinc-800")}>
-                                                                {FLAG_CONFIG[k]?.emoji} {FLAG_CONFIG[k]?.label || k}
-                                                            </span>
-                                                        ))
-                                                    ) : <span className="text-[10px] text-zinc-600">Clean</span>
+                                                    <div className="flex gap-1 flex-wrap">
+                                                        {Object.entries(record.flags).filter(([_, v]) => v).length > 0 ? (
+                                                            Object.entries(record.flags).filter(([_, v]) => v).map(([k]) => (
+                                                                <span key={k} className={cn("text-[8.5px] font-bold px-1.5 py-0.5 rounded-sm flex items-center gap-1", FLAG_CONFIG[k]?.color || "text-zinc-400 bg-zinc-800")}>
+                                                                    {FLAG_CONFIG[k]?.emoji} {FLAG_CONFIG[k]?.label || k}
+                                                                </span>
+                                                            ))
+                                                        ) : <span className="text-[10px] text-zinc-600">Clean</span>}
+                                                    </div>
                                                 ) : <span className="text-[10px] text-zinc-600">—</span>}
+
+                                                {isHRorFounder && record?.dressCodeImageUrl && record.dressCodeStatus === "Pending" && (
+                                                    <div className="flex gap-1 mt-1">
+                                                        <button
+                                                            onClick={() => resolveDressCodeCheck(record.id, "Approved")}
+                                                            className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded-sm hover:bg-emerald-500/30 font-bold"
+                                                        >
+                                                            ✓ Approve Dress
+                                                        </button>
+                                                        <button
+                                                            onClick={() => resolveDressCodeCheck(record.id, "Rejected")}
+                                                            className="text-[8px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-sm hover:bg-red-500/30 font-bold"
+                                                        >
+                                                            ✗ Reject
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -279,6 +297,8 @@ export default function AttendancePage() {
                     </div>
                 </div>
             )}
+
+
 
 
             <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-4">
@@ -526,6 +546,39 @@ export default function AttendancePage() {
                             ))}
                         </tbody></table>
                 </div>
+            </div>
+
+            {/* Fines & Penalties Section */}
+            <div className="bg-zinc-900/80 border border-red-500/20 rounded-2xl p-5 space-y-4">
+                <div className="flex justify-between items-center pb-2 border-b border-zinc-800/50">
+                    <div className="flex items-center gap-2">
+                        <AlertTriangle size={18} className="text-red-400" />
+                        <h2 className="text-sm font-bold text-white">Fines & Penalties</h2>
+                    </div>
+                    <div className="px-3 py-1 bg-red-500/10 border border-red-500/20 rounded-lg">
+                        <span className="text-xs font-bold text-red-400">Total Outstanding: ₹{emp.fines?.total || 0}</span>
+                    </div>
+                </div>
+
+                {emp.fines?.records && emp.fines.records.length > 0 ? (
+                    <div className="space-y-2">
+                        {emp.fines.records.map((fine, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-3 bg-zinc-800/30 rounded-xl border border-zinc-700/50">
+                                <div className="space-y-0.5">
+                                    <p className="text-xs font-bold text-white">{fine.reason}</p>
+                                    <p className="text-[10px] text-zinc-500">{fine.date}</p>
+                                </div>
+                                <span className="text-xs font-black text-red-400">₹{fine.amount}</span>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="py-4 text-center">
+                        <CheckCircle2 size={24} className="mx-auto text-green-500/30 mb-2" />
+                        <p className="text-xs text-zinc-500 italic">No fines or penalties on record. Keep it up!</p>
+                    </div>
+                )}
+                <p className="text-[9px] text-zinc-600 italic">Note: Fines are automatically deducted from the monthly payout. For disputes, please raise a ticket.</p>
             </div>
         </div>
     );

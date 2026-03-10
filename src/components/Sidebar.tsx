@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Users, Calendar, LogOut, ShieldCheck, User, Clock,
     Briefcase, Award, Network, Megaphone, Ticket, Receipt,
     FileText, CalendarCheck, AlertTriangle, UserCog, Star, MapPin, ClipboardList,
-    Crown, Bell, Activity, Flag, ShieldAlert, Trophy
+    Crown, Bell, Activity, Flag, ShieldAlert, Trophy, TrendingUp
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -35,7 +35,9 @@ const managerMenu = [
     { label: "Report Misbehaviour", icon: AlertTriangle, path: "/manager/misbehaviour" },
     { label: "Ratings", icon: Star, path: "/manager/ratings" },
     { label: "Work Location", icon: MapPin, path: "/manager/work-location" },
+    { label: "Bi-Weekly Progress", icon: TrendingUp, path: "/management/bi-weekly" },
     { label: "Holidays", icon: CalendarCheck, path: "/manager/holidays" },
+    { label: "Attendance Override", icon: ClipboardList, path: "/manager/attendance-override" },
     { label: "Locations Map", icon: MapPin, path: "/locations" },
 ];
 
@@ -103,7 +105,6 @@ export default function Sidebar() {
     const { user, logout, getMyNotifications } = useAuth();
     const pathname = usePathname();
     const role = user?.role as Role;
-    const emp = user as any;
     const unreadCount = getMyNotifications().filter(n => !n.read).length;
 
     const roleStyle = role ? ROLE_COLORS[role] : { bg: "bg-zinc-800", text: "text-zinc-400", label: "Guest" };
@@ -112,9 +113,14 @@ export default function Sidebar() {
     return (
         <aside className="w-56 h-screen bg-[#0a0a0b] border-r border-zinc-800/50 flex flex-col py-5 px-3 shrink-0">
             <div className="flex items-center gap-2.5 px-3 mb-8">
-                <div className="w-7 h-7 bg-primary rounded-md flex items-center justify-center text-primary-foreground text-xs font-bold">G</div>
+                {/* <div className="w-7 h-7 bg-primary rounded-md flex items-center justify-center text-primary-foreground text-xs font-bold">G</div> */}
+                <img
+                    src="https://i.ibb.co/qYQkmMDR/unnamed-1.png"
+                    alt="GOG Logo"
+                    className="w-7 h-7 rounded-md object-contain"
+                />
                 <div>
-                    <h2 className="text-sm font-bold text-white leading-none">GoG OMS</h2>
+                    <h2 className="text-sm font-bold text-white leading-none">GOG OMS</h2>
                     <p className="text-[9px] text-zinc-500 mt-0.5">Management System</p>
                 </div>
             </div>

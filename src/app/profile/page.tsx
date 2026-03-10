@@ -13,9 +13,11 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function ProfilePage() {
-    const { user, updateProfile } = useAuth();
+    const { user, updateProfile, attendanceRecords } = useAuth();
     const [uploading, setUploading] = useState(false);
     const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
+    const [selectedMonth, setSelectedMonth] = useState(new Date().toLocaleString('en-US', { month: 'long' }));
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     if (!user) return null;
@@ -126,13 +128,54 @@ export default function ProfilePage() {
 
                     {/* Quick Stats / Metrics */}
                     <div className="bg-[#0d0f12]/40 backdrop-blur-3xl border border-white/[0.08] rounded-3xl p-6">
-                        <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                            Performance Metrics
-                        </h3>
-                        <div className="space-y-3">
-                            <MetricRow label="Attendance Credits" value={`${emp.chancesRemaining}/3`} color="emerald" />
-                            <MetricRow label="Mark Present Used" value={emp.markPresentUsed || 0} color="amber" />
-                            <MetricRow label="Dress Code Flags" value={emp.dressCodeDefaults || 0} color="red" />
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                                Performance Matrix
+                            </h3>
+                            <div className="flex gap-2">
+                                <select 
+                                    className="bg-zinc-800 border border-zinc-700/50 rounded-lg px-2 py-1 text-[9px] text-zinc-400 outline-none cursor-pointer"
+                                    value={selectedYear}
+                                    onChange={(e) => setSelectedYear(e.target.value)}
+                                >
+                                    <option value="2026">2026</option>
+                                    <option value="2025">2025</option>
+                                </select>
+                                <select 
+                                    className="bg-zinc-800 border border-zinc-700/50 rounded-lg px-2 py-1 text-[9px] text-zinc-400 outline-none cursor-pointer"
+                                    value={selectedMonth}
+                                    onChange={(e) => setSelectedMonth(e.target.value)}
+                                >
+                                    {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map(m => (
+                                        <option key={m} value={m}>{m}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            {(() => {
+                                const monthIndex = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].indexOf(selectedMonth);
+                                const filteredAttendance = attendanceRecords.filter(r => {
+                                    if (r.employeeId !== emp.id) return false;
+                                    const date = new Date(r.date);
+                                    return date.getFullYear().toString() === selectedYear && date.getMonth() === monthIndex;
+                                });
+
+                                return (
+                                    <>
+                                        <MetricRow label="Attendance Credits" value={`${emp.chancesRemaining}/3`} color="emerald" />
+                                        <MetricRow label="Mark Present Used" value={emp.markPresentUsed || 0} color="amber" />
+                                        <div className="grid grid-cols-2 gap-2 mt-4">
+                                            <MetricRow label="Late" value={filteredAttendance.filter(r => r.flags?.late).length} color="red" />
+                                            <MetricRow label="Dress Code" value={filteredAttendance.filter(r => r.flags?.dressCode).length} color="red" />
+                                            <MetricRow label="Misconduct" value={filteredAttendance.filter(r => r.flags?.misconduct).length} color="red" />
+                                            <MetricRow label="Meeting" value={filteredAttendance.filter(r => r.flags?.meetingAbsent).length} color="red" />
+                                            <MetricRow label="Performance" value={filteredAttendance.filter(r => r.flags?.performance).length} color="red" />
+                                            <MetricRow label="Location" value={filteredAttendance.filter(r => r.flags?.locationDiff).length} color="red" />
+                                        </div>
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>
@@ -147,7 +190,8 @@ export default function ProfilePage() {
                         <InfoRow icon={<Building size={14} />} label="Department" value={emp.dept} />
                         <InfoRow icon={<GraduationCap size={14} />} label="Corporate Node" value={emp.location} />
                         <InfoRow icon={<Shield size={14} />} label="Designation" value={emp.designation} />
-                        <InfoRow icon={<CalendarIcon size={14} />} label="Onboarding Date" value={emp.joiningDate} />
+                        <InfoRow icon={<CalendarIcon size={14} />} label="Onboarding Date" value={emp.joiningDate || "01-01-2024"} />
+                        <InfoRow icon={<Briefcase size={14} />} label="Tech Lead Tenure" value={emp.designationDate || "01-12-2025"} />
                     </Section>
 
                     {/* Section: Bank Details */}

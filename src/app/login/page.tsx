@@ -11,7 +11,7 @@ const ROLE_OPTIONS = [
     { key: "AD", label: "Associate Director (AD)" },
     { key: "TL", label: "Tech Lead (TL)" },
     { key: "HOI", label: "Head of Institute (HOI)" },
-    { key: "OM", label: "Operations Manager (OM)" },
+    { key: "OM", label: "Operations Manager / Growth Manager" },
     { key: "PROFESSOR", label: "Academic Faculty / Professor" },
 ];
 
@@ -165,7 +165,7 @@ export default function LoginPage() {
                         <form onSubmit={handleLogin} className="space-y-4 lg:space-y-6">
                             {/* Access Tier */}
                             <div className="space-y-2">
-                                <label className="text-[9px] lg:text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1 opacity-80">Institutional Access Tier</label>
+                                <label className="text-[9px] lg:text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1 opacity-80">Organisation Access Tier</label>
                                 <div className="relative group">
                                     <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#10b981]">
                                         <LayoutDashboard size={16} />
@@ -185,7 +185,7 @@ export default function LoginPage() {
 
                             {/* Institutional Email */}
                             <div className="space-y-2">
-                                <label className="text-[9px] lg:text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1 opacity-80">Institutional Email</label>
+                                <label className="text-[9px] lg:text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1 opacity-80">Organisation Email</label>
                                 <div className="relative group">
                                     <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-[#10b981]">
                                         <User size={16} />

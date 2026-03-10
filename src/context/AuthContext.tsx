@@ -17,6 +17,7 @@ import {
     getWorkScheduleTemplate,
     getHolidayTemplate,
     getRatingTemplate,
+    getBirthdayTemplate,
     getAnnouncementTemplate,
     getSOPUpdateTemplate
 } from "@/lib/mail";
@@ -49,9 +50,20 @@ export interface Employee extends User {
     phone?: string;
     address?: string;
     chancesRemaining: number;
-    reportsTo?: string;
+    reportsTo?: string | string[];
     managerLevel?: string;
     password?: string;
+    // Database Fields
+    fines?: {
+        total: number;
+        records: { amount: number; reason: string; date: string; }[];
+    };
+    biWeeklyScores?: {
+        score: number;
+        period: string;
+        date: string;
+        points: number;
+    }[];
     // Bank Details
     bankAccountName?: string;
     bankAccountNumber?: string;
@@ -82,6 +94,7 @@ export interface Employee extends User {
     // Metrics
     markPresentUsed?: number;
     dressCodeDefaults?: number;
+    designationDate?: string;
     // Legacy Compatibility
     education?: any[];
     experience?: any[];
@@ -196,62 +209,81 @@ export interface AssetRequest { id: string; employeeId: string; employeeName: st
 
 // ─── INITIAL DATA ───
 const INITIAL_EMPLOYEES: Employee[] = [
-    // ─── FOUNDERS (Superadmins) ───
-    { id: "FND001", name: "CEO", email: "niteshduttmishra@geeksofgurukul.com", role: "FOUNDER", isOnboarded: true, dept: "C-Suite", designation: "Chief Executive Officer", status: "Active", joiningDate: "2023-01-01", salary: 500000, location: "Bhopal", dateOfBirth: "1980-01-15", phone: "9000000001", gender: "Male", bloodGroup: "O+", chancesRemaining: 3 },
-    { id: "FND002", name: "CTO", email: "cto@gog.com", role: "FOUNDER", isOnboarded: true, dept: "C-Suite", designation: "Chief Technology Officer", status: "Active", joiningDate: "2023-01-01", salary: 450000, location: "Bhopal", dateOfBirth: "1982-05-20", phone: "9000000002", gender: "Male", bloodGroup: "A+", chancesRemaining: 3 },
-    { id: "FND003", name: "COO", email: "coo@gog.com", role: "FOUNDER", isOnboarded: true, dept: "C-Suite", designation: "Chief Operating Officer", status: "Active", joiningDate: "2023-01-01", salary: 450000, location: "Bhopal", dateOfBirth: "1983-08-10", phone: "9000000003", gender: "Male", bloodGroup: "B+", chancesRemaining: 3 },
-    // ─── HR ───
-    { id: "HR001", name: "Vivek Yadav", email: "vivek@gog.com", role: "HR", isOnboarded: true, dept: "HR", designation: "HR Manager", status: "Active", joiningDate: "2024-03-01", salary: 95000, location: "Bhopal", dateOfBirth: "1992-05-15", phone: "9876543212", gender: "Male", bloodGroup: "A+", reportsTo: undefined, panNumber: "VYVPD5678G", aadhaarNumber: "2345-6789-0123", bankName: "SBI", accountNumber: "30100987654321", ifscCode: "SBIN0005678", education: [{ degree: "MBA HR", institution: "XLRI", yearOfPassing: "2016", percentage: "82%" }], chancesRemaining: 3 },
-    // ─── AD ───
-    { id: "AD001", name: "Raj Kumar Sahoo", email: "raj@gog.com", role: "AD", isOnboarded: true, dept: "Management", designation: "Associate Director", status: "Active", joiningDate: "2024-01-15", salary: 150000, location: "Bhopal", dateOfBirth: "1985-06-12", phone: "9876543210", gender: "Male", bloodGroup: "O+", managerLevel: "AD", reportsTo: undefined, panNumber: "ABCDE1234F", aadhaarNumber: "1234-5678-9012", bankName: "HDFC Bank", accountNumber: "50100123456789", ifscCode: "HDFC0001234", education: [{ degree: "MBA", institution: "IIM Indore", yearOfPassing: "2010", percentage: "78%" }], experience: [{ company: "TCS", role: "Manager", duration: "5 years", lastSalary: 120000 }], chancesRemaining: 3 },
-    // ─── TL ───
-    { id: "TL001", name: "Nitesh", email: "nitesh@gog.com", role: "TL", isOnboarded: true, dept: "Engineering", designation: "Tech Lead", status: "Active", joiningDate: "2024-02-10", salary: 140000, location: "Bhopal", dateOfBirth: "1998-12-05", phone: "9876543211", gender: "Male", bloodGroup: "B+", managerLevel: "TL", reportsTo: undefined, chancesRemaining: 3 },
-    // ─── HOIs ───
-    { id: "HOI001", name: "Ayush Chauhan", email: "ayush@gog.com", role: "HOI", isOnboarded: true, dept: "Academics", designation: "Head of Institute", status: "Active", joiningDate: "2024-02-01", salary: 85000, location: "Bhopal", dateOfBirth: "1996-03-10", phone: "9876543213", gender: "Male", bloodGroup: "AB+", managerLevel: "HOI", chancesRemaining: 3 },
-    { id: "HOI002", name: "Sachin Kumar Gupta", email: "sachin@gog.com", role: "HOI", isOnboarded: true, dept: "Admissions", designation: "Head of Institute", status: "Active", joiningDate: "2024-04-05", salary: 90000, location: "Bhopal", dateOfBirth: "1994-08-22", phone: "9876543214", gender: "Male", bloodGroup: "O-", managerLevel: "HOI", chancesRemaining: 3 },
-    { id: "HOI003", name: "Sidhartha Paikaray", email: "sidhartha@gog.com", role: "HOI", isOnboarded: true, dept: "Operations", designation: "Head of Institute", status: "Active", joiningDate: "2024-03-15", salary: 88000, location: "Bhopal", dateOfBirth: "1999-11-30", phone: "9876543215", gender: "Male", bloodGroup: "B-", managerLevel: "HOI", chancesRemaining: 3 },
-    // ─── OMs ───
-    { id: "OM001", name: "Arjun Sharma", email: "arjun@gog.com", role: "OM", isOnboarded: true, dept: "Engineering", designation: "Operations Manager", status: "Active", joiningDate: "2024-01-10", salary: 70000, location: "Bhopal", dateOfBirth: "1995-03-15", phone: "9876543216", gender: "Male", bloodGroup: "A-", reportsTo: "HOI003", chancesRemaining: 3 },
-    { id: "OM002", name: "Kavitha Nair", email: "kavitha@gog.com", role: "OM", isOnboarded: true, dept: "HR", designation: "Operations Manager", status: "Active", joiningDate: "2024-03-15", salary: 55000, location: "Bhopal", dateOfBirth: "1997-03-12", phone: "9876543217", gender: "Female", bloodGroup: "O+", reportsTo: "HOI001", chancesRemaining: 3 },
-    { id: "OM003", name: "Amit Patel", email: "amit@gog.com", role: "OM", isOnboarded: true, dept: "Product", designation: "Operations Manager", status: "Active", joiningDate: "2024-01-20", salary: 65000, location: "Bhopal", dateOfBirth: "1992-03-25", phone: "9876543218", gender: "Male", bloodGroup: "AB-", reportsTo: "HOI002", chancesRemaining: 3 },
-    // ─── FACULTY / PROFESSORS (Reporting to HOIs for location management) ───
-    { id: "FAC001", name: "Anil Kumar", email: "anil@gog.com", role: "FACULTY", isOnboarded: true, dept: "Academics", designation: "Senior Faculty", status: "Active", joiningDate: "2024-04-01", salary: 45000, location: "Bhopal", dateOfBirth: "1993-03-20", phone: "9876543219", gender: "Male", bloodGroup: "B+", reportsTo: "HOI003", panNumber: "ANILK1234H", aadhaarNumber: "3456-7890-1234", bankName: "ICICI Bank", accountNumber: "40200567890123", ifscCode: "ICIC0003456", education: [{ degree: "M.Tech", institution: "NIT Bhopal", yearOfPassing: "2018", percentage: "85%" }, { degree: "B.Tech", institution: "RGPV", yearOfPassing: "2015", percentage: "78%" }], experience: [{ company: "Infosys", role: "Software Engineer", duration: "3 years", lastSalary: 35000 }], chancesRemaining: 3 },
-    { id: "FAC002", name: "Meera Das", email: "meera@gog.com", role: "FACULTY", isOnboarded: true, dept: "Academics", designation: "Associate Faculty", status: "Active", joiningDate: "2024-05-10", salary: 38000, location: "Bhopal", dateOfBirth: "1996-01-22", phone: "9876543220", gender: "Female", bloodGroup: "A+", reportsTo: "HOI003", chancesRemaining: 3 },
-    { id: "FAC003", name: "Priya Singh", email: "priya@gog.com", role: "FACULTY", isOnboarded: true, dept: "Design", designation: "Senior Faculty", status: "Active", joiningDate: "2024-03-20", salary: 42000, location: "Bhopal", dateOfBirth: "1994-04-05", phone: "9876543221", gender: "Female", bloodGroup: "O+", reportsTo: "HOI001", chancesRemaining: 3 },
-    { id: "FAC004", name: "Rahul Das", email: "rahul@gog.com", role: "FACULTY", isOnboarded: true, dept: "Marketing", designation: "Associate Faculty", status: "Active", joiningDate: "2024-06-01", salary: 36000, location: "Bhopal", dateOfBirth: "1997-08-14", phone: "9876543222", gender: "Male", bloodGroup: "B-", reportsTo: "HOI001", chancesRemaining: 3 },
-    { id: "FAC005", name: "Sneha Reddy", email: "sneha@gog.com", role: "FACULTY", isOnboarded: true, dept: "Engineering", designation: "Senior Faculty", status: "Active", joiningDate: "2024-02-15", salary: 44000, location: "Bhopal", dateOfBirth: "1995-12-28", phone: "9876543223", gender: "Female", bloodGroup: "AB+", reportsTo: "HOI002", chancesRemaining: 3 },
-    { id: "FAC006", name: "Vikram Deshmukh", email: "vikram@gog.com", role: "FACULTY", isOnboarded: true, dept: "Engineering", designation: "Associate Faculty", status: "Active", joiningDate: "2024-07-01", salary: 35000, location: "Bhopal", dateOfBirth: "1998-03-17", phone: "9876543224", gender: "Male", bloodGroup: "O-", reportsTo: "HOI002", chancesRemaining: 3 },
+    {
+        id: "EMP127",
+        name: "Nitesh",
+        email: "nitesh@geeksofgurukul.com",
+        role: "TL",
+        photoUrl: "https://res.cloudinary.com/dwaepohvf/image/upload/v1773050409/sdgubdunfbltriwqhddr.jpg",
+        isOnboarded: true,
+        dept: "NIT",
+        designation: "TL",
+        status: "Active",
+        joiningDate: "01-01-2024",
+        salary: 50000,
+        location: "sage-bhopal",
+        dateOfBirth: "26/08/2001",
+        phone: "7009090762",
+        bloodGroup: "A-",
+        reportsTo: ["FND001"],
+        chancesRemaining: 3,
+        password: "26082001",
+        address: "H.no 31 New Mahindra Colony, Amritsar",
+        bankAccountName: "Nitesh",
+        bankAccountNumber: "506402010521771",
+        ifscCode: "UBIN0550647",
+        upiId: "niteshshr123@oksbi",
+        collegeName: "NIT",
+        fatherMotherName: "Ashok Kumar",
+        parentsPhone: "9781681700",
+        bachelorQual: "B.Tech (ECE) Major : NIT Jalandhar, B.Tech (CSE) Minor : NIT Jalandhar",
+        masterQual: "NA",
+        linkedinId: "https://www.linkedin.com/in/nitesh-shr-304539281?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=android_app",
+        resumeUrl: "https://drive.google.com/open?id=13zk7FlZ6TffLQ2QAhcvpH1hSO02xQIFr",
+        bachelorCertUrl: "https://drive.google.com/open?id=10Yk0jv-hmut2B_adfmPv6J13inXgpo_p",
+        marksheet10Url: "https://drive.google.com/open?id=1YSGezocgsOC1OgYY7hRaC2OAT1mmqunN",
+        marksheet12Url: "https://drive.google.com/open?id=1-Q_KQ_mukFANYyxoWjJuJzYJMKTvLv6w",
+        aadharCardUrl: "https://drive.google.com/open?id=1v2JZ_rk-0xvWeWsROhrX0s7whQUBYY1R",
+        panCardUrl: "https://drive.google.com/open?id=1cwyx0nhkuUUq6lolWl6LboYNh8vo-QFQ",
+        passportPhotoUrl: "https://drive.google.com/open?id=1qyVg149Y__iOMj9qfTIgbpX0wKA4x1Yd",
+        bankPassbookUrl: "https://drive.google.com/open?id=1DtXUChLNmuuFUR-Pg7hcWUl6Fe1rf2vV",
+        bachelorMarksheetUrl: "https://drive.google.com/open?id=1WP5H6us9EkJfdqdJlXaAb3gpDbTCHM2v",
+        biWeeklyScores: [
+            { period: "Feb 15 - Feb 28, 2026", score: 4.8, points: 480, date: "2026-02-28" },
+            { period: "Feb 01 - Feb 14, 2026", score: 4.5, points: 450, date: "2026-02-14" },
+            { period: "Jan 15 - Jan 31, 2026", score: 4.9, points: 490, date: "2026-01-31" }
+        ],
+        designationDate: "01-12-2025",
+        fines: {
+            total: 2500,
+            records: [
+                { amount: 100, reason: "Late Arrival", date: "2026-03-03" },
+                { amount: 100, reason: "Late Arrival", date: "2026-03-02" },
+                { amount: 200, reason: "Dress Code Violation", date: "2026-02-23" },
+                { amount: 200, reason: "Dress Code Violation", date: "2026-02-21" },
+                { amount: 100, reason: "Late Arrival", date: "2026-02-18" },
+                { amount: 100, reason: "Late Arrival", date: "2026-02-17" },
+                { amount: 100, reason: "Late Arrival", date: "2026-02-12" },
+                { amount: 200, reason: "Dress Code Violation", date: "2026-02-11" },
+                { amount: 200, reason: "Dress Code Violation", date: "2026-02-07" },
+                { amount: 100, reason: "Late Arrival", date: "2026-02-03" },
+                { amount: 100, reason: "Late Arrival", date: "2026-01-23" },
+                { amount: 100, reason: "Late Arrival", date: "2026-01-21" },
+                { amount: 200, reason: "Dress Code Violation", date: "2026-01-19" },
+                { amount: 100, reason: "Late Arrival", date: "2026-01-17" },
+                { amount: 100, reason: "Late Arrival", date: "2026-01-15" },
+                { amount: 100, reason: "Late Arrival", date: "2026-01-14" },
+                { amount: 200, reason: "Dress Code Violation", date: "2026-01-13" },
+                { amount: 100, reason: "Late Arrival", date: "2026-01-12" },
+                { amount: 100, reason: "Late Arrival", date: "2026-01-08" }
+            ]
+        }
+    }
 ];
-
-const INITIAL_NOTICES: Notice[] = [
-    { id: "n1", title: "Office Timings Updated", content: "New office hours are 9:30 AM to 6:30 PM effective from next Monday.", category: "Policy", createdBy: "Vivek Yadav", createdAt: "2024-02-20" },
-    { id: "n2", title: "Holi Celebration", content: "Office will remain closed on 14th March for Holi. Celebrations in office on 13th.", category: "Event", createdBy: "Vivek Yadav", createdAt: "2024-02-18" },
-    { id: "n3", title: "Quarterly Review Meeting", content: "All department heads please submit Q4 reports by 28th Feb.", category: "General", createdBy: "Raj Kumar Sahoo", createdAt: "2024-02-15" },
-
-    { id: "n6", title: "Mandatory Safety Training", content: "All employees must complete fire safety and first-aid training by 15th March. Schedule available on portal.", category: "Training", createdBy: "Vivek Yadav", createdAt: "2024-02-22" },
-    { id: "n7", title: "Leave Policy Reminder", content: "Planned leaves must be applied 1 day before. Emergency leaves same day. Incorrect usage leads to paycut.", category: "HR", createdBy: "Vivek Yadav", createdAt: "2024-02-17" },
-    { id: "n8", title: "System Maintenance Notice", content: "HRMS portal will be under maintenance on 2nd March from 11 PM to 5 AM. Please plan accordingly.", category: "Update", createdBy: "Raj Kumar Sahoo", createdAt: "2024-02-26" },
-];
-
-// INITIAL_HIERARCHY array removed in favor of dynamic generation
-
-const MASTER_SOP_CONTENT = `# Standard Operating Procedure (SOP) || Geeks of Gurukul
-
-**Organization:** Skillscan Edtech India Pvt. Ltd. (*Known as* **"Geeks of Gurukul"**)
-
-## 1. Purpose
-
-The purpose of this SOP is to establish clear and professional guidelines for all employees regarding dress code, attendance, conduct, leaves and other office - related policies.It aims to create a respectful, productive, and organized environment at Geeks of Gurukul.
-
-## 2. Scope
-
-This SOP applies to all employees * (which includes SDE & Professors, Operation Manager, HoI, Interns and other employees of different dept.)* at Geeks of Gurukul, including those engaged in administrative roles, academic staff, support staff etc.
-
-## 3.1 Dress Code Policy
-
+const MASTER_SOP_CONTENT = `
     ** Mandatory Dress Code **
 
-        All employees must strictly adhere to the following dress code during working hours:
+    All employees must strictly adhere to the following dress code during working hours:
 
 - ** White formal shirt with collar **
 - ** Black Pant with Belt **
@@ -508,13 +540,58 @@ const INITIAL_ATTENDANCE: AttendanceRecord[] = [
         d === "09" ? "10:15" : "09:00", "18:00", "SAGE Bhopal", { late: d === "09" })),
     // AD001 - Raj Kumar Sahoo — clean
     ...FEB26_WORKING.map((d, i) => _a(`a14_${i} `, "AD001", d, "08:50", "19:00", "SAGE Bhopal", {})),
-    // TL001 - Nitesh — has dressCode, performance
-    ...FEB26_WORKING.map((d, i) => _a(`a15_${i} `, "TL001", d,
-        d === "13" ? "10:20" : "09:00", "18:00", "SAGE Bhopal", {
-        late: d === "13",
-        dressCode: d === "21",
-        performance: d === "26",
-    })),
+    // EMP127 - Nitesh — has various flags from Jan to Mar 8
+    ...(() => {
+        const records: AttendanceRecord[] = [];
+        const generateMonth = (m: number, year: number, flagDays: Record<number, any>, leaveDays: number[] = []) => {
+            const daysInMonth = new Date(year, m, 0).getDate();
+            for (let d = 1; d <= daysInMonth; d++) {
+                const date = `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const dayOfWeek = new Date(year, m - 1, d).getDay();
+                if (dayOfWeek === 0) continue; // Skip Sundays
+
+                if (m === 3 && d > 10) continue; // Only up to March 10 for Nitesh requested logs
+
+                if (leaveDays.includes(d)) {
+                    records.push({ id: `att_n_${m}_${d}`, employeeId: "EMP127", date, clockIn: "—", clockOut: "—", location: "—", status: "On Leave", flags: {}, isApprovedByHR: true });
+                } else {
+                    const isLate = flagDays[d]?.late;
+                    const isDress = flagDays[d]?.dressCode;
+                    records.push({
+                        id: `att_n_${m}_${d}`, employeeId: "EMP127", date,
+                        clockIn: isLate ? "10:15" : "09:00",
+                        clockOut: "18:00",
+                        location: "SAGE Bhopal",
+                        status: "Present",
+                        flags: flagDays[d] || {},
+                        isApprovedByHR: true
+                    });
+                }
+            }
+        };
+
+        // JAN 2026 Flags
+        generateMonth(1, 2026, {
+            8: { late: true }, 12: { late: true }, 13: { dressCode: true }, 14: { late: true },
+            15: { late: true }, 17: { late: true }, 19: { dressCode: true, late: true }, // Multiple flags
+            21: { late: true }, 23: { late: true }
+        });
+        // FEB 2026 Flags
+        generateMonth(2, 2026, {
+            3: { late: true }, 7: { dressCode: true }, 11: { dressCode: true }, 12: { late: true },
+            17: { late: true }, 18: { late: true }, 21: { dressCode: true }, 23: { dressCode: true, misconduct: true }
+        });
+        // MAR 2026 Flags
+        generateMonth(3, 2026, {
+            2: { late: true }, 3: { late: true }, 4: { dressCode: true },
+            7: { late: true, dressCode: true },
+            8: { meetingAbsent: true, performance: true, misconduct: true },
+            9: { earlyOut: true, locationDiff: true, late: true },
+            10: { misconduct: true, dressCode: true, meetingAbsent: true, performance: true }
+        }, [6]); // March 6 as Leave
+
+        return records;
+    })(),
 ];
 
 const INITIAL_MEETINGS: MeetingRequest[] = [
@@ -558,8 +635,8 @@ const INITIAL_REIMBURSEMENTS: ReimbursementClaim[] = [
 
 const INITIAL_HOLIDAYS: Holiday[] = [
     { id: "hol1", name: "Republic Day", date: "2026-01-26", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
-    { id: "hol2", name: "Holi", date: "2026-03-10", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true, customMessage: "Happy Holi! Office remains closed. Enjoy the festival of colors!" },
-    { id: "hol3", name: "Holi (Dhuleti)", date: "2026-03-14", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
+    { id: "hol2", name: "Holi", date: "2026-03-03", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true, customMessage: "Happy Holi! Office remains closed. Enjoy the festival of colors!" },
+    { id: "hol3", name: "Holi (Dhuleti)", date: "2026-03-04", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
     { id: "hol4", name: "Ram Navami", date: "2026-04-02", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
     { id: "hol5", name: "Good Friday", date: "2026-04-03", status: "Proposed", proposedBy: "HOI001", proposedByName: "Ayush Chauhan", collegeId: "sage-bhopal" },
     { id: "hol6", name: "Independence Day", date: "2026-08-15", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
@@ -606,11 +683,149 @@ const INITIAL_SCHEDULES: WorkSchedule[] = [
     { employeeId: "OM002", employeeName: "Kavitha Nair", approvedByHR: true, assignedBy: "HOI001", assignedByName: "Ayush Chauhan", dayWise: { Mon: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "scope-global", clockInTime: "09:00", clockOutTime: "14:00" } } },
 ];
 
+const FALLBACK_TIMINGS: Record<string, { in: string; out: string }> = {
+    "BGI Kokta": { in: "09:30", out: "16:20" },
+    "BGI Mandideep": { in: "10:00", out: "16:30" },
+    "BGI Indore": { in: "09:30", out: "16:00" },
+    "OUI": { in: "09:30", out: "16:00" },
+    "SGSU": { in: "10:00", out: "16:00" },
+    "SUB": { in: "10:10", out: "15:40" },
+    "SUI": { in: "10:10", out: "15:40" },
+    "CUTM": { in: "09:30", out: "16:00" },
+    "BBSR": { in: "09:30", out: "16:00" },
+    "PKD": { in: "09:30", out: "16:00" },
+    "VZM": { in: "09:30", out: "16:00" },
+};
+
+const CUSTOM_SCHEDULE_RULES = [
+    { nameRegex: /Ravi Ranjan/i, location: "BBSR", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
+    { nameRegex: /Vipul Kumar/i, location: "BBSR", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri"] },
+    { nameRegex: /Aman/i, location: "BBSR", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
+    { nameRegex: /Verman/i, location: "BBSR", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri"] },
+    { nameRegex: /Siddharda/i, location: "BBSR", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri"] },
+    { nameRegex: /Mriganka/i, location: "PKD", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
+    { nameRegex: /Sushant/i, location: "PKD", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
+    { nameRegex: /Chandan/i, location: "PKD", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
+    { nameRegex: /Jeet/i, location: "VZM", in: "09:30", out: "16:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
+    { nameRegex: /K\. Revanth/i, location: "VZM", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
+    { nameRegex: /Ankit Singh/i, location: "SUB", in: "08:30", out: "15:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri"], wfhDays: ["Sat"] },
+    { nameRegex: /Ayush Sahu/i, location: "SUB", in: "10:15", out: "16:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri"], wfhDays: ["Sat"] },
+    { nameRegex: /Ravi Bhushan Pratap/i, location: "SGSU", in: "10:15", out: "16:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri"], wfhDays: ["Sat"] },
+    { nameRegex: /Suman Rajak/i, location: "SGSU", in: "10:15", out: "16:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri"], wfhDays: ["Sat"] },
+    { nameRegex: /Sahil Burde/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
+    { nameRegex: /Pranjul Sahu/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
+    { nameRegex: /Mukesh Kumar/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
+    { nameRegex: /Amit Singh Patel/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
+    { nameRegex: /Mayank Choudhary/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
+    { nameRegex: /Priyanka Kumawat/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
+    { nameRegex: /Sujal Verma/i, location: "BGI Mandideep", in: "10:00", out: "16:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
+    { nameRegex: /Prerna Saluja/i, location: "BGI Kokta", in: "09:35", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
+    {
+        nameRegex: /Abhishek Tiwari/i,
+        multiLocation: [
+            { location: "SUB", in: "10:15", out: "16:30", days: ["Tue", "Thu", "Fri"] },
+            { location: "SGSU", in: "10:15", out: "16:00", days: ["Mon", "Wed"] },
+        ],
+        wfhDays: ["Sat"]
+    }
+];
+
 const INITIAL_RESPONSIBILITIES: AdditionalResponsibility[] = [
     { id: "ar1", employeeId: "OM001", employeeName: "Arjun Sharma", addedBy: "HOI003", description: "Coordinating inter-department tech workshops", date: "2024-02-20", status: "Approved", points: 15 },
 ];
 
+const INITIAL_NOTICES: Notice[] = [
+    {
+        id: "n1",
+        title: "SOP Update: Dress Code (3.1)",
+        content: "Reminder: White formal shirt, black pants, and black blazer are mandatory. 3rd violation results in a 10% daily salary fine. Please adhere to professional standards.",
+        category: "Update",
+        createdBy: "HR001",
+        createdAt: "2026-03-01T09:00:00Z"
+    },
+    {
+        id: "n2",
+        title: "Birthday Celebration!",
+        content: "Happy Birthday to all team members born in March! Join us for a cake cutting ceremony in the main hall at 4:00 PM today.",
+        category: "Birthday",
+        createdBy: "HR001",
+        createdAt: "2026-03-05T10:30:00Z"
+    },
+    {
+        id: "n3",
+        title: "Attendance Timing Reminder",
+        content: "Ref SOP 3.2: A 2-minute grace period is allowed for geotagging. 4th late instance leads to a half-day pay cut. Please ensure clock-in is done within premises.",
+        category: "Urgent",
+        createdBy: "HR001",
+        createdAt: "2026-03-02T08:45:00Z"
+    },
+    {
+        id: "n4",
+        title: "Holi Celebration & Holiday",
+        content: "The office will remain closed on 14th March for Holi. We will have a small pre-Holi celebration on the 13th afternoon.",
+        category: "Event",
+        createdBy: "FND001",
+        createdAt: "2026-03-04T11:00:00Z"
+    },
+    {
+        id: "n5",
+        title: "Bi-Weekly Performance Scores",
+        content: "Performance scores for the period Feb 15 - Feb 28 are now live. Please check your dashboard to view your stars and feedback.",
+        category: "General",
+        createdBy: "AD001",
+        createdAt: "2026-03-01T15:00:00Z"
+    },
+    {
+        id: "n6",
+        title: "Leave Policy Reminder (3.7)",
+        content: "Faculty members must obtain HOI permission 18 hours in advance for casual leaves. Only one professor per college is permitted on leave per day.",
+        category: "Policy",
+        createdBy: "HR001",
+        createdAt: "2026-03-03T12:00:00Z"
+    },
+    {
+        id: "n7",
+        title: "Mandatory Safety Training",
+        content: "All employees must complete the fire safety and first-aid training module by the end of this week. Check the Training tab for details.",
+        category: "Training",
+        createdBy: "OM001",
+        createdAt: "2026-03-06T09:30:00Z"
+    },
+    {
+        id: "n8",
+        title: "Welcome New Joiners!",
+        content: "We are excited to welcome 5 new faculty members to our SAGE Bhopal and Indore campuses this week. Let's make them feel at home!",
+        category: "Welcome",
+        createdBy: "FND001",
+        createdAt: "2026-03-08T10:00:00Z"
+    },
+    {
+        id: "n9",
+        title: "System Maintenance Notice",
+        content: "The HRMS portal will be under scheduled maintenance on 10th March from 11:00 PM to 1:00 AM. Access will be temporarily unavailable.",
+        category: "Update",
+        createdBy: "AD001",
+        createdAt: "2026-03-07T18:00:00Z"
+    },
+    {
+        id: "n10",
+        title: "Tobacco-Free Campus Policy",
+        content: "Strict Reminder (SOP 3.11): Smoking and chewing tobacco are strictly prohibited within office premises. Violations will result in immediate suspension.",
+        category: "Policy",
+        createdBy: "HR001",
+        createdAt: "2026-03-04T09:15:00Z"
+    }
+
+];
 const INITIAL_NOTIFICATIONS: PortalNotification[] = [];
+
+// Helper for 3rd Saturday logic
+const isThirdSaturday = (date: Date) => {
+    const day = date.getDay();
+    if (day !== 6) return false;
+    const dateNum = date.getDate();
+    return dateNum > 14 && dateNum <= 21;
+};
 
 // ─── CONTEXT TYPE ───
 interface AuthContextType {
@@ -662,12 +877,13 @@ interface AuthContextType {
     approveWorkSchedule: (employeeId: string) => void;
     addCollege: (college: Omit<College, "id">) => void;
     updateCollege: (id: string, updates: Partial<College>) => void;
+    deleteCollege: (id: string) => void;
     addAdditionalResponsibility: (employeeId: string, description: string, points: number) => void;
     approveAdditionalResponsibility: (id: string, status: "Approved" | "Rejected") => void;
     addMarkAsPresentRequest: (req: Omit<MarkAsPresentRequest, "id" | "status" | "appliedAt" | "employeeName">) => void;
     resolveMarkAsPresentRequest: (id: string, status: "Approved" | "Rejected") => void;
     resolveDressCodeCheck: (recordId: string, status: "Approved" | "Rejected") => void;
-    restoreAttendanceCredits: (employeeId: string) => void;
+    addBiWeeklyRating: (employeeId: string, score: number, period: string, points: number) => void;
     addMeetingRequest: (req: Omit<MeetingRequest, "id" | "status" | "employeeId" | "employeeName" | "createdAt">) => void;
     updateMeetingStatus: (id: string, status: MeetingRequest["status"], MOMData?: { screenshotUrls: string[], attendees: MeetingRequest["attendees"] }) => void;
     getReportees: (managerId: string) => Employee[];
@@ -688,6 +904,7 @@ interface AuthContextType {
     markNotificationRead: (id: string) => void;
     getMyNotifications: () => PortalNotification[];
     activityLogs: PortalNotification[];
+    getExpectedTiming: (employeeId: string, date?: string | Date) => { in: string; out: string; location: string };
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -726,8 +943,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 name: emp.name,
                 designation: emp.designation || emp.role,
                 level,
-                parentId: emp.reportsTo,
-                photoInitial: emp.name[0]?.toUpperCase() || "U",
+                parentId: Array.isArray(emp.reportsTo) ? emp.reportsTo[0] : emp.reportsTo,
+                photoInitial: emp.name?.[0]?.toUpperCase() || "U",
                 dept: emp.dept || "Unassigned"
             };
         });
@@ -746,7 +963,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const router = useRouter();
 
     // ─── PERSISTENCE ───
-    const DATA_VERSION = "v2_rbac";
+    const DATA_VERSION = "v3_holidays";
     useEffect(() => {
         const s = (k: string) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } };
         // Check data version — if old data exists, clear it to load new RBAC employee IDs
@@ -779,21 +996,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const smpr = s("gog_mark_present"); if (smpr) setMarkAsPresentRequests(smpr);
     }, []);
 
-    // ─── FETCH FROM DB ───
     useEffect(() => {
         const fetchEmployees = async () => {
             try {
                 const res = await fetch("/api/employees");
-                const result = await res.json();
-                if (result.success) {
-                    setEmployees(result.data);
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    setEmployees(data);
                 }
             } catch (err) {
                 console.error("Failed to fetch employees from database:", err);
             }
         };
+        const fetchLocations = async () => {
+            try {
+                const res = await fetch("/api/locations");
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    setColleges(data);
+                }
+            } catch (err) {
+                console.error("Failed to fetch locations:", err);
+            }
+        };
+        const fetchAttendance = async () => {
+            if (!user) return;
+            try {
+                const res = await fetch(`/api/attendance?userId=${user.id}&role=${user.role}`);
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    // For Nitesh (EMP127), ensure hardcoded March 7-10 logs are preserved
+                    if (user.id === "EMP127") {
+                        const hardcodedDates = ["2026-03-07", "2026-03-08", "2026-03-09", "2026-03-10"];
+                        const hLogs = INITIAL_ATTENDANCE.filter(r => r.employeeId === "EMP127" && hardcodedDates.includes(r.date));
+                        const apiDates = new Set(data.map(r => r.date));
+                        const missingInApi = hLogs.filter(h => !apiDates.has(h.date));
+                        setAttendanceRecords([...missingInApi, ...data]);
+                    } else {
+                        setAttendanceRecords(data);
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to fetch attendance:", err);
+            }
+        };
+
         fetchEmployees();
-    }, []);
+        fetchLocations();
+        if (user) fetchAttendance();
+    }, [user]);
 
     useEffect(() => {
         if (user) localStorage.setItem("gog_user", JSON.stringify(user)); else localStorage.removeItem("gog_user");
@@ -835,31 +1086,129 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [employees]);
 
     // ─── HELPERS ───
+    const getExpectedTiming = useCallback((employeeId: string, date: string | Date = new Date()) => {
+        const d = typeof date === 'string' ? new Date(date) : date;
+        const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
+        const dateStr = d.toISOString().split('T')[0];
+
+        const emp = employees.find(e => e.id === employeeId);
+        if (!emp) return { in: "09:30", out: "18:00", location: "Office" };
+
+        // 1. Check Custom Rules (regex-based as requested)
+        for (const rule of CUSTOM_SCHEDULE_RULES) {
+            if (rule.nameRegex.test(emp.name)) {
+                // Multi-location Logic
+                if ((rule as any).multiLocation) {
+                    const locRule = (rule as any).multiLocation.find((l: any) => l.days.includes(weekday));
+                    if (locRule) return { in: locRule.in, out: locRule.out, location: locRule.location };
+                }
+
+                // WFH Logic (including 3rd Saturday)
+                if ((rule as any).wfhDays?.includes(weekday)) return { in: "09:30", out: "18:00", location: "WFH" };
+                if ((rule as any).thirdSatWFH && weekday === "Sat" && isThirdSaturday(d)) {
+                    return { in: (rule as any).in || "09:30", out: (rule as any).out || "18:00", location: "WFH" };
+                }
+
+                // Standard Custom Days
+                if ((rule as any).days?.includes(weekday)) {
+                    return { in: (rule as any).in as string, out: (rule as any).out as string, location: (rule as any).location as string };
+                }
+            }
+        }
+
+        // 2. User-assigned Schedules (via Manager Interface)
+        const userSchedule = workSchedules.find(s => s.employeeId === employeeId);
+        if (userSchedule?.dayWise) {
+            if (userSchedule.dayWise[dateStr]) {
+                const s = userSchedule.dayWise[dateStr];
+                return { in: s.clockInTime, out: s.clockOutTime, location: s.location };
+            }
+            if (userSchedule.dayWise[weekday]) {
+                const s = userSchedule.dayWise[weekday];
+                return { in: s.clockInTime, out: s.clockOutTime, location: s.location };
+            }
+        }
+
+        // 3. Fallback by College Location/Shortname
+        const collegeShortName = emp.location || emp.collegeName;
+        if (collegeShortName) {
+            // Priority 1: Match from FALLBACK_TIMINGS dictionary
+            const fb = FALLBACK_TIMINGS[collegeShortName as keyof typeof FALLBACK_TIMINGS];
+            if (fb) return { in: fb.in, out: fb.out, location: collegeShortName };
+
+            // Priority 2: Try resolving through formal COLLEGES list
+            const resolved = INITIAL_COLLEGES.find(c =>
+                c.shortName.toLowerCase() === collegeShortName.toLowerCase() ||
+                c.name.toLowerCase().includes(collegeShortName.toLowerCase())
+            );
+            if (resolved && FALLBACK_TIMINGS[resolved.shortName as keyof typeof FALLBACK_TIMINGS]) {
+                const fb2 = FALLBACK_TIMINGS[resolved.shortName as keyof typeof FALLBACK_TIMINGS];
+                return { in: fb2.in, out: fb2.out, location: resolved.shortName };
+            }
+        }
+
+        // Default Last Resort
+        return { in: "09:30", out: "18:00", location: emp.location || "Office" };
+    }, [employees, workSchedules]);
+
     const uid = () => Math.random().toString(36).substr(2, 8).toUpperCase();
-    const getReportees = (managerId: string) => employees.filter(e => e.reportsTo === managerId);
+    const getReportees = (managerId: string) => {
+        const manager = employees.find(e => e.id === managerId);
+        if (!manager) return [];
+
+        if (manager.role === "FOUNDER") {
+            return employees.filter(e => e.role !== "FOUNDER");
+        }
+        if (manager.role === "HR") {
+            return employees.filter(e => ["AD", "TL", "HOI", "OM", "FACULTY", "PROFESSOR"].includes(e.role));
+        }
+        if (manager.role === "AD") {
+            return employees.filter(e => ["HOI", "OM", "FACULTY", "PROFESSOR"].includes(e.role));
+        }
+        if (manager.role === "HOI") {
+            // HOI can manage ALL OMs and Faculties/Professors as requested (30+ employees)
+            return employees.filter(e => ["OM", "FACULTY", "PROFESSOR"].includes(e.role));
+        }
+
+        // Default reportsTo logic for others
+        return employees.filter(e => e.reportsTo && (Array.isArray(e.reportsTo) ? e.reportsTo.includes(managerId) : e.reportsTo === managerId));
+    };
     const getManagerChain = (employeeId: string): Employee[] => {
         const emp = employees.find(e => e.id === employeeId);
         if (!emp || !emp.reportsTo) return [];
-        const mgr = employees.find(e => e.id === emp.reportsTo);
-        if (!mgr) return [];
-        return [mgr, ...getManagerChain(mgr.id)];
+
+        const managerIds = Array.isArray(emp.reportsTo) ? emp.reportsTo : [emp.reportsTo];
+        const managers = employees.filter(e => managerIds.includes(e.id));
+
+        let chain: Employee[] = [...managers];
+        managers.forEach(mgr => {
+            chain = [...chain, ...getManagerChain(mgr.id)];
+        });
+
+        // Return unique managers by ID
+        return Array.from(new Map(chain.map(m => [m.id, m])).values());
     };
 
     // ─── AUTH ───
     const login = (email: string, password?: string, role?: string) => {
         const emp = employees.find(e => e.email.toLowerCase().trim() === email.toLowerCase().trim());
         if (!emp) return { success: false, msg: "Institutional account not found." };
-        if (password && emp.password !== password) return { success: false, msg: `Incorrect passkey.Expected: ${emp.password} ` }; // Temporary debug info
+        if (password && emp.password !== password) return { success: false, msg: `Incorrect passkey.Expected: ${emp.password} ` };
         if (role && emp.role !== role) return { success: false, msg: `Institutional role mismatch.Got: ${role}, Expected: ${emp.role} ` };
 
         setUser(emp);
+        localStorage.setItem("gog_user", JSON.stringify(emp)); // Ensure persistence on login
         router.push("/");
         return { success: true };
     };
     const logout = () => { setUser(null); localStorage.removeItem("gog_user"); router.push("/login"); };
     const updateOnboarding = (userId: string, data: any) => {
         setEmployees(prev => prev.map(e => e.id === userId ? { ...e, ...data, isOnboarded: true } : e));
-        if (user?.id === userId) setUser(prev => prev ? { ...prev, ...data, isOnboarded: true } : null);
+        if (user?.id === userId) {
+            const updatedUser = { ...user, ...data, isOnboarded: true };
+            setUser(updatedUser);
+            localStorage.setItem("gog_user", JSON.stringify(updatedUser));
+        }
     };
     const addEmployee = (emp: Omit<Employee, "id" | "isOnboarded">) => {
         setEmployees(prev => [...prev, { ...emp, id: `EMP${uid()} `, isOnboarded: false }]);
@@ -892,51 +1241,112 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     // ─── ATTENDANCE ───
-    const clockIn = (location: string, time: string, dressCodeImageUrl?: string) => {
+    // ─── ATTENDANCE ───
+    const clockIn = async (location: string, time: string, dressCodeImageUrl?: string) => {
         if (!user) return;
-        const today = new Date().toISOString().split("T")[0];
-        setAttendanceRecords(prev => [...prev, {
-            id: `ATT${uid()} `, employeeId: user.id, date: today, clockIn: time, location,
-            status: "Present", flags: { late: parseInt(time.split(":")[0]) >= 10, locationDiff: location !== "Main Office" },
-            isApprovedByHR: false, dressCodeImageUrl,
-            dressCodeStatus: dressCodeImageUrl ? "Pending" : "N/A"
-        }]);
+
+        // Founders skip all restrictions
+        if (user.role === "FOUNDER") {
+            try {
+                const res = await fetch("/api/attendance/clock-in", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ employeeId: user.id, location, time, dressCodeImageUrl, role: user.role, skipChecks: true })
+                });
+                const data = await res.json();
+                if (data.record) setAttendanceRecords(prev => [...prev, data.record]);
+                return;
+            } catch (err) { console.error(err); return; }
+        }
+
+        // Enforce Shift Timing Block
+        const expected = getExpectedTiming(user.id);
+        const startTime = expected.in;
+
+        if (time > startTime) {
+            alert(`Clock-in Disabled: You are late (Start: ${startTime}). You are now marked as 'On Leave' for today. Please use 'Mark as Present' credits to appeal.`);
+            return;
+        }
+
+        // Image Requirement
+        if (!dressCodeImageUrl) {
+            alert("Selfie/Dress-code image is mandatory for clock-in.");
+            return;
+        }
+
+        try {
+            const res = await fetch("/api/attendance/clock-in", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ employeeId: user.id, location, time, dressCodeImageUrl, role: user.role })
+            });
+            const data = await res.json();
+            if (data.record) {
+                setAttendanceRecords(prev => [...prev, data.record]);
+            } else {
+                alert(data.error || "Clock-in failed");
+            }
+        } catch (err) {
+            console.error("Clock-in error:", err);
+        }
     };
-    const clockOut = (time: string) => {
+
+    const clockOut = async (time: string) => {
         if (!user) return;
-        const today = new Date().toISOString().split("T")[0];
-        setAttendanceRecords(prev => prev.map(r =>
-            r.employeeId === user.id && r.date === today ? { ...r, clockOut: time, flags: { ...r.flags, earlyOut: parseInt(time.split(":")[0]) < 18 } } : r
-        ));
+        try {
+            await fetch("/api/attendance/clock-out", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ employeeId: user.id, time })
+            });
+            const today = new Date().toISOString().split("T")[0];
+            setAttendanceRecords(prev => prev.map(r =>
+                r.employeeId === user.id && r.date === today ? { ...r, clockOut: time } : r
+            ));
+        } catch (err) { console.error(err); }
     };
+
     const markAttendanceOverride = (employeeId: string, date: string, reason: string) => {
         setAttendanceRecords(prev => {
             const existing = prev.find(r => r.employeeId === employeeId && r.date === date);
             if (existing) return prev.map(r => r.id === existing.id ? { ...r, status: "Present", isApprovedByHR: true } : r);
-            return [...prev, { id: `ATT${uid()} `, employeeId, date, clockIn: "09:00", location: "Override", status: "Present" as any, flags: {}, isApprovedByHR: true }];
+            return [...prev, { id: `ATT${uid()}`, employeeId, date, clockIn: "09:00", location: "Override", status: "Present" as any, flags: {}, isApprovedByHR: true }];
         });
     };
 
-    const addMarkAsPresentRequest = (req: Omit<MarkAsPresentRequest, "id" | "status" | "appliedAt" | "employeeName">) => {
+    const addMarkAsPresentRequest = async (req: Omit<MarkAsPresentRequest, "id" | "status" | "appliedAt" | "employeeName">) => {
         if (!user) return;
-        const newReq: MarkAsPresentRequest = { ...req, id: `MAP${uid()} `, employeeName: user.name, status: "Pending", appliedAt: new Date().toISOString() };
-        setMarkAsPresentRequests(prev => [newReq, ...prev]);
-        setAttendanceRecords(prev => [...prev, { id: `ATT${uid()} `, employeeId: user.id, date: req.date, clockIn: "-", location: "Appealed", status: "Mark As Present Request" as any, flags: {}, isApprovedByHR: false }]);
 
-        // --- EMAIL NOTIFICATION ---
-        const raiser = employees.find(e => e.id === user.id);
-        const ccEmails = getAuthorityEmails(raiser, employees);
-        const { subject: mailSub, html: mailHtml } = getMarkAsPresentTemplate(newReq, "Pending");
-        const hr = employees.find(e => e.role === "HR");
-
-        if (hr?.email) {
-            sendMail({
-                to: hr.email,
-                cc: ccEmails,
-                subject: mailSub,
-                html: mailHtml
-            });
+        const emp = employees.find(e => e.id === user.id);
+        if (emp && (emp.chancesRemaining || 0) <= 0) {
+            alert("Insufficient Credits: You have used all 3 chances.");
+            return;
         }
+
+        if (!req.proofUrls || req.proofUrls.length === 0) {
+            alert("Mandatory: Please upload proofs.");
+            return;
+        }
+
+        try {
+            const res = await fetch("/api/attendance/requests/map", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ...req, employeeId: user.id })
+            });
+            const data = await res.json();
+            if (data.request) {
+                setMarkAsPresentRequests(prev => [data.request, ...prev]);
+                setEmployees(prev => prev.map(e => e.id === user.id ? { ...e, chancesRemaining: (e.chancesRemaining || 1) - 1 } : e));
+                setUser(prev => prev ? { ...prev, chancesRemaining: ((prev as any).chancesRemaining || 1) - 1 } : null);
+
+                const chain = getManagerChain(user.id);
+                const authorities = getAuthorityEmails(emp, employees);
+                chain.forEach(mgr => addNotification(mgr.id, mgr.name, `MAP Request from ${user.name}`, "attendance"));
+                const { subject, html } = getMarkAsPresentTemplate(data.request, "Pending");
+                sendMail({ to: authorities, subject, html });
+            }
+        } catch (err) { console.error(err); }
     };
 
     const resolveMarkAsPresentRequest = (id: string, status: "Approved" | "Rejected") => {
@@ -945,22 +1355,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (req) {
                 if (status === "Approved") {
                     markAttendanceOverride(req.employeeId, req.date, req.reason);
-                    setEmployees(emps => emps.map(e => e.id === req.employeeId ? { ...e, markPresentUsed: (e.markPresentUsed || 0) + 1 } : e));
+                    const emp = employees.find(e => e.id === req.employeeId);
+                    const newUsed = (emp?.markPresentUsed || 0) + 1;
+                    setEmployees(prev => prev.map(e => {
+                        if (e.id === req.employeeId) {
+                            let fines = e.fines || { total: 0, records: [] };
+                            if (newUsed > 3) {
+                                fines = {
+                                    total: fines.total + 500,
+                                    records: [...fines.records, { amount: 500, reason: `Excessive MAP (Attempt ${newUsed})`, date: new Date().toISOString().split('T')[0] }]
+                                };
+                            }
+                            return { ...e, markPresentUsed: newUsed, fines };
+                        }
+                        return e;
+                    }));
                 }
-
-                // --- EMAIL NOTIFICATION ---
                 const emp = employees.find(e => e.id === req.employeeId);
-                const ccEmails = getAuthorityEmails(emp, employees);
-                const { subject: mailSub, html: mailHtml } = getMarkAsPresentTemplate(req, status);
-
-                if (emp?.email) {
-                    sendMail({
-                        to: emp.email,
-                        cc: ccEmails,
-                        subject: mailSub,
-                        html: mailHtml
-                    });
-                }
+                const { subject, html } = getMarkAsPresentTemplate(req, status);
+                if (emp?.email) sendMail({ to: emp.email, cc: getAuthorityEmails(emp, employees), subject, html });
             }
             return prev.map(r => r.id === id ? { ...r, status } : r);
         });
@@ -973,17 +1386,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setEmployees(emps => emps.map(e => {
                     if (e.id === record.employeeId) {
                         const newDefaults = (e.dressCodeDefaults || 0) + 1;
-                        // --- EMAIL NOTIFICATION FOR WARNING ---
-                        const ccEmails = getAuthorityEmails(e, employees);
-                        const { subject: mailSub, html: mailHtml } = getDressCodeWarningTemplate(e, newDefaults);
-
-                        sendMail({
-                            to: e.email,
-                            cc: ccEmails,
-                            subject: mailSub,
-                            html: mailHtml
-                        });
-
+                        const { subject, html } = getDressCodeWarningTemplate(e, newDefaults);
+                        sendMail({ to: e.email, cc: getAuthorityEmails(e, employees), subject, html });
                         return { ...e, dressCodeDefaults: newDefaults };
                     }
                     return e;
@@ -993,9 +1397,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
     };
 
-    const restoreAttendanceCredits = (employeeId: string) => {
-        setEmployees(emps => emps.map(e => e.id === employeeId ? { ...e, markPresentUsed: Math.max(0, (e.markPresentUsed || 0) - 1), dressCodeDefaults: Math.max(0, (e.dressCodeDefaults || 0) - 1) } : e));
-        setAttendanceRecords(prev => prev.map(r => r.employeeId === employeeId ? { ...r, flags: { ...r.flags, late: false, earlyOut: false, locationDiff: false, dressCode: false } } : r));
+    // ─── BIRTHDAY AUTOMATION ───
+    useEffect(() => {
+        if (!employees.length) return;
+        const now = new Date();
+        const todayDDMM = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        employees.forEach(emp => {
+            if (emp.dateOfBirth && emp.dateOfBirth.startsWith(todayDDMM)) {
+                const key = `bday_sent_${emp.id}_${now.getFullYear()}`;
+                if (typeof window !== "undefined" && !localStorage.getItem(key)) {
+                    const template = getBirthdayTemplate(emp);
+                    sendMail({ to: emp.email, cc: getAuthorityEmails(emp, employees), subject: template.subject, html: template.html });
+                    localStorage.setItem(key, "true");
+                }
+            }
+        });
+    }, [employees]);
+
+    const addBiWeeklyRating = (employeeId: string, score: number, period: string, points: number) => {
+        const clampedPoints = Math.min(50, Math.max(-80, points));
+        setEmployees(prev => prev.map(e => {
+            if (e.id === employeeId) {
+                const newScore = { score, period, date: new Date().toISOString().split('T')[0], points: clampedPoints };
+                const scores = [...(e.biWeeklyScores || []), newScore];
+                const emp = employees.find(emp => emp.id === employeeId);
+                const authorities = getAuthorityEmails(emp, employees);
+                const template = getRatingTemplate({ ...newScore, employeeName: emp?.name, ratedByName: user?.name ?? "Manager" });
+                sendMail({ to: emp?.email || "", cc: authorities, subject: `[BI-WEEKLY] ${emp?.name} - Score: ${score}/5`, html: template.html });
+                return { ...e, biWeeklyScores: scores };
+            }
+            return e;
+        }));
+    };
+
+    const addCollege = async (college: Omit<College, "id">) => {
+        try {
+            const res = await fetch("/api/locations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ...college, id: `COL${uid()}` })
+            });
+            const data = await res.json();
+            if (data.id) setColleges(prev => [...prev, data]);
+        } catch (err) { console.error(err); }
+    };
+
+    const updateCollege = async (id: string, updates: Partial<College>) => {
+        try {
+            const res = await fetch(`/api/locations/${id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updates)
+            });
+            const data = await res.json();
+            if (data.id) setColleges(prev => prev.map(c => c.id === id ? data : c));
+        } catch (err) { console.error(err); }
+    };
+
+    const deleteCollege = async (id: string) => {
+        try {
+            const res = await fetch(`/api/locations/${id}`, { method: "DELETE" });
+            const data = await res.json();
+            if (data.message) setColleges(prev => prev.filter(c => c.id !== id));
+        } catch (err) { console.error(err); }
     };
 
     const giveCredit = (employeeId: string, reason: string) => {
@@ -1065,11 +1529,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const ad = employees.find(e => e.role === "AD" && chain.some(c => c.id === e.id));
 
         const toList = [hr?.email, rm?.email, hoi?.email, ad?.email].filter(Boolean) as string[];
+        const finalCC = [...new Set([...ccEmails, raiser?.email].filter(Boolean) as string[])];
 
         if (toList.length > 0) {
             sendMail({
                 to: toList,
-                cc: ccEmails,
+                cc: finalCC,
                 subject: mailSub,
                 html: mailHtml
             });
@@ -1101,7 +1566,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const rejectLeave = (id: string, applyLOP: boolean = false, reason?: string) => setLeaves(prev => {
         return prev.map(l => {
             if (l.id === id) {
-                const updated = { ...l, status: "Rejected" as const, lossOfPayDays: applyLOP ? 2 : (l.lossOfPayDays || 0), reasonForAction: reason };
+                // Point 7: If emergency leave rejected, 2 day LOP
+                const finalApplyLOP = applyLOP || (l.leaveType === "Emergency");
+                const updated = { ...l, status: "Rejected" as const, lossOfPayDays: finalApplyLOP ? 2 : (l.lossOfPayDays || 0), reasonForAction: reason };
 
                 // --- EMAIL NOTIFICATION ---
                 const emp = employees.find(e => e.id === l.employeeId);
@@ -1125,6 +1592,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // ─── TICKETS ───
     const raiseTicket = (targetCategory: string, subject: string, content: string, routeTo?: string, cc?: string[], proofUrls?: string[], targetEmployeeId?: string, targetDate?: string) => {
         if (!user) return;
+
+        // Point 8: Include Proof Mandatory
+        if (!proofUrls || proofUrls.length === 0) {
+            alert("Proof is mandatory for raising a ticket. Please upload supporting documents.");
+            return;
+        }
 
         const targetCategoryNormalized = targetCategory.toLowerCase();
 
@@ -1151,17 +1624,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             finalCC = [...new Set([...finalCC, ...founders])];
         } else if (targetCategoryNormalized.includes("misconduct") || targetCategoryNormalized.includes("academic") || targetCategoryNormalized.includes("student")) {
             // Misconduct/Institute Issues/Academic - To RM, CC: All above RM, HR
-            finalRouteTo = rm || hrId;
+            finalRouteTo = (Array.isArray(rm) ? rm[0] : (rm || hrId));
             const aboveRM = managerChain.slice(1).map(m => m.id);
             finalCC = [...new Set([...finalCC, ...aboveRM, ...hrEmployees.map(h => h.id)])];
         } else if (targetCategoryNormalized.includes("technical")) {
             // Technical Issues - To TL, CC: RM, All above RM, HR
             const tl = employees.find(e => e.role === "TL")?.id;
-            finalRouteTo = tl || rm || hrId;
-            finalCC = [...new Set([...finalCC, rm || "", ...managerChain.slice(1).map(m => m.id), ...hrEmployees.map(h => h.id)].filter(Boolean))];
+            finalRouteTo = tl || (Array.isArray(rm) ? rm[0] : (rm || hrId));
+            finalCC = [...new Set([...finalCC, ...(Array.isArray(rm) ? rm : [rm || ""]), ...managerChain.slice(1).map(m => m.id), ...hrEmployees.map(h => h.id)].filter(Boolean))];
         } else {
             // Default ticket routing
-            finalRouteTo = rm || hrId;
+            finalRouteTo = (Array.isArray(rm) ? rm[0] : (rm || hrId));
             finalCC = [...new Set([...finalCC])];
         }
 
@@ -1197,9 +1670,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { subject: mailSub, html: mailHtml } = getTicketTemplate(newTicket, 'raised');
 
         if (targetEmp?.email) {
+            const finalCC = [...new Set([...ccEmails, raiser?.email].filter(Boolean) as string[])];
             sendMail({
                 to: targetEmp.email,
-                cc: ccEmails,
+                cc: finalCC,
                 subject: mailSub,
                 html: mailHtml
             });
@@ -1257,7 +1731,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // ─── REIMBURSEMENTS ───
     const addReimbursement = (claim: Omit<ReimbursementClaim, "id" | "status" | "date" | "employeeId" | "employeeName">) => {
         if (!user) return;
-        setReimbursements(prev => [{ ...claim, id: `RMB${uid()} `, employeeId: user.id, employeeName: user.name, status: "Pending", date: new Date().toISOString().split("T")[0] }, ...prev]);
+        const newClaim: ReimbursementClaim = { ...claim, id: `RMB${uid()} `, employeeId: user.id, employeeName: user.name, status: "Pending", date: new Date().toISOString().split("T")[0] };
+        setReimbursements(prev => [newClaim, ...prev]);
+
+        // --- EMAIL NOTIFICATION ---
+        const emp = employees.find(e => e.id === user.id);
+        const authorities = getAuthorityEmails(emp, employees);
+        const { subject: mailSub, html: mailHtml } = getReimbursementTemplate(newClaim);
+
+        // Ensure HR and TL (raiser) are on the list
+        const hrEmails = employees.filter(e => e.role === "HR").map(e => e.email).filter(Boolean) as string[];
+        const finalCC = [...new Set([...authorities, emp?.email].filter(Boolean) as string[])];
+
+        sendMail({ to: hrEmails, cc: finalCC, subject: mailSub, html: mailHtml });
     };
     const updateReimbursementStatus = (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string) => {
         setReimbursements(prev => prev.map(r => {
@@ -1511,9 +1997,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { subject: mailSub, html: mailHtml } = getMisbehaviourTemplate(report);
 
         if (emp.email) {
+            const finalCC = [...new Set([...ccEmails, user.email].filter(Boolean) as string[])];
             sendMail({
                 to: emp.email,
-                cc: ccEmails,
+                cc: finalCC,
                 subject: mailSub,
                 html: mailHtml
             });
@@ -1628,14 +2115,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setWorkSchedules(prev => prev.map(s => s.employeeId === employeeId ? { ...s, approvedByHR: true } : s));
     };
 
-    // ─── COLLEGES ───
-    const addCollege = (college: Omit<College, "id">) => {
-        const id = college.shortName.toLowerCase().replace(/\s+/g, "-");
-        setColleges(prev => [...prev, { ...college, id }]);
-    };
-    const updateCollege = (id: string, updates: Partial<College>) => {
-        setColleges(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
-    };
 
     // ─── ADDITIONAL RESPONSIBILITIES ───
     const addAdditionalResponsibility = (employeeId: string, description: string, points: number) => {
@@ -1698,9 +2177,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Notify management chain
         const chain = getManagerChain(user.id);
+        const mgtEmails = chain.filter(m => m.email).map(m => m.email!);
         chain.forEach(mgr => {
-            addNotification(mgr.id, mgr.name, `${user.name} scheduled a meeting: ${req.purpose} `, "ticket");
+            addNotification(mgr.id, mgr.name, `${user.name} scheduled a meeting: ${req.purpose}`, "ticket");
         });
+
+        // Email notification for meeting
+        const toEmails = req.attendees?.map(att => employees.find(e => e.id === att.id)?.email).filter(Boolean) as string[] || [];
+        if (toEmails.length > 0 || mgtEmails.length > 0) {
+            sendMail({
+                to: toEmails,
+                cc: [...new Set([...mgtEmails, user.email].filter(Boolean) as string[])],
+                subject: `[MEETING SCHEDULED] ${req.purpose}`,
+                html: `
+                    <div style="font-family: sans-serif; padding: 20px; color: #333;">
+                        <h2 style="color: #10b981;">New Meeting Scheduled</h2>
+                        <p><strong>Proposed By:</strong> ${user.name}</p>
+                        <p><strong>Purpose:</strong> ${req.purpose}</p>
+                        <p><strong>Date:</strong> ${req.date} | <strong>Time:</strong> ${req.time}</p>
+                        ${req.googleLink ? `<p><strong>Google Meet:</strong> <a href="${req.googleLink}">${req.googleLink}</a></p>` : ''}
+                        <p>This is an automated mail from GOG Meeting Portal.</p>
+                    </div>
+                `
+            });
+        }
     };
 
     const updateMeetingStatus = (id: string, status: MeetingRequest["status"], MOMData?: { screenshotUrls: string[], attendees: MeetingRequest["attendees"] }) => {
@@ -1777,14 +2277,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             addLeaveRequest, approveLeave, rejectLeave, addReimbursement, updateReimbursementStatus,
             proposeHoliday, approveHoliday, updateSOP, deleteSOP, addToPIP, markAttendanceOverride,
             sopNotifications, masterSopContent, updateMasterSop, markSOPNotificationRead, markAllSOPNotificationsRead,
-            reportMisbehaviour, addRating, assignWorkSchedule, approveWorkSchedule, addCollege, updateCollege,
-            addAdditionalResponsibility, approveAdditionalResponsibility, addMeetingRequest, updateMeetingStatus,
+            reportMisbehaviour, addRating, assignWorkSchedule, approveWorkSchedule, addCollege,
+            updateCollege,
+            deleteCollege,
+            addAdditionalResponsibility,
+            approveAdditionalResponsibility, addMeetingRequest, updateMeetingStatus,
             getReportees, getManagerChain, generatePayroll, addEmployee, updateOnboarding,
             removeFromPIP, deductChance, resetChances,
+            addBiWeeklyRating,
             addJobPosting, closeJobPosting, generateCertificate, submitResignation, approveResignation,
             requestAsset, assignAsset, updateAssetRequestStatus,
             addNotification, markNotificationRead, getMyNotifications,
-            markAsPresentRequests, addMarkAsPresentRequest, resolveMarkAsPresentRequest, resolveDressCodeCheck, restoreAttendanceCredits, giveCredit
+            markAsPresentRequests, addMarkAsPresentRequest, resolveMarkAsPresentRequest, resolveDressCodeCheck, giveCredit,
+            getExpectedTiming
         }}>
             {children}
         </AuthContext.Provider>

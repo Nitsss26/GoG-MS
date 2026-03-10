@@ -9,15 +9,28 @@ import { ChevronLeft, ChevronRight, Calendar, Flag, AlertTriangle } from "lucide
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function FlagCalendarPage() {
-    const { user, attendanceRecords, holidays } = useAuth();
+    const { user, attendanceRecords, holidays, employees } = useAuth();
     const now = new Date();
     const [month, setMonth] = useState(now.getMonth());
     const [year, setYear] = useState(now.getFullYear());
     const [selectedDay, setSelectedDay] = useState<string | null>(null);
+    const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(user?.id || "");
 
     if (!user) return null;
 
-    const myRecords = attendanceRecords.filter(r => r.employeeId === user.id);
+    // Hierarchy visibility logic
+    const viewableEmployees = employees.filter(e => {
+        if (user.role === "FOUNDER") return true;
+        if (user.id === e.id) return true;
+        if (user.role === "HR") return ["AD", "HOI", "FACULTY", "PROFESSOR", "OM"].includes(e.role);
+        if (user.role === "AD") return ["HOI", "FACULTY", "PROFESSOR", "OM"].includes(e.role);
+        if (user.role === "HOI") return ["FACULTY", "PROFESSOR", "OM"].includes(e.role);
+        if (user.role === "OM") return ["FACULTY", "PROFESSOR"].includes(e.role); // OM can see faculties under them usually
+        return false;
+    });
+
+    const selectedEmployee = employees.find(e => e.id === selectedEmployeeId) || user;
+    const records = attendanceRecords.filter(r => r.employeeId === selectedEmployeeId);
 
     // Build calendar grid
     const firstDay = new Date(year, month, 1);
@@ -75,7 +88,7 @@ export default function FlagCalendarPage() {
     const getIndianHoliday = (d: string) => INDIAN_HOLIDAYS_2026.find(h => h.date === d);
 
     const getFlags = (d: string) => {
-        const rec = myRecords.find(r => r.date === d);
+        const rec = records.find(r => r.date === d);
         if (!rec) return [];
         return Object.entries(rec.flags).filter(([_, v]) => v).map(([k]) => k);
     };
@@ -83,7 +96,7 @@ export default function FlagCalendarPage() {
     // Monthly flag summary
     const monthFlags: Record<string, number> = {};
     Object.keys(FLAG_CONFIG).forEach(k => monthFlags[k] = 0);
-    myRecords.forEach(rec => {
+    records.forEach(rec => {
         const d = new Date(rec.date);
         if (d.getMonth() === month && d.getFullYear() === year) {
             Object.entries(rec.flags).filter(([_, v]) => v).forEach(([k]) => { monthFlags[k] = (monthFlags[k] || 0) + 1; });
@@ -98,9 +111,26 @@ export default function FlagCalendarPage() {
 
     return (
         <div className="p-6 space-y-6 max-w-5xl mx-auto w-full">
-            <header>
-                <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2"><Flag size={18} className="text-primary" /> Flag Calendar</h1>
-                <p className="text-xs text-zinc-400 mt-1">Monthly view of your attendance flags and holidays.</p>
+            <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                <div>
+                    <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2"><Flag size={18} className="text-primary" /> Flag Calendar</h1>
+                    <p className="text-xs text-zinc-400 mt-1">Monthly view of attendance flags and holidays.</p>
+                </div>
+
+                {viewableEmployees.length > 1 && (
+                    <div className="flex flex-col gap-1.5 min-w-[200px]">
+                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider ml-1">Viewing Calendar For</label>
+                        <select
+                            value={selectedEmployeeId}
+                            onChange={(e) => { setSelectedEmployeeId(e.target.value); setSelectedDay(null); }}
+                            className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-primary/50 transition-all appearance-none cursor-pointer"
+                        >
+                            {viewableEmployees.map(e => (
+                                <option key={e.id} value={e.id}>{e.name} ({e.designation})</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
             </header>
 
             {/* Flag Summary KPIs */}
@@ -148,7 +178,7 @@ export default function FlagCalendarPage() {
                                 const isToday = ds === now.toISOString().split("T")[0];
                                 const isSelected = selectedDay === ds;
                                 const isHoliday = approvedHols.length > 0 || !!indianHol;
-                                const rec = myRecords.find(r => r.date === ds);
+                                const rec = records.find(r => r.date === ds);
 
                                 return (
                                     <div key={di} onClick={() => setSelectedDay(isSelected ? null : ds)}
@@ -177,19 +207,27 @@ export default function FlagCalendarPage() {
 
                                         {/* Flag Dots */}
                                         {flags.length > 0 && (
-                                            <div className="flex gap-0.5 mt-1 flex-wrap">
-                                                {flags.map(f => (
-                                                    <div key={f} className={cn("w-2 h-2 rounded-full", FLAG_CONFIG[f]?.dotColor || "bg-zinc-500")} title={FLAG_CONFIG[f]?.label} />
+                                            <div className="flex gap-[3px] mt-2 flex-wrap">
+                                                {flags.slice(0, 4).map(f => (
+                                                    <div key={f} className={cn("w-3 h-3 rounded-full shadow-[0_0_5px_rgba(0,0,0,0.5)]", FLAG_CONFIG[f]?.dotColor || "bg-zinc-500")} title={FLAG_CONFIG[f]?.label} />
                                                 ))}
+                                            </div>
+                                        )}
+
+                                        {/* Leave dot */}
+                                        {rec?.status === "On Leave" && (
+                                            <div className="flex gap-1 mt-2">
+                                                <div className="w-3.5 h-3.5 rounded-full bg-pink-400 shadow-[0_0_5px_rgba(0,0,0,0.5)]" title="On Leave" />
                                             </div>
                                         )}
 
                                         {/* Holiday dot */}
                                         {isHoliday && flags.length === 0 && (
-                                            <div className="flex gap-0.5 mt-1">
-                                                <div className="w-2 h-2 rounded-full bg-green-400" title="Holiday" />
+                                            <div className="flex gap-1 mt-2">
+                                                <div className="w-3.5 h-3.5 rounded-full bg-green-400 shadow-[0_0_5px_rgba(0,0,0,0.5)]" title="Holiday" />
                                             </div>
                                         )}
+
                                     </div>
                                 );
                             })}
@@ -207,7 +245,7 @@ export default function FlagCalendarPage() {
                     {getApprovedHolidays(selectedDay).map(h => <p key={h.id} className="text-xs text-green-400 font-bold bg-green-500/10 p-2 rounded-lg border border-green-500/20">🟢 {h.name} {h.customMessage && `— ${h.customMessage}`}</p>)}
 
                     {(() => {
-                        const rec = myRecords.find(r => r.date === selectedDay);
+                        const rec = records.find(r => r.date === selectedDay);
                         if (!rec) return <p className="text-xs text-zinc-500 italic">No attendance record for this day.</p>;
                         const flags = Object.entries(rec.flags).filter(([_, v]) => v);
                         return (

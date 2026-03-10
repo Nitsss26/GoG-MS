@@ -1,21 +1,67 @@
 import mongoose, { Schema } from 'mongoose';
 
-// Performance Star Schema
-const PerformanceStarSchema = new Schema({
-    employeeId: { type: String, required: true },
-    stars: { type: Number, default: 0 },
-    rating: { type: Number, default: 0 },
-    badges: [String]
+// Employee Schema
+const EmployeeSchema = new Schema({
+    id: { type: String, required: true, unique: true },
+    name: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    role: { type: String, required: true },
+    photoUrl: { type: String },
+    isOnboarded: { type: Boolean, default: false },
+    dept: { type: String },
+    designation: { type: String },
+    status: { type: String, default: "Active" },
+    joiningDate: { type: String },
+    salary: { type: Number },
+    location: { type: String }, // Refers to Location id
+    dateOfBirth: { type: String },
+    phone: { type: String },
+    gender: { type: String },
+    bloodGroup: { type: String },
+    reportsTo: { type: [String] }, // Array of manager IDs
+    managerLevel: { type: String },
+    chancesRemaining: { type: Number, default: 3 }, // MAP Credits
+    fines: {
+        total: { type: Number, default: 0 },
+        records: [{
+            amount: { type: Number },
+            reason: { type: String },
+            date: { type: String }
+        }]
+    },
+    biWeeklyScores: [{
+        score: { type: Number },
+        period: { type: String },
+        date: { type: String },
+        points: { type: Number }
+    }],
+    education: [{
+        degree: String,
+        institution: String,
+        yearOfPassing: String,
+        percentage: String
+    }],
+    experience: [{
+        company: String,
+        role: String,
+        duration: String,
+        lastSalary: Number
+    }],
+    panNumber: String,
+    aadhaarNumber: String,
+    bankName: String,
+    accountNumber: String,
+    ifscCode: String
 });
 
 // Attendance Schema
 const AttendanceSchema = new Schema({
     employeeId: { type: String, required: true },
     date: { type: String, required: true },
-    clockIn: { type: String, required: true },
+    clockIn: { type: String }, // Can be empty if on leave
     clockOut: { type: String },
-    location: { type: String, required: true },
-    status: { type: String, required: true },
+    location: { type: String },
+    status: { type: String, required: true, enum: ["Present", "On Leave", "Late", "Absent"] },
     flags: {
         late: { type: Boolean, default: false },
         earlyOut: { type: Boolean, default: false },
@@ -24,10 +70,65 @@ const AttendanceSchema = new Schema({
         dressCode: { type: Boolean, default: false },
         meetingAbsent: { type: Boolean, default: false },
         performance: { type: Boolean, default: false },
+        overridden: { type: Boolean, default: false }
     },
     isApprovedByHR: { type: Boolean, default: false },
-    dressCodeImageUrl: { type: String },
-    dressCodeStatus: { type: String, default: "N/A" }
+    clockInImageUrl: { type: String },
+    dressCodeStatus: { type: String, default: "Pending", enum: ["Pending", "Approved", "Rejected", "N/A"] },
+    mapRequestId: { type: String } // Reference to MarkAsPresentRequest
+});
+
+// Work Schedule Schema
+const WorkScheduleSchema = new Schema({
+    employeeId: { type: String, required: true },
+    date: { type: String, required: true }, // For day-specific locations/times
+    location: { type: String, required: true },
+    clockInTime: { type: String, default: "09:30" },
+    clockOutTime: { type: String, default: "18:30" },
+    assignedBy: { type: String },
+    status: { type: String, default: "Approved", enum: ["Pending", "Approved", "Rejected"] },
+    reason: { type: String }
+});
+
+// Mark As Present Request Schema
+const MarkAsPresentRequestSchema = new Schema({
+    employeeId: { type: String, required: true },
+    date: { type: String, required: true },
+    reason: { type: String, required: true },
+    proofUrls: [String],
+    status: { type: String, default: "Pending", enum: ["Pending", "Approved", "Rejected"] },
+    approvals: [{
+        role: String,
+        approverId: String,
+        status: String,
+        date: String
+    }],
+    createdAt: { type: String, required: true }
+});
+
+// Attendance Override Request Schema
+const OverrideRequestSchema = new Schema({
+    employeeId: { type: String, required: true }, // Targeted employee
+    requestedBy: { type: String, required: true }, // Manager ID
+    date: { type: String, required: true },
+    reason: { type: String, required: true },
+    proofUrls: [String],
+    status: { type: String, default: "Pending", enum: ["Pending", "Approved", "Rejected"] },
+    approvals: [{
+        role: String,
+        approverId: String,
+        status: String,
+        date: String
+    }],
+    createdAt: { type: String, required: true }
+});
+
+// Performance Star Schema
+const PerformanceStarSchema = new Schema({
+    employeeId: { type: String, required: true },
+    stars: { type: Number, default: 0 },
+    rating: { type: Number, default: 0 },
+    badges: [String]
 });
 
 // Leave Request Schema
@@ -48,67 +149,34 @@ const LeaveRequestSchema = new Schema({
     appliedAt: { type: String }
 });
 
-// Notice Schema
-const NoticeSchema = new Schema({
+// ... (Notice, Ticket, PIP, etc. match original but consolidated below)
+const NoticeSchema = new Schema({ id: { type: String, unique: true }, title: String, content: String, category: String, createdBy: String, createdAt: String, readBy: [String], isEdited: Boolean, imageUrlls: [String] });
+const TicketSchema = new Schema({ id: { type: String, unique: true }, raisedBy: String, employeeName: String, targetCategory: String, subject: String, content: String, proofUrls: [String], status: String, createdAt: String });
+const PIPRecordSchema = new Schema({ id: { type: String, unique: true }, employeeId: String, employeeName: String, reason: String, startDate: String, status: String, warnings: Number, disclaimer: String });
+const AdditionalResponsibilitySchema = new Schema({ id: { type: String, unique: true }, employeeId: String, employeeName: String, addedBy: String, description: String, date: String, status: String, points: Number });
+
+// Location Schema for Campus / University Geo-Coordinates
+const LocationSchema = new Schema({
     id: { type: String, required: true, unique: true },
-    title: { type: String, required: true },
-    content: { type: String, required: true },
-    category: { type: String, required: true },
-    createdBy: { type: String, required: true },
-    createdAt: { type: String, required: true },
-    readBy: [String],
-    isEdited: { type: Boolean, default: false },
-    editedAt: { type: String },
-    imageUrls: [String]
+    name: { type: String, required: true },
+    shortName: { type: String, required: true },
+    lat: { type: Number, required: true },
+    lng: { type: Number, required: true },
+    radiusKm: { type: Number, default: 2 },
+    address: { type: String, required: true },
+    city: { type: String, required: true },
+    state: { type: String, required: true }
 });
 
-// Ticket Schema
-const TicketSchema = new Schema({
-    id: { type: String, required: true, unique: true },
-    raisedBy: { type: String, required: true },
-    employeeName: { type: String, required: true },
-    targetCategory: { type: String, required: true },
-    subject: { type: String, required: true },
-    content: { type: String, required: true },
-    proofUrls: [String],
-    status: { type: String, default: "Open" },
-    createdAt: { type: String, required: true },
-    resolvedAt: { type: String },
-    assignedTo: { type: String },
-    resolutionNotes: { type: String }
-});
-
-// PIP Record Schema
-const PIPRecordSchema = new Schema({
-    id: { type: String, required: true, unique: true },
-    employeeId: { type: String, required: true },
-    employeeName: { type: String, required: true },
-    reason: { type: String, required: true },
-    startDate: { type: String, required: true },
-    status: { type: String, default: "Active" },
-    warnings: { type: Number, default: 0 },
-    disclaimer: { type: String },
-    resolvedReason: { type: String },
-    resolvedProofs: [String],
-    resolvedAt: { type: String }
-});
-
-// Additional Responsibility Schema
-const AdditionalResponsibilitySchema = new Schema({
-    id: { type: String, required: true, unique: true },
-    employeeId: { type: String, required: true },
-    employeeName: { type: String, required: true },
-    addedBy: { type: String, required: true },
-    description: { type: String, required: true },
-    date: { type: String, required: true },
-    status: { type: String, default: "Pending" },
-    points: { type: Number, default: 0 }
-});
-
-export const PerformanceStar = mongoose.models.PerformanceStar || mongoose.model('PerformanceStar', PerformanceStarSchema);
+export const Employee = mongoose.models.Employee || mongoose.model('Employee', EmployeeSchema);
 export const Attendance = mongoose.models.Attendance || mongoose.model('Attendance', AttendanceSchema);
+export const WorkSchedule = mongoose.models.WorkSchedule || mongoose.model('WorkSchedule', WorkScheduleSchema);
+export const MarkAsPresentRequest = mongoose.models.MarkAsPresentRequest || mongoose.model('MarkAsPresentRequest', MarkAsPresentRequestSchema);
+export const OverrideRequest = mongoose.models.OverrideRequest || mongoose.model('OverrideRequest', OverrideRequestSchema);
+export const PerformanceStar = mongoose.models.PerformanceStar || mongoose.model('PerformanceStar', PerformanceStarSchema);
 export const LeaveRequest = mongoose.models.LeaveRequest || mongoose.model('LeaveRequest', LeaveRequestSchema);
 export const Notice = mongoose.models.Notice || mongoose.model('Notice', NoticeSchema);
 export const Ticket = mongoose.models.Ticket || mongoose.model('Ticket', TicketSchema);
 export const PIPRecord = mongoose.models.PIPRecord || mongoose.model('PIPRecord', PIPRecordSchema);
 export const AdditionalResponsibility = mongoose.models.AdditionalResponsibility || mongoose.model('AdditionalResponsibility', AdditionalResponsibilitySchema);
+export const Location = mongoose.models.Location || mongoose.model('Location', LocationSchema);

@@ -25,9 +25,9 @@ export const getAuthorityEmails = (employee: any, allEmployees: any[]) => {
     const hrEmails = allEmployees.filter(e => e.role === "HR").map(e => e.email.toLowerCase());
     hrEmails.forEach(email => authorities.add(email));
 
-    // Remove the employee's own email from CC if present
+    // Ensure the employee's own email (initiator) is included in CC
     if (employee && employee.email) {
-        authorities.delete(employee.email.toLowerCase());
+        authorities.add(employee.email.toLowerCase());
     }
 
     return Array.from(authorities);
@@ -50,7 +50,7 @@ export const getTicketTemplate = (ticket: any, type: 'raised' | 'resolved') => {
                         <strong>Description:</strong><br/>
                         ${ticket.content}
                     </div>
-                    <p>This is an automated notification from GoG OMS.</p>
+                    <p>This is an automated mail from GOG OMS.</p>
                 </div>
             `
         };
@@ -192,15 +192,39 @@ export const getAdditionalResponsibilityTemplate = (resp: any) => {
 export const getMarkAsPresentTemplate = (req: any, status: 'Pending' | 'Approved' | 'Rejected') => {
     const statusColor = status === 'Approved' ? '#10b981' : status === 'Rejected' ? '#ef4444' : '#f59e0b';
     return {
-        subject: `[ATTENDANCE REQUEST] Mark As Present ${status.toUpperCase()} - ${req.date}`,
+        subject: `[ATTENDANCE APPEAL] ${status.toUpperCase()} - ${req.employeeName} (${req.date})`,
         html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333;">
+            <div style="font-family: sans-serif; padding: 20px; color: #333; border: 1px solid ${statusColor}; border-radius: 8px;">
                 <h2 style="color: ${statusColor};">Attendance Appeal ${status}</h2>
-                <p><strong>Employee:</strong> ${req.employeeName}</p>
-                <p><strong>Requested Date:</strong> ${req.date}</p>
-                <p><strong>Reason:</strong> ${req.reason}</p>
-                <p><strong>Review Status:</strong> <span style="color: ${statusColor}; font-weight: bold;">${status}</span></p>
-                <p>Please check your attendance calendar for updates.</p>
+                <p><strong>Employee:</strong> ${req.employeeName} (${req.employeeId})</p>
+                <p><strong>Date:</strong> ${req.date}</p>
+                <div style="background: #f8fafc; padding: 15px; border-radius: 6px; margin: 10px 0;">
+                    <strong>Reason:</strong> ${req.reason}
+                </div>
+                ${req.proofUrls?.length ? `<p><strong>Proofs attached:</strong> ${req.proofUrls.length} files</p>` : ''}
+                <p><strong>Final Decision:</strong> <span style="color: ${statusColor}; font-weight: bold;">${status}</span></p>
+                ${status === 'Approved' ? '<p style="color: #10b981;">Note: Attendance has been marked as Present with a Late Clock-in flag.</p>' : ''}
+                <p style="font-size: 11px; color: #666; margin-top: 20px;">This is an automated response from GOG Attendance Systems.</p>
+            </div>
+        `
+    };
+};
+
+export const getOverrideTemplate = (req: any, status: 'Pending' | 'Approved' | 'Rejected') => {
+    const statusColor = status === 'Approved' ? '#10b981' : status === 'Rejected' ? '#ef4444' : '#f59e0b';
+    return {
+        subject: `[ATTENDANCE OVERRIDE] ${status.toUpperCase()} - Requested by ${req.requestedByName} for ${req.employeeName}`,
+        html: `
+            <div style="font-family: sans-serif; padding: 20px; color: #333; border: 1px solid #6366f1; border-radius: 8px;">
+                <h2 style="color: #6366f1;">Attendance Override ${status}</h2>
+                <p><strong>Target Employee:</strong> ${req.employeeName} (${req.employeeId})</p>
+                <p><strong>Requested By:</strong> ${req.requestedByName}</p>
+                <p><strong>Reason for Override:</strong> ${req.reason}</p>
+                <div style="background: #f5f3ff; padding: 15px; border-radius: 6px; margin: 10px 0;">
+                    <strong>Official Communication Log:</strong> This request has been logged in the Founder's communication log for compliance.
+                </div>
+                <p><strong>Status:</strong> <span style="color: ${statusColor}; font-weight: bold;">${status}</span></p>
+                <p style="font-size: 11px; color: #666; margin-top: 20px;">GoG OMS Override Management</p>
             </div>
         `
     };
@@ -326,6 +350,28 @@ export const getSOPUpdateTemplate = (sop: any, type: 'new' | 'updated' | 'delete
                 </div>` : ''}
                 <p>Please review the updated SOPs in the Documentation section of your dashboard.</p>
                 <p style="font-size: 11px; color: #666; margin-top: 20px;">GoG OMS Documentation Control System</p>
+            </div>
+        `
+    };
+};
+
+export const getBirthdayTemplate = (employee: any) => {
+    return {
+        subject: `🎂 Happy Birthday ${employee.name}! - Geeks of Gurukul`,
+        html: `
+            <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; border: 1px solid #e5e7eb; border-radius: 16px; background-color: #ffffff; text-align: center;">
+                <div style="margin-bottom: 24px;">
+                    <img src="https://i.postimg.cc/4NdhCzDD/logo-(2).png" alt="GoG Logo" style="height: 40px; margin: 0 auto;">
+                </div>
+                <h1 style="color: #10b981; font-size: 28px; font-weight: 800; margin-bottom: 16px;">Happy Birthday, ${employee.name}! 🥳</h1>
+                <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+                    On behalf of everyone at <strong>Geeks of Gurukul</strong>, we wish you a fantastic day filled with joy, laughter, and your favorite things. We are grateful for your hard work and contribution to our team.
+                </p>
+                <div style="font-size: 80px; margin: 32px 0;">🎂</div>
+                <p style="color: #9ca3af; font-size: 14px; margin-top: 40px; border-top: 1px solid #f3f4f6; pt: 20px;">
+                    Wishing you a great year ahead!<br/>
+                    <strong>The GoG Management Team</strong>
+                </p>
             </div>
         `
     };

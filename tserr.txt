@@ -1,0 +1,22 @@
+.next/dev/types/validator.ts(495,31): error TS2344: Type 'typeof import("C:/Users/Nitesh/Desktop/GoG_MS/src/app/api/locations/[id]/route")' does not satisfy the constraint 'RouteHandlerConfig<"/api/locations/[id]">'.
+  Types of property 'GET' are incompatible.
+    Type '(request: Request, { params }: { params: { id: string; }; }) => Promise<NextResponse<any>>' is not assignable to type '(request: NextRequest, context: { params: Promise<{ id: string; }>; }) => void | Response | Promise<void | Response>'.
+      Types of parameters '__1' and 'context' are incompatible.
+        Type '{ params: Promise<{ id: string; }>; }' is not assignable to type '{ params: { id: string; }; }'.
+          Types of property 'params' are incompatible.
+            Property 'id' is missing in type 'Promise<{ id: string; }>' but required in type '{ id: string; }'.
+.next/types/validator.ts(495,31): error TS2344: Type 'typeof import("C:/Users/Nitesh/Desktop/GoG_MS/src/app/api/locations/[id]/route")' does not satisfy the constraint 'RouteHandlerConfig<"/api/locations/[id]">'.
+  Types of property 'GET' are incompatible.
+    Type '(request: Request, { params }: { params: { id: string; }; }) => Promise<NextResponse<any>>' is not assignable to type '(request: NextRequest, context: { params: Promise<{ id: string; }>; }) => void | Response | Promise<void | Response>'.
+      Types of parameters '__1' and 'context' are incompatible.
+        Type '{ params: Promise<{ id: string; }>; }' is not assignable to type '{ params: { id: string; }; }'.
+          Types of property 'params' are incompatible.
+            Property 'id' is missing in type 'Promise<{ id: string; }>' but required in type '{ id: string; }'.
+scripts/seed-locations.ts(2,26): error TS2307: Cannot find module './src/models/Schemas' or its corresponding type declarations.
+src/app/management/bi-weekly/page.tsx(144,75): error TS2322: Type '{ size: number; className: string; title: string; }' is not assignable to type 'IntrinsicAttributes & Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>'.
+  Property 'title' does not exist on type 'IntrinsicAttributes & Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>'.
+src/app/page.tsx(500,68): error TS2304: Cannot find name 'PartyPopper'.
+src/app/page.tsx(501,72): error TS2304: Cannot find name 'AlertCircle'.
+src/app/page.tsx(503,81): error TS2304: Cannot find name 'UserPlus'.
+src/app/profile/page.tsx(194,101): error TS2551: Property 'designationDate' does not exist on type 'Employee'. Did you mean 'designation'?
+src/app/tickets/page.tsx(10,81): error TS2339: Property 'restoreAttendanceCredits' does not exist on type 'AuthContextType'.
