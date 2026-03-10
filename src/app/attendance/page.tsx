@@ -174,11 +174,11 @@ export default function AttendancePage() {
     const teamAttendanceList = showsTeamRoster ? computeTeamAttendance() : [];
 
     return (
-        <div className="p-6 space-y-6 max-w-5xl mx-auto w-full">
-            <header className="flex justify-between items-center">
-                <div><h1 className="text-xl font-bold text-white tracking-tight">Attendance Management</h1><p className="text-xs text-zinc-400 mt-1">Clock in/out with location & dress code verification.</p></div>
-                <div className="flex flex-col items-end gap-1">
-                    <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-lg text-primary">
+        <div className="p-4 sm:p-6 space-y-6 max-w-5xl mx-auto w-full">
+            <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div><h1 className="text-lg sm:text-xl font-bold text-white tracking-tight">Attendance Management</h1><p className="text-[11px] text-zinc-400 mt-1">Clock in/out with location & dress code verification.</p></div>
+                <div className="flex flex-col items-end gap-1 w-full sm:w-auto">
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-lg text-primary w-full sm:w-auto justify-center">
                         <Clock size={14} /><span className="text-[11px] font-bold font-mono">{currentTime}</span>
                     </div>
                 </div>
@@ -202,7 +202,7 @@ export default function AttendancePage() {
                         />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="bg-zinc-800/30 border border-zinc-700/50 p-3 rounded-xl flex items-center justify-between">
                             <span className="text-xs font-bold text-zinc-400 block">{isHRorFounder ? "Total Staff" : "Team Size"}</span>
                             <span className="text-lg font-black text-white">{employeesToShow.length}</span>
@@ -217,83 +217,82 @@ export default function AttendancePage() {
                         </div>
                     </div>
 
-                    <div className="overflow-x-auto max-h-[400px] custom-scrollbar rounded-xl border border-zinc-800/50">
-                        <table className="w-full text-left">
-                            <thead className="bg-zinc-800/80 sticky top-0 z-10 text-[9px] uppercase tracking-widest text-zinc-400">
-                                <tr>
-                                    <th className="px-4 py-3 font-bold">Employee</th>
-                                    <th className="px-4 py-3 font-bold">Status</th>
-                                    <th className="px-4 py-3 font-bold">In / Out</th>
-                                    <th className="px-4 py-3 font-bold">Location</th>
-                                    <th className="px-4 py-3 font-bold">Flags Issued</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-zinc-800/50">
-                                {teamAttendanceList.map(({ employee, record, status }) => (
-                                    <tr key={employee.id} className="hover:bg-zinc-800/30 transition-colors text-xs">
-                                        <td className="px-4 py-3">
-                                            <p className="font-bold text-white">{employee.name}</p>
-                                            <p className="text-[10px] text-zinc-500">{employee.designation || employee.role}</p>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold border",
-                                                status === "Working" ? "bg-green-500/10 text-green-400 border-green-500/20" :
-                                                    status === "Clocked Out" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
-                                                        "bg-zinc-800 text-zinc-500 border-zinc-700"
-                                            )}>
-                                                {status}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-[10px] text-zinc-300">
-                                            {record ? (
-                                                <div className="flex flex-col gap-0.5">
-                                                    <span className="text-green-400">In: {record.clockIn}</span>
-                                                    {record.clockOut && <span className="text-orange-400">Out: {record.clockOut}</span>}
-                                                </div>
-                                            ) : <span className="text-zinc-600">—</span>}
-                                        </td>
-                                        <td className="px-4 py-3 text-[10px] text-zinc-400">
-                                            {record ? record.location : "—"}
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex flex-col gap-1.5 min-w-[120px]">
-                                                {record ? (
-                                                    <div className="flex gap-1 flex-wrap">
-                                                        {Object.entries(record.flags).filter(([_, v]) => v).length > 0 ? (
-                                                            Object.entries(record.flags).filter(([_, v]) => v).map(([k]) => (
-                                                                <span key={k} className={cn("text-[8.5px] font-bold px-1.5 py-0.5 rounded-sm flex items-center gap-1", FLAG_CONFIG[k]?.color || "text-zinc-400 bg-zinc-800")}>
-                                                                    {FLAG_CONFIG[k]?.emoji} {FLAG_CONFIG[k]?.label || k}
-                                                                </span>
-                                                            ))
-                                                        ) : <span className="text-[10px] text-zinc-600">Clean</span>}
-                                                    </div>
-                                                ) : <span className="text-[10px] text-zinc-600">—</span>}
-
-                                                {isHRorFounder && record?.dressCodeImageUrl && record.dressCodeStatus === "Pending" && (
-                                                    <div className="flex gap-1 mt-1">
-                                                        <button
-                                                            onClick={() => resolveDressCodeCheck(record.id, "Approved")}
-                                                            className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded-sm hover:bg-emerald-500/30 font-bold"
-                                                        >
-                                                            ✓ Approve Dress
-                                                        </button>
-                                                        <button
-                                                            onClick={() => resolveDressCodeCheck(record.id, "Rejected")}
-                                                            className="text-[8px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-sm hover:bg-red-500/30 font-bold"
-                                                        >
-                                                            ✗ Reject
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </td>
+                    <div className="overflow-x-auto max-h-[500px] custom-scrollbar rounded-xl border border-zinc-800/50 -mx-2 sm:mx-0">
+                        <div className="min-w-[800px]">
+                            <table className="w-full text-left">
+                                <thead className="bg-zinc-800/80 sticky top-0 z-10 text-[9px] uppercase tracking-widest text-zinc-400">
+                                    <tr>
+                                        <th className="px-4 py-3 font-bold">Employee</th>
+                                        <th className="px-4 py-3 font-bold">Status</th>
+                                        <th className="px-4 py-3 font-bold">In / Out</th>
+                                        <th className="px-4 py-3 font-bold">Location</th>
+                                        <th className="px-4 py-3 font-bold">Flags Issued</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        {teamAttendanceList.length === 0 && (
-                            <div className="p-8 text-center text-zinc-500 text-sm">No employee data found.</div>
-                        )}
+                                </thead>
+                                <tbody className="divide-y divide-zinc-800/50">
+                                    {teamAttendanceList.map(({ employee, record, status }) => (
+                                        <tr key={employee.id} className="hover:bg-zinc-800/30 transition-colors text-xs">
+                                            <td className="px-4 py-3">
+                                                <p className="font-bold text-white">{employee.name}</p>
+                                                <p className="text-[10px] text-zinc-500">{employee.designation || employee.role}</p>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold border",
+                                                    status === "Working" ? "bg-green-500/10 text-green-400 border-green-500/20" :
+                                                        status === "Clocked Out" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
+                                                            "bg-zinc-800 text-zinc-500 border-zinc-700"
+                                                )}>
+                                                    {status}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-[10px] text-zinc-300">
+                                                {record ? (
+                                                    <div className="flex flex-col gap-0.5">
+                                                        <span className="text-green-400">In: {record.clockIn}</span>
+                                                        {record.clockOut && <span className="text-orange-400">Out: {record.clockOut}</span>}
+                                                    </div>
+                                                ) : <span className="text-zinc-600">—</span>}
+                                            </td>
+                                            <td className="px-4 py-3 text-[10px] text-zinc-400">
+                                                {record ? record.location : "—"}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="flex flex-col gap-1.5 min-w-[120px]">
+                                                    {record ? (
+                                                        <div className="flex gap-1 flex-wrap">
+                                                            {Object.entries(record.flags).filter(([_, v]) => v).length > 0 ? (
+                                                                Object.entries(record.flags).filter(([_, v]) => v).map(([k]) => (
+                                                                    <span key={k} className={cn("text-[8.5px] font-bold px-1.5 py-0.5 rounded-sm flex items-center gap-1", FLAG_CONFIG[k]?.color || "text-zinc-400 bg-zinc-800")}>
+                                                                        {FLAG_CONFIG[k]?.emoji} {FLAG_CONFIG[k]?.label || k}
+                                                                    </span>
+                                                                ))
+                                                            ) : <span className="text-[10px] text-zinc-600">Clean</span>}
+                                                        </div>
+                                                    ) : <span className="text-[10px] text-zinc-600">—</span>}
+
+                                                    {isHRorFounder && record?.dressCodeImageUrl && record.dressCodeStatus === "Pending" && (
+                                                        <div className="flex gap-1 mt-1">
+                                                            <button
+                                                                onClick={() => resolveDressCodeCheck(record.id, "Approved")}
+                                                                className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded-sm hover:bg-emerald-500/30 font-bold"
+                                                            >
+                                                                ✓ Approve Dress
+                                                            </button>
+                                                            <button
+                                                                onClick={() => resolveDressCodeCheck(record.id, "Rejected")}
+                                                                className="text-[8px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-sm hover:bg-red-500/30 font-bold"
+                                                            >
+                                                                ✗ Reject
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             )}
@@ -303,18 +302,18 @@ export default function AttendancePage() {
 
             <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-4">
                 {/* Employee Info */}
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold">{user.name[0]}</div>
                         <div><p className="text-sm font-bold text-white">{user.name}</p><p className="text-[10px] text-zinc-500">{emp.designation} · {emp.dept}</p></div>
                     </div>
-                    <div className={cn("px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border",
+                    <div className={cn("px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border w-full sm:w-auto text-center",
                         hasCheckedIn ? (hasCheckedOut ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-green-500/10 text-green-400 border-green-500/20") : "bg-zinc-800 text-zinc-500 border-zinc-700"
                     )}>{hasCheckedIn ? (hasCheckedOut ? "Clocked Out" : "Working") : "Not Clocked In"}</div>
                 </div>
 
                 {/* Schedule */}
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="bg-zinc-800/50 p-3 rounded-xl border border-zinc-700/50">
                         <p className="text-[9px] text-zinc-500 font-bold uppercase">Location</p>
                         <p className="text-xs font-bold text-white mt-1 flex items-center gap-1">
@@ -516,35 +515,46 @@ export default function AttendancePage() {
             {/* Attendance Log */}
             <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl overflow-hidden">
                 <div className="p-4 border-b border-zinc-800/50 flex items-center gap-2"><History size={14} className="text-zinc-400" /><h3 className="text-sm font-semibold text-white">Attendance Log</h3></div>
-                <div className="overflow-x-auto">
-                    <table className="w-full"><thead><tr className="border-b border-zinc-800/50 text-[9px] text-zinc-500 uppercase tracking-widest">
-                        <th className="text-left px-5 py-3">Date</th><th className="text-left px-5 py-3">In</th><th className="text-left px-5 py-3">Out</th><th className="text-left px-5 py-3">Location</th><th className="text-left px-5 py-3">Photo</th><th className="text-left px-5 py-3">Flags</th>
-                    </tr></thead>
-                        <tbody className="divide-y divide-zinc-800/50">
-                            {myLogs.slice(0, 20).map(log => (
-                                <tr key={log.id} className="hover:bg-zinc-800/20 transition-colors text-xs">
-                                    <td className="px-5 py-3 text-white font-medium">{log.date}</td>
-                                    <td className="px-5 py-3 text-zinc-300">{log.clockIn}</td>
-                                    <td className="px-5 py-3 text-zinc-300">{log.clockOut || "—"}</td>
-                                    <td className="px-5 py-3 text-zinc-400">{log.location}</td>
-                                    <td className="px-5 py-3">
-                                        {log.dressCodeImageUrl ? (
-                                            <a href={log.dressCodeImageUrl} target="_blank" rel="noopener" className="text-primary hover:underline flex items-center gap-1"><ImageIcon size={12} /> View</a>
-                                        ) : <span className="text-zinc-600">—</span>}
-                                    </td>
-                                    <td className="px-5 py-3">
-                                        <div className="flex gap-1 flex-wrap">
-                                            {Object.entries(log.flags).filter(([_, v]) => v).map(([k]) => (
-                                                <span key={k} className={cn("text-[8px] font-bold px-1.5 py-0.5 rounded-full", FLAG_CONFIG[k]?.color || "text-zinc-400 bg-zinc-800")}>
-                                                    {FLAG_CONFIG[k]?.emoji} {FLAG_CONFIG[k]?.label || k}
-                                                </span>
-                                            ))}
-                                            {Object.values(log.flags).every(v => !v) && <span className="text-[8px] text-zinc-600">Clean</span>}
-                                        </div>
-                                    </td>
+                <div className="overflow-x-auto -mx-2 sm:mx-0">
+                    <div className="min-w-[700px]">
+                        <table className="w-full">
+                            <thead>
+                                <tr className="border-b border-zinc-800/50 text-[9px] text-zinc-500 uppercase tracking-widest">
+                                    <th className="text-left px-5 py-3">Date</th>
+                                    <th className="text-left px-5 py-3">In</th>
+                                    <th className="text-left px-5 py-3">Out</th>
+                                    <th className="text-left px-5 py-3">Location</th>
+                                    <th className="text-left px-5 py-3">Photo</th>
+                                    <th className="text-left px-5 py-3">Flags</th>
                                 </tr>
-                            ))}
-                        </tbody></table>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-800/50">
+                                {myLogs.slice(0, 20).map(log => (
+                                    <tr key={log.id} className="hover:bg-zinc-800/20 transition-colors text-xs">
+                                        <td className="px-5 py-3 text-white font-medium">{log.date}</td>
+                                        <td className="px-5 py-3 text-zinc-300">{log.clockIn}</td>
+                                        <td className="px-5 py-3 text-zinc-300">{log.clockOut || "—"}</td>
+                                        <td className="px-5 py-3 text-zinc-400">{log.location}</td>
+                                        <td className="px-5 py-3">
+                                            {log.dressCodeImageUrl ? (
+                                                <a href={log.dressCodeImageUrl} target="_blank" rel="noopener" className="text-primary hover:underline flex items-center gap-1"><ImageIcon size={12} /> View</a>
+                                            ) : <span className="text-zinc-600">—</span>}
+                                        </td>
+                                        <td className="px-5 py-3">
+                                            <div className="flex gap-1 flex-wrap">
+                                                {Object.entries(log.flags).filter(([_, v]) => v).map(([k]) => (
+                                                    <span key={k} className={cn("text-[8px] font-bold px-1.5 py-0.5 rounded-full", FLAG_CONFIG[k]?.color || "text-zinc-400 bg-zinc-800")}>
+                                                        {FLAG_CONFIG[k]?.emoji} {FLAG_CONFIG[k]?.label || k}
+                                                    </span>
+                                                ))}
+                                                {Object.values(log.flags).every(v => !v) && <span className="text-[8px] text-zinc-600">Clean</span>}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 

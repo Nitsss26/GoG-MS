@@ -905,6 +905,7 @@ interface AuthContextType {
     getMyNotifications: () => PortalNotification[];
     activityLogs: PortalNotification[];
     getExpectedTiming: (employeeId: string, date?: string | Date) => { in: string; out: string; location: string };
+    restoreAttendanceCredits: (employeeId: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -1460,6 +1461,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const data = await res.json();
             if (data.message) setColleges(prev => prev.filter(c => c.id !== id));
         } catch (err) { console.error(err); }
+    };
+
+    const restoreAttendanceCredits = (employeeId: string) => {
+        setEmployees(prev => prev.map(emp => {
+            if (emp.id === employeeId) {
+                return {
+                    ...emp,
+                    chancesRemaining: Math.min(3, (emp.chancesRemaining || 0) + 1),
+                    markPresentUsed: Math.max(0, (emp.markPresentUsed || 0) - 1)
+                };
+            }
+            return emp;
+        }));
     };
 
     const giveCredit = (employeeId: string, reason: string) => {
@@ -2289,7 +2303,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             requestAsset, assignAsset, updateAssetRequestStatus,
             addNotification, markNotificationRead, getMyNotifications,
             markAsPresentRequests, addMarkAsPresentRequest, resolveMarkAsPresentRequest, resolveDressCodeCheck, giveCredit,
-            getExpectedTiming
+            getExpectedTiming, restoreAttendanceCredits
         }}>
             {children}
         </AuthContext.Provider>

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -260,7 +260,7 @@ export default function Home() {
     const expected = getExpectedTiming(user.id);
 
     return (
-        <div className="p-6 space-y-6 max-w-6xl mx-auto w-full">
+        <div className="p-4 sm:p-6 space-y-6 max-w-6xl mx-auto w-full">
             {/* PIP Warning Banner */}
             {myPIP && (
                 <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-center gap-3">
@@ -270,43 +270,43 @@ export default function Home() {
             )}
 
             {/* Welcome */}
-            <header className="flex justify-between items-end">
+            <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3 sm:gap-0">
                 <div>
-                    <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
-                        {role === "HR" ? "HR Administration" : role === "FOUNDER" ? "Founder" : ["AD", "HOI", "TL"].includes(role) ? `${role} Â· ${emp.designation || ""}` : "Employee"} Dashboard
+                    <p className="text-[9px] sm:text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+                        {role === "HR" ? "HR Administration" : role === "FOUNDER" ? "Founder" : ["AD", "HOI", "TL"].includes(role) ? `${role} · ${emp.designation || ""}` : "Employee"} Dashboard
                     </p>
-                    <h1 className="text-2xl font-bold text-white tracking-tight mt-1">Welcome back, {user.name}</h1>
+                    <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight mt-0.5 sm:mt-1">Welcome back, {user.name}</h1>
                 </div>
-                <span className="text-[9px] text-zinc-500">{todayStr}</span>
+                <span className="text-[8px] sm:text-[9px] text-zinc-500">{todayStr}</span>
             </header>
 
             {/* Today's Schedule Banner */}
             {!isManagerRole && role !== "HR" && role !== "FOUNDER" && (
-                <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-3xl p-6 flex flex-wrap items-center justify-between gap-6 animate-in fade-in slide-in-from-top-4 duration-700">
-                    <div className="flex items-center gap-5">
-                        <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shadow-inner">
-                            <Clock size={28} />
+                <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl sm:rounded-3xl p-4 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6 animate-in fade-in slide-in-from-top-4 duration-700">
+                    <div className="flex items-center gap-4 sm:gap-5">
+                        <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-primary/10 flex items-center justify-center text-primary shadow-inner shrink-0">
+                            <Clock size={24} className="sm:w-7 sm:h-7" />
                         </div>
                         <div>
-                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-1">Shift Duration Today</p>
-                            <p className="text-xl font-bold text-white tracking-tight">{expected.in} — {expected.out}</p>
+                            <p className="text-[9px] sm:text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-0.5 sm:mb-1">Shift Duration Today</p>
+                            <p className="text-lg sm:text-xl font-bold text-white tracking-tight">{expected.in} — {expected.out}</p>
                         </div>
                     </div>
 
                     <div className="h-10 w-px bg-zinc-800 hidden md:block" />
 
-                    <div className="flex items-center gap-5">
-                        <div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-400 shadow-inner">
-                            <MapPin size={28} />
+                    <div className="flex items-center gap-4 sm:gap-5">
+                        <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-400 shadow-inner shrink-0">
+                            <MapPin size={24} className="sm:w-7 sm:h-7" />
                         </div>
                         <div>
-                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-1">Assigned Work Location</p>
-                            <p className="text-xl font-bold text-white tracking-tight">{expected.location}</p>
+                            <p className="text-[9px] sm:text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-0.5 sm:mb-1">Assigned Work Location</p>
+                            <p className="text-lg sm:text-xl font-bold text-white tracking-tight">{expected.location}</p>
                         </div>
                     </div>
 
-                    <div className="flex flex-col items-end gap-2">
-                        <span className={cn("text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest border",
+                    <div className="flex flex-row sm:flex-col items-center sm:items-end w-full sm:w-auto justify-between sm:justify-center gap-2">
+                        <span className={cn("text-[9px] sm:text-[10px] font-bold px-2.5 sm:px-3 py-1 rounded-full uppercase tracking-widest border",
                             expected.location === "WFH" ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : "text-green-400 bg-green-500/10 border-green-500/20"
                         )}>
                             {expected.location === "WFH" ? "Remote Work" : "Campus Presence"}

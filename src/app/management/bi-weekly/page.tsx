@@ -141,7 +141,7 @@ export default function BiWeeklyReportPage() {
                                     type="text" value={period} onChange={(e) => setPeriod(e.target.value)}
                                     className="flex-1 bg-transparent text-xs text-white focus:outline-none"
                                 />
-                                <Info size={14} className="text-zinc-700" title="Auto-detected based on current date" />
+                                <Info size={14} className="text-zinc-700" />
                             </div>
                         </div>
 
