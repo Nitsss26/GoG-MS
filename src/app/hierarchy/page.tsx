@@ -40,27 +40,27 @@ export default function HierarchyPage() {
 
     const filteredNodes = searchQuery
         ? orgHierarchy.filter(n =>
-            n.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            n.designation.toLowerCase().includes(searchQuery.toLowerCase())
+            (n.name?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
+            (n.designation?.toLowerCase() || "").includes(searchQuery.toLowerCase())
         )
         : [];
 
     return (
-        <div className="p-8 space-y-8 w-full min-h-screen">
-            <header className="flex justify-between items-end">
+        <div className="p-4 sm:p-8 space-y-6 sm:space-y-8 w-full min-h-screen">
+            <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-                        <Network className="text-primary" size={24} />
-                        Organizational Hierarchy
+                    <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+                        <Network className="text-primary" size={20} />
+                        Hierarchy
                     </h1>
-                    <p className="text-sm text-zinc-400 mt-1 italic">Institutional Reporting Tree & Vector Registry</p>
+                    <p className="text-[10px] sm:text-sm text-zinc-400 mt-1 font-medium">Reporting Structure & Team Grid</p>
                 </div>
-                <div className="relative w-72">
+                <div className="relative w-full sm:w-72">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={14} />
                     <input
                         type="text"
-                        placeholder="Search Profile or Node..."
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white outline-none focus:border-primary/50 transition-all font-medium"
+                        placeholder="Search Profile or Role..."
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2 sm:py-2.5 pl-10 pr-4 text-[11px] sm:text-xs text-white outline-none focus:border-primary/50 transition-all font-medium"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
@@ -82,17 +82,17 @@ export default function HierarchyPage() {
                 </div>
             )}
 
-            <div className="flex justify-center pt-8 overflow-hidden min-h-[600px] h-[80vh] pb-20 cursor-grab active:cursor-grabbing touch-none relative bg-zinc-950/50 rounded-3xl border border-zinc-900" ref={containerRef}>
+            <div className="flex justify-center pt-8 sm:pt-12 overflow-hidden min-h-[500px] h-[75vh] sm:h-[80vh] pb-20 cursor-grab active:cursor-grabbing touch-none relative bg-zinc-950/30 sm:rounded-3xl border-y sm:border border-zinc-900 -mx-4 sm:mx-0" ref={containerRef}>
                 {/* Floating Canvas Controls */}
-                <div className="fixed bottom-10 right-10 flex flex-col gap-2 z-[100]">
-                    <button onClick={() => setZoomScale(s => Math.min(s + 0.1, 2))} className="w-10 h-10 bg-zinc-950/80 backdrop-blur border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl" title="Zoom In">
-                        <ZoomIn size={18} />
+                <div className="fixed bottom-6 right-6 sm:bottom-10 sm:right-10 flex flex-col gap-2 z-[100]">
+                    <button onClick={() => setZoomScale(s => Math.min(s + 0.1, 2))} className="w-9 h-9 sm:w-10 sm:h-10 bg-zinc-900/90 backdrop-blur border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl" title="Zoom In">
+                        <ZoomIn size={16} />
                     </button>
-                    <button onClick={() => setZoomScale(s => Math.max(s - 0.1, 0.4))} className="w-10 h-10 bg-zinc-950/80 backdrop-blur border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl" title="Zoom Out">
-                        <ZoomOut size={18} />
+                    <button onClick={() => setZoomScale(s => Math.max(s - 0.1, 0.4))} className="w-9 h-9 sm:w-10 sm:h-10 bg-zinc-900/90 backdrop-blur border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl" title="Zoom Out">
+                        <ZoomOut size={16} />
                     </button>
-                    <button onClick={recenter} className="w-10 h-10 bg-zinc-950/80 backdrop-blur border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl" title="Recenter View">
-                        <RotateCcw size={16} />
+                    <button onClick={recenter} className="w-9 h-9 sm:w-10 sm:h-10 bg-zinc-900/90 backdrop-blur border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl" title="Recenter View">
+                        <RotateCcw size={14} />
                     </button>
                 </div>
 
@@ -138,7 +138,7 @@ function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: Or
         const sharedFaculty = allNodes.filter(n => n.level === "Faculty");
 
         return (
-            <div className="flex flex-col items-center gap-12 relative">
+            <div className="flex flex-col items-center gap-8 sm:gap-16 relative">
 
                 {/* Top Level Roots Container */}
                 <div className="flex gap-4 relative">
@@ -164,7 +164,7 @@ function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: Or
 
                 {/* Horizontal line connecting all Leadership nodes */}
                 {(leadershipNodes.length > 0) && (
-                    <div className="relative flex gap-12 relative">
+                    <div className="relative flex flex-row gap-6 sm:gap-12 relative">
                         {leadershipNodes.length > 1 && (
                             <div className="absolute top-0 left-0 right-0 h-0.5 bg-zinc-700/40"
                                 style={{ width: `calc(100% - ${100 / leadershipNodes.length}%)`, left: `${50 / leadershipNodes.length}%` }} />
@@ -172,9 +172,9 @@ function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: Or
 
                         {leadershipNodes.map(ln => (
                             <div key={ln.id} className="relative flex flex-col items-center">
-                                <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-0.5 h-8 bg-zinc-700/40" />
+                                <div className="absolute -top-8 sm:-top-12 left-1/2 -translate-x-1/2 w-0.5 h-8 sm:h-12 bg-zinc-700/40" />
                                 <NodeCard node={ln} />
-                                <div className="w-0.5 h-8 bg-zinc-700/40" />
+                                <div className="w-0.5 h-6 sm:h-10 bg-zinc-700/40" />
                             </div>
                         ))}
                     </div>
@@ -194,14 +194,14 @@ function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: Or
                         </div>
 
                         {/* HOI Row */}
-                        <div className="flex gap-8 items-center justify-center">
+                        <div className="flex flex-row gap-4 sm:gap-8 items-center justify-center">
                             {hoiNodes.map(hn => (
                                 <div key={hn.id} className="relative flex flex-col items-center">
                                     {/* Vertical line up to bridge/leadership */}
                                     <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-0.5 h-8 bg-zinc-700/40" />
                                     <NodeCard node={hn} />
                                     {/* Vertical line down to Shared Matrix Bar */}
-                                    <div className="w-0.5 h-8 bg-zinc-700/40" />
+                                    <div className="w-0.5 h-6 sm:h-10 bg-zinc-700/40" />
                                 </div>
                             ))}
                         </div>
@@ -217,16 +217,16 @@ function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: Or
                             <div className="w-0.5 h-8 bg-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)]" />
                         </div>
 
-                        {/* THE SHARED REPORTEES BLOCK (Centered & Symmetric) */}
-                        <div className="flex lg:flex-row flex-col gap-8 items-start relative pb-20">
+                        {/* THE SHARED REPORTEES BLOCK (Parallel horizontal groups) */}
+                        <div className="flex flex-row gap-12 sm:gap-24 items-start relative pb-20">
                             {/* Operation Managers Group */}
                             {sharedOMs.length > 0 && (
-                                <div className="relative border border-indigo-500/20 bg-indigo-500/5 rounded-2xl p-4 pt-8 flex flex-col items-center shadow-[0_10px_40px_rgba(79,70,229,0.05)]">
+                                <div className="relative border border-indigo-500/20 bg-indigo-500/5 rounded-2xl p-2.5 sm:p-5 pt-10 flex flex-col items-center shadow-2xl w-max min-w-[200px]">
                                     <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-0.5 h-8 bg-zinc-700/40" />
-                                    <div className="absolute -top-3 px-3 py-1 bg-zinc-950 border border-indigo-500/30 text-indigo-400 text-[8px] font-black uppercase tracking-widest rounded-full shadow-lg z-20">Operation Managers</div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="absolute -top-3 px-3 py-1 bg-zinc-950 border border-indigo-500/30 text-indigo-400 text-[8px] sm:text-[9px] font-black uppercase tracking-widest rounded-lg shadow-xl z-20 whitespace-nowrap">Operation Managers</div>
+                                    <div className="grid grid-cols-2 gap-1.5 sm:gap-4 w-full">
                                         {sharedOMs.map(child => (
-                                            <div key={child.id} className="relative">
+                                            <div key={child.id} className="relative flex justify-center">
                                                 <NodeCard node={child} />
                                             </div>
                                         ))}
@@ -236,12 +236,12 @@ function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: Or
 
                             {/* Faculty Group */}
                             {sharedFaculty.length > 0 && (
-                                <div className="relative border border-rose-500/20 bg-rose-500/5 rounded-2xl p-4 pt-8 flex flex-col items-center shadow-[0_10px_40px_rgba(244,63,94,0.05)]">
+                                <div className="relative border border-rose-500/20 bg-rose-500/5 rounded-2xl p-2.5 sm:p-5 pt-10 flex flex-col items-center shadow-2xl w-max min-w-[200px]">
                                     <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-0.5 h-8 bg-zinc-700/40" />
-                                    <div className="absolute -top-3 px-3 py-1 bg-zinc-950 border border-rose-500/30 text-rose-400 text-[8px] font-black uppercase tracking-widest rounded-full shadow-lg z-20">Professors & Faculty</div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                                    <div className="absolute -top-3 px-3 py-1 bg-zinc-950 border border-rose-500/30 text-rose-400 text-[8px] sm:text-[9px] font-black uppercase tracking-widest rounded-lg shadow-xl z-20 whitespace-nowrap">Faculty & Professors</div>
+                                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-1.5 sm:gap-4 w-full">
                                         {sharedFaculty.map(child => (
-                                            <div key={child.id} className="relative">
+                                            <div key={child.id} className="relative flex justify-center">
                                                 <NodeCard node={child} />
                                             </div>
                                         ))}
@@ -287,9 +287,9 @@ function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
         <motion.div
             layout
             className={cn(
-                "group relative bg-zinc-950 border rounded-xl transition-all shadow-xl hover:shadow-primary/5 min-w-[210px]",
-                isCompact ? "p-2 border-zinc-800" : "p-3 border-zinc-800/80 hover:border-primary/50",
-                node.level === "C-Suite" ? "animate-pulse-slow border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.1)]" : ""
+                "group relative bg-zinc-950 border rounded-xl transition-all shadow-xl hover:shadow-primary/5 min-w-[130px] sm:min-w-[210px]",
+                isCompact ? "p-1 sm:p-2 border-zinc-800" : "p-2 sm:p-3 border-zinc-800/80 hover:border-primary/50",
+                node.level === "C-Suite" ? "animate-pulse-slow border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)]" : ""
             )}
         >
             <div className={cn(
@@ -297,22 +297,22 @@ function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
                 colors[node.level]
             )} />
 
-            <div className="relative flex items-center gap-2">
+            <div className="relative flex items-center gap-1.5 sm:gap-2">
                 <div className={cn(
-                    "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-base border",
+                    "w-6 h-6 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-bold text-xs sm:text-base border shrink-0",
                     node.level === "C-Suite" ? "bg-amber-500/10 border-amber-500/20 text-amber-500" : "bg-zinc-900 border-zinc-800 text-primary"
                 )}>
                     {node.photoInitial}
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1 break-all">
-                        <h3 className="text-[10px] font-bold text-white uppercase tracking-tight line-clamp-1">{node.name}</h3>
+                        <h3 className="text-[8px] sm:text-[10px] font-black text-white uppercase tracking-tight line-clamp-1">{node?.name || "Unknown"}</h3>
                         {/* Mock PIP Indicator */}
-                        {node.dept === "Sales" && node.level === "Faculty" && (
+                        {node?.dept === "Sales" && node?.level === "Faculty" && (
                             <span className="w-1 h-1 rounded-full bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)] animate-pulse" title="Under Performance Improvement Plan (PIP)" />
                         )}
                     </div>
-                    <p className="text-[9px] text-zinc-400 font-medium truncate">{node.designation}</p>
+                    <p className="text-[7px] sm:text-[9px] text-zinc-500 font-bold truncate tracking-wide">{node?.designation || "No Designation"}</p>
                 </div>
 
                 {/* Action Menu for Admin/HR */}
@@ -348,15 +348,15 @@ function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
                 )}
             </div>
 
-            <div className="mt-3 flex items-center justify-between">
+            <div className="mt-2 sm:mt-3 flex items-center justify-between">
                 <div className={cn(
-                    "flex items-center gap-1 text-[8px] font-black uppercase tracking-[0.2em] px-2 py-0.5 rounded-full border",
-                    colors[node.level]
+                    "flex items-center gap-1 text-[7px] sm:text-[8px] font-black uppercase tracking-[0.1em] sm:tracking-[0.2em] px-1.5 sm:px-2 py-0.5 rounded-full border",
+                    node?.level ? colors[node.level] : "text-zinc-500 border-zinc-700"
                 )}>
-                    {levelIcon[node.level]}
-                    {node.level}
+                    {node?.level ? levelIcon[node.level] : <User size={10} />}
+                    <span className="truncate max-w-[40px] sm:max-w-none">{node?.level || "N/A"}</span>
                 </div>
-                <div className="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">{node.dept}</div>
+                <div className="text-[7px] sm:text-[9px] text-zinc-700 font-bold uppercase tracking-tight sm:tracking-widest">{node?.dept || ""}</div>
             </div>
 
             {hasChildren && onToggle && (

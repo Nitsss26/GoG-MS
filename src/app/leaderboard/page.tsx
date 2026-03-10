@@ -160,10 +160,10 @@ export default function LeaderboardPage() {
                         <ChevronLeft size={16} /> <span className="uppercase tracking-widest font-black">Back to Dashboard</span>
                     </Link>
                     <div className="space-y-1">
-                        <h1 className="text-4xl md:text-6xl font-black text-white tracking-tighter leading-none">
+                        <h1 className="text-3xl md:text-6xl font-black text-white tracking-tighter leading-none">
                             LEADER<span className="text-primary italic">BOARD</span>
                         </h1>
-                        <p className="text-zinc-500 text-[10px] font-black tracking-[0.2em] uppercase">Institutional Performance Rankings &middot; March 2026</p>
+                        <p className="text-zinc-500 text-[10px] font-black tracking-[0.2em] uppercase">Institute Performance Rankings &middot; March 2026</p>
                     </div>
                 </div>
 
@@ -203,7 +203,7 @@ export default function LeaderboardPage() {
                             <div className="h-px flex-1 bg-gradient-to-r from-border/50 to-transparent" />
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
                             {foundersRankings.map((s, i) => (
                                 <LeaderboardBox key={s.employeeId || `founder-${i}`} data={s} rank={i + 1} type="FOUNDER" onRespClick={() => setSelectedEmpForResp(s)} />
                             ))}
@@ -223,7 +223,7 @@ export default function LeaderboardPage() {
                         <div className="h-px flex-1 bg-gradient-to-r from-border/50 to-transparent" />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
                         {omRankings.map((s, i) => (
                             <LeaderboardBox key={s.employeeId} data={s} rank={i + 1} type="OM" onRespClick={() => setSelectedEmpForResp(s)} />
                         ))}
@@ -242,7 +242,7 @@ export default function LeaderboardPage() {
                         <div className="h-px flex-1 bg-gradient-to-r from-border/50 to-transparent" />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
                         {facultyRankings.map((s, i) => (
                             <LeaderboardBox key={s.employeeId} data={s} rank={i + 1} type="FACULTY" onRespClick={() => setSelectedEmpForResp(s)} />
                         ))}
@@ -307,8 +307,8 @@ export default function LeaderboardPage() {
                                         <Star size={16} className="text-primary fill-primary" /> Star Conversion
                                     </h3>
                                     <p className="text-[10px] font-bold text-zinc-400 leading-relaxed uppercase tracking-wider">
-                                        Base Level: **3.0 Stars** <br />
-                                        For every **200 points** earned, seniority increment of **0.5 Stars** is applied (Capped at 5.0 Stars).
+                                        Base Level: <strong className="text-primary italic">3.0 Stars</strong> <br />
+                                        For every <strong className="text-primary italic">200 points</strong> earned, seniority increment of <strong className="text-primary italic">0.5 Stars</strong> is applied (Capped at 5.0 Stars).
                                     </p>
                                 </div>
                             </div>
@@ -398,7 +398,7 @@ function StarRating({ stars }: { stars: number }) {
 
 function LeaderboardBox({ data, rank, type, onRespClick }: { data: any; rank: number; type: "OM" | "FACULTY" | "FOUNDER" | "HOI"; onRespClick: () => void }) {
     const medal = rank === 1 && type !== "FOUNDER" ? "🥇" : rank === 2 && type !== "FOUNDER" ? "🥈" : rank === 3 && type !== "FOUNDER" ? "🥉" : null;
-    const isTop3 = rank <= 3 && type !== "FOUNDER";
+    const isTop3 = (rank <= 3) && type !== "FOUNDER";
 
     return (
         <motion.div
@@ -407,19 +407,15 @@ function LeaderboardBox({ data, rank, type, onRespClick }: { data: any; rank: nu
             transition={{ delay: rank * 0.05 }}
             whileHover={{ y: -8, transition: { duration: 0.2 } }}
             className={cn(
-                "group relative w-full aspect-[4/5] rounded-[2rem] border transition-all duration-500 flex flex-col items-center p-6 overflow-visible",
+                "group relative w-full h-auto min-h-[14rem] rounded-[1.8rem] md:rounded-[2.2rem] border transition-all duration-500 flex flex-col items-center p-4 sm:p-5 overflow-visible",
                 isTop3 || type === "FOUNDER"
-                    ? type === "OM"
-                        ? "bg-gradient-to-b from-yellow-500/10 to-transparent border-yellow-500/30 shadow-[0_0_40px_-15px_rgba(234,179,8,0.2)]"
-                        : type === "FOUNDER"
-                            ? "bg-gradient-to-b from-primary/10 to-transparent border-primary/30 shadow-[0_0_40px_-15px_rgba(16,185,129,0.2)]"
-                            : "bg-gradient-to-b from-emerald-500/10 to-transparent border-emerald-500/30 shadow-[0_0_40px_-15px_rgba(16,185,129,0.2)]"
+                    ? "bg-gradient-to-b from-primary/10 to-transparent border-primary/30 shadow-[0_0_40px_-15px_rgba(16,185,129,0.2)]"
                     : "bg-[#111] border-white/[0.05] hover:border-primary/30"
             )}
         >
             {/* Rank Badge */}
             <div className={cn(
-                "absolute -top-3 -left-3 w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-black z-30 shadow-2xl rotate-[-10deg] group-hover:rotate-0 transition-transform",
+                "absolute -top-1.5 -left-1.5 sm:-top-3 sm:-left-3 w-6 h-6 sm:w-10 sm:h-10 rounded-lg sm:rounded-2xl flex items-center justify-center text-[7px] sm:text-xs font-black z-30 shadow-2xl rotate-[-10deg] group-hover:rotate-0 transition-transform",
                 type === "FOUNDER" ? "bg-primary text-primary-foreground" :
                     rank === 1 ? "bg-yellow-500 text-black" :
                         rank === 2 ? "bg-zinc-300 text-black" :
@@ -431,73 +427,73 @@ function LeaderboardBox({ data, rank, type, onRespClick }: { data: any; rank: nu
 
             {/* Medal for Top Performer */}
             {medal && (
-                <div className="absolute -top-4 -right-4 text-3xl z-30 drop-shadow-[0_0_10px_rgba(255,255,255,0.3)] group-hover:scale-125 transition-transform duration-300">
+                <div className="absolute -top-2 -right-2 sm:-top-4 sm:-right-4 text-lg sm:text-3xl z-30 drop-shadow-[0_0_10px_rgba(255,255,255,0.3)] group-hover:scale-125 transition-transform duration-300">
                     {medal}
                 </div>
             )}
 
             {/* Avatar Section */}
-            <div className="relative mt-2 mb-4">
+            <div className="relative mt-0.5 mb-2 sm:mb-3">
                 <div className={cn(
-                    "w-24 h-24 rounded-3xl border-4 overflow-hidden shadow-2xl transition-all duration-500 transform group-hover:scale-105 relative z-10 bg-[#222]",
+                    "w-12 h-12 sm:w-14 sm:h-14 md:w-20 md:h-20 rounded-2xl md:rounded-3xl border-2 md:border-4 overflow-hidden shadow-2xl transition-all duration-500 transform group-hover:scale-105 relative z-10 bg-[#222]",
                     rank === 1 ? "border-yellow-500" : rank === 2 ? "border-zinc-300" : rank === 3 ? "border-amber-600" : "border-white/5"
                 )}>
                     {data.emp?.photoUrl ? (
                         <img src={data.emp.photoUrl} alt="" className="w-full h-full object-cover" />
                     ) : (
-                        <div className="w-full h-full flex items-center justify-center text-3xl font-black text-zinc-700">
-                            {data.emp?.name}
+                        <div className="w-full h-full flex items-center justify-center text-lg sm:text-xl md:text-2xl font-black text-zinc-700">
+                            {data.emp?.name?.[0]}
                         </div>
                     )}
                 </div>
             </div>
 
             {/* Identity Info */}
-            <div className="text-center w-full min-w-0 flex flex-col items-center gap-1">
-                <h3 className="text-sm font-black text-white truncate px-2 leading-tight group-hover:text-primary transition-colors">
+            <div className="text-center w-full min-w-0 flex flex-col items-center gap-0.5 flex-1">
+                <h3 className="text-[10px] sm:text-[11px] md:text-sm font-black text-white truncate px-2 leading-tight group-hover:text-primary transition-colors">
                     {data.emp?.name}
                 </h3>
-                <p className="text-[8px] text-zinc-500 font-bold uppercase tracking-[0.1em] truncate px-4">
+                <p className="text-[6px] sm:text-[7px] text-zinc-500 font-bold uppercase tracking-[0.1em] truncate px-4">
                     {data.emp?.role === "FOUNDER" ? "Founder" : data.emp?.role === "OM" ? "Operation Manager" : data.emp?.role === "PROFESSOR" ? "Professor" : data.emp?.designation}
                 </p>
 
                 {/* Stars Display */}
-                <div className="mt-2">
+                <div className="mt-1">
                     <StarRating stars={data.calculatedStars} />
                 </div>
 
                 {/* Flags Display */}
-                <div className="flex items-center justify-center flex-wrap gap-1 mt-1 mb-2 min-h-4" style={{ minHeight: "16px" }}>
-                    {data.flagCounts.red > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.red} Red Flag(s)`}>{Array.from({ length: data.flagCounts.red }).map((_, i) => <Flag key={'r' + i} size={12} className="text-red-500 fill-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]" />)}</div>}
-                    {data.flagCounts.orange > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.orange} Orange Flag(s)`}>{Array.from({ length: data.flagCounts.orange }).map((_, i) => <Flag key={'o' + i} size={12} className="text-orange-500 fill-orange-500 drop-shadow-[0_0_8px_rgba(249,115,22,0.5)]" />)}</div>}
-                    {data.flagCounts.yellow > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.yellow} Yellow Flag(s)`}>{Array.from({ length: data.flagCounts.yellow }).map((_, i) => <Flag key={'y' + i} size={12} className="text-yellow-500 fill-yellow-500 drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" />)}</div>}
-                    {data.flagCounts.blue > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.blue} Blue Flag(s)`}>{Array.from({ length: data.flagCounts.blue }).map((_, i) => <Flag key={'bl' + i} size={12} className="text-blue-500 fill-blue-500 drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]" />)}</div>}
-                    {data.flagCounts.black > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.black} Black Flag(s)`}>{Array.from({ length: data.flagCounts.black }).map((_, i) => <Flag key={'bk' + i} size={12} className="text-zinc-500 fill-black drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]" />)}</div>}
+                <div className="flex items-center justify-center flex-wrap gap-1 mt-1 mb-1.5 min-h-3" style={{ minHeight: "12px" }}>
+                    {data.flagCounts.red > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.red} Red Flag(s)`}>{Array.from({ length: data.flagCounts.red }).map((_, i) => <Flag key={'r' + i} size={9} className="text-red-500 fill-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]" />)}</div>}
+                    {data.flagCounts.orange > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.orange} Orange Flag(s)`}>{Array.from({ length: data.flagCounts.orange }).map((_, i) => <Flag key={'o' + i} size={9} className="text-orange-500 fill-orange-500 drop-shadow-[0_0_8px_rgba(249,115,22,0.5)]" />)}</div>}
+                    {data.flagCounts.yellow > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.yellow} Yellow Flag(s)`}>{Array.from({ length: data.flagCounts.yellow }).map((_, i) => <Flag key={'y' + i} size={9} className="text-yellow-500 fill-yellow-500 drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" />)}</div>}
+                    {data.flagCounts.blue > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.blue} Blue Flag(s)`}>{Array.from({ length: data.flagCounts.blue }).map((_, i) => <Flag key={'bl' + i} size={9} className="text-blue-500 fill-blue-500 drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]" />)}</div>}
+                    {data.flagCounts.black > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.black} Black Flag(s)`}>{Array.from({ length: data.flagCounts.black }).map((_, i) => <Flag key={'bk' + i} size={9} className="text-zinc-500 fill-black drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]" />)}</div>}
                 </div>
             </div>
 
             {/* Performance Stats */}
-            <div className="w-full mt-auto pt-4 flex items-center justify-between border-t border-white/5 group-hover:border-primary/20 transition-colors">
+            <div className="w-full mt-2 pt-2.5 border-t border-white/5 group-hover:border-primary/20 transition-colors grid grid-cols-2 gap-2">
                 <div className="flex flex-col">
-                    <span className="text-[7px] text-zinc-500 font-black uppercase tracking-widest">Points</span>
-                    <span className="text-xs font-black text-white">{data.totalPoints.toFixed(0)}</span>
+                    <span className="text-[6px] sm:text-[7px] text-zinc-500 font-black uppercase tracking-widest truncate">Points</span>
+                    <span className="text-[10px] sm:text-xs font-black text-white leading-none">{data.totalPoints.toFixed(0)}</span>
                 </div>
-                {data.responsibilities.length > 0 ? (
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onRespClick(); }}
-                        className="flex flex-col items-end group/btn cursor-pointer"
-                    >
-                        <span className="text-[7px] text-primary font-black uppercase tracking-widest group-hover/btn:underline">Add. Resp</span>
-                        <span className="text-[9px] font-black text-primary px-2 py-0.5 bg-primary/10 rounded-lg">+{data.responsibilities.length}</span>
-                    </button>
-                ) : (
-                    <button
-                        className="flex flex-col items-end group/btn cursor-pointer opacity-50"
-                    >
-                        <span className="text-[7px] text-primary font-black uppercase tracking-widest">Add. Resp</span>
-                        <span className="text-[9px] font-black text-primary px-2 py-0.5 bg-primary/10 rounded-lg">0</span>
-                    </button>
-                )}
+                <button
+                    onClick={(e) => { e.stopPropagation(); onRespClick(); }}
+                    className="flex flex-col items-end group/btn cursor-pointer overflow-hidden p-1 -m-1 rounded-lg hover:bg-primary/5 transition-colors"
+                >
+                    <span className="text-[6px] sm:text-[7px] text-primary font-black uppercase tracking-widest group-hover/btn:underline truncate mb-0.5">Add. Resp</span>
+                    <div className={cn(
+                        "px-2 py-0.5 rounded-md shadow-lg transition-all",
+                        data.responsibilities.length > 0 
+                            ? "bg-primary shadow-primary/20" 
+                            : "bg-primary/40 shadow-primary/10 group-hover:bg-primary/60"
+                    )}>
+                        <span className="text-[9px] font-black text-primary-foreground leading-none">
+                            {data.responsibilities.length > 0 ? `+${data.responsibilities.length}` : '0'}
+                        </span>
+                    </div>
+                </button>
             </div>
         </motion.div>
     );

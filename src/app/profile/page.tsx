@@ -23,6 +23,13 @@ export default function ProfilePage() {
     if (!user) return null;
     const emp = user as Employee;
 
+    // Helper to resolve fields between CamelCase (Portal) and SnakeCase (Database/MongoDB)
+    const getVal = (portal?: any, db?: any) => {
+        const val = portal || db;
+        if (!val || val === "?" || val === "NA" || val === "N/A") return "—";
+        return val;
+    };
+
     const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -186,51 +193,57 @@ export default function ProfilePage() {
                     {/* Section: Professional */}
                     <Section title="Professional Credentials" icon={<Briefcase size={16} />}>
                         <InfoRow icon={<Mail size={14} />} label="Institution Email" value={user.email} />
-                        <InfoRow icon={<Phone size={14} />} label="Professional Contact" value={emp.phone || "—"} />
+                        <InfoRow icon={<Phone size={14} />} label="Professional Contact" value={getVal(emp.phone, emp.phone_no_)} />
                         <InfoRow icon={<Building size={14} />} label="Department" value={emp.dept} />
-                        <InfoRow icon={<GraduationCap size={14} />} label="Corporate Node" value={emp.location} />
-                        <InfoRow icon={<Shield size={14} />} label="Designation" value={emp.designation} />
-                        <InfoRow icon={<CalendarIcon size={14} />} label="Onboarding Date" value={emp.joiningDate || "01-01-2024"} />
-                        <InfoRow icon={<Briefcase size={14} />} label="Tech Lead Tenure" value={emp.designationDate || "01-12-2025"} />
+                        <InfoRow icon={<GraduationCap size={14} />} label="Corporate Node" value={getVal(emp.location, emp.you_are_from_)} />
+                        <InfoRow icon={<Shield size={14} />} label="Designation" value={getVal(emp.designation, emp.current_designation_at_gog)} />
+                        <InfoRow icon={<CalendarIcon size={14} />} label="Onboarding Date" value={emp.joiningDate || "—"} />
+                        <InfoRow icon={<Briefcase size={14} />} label="Tenure Start" value={emp.designationDate || "—"} />
                     </Section>
 
                     {/* Section: Bank Details */}
                     <Section title="Remuneration & Banking" icon={<Landmark size={16} />}>
-                        <InfoRow icon={<CreditCard size={14} />} label="Account Name" value={emp.bankAccountName || "—"} />
-                        <InfoRow icon={<Fingerprint size={14} />} label="Account Number" value={emp.bankAccountNumber || "—"} />
-                        <InfoRow icon={<Building size={14} />} label="Bank IFSC Code" value={emp.ifscCode || "—"} />
-                        <InfoRow icon={<Wallet size={14} />} label="Institutional UPI" value={emp.upiId || "—"} />
+                        <InfoRow icon={<CreditCard size={14} />} label="Account Name" value={getVal(emp.bankAccountName, emp.account_holder_name)} />
+                        <InfoRow icon={<Fingerprint size={14} />} label="Account Number" value={getVal(emp.bankAccountNumber, emp.bank_account_number)} />
+                        <InfoRow icon={<Building size={14} />} label="Bank IFSC Code" value={getVal(emp.ifscCode, emp.ifsc_code)} />
+                        <InfoRow icon={<Wallet size={14} />} label="Institutional UPI" value={getVal(emp.upiId, emp.upi_id)} />
                     </Section>
 
                     {/* Section: Academic */}
                     <Section title="Academic Qualifications" icon={<GraduationCap size={16} />}>
-                        <InfoRow icon={<FileText size={14} />} label="Bachelor Degree" value={emp.bachelorQual || "—"} />
-                        <InfoRow icon={<FileText size={14} />} label="Master Degree" value={emp.masterQual || "—"} />
-                        <InfoRow icon={<FileText size={14} />} label="Institution" value={emp.collegeName || "—"} />
+                        <InfoRow icon={<FileText size={14} />} label="Bachelor Degree" value={getVal(emp.bachelorQual, emp.bachelor_s_qualification____ex___b_tech__cse____iit_guwahati_)} />
+                        <InfoRow icon={<FileText size={14} />} label="Master Degree" value={getVal(emp.masterQual, emp.master_s_qualification____ex___m_tech__cse____iit_guwahati_)} />
+                        <InfoRow icon={<FileText size={14} />} label="Institution" value={getVal(emp.collegeName, emp.which_college_are_you_from_)} />
                         <InfoRow icon={<Linkedin size={14} />} label="LinkedIn Identity" value={emp.linkedinId ? <a href={emp.linkedinId} target="_blank" className="text-emerald-500 hover:underline">View Profile</a> : "—"} />
                     </Section>
 
                     {/* Section: Persona/Family */}
                     <Section title="Personal & Family" icon={<User size={16} />}>
-                        <InfoRow icon={<User size={14} />} label="Father/Mother Name" value={emp.fatherMotherName || "—"} />
-                        <InfoRow icon={<Phone size={14} />} label="Parents Contact" value={emp.parentsPhone || "—"} />
-                        <InfoRow icon={<Shield size={14} />} label="Blood Group" value={emp.bloodGroup || "—"} />
-                        <InfoRow icon={<User size={14} />} label="Gender Identity" value={emp.gender || "—"} />
+                        <InfoRow icon={<User size={14} />} label="Father/Mother Name" value={getVal(emp.fatherMotherName, emp.father_name_or_mother_name)} />
+                        <InfoRow icon={<Phone size={14} />} label="Parents Contact" value={getVal(emp.parentsPhone, emp.parents_phone_no_)} />
+                        <InfoRow icon={<Shield size={14} />} label="Blood Group" value={getVal(emp.bloodGroup, emp.blood_group)} />
+                        <InfoRow icon={<User size={14} />} label="Date of Birth" value={getVal(emp.dateOfBirth, emp.date_of_birth)} />
                     </Section>
 
-                    {/* Full Width Section: Documents */}
+                    {/* Full Width Section: Institutional Document Vault */}
                     <div className="md:col-span-2 bg-[#0d0f12]/40 backdrop-blur-3xl border border-white/[0.08] rounded-3xl p-6 lg:p-8">
                         <div className="flex items-center gap-3 border-b border-white/[0.05] pb-4 mb-6">
                             <div className="p-2 bg-pink-500/10 rounded-lg text-pink-500"><FileText size={18} /></div>
                             <h3 className="text-base font-bold text-white uppercase tracking-wider">Institutional Document Vault</h3>
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-center">
-                            <DocLink label="Resume/CV" url={emp.resumeUrl} />
-                            <DocLink label="Degree (Bach)" url={emp.bachelorCertUrl} />
-                            <DocLink label="Degree (Mast)" url={emp.masterCertUrl} />
-                            <DocLink label="Aadhar Card" url={emp.aadharCardUrl} />
-                            <DocLink label="PAN Card" url={emp.panCardUrl} />
-                            <DocLink label="ID Card" url={emp.passportPhotoUrl} />
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 text-center">
+                            <DocLink label="Resume/CV" url={emp.resumeUrl || emp.upload_your_resume} />
+                            <DocLink label="10th Marksheet" url={emp.marksheet10Url || emp["10th_marksheet"]} />
+                            <DocLink label="12th Marksheet" url={emp.marksheet12Url || emp["12th_marksheet"]} />
+                            <DocLink label="Bachelor Degree" url={emp.bachelorCertUrl || emp.upload_your_bachelor_s_passing_certificate} />
+                            <DocLink label="Bachelor Marksheet" url={emp.bachelorMarksheetUrl || emp.upload_your_bachelor_s_marksheet__all_marksheet_together_} />
+                            <DocLink label="Master Degree" url={emp.masterCertUrl || emp.upload_your_master_s_passing_certificate} />
+                            <DocLink label="Master Marksheet" url={emp.masterMarksheetUrl || emp.upload_your_masters_marksheet__all_marksheet_together_} />
+                            <DocLink label="Aadhar Card" url={emp.aadharCardUrl || emp.aadhar_card} />
+                            <DocLink label="PAN Card" url={emp.panCardUrl || emp.pan_card} />
+                            <DocLink label="Passport Photo" url={emp.passportPhotoUrl || emp.passport_size_photo} />
+                            <DocLink label="Bank/Cancelled Cheque" url={emp.bankPassbookUrl || emp.bank_passbook___cancelled_cheque} />
+                            <DocLink label="Experience Letter" url={emp.expLetterUrl || emp.experience_letter__if_any_} />
                         </div>
                     </div>
 

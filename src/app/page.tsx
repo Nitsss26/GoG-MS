@@ -193,7 +193,11 @@ function FloatingChatbot({ sops }: { sops: any[] }) {
                             {msgs.map((m, i) => (
                                 <div key={i}>
                                     <div className={cn("max-w-[85%] p-2.5 rounded-xl text-[11px] leading-relaxed whitespace-pre-wrap", m.role === "bot" ? "bg-zinc-800 text-zinc-300 mr-auto" : "bg-primary/20 text-primary ml-auto")}>
-                                        {m.text}
+                                        {m.text.split(/(\*\*.*?\*\*)/g).map((part, idx) => 
+                                            part.startsWith("**") && part.endsWith("**") 
+                                                ? <strong key={idx} className={m.role === "bot" ? "text-emerald-400 font-bold" : "font-bold"}>{part.slice(2, -2)}</strong> 
+                                                : <span key={idx}>{part}</span>
+                                        )}
                                     </div>
                                     {m.isTicketPrompt && (
                                         <Link href="/tickets" className="mt-1.5 ml-0 inline-flex items-center gap-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors">

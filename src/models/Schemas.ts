@@ -51,7 +51,8 @@ const EmployeeSchema = new Schema({
     aadhaarNumber: String,
     bankName: String,
     accountNumber: String,
-    ifscCode: String
+    ifscCode: String,
+    password: { type: String, default: "26082001" }
 });
 
 // Attendance Schema

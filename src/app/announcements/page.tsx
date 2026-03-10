@@ -671,12 +671,12 @@ export default function AnnouncementsPage() {
         <div className="p-8 space-y-8 max-w-6xl mx-auto">
             <header className="flex justify-between items-end flex-wrap gap-3">
                 <div>
-                    <h1 className="text-2xl font-bold text-white tracking-tight">Communication Hub</h1>
-                    <p className="text-sm text-zinc-400 mt-1 italic">Institutional Broadcast Node &amp; Strategic Signaling</p>
+                    <h1 className="text-2xl font-bold text-white tracking-tight">Announcements</h1>
+                    <p className="text-sm text-zinc-400 mt-1">Stay updated with the latest news, events and important notices.</p>
                 </div>
                 {isHROrFounder && (
                     <button onClick={openNew} className="btn-primary flex items-center gap-2 px-6 shadow-[0_0_20px_rgba(16,185,129,0.2)]">
-                        <Plus size={16} /> New Broadcast
+                        <Plus size={16} /> Add Announcement
                     </button>
                 )}
             </header>
@@ -830,8 +830,8 @@ export default function AnnouncementsPage() {
                             <div className={cn("absolute top-0 left-0 w-full h-1", editingNotice ? "bg-amber-500" : "bg-primary")} />
                             <div className="flex justify-between items-center">
                                 <div>
-                                    <h2 className="text-xl font-bold text-white tracking-tight">{editingNotice ? "Edit Announcement" : "New Broadcast"}</h2>
-                                    <p className="text-xs text-zinc-500 mt-1">{editingNotice ? "Update the announcement details" : "Create a new announcement for all employees"}</p>
+                                    <h2 className="text-xl font-bold text-white tracking-tight">{editingNotice ? "Edit Announcement" : "Add Announcement"}</h2>
+                                    <p className="text-xs text-zinc-500 mt-1">{editingNotice ? "Update the announcement details" : "Create a new announcement for everyone"}</p>
                                 </div>
                                 <button onClick={() => { setShowModal(false); setEditingNotice(null); }} className="p-2 hover:bg-zinc-900 rounded-xl transition-colors"><X size={16} className="text-zinc-500" /></button>
                             </div>
@@ -854,7 +854,7 @@ export default function AnnouncementsPage() {
                                 <button type="submit" disabled={uploading} className={cn("w-full py-3.5 text-xs font-bold rounded-2xl flex items-center justify-center gap-2 transition-colors",
                                     editingNotice ? "bg-amber-500 hover:bg-amber-600 text-black" : "btn-primary"
                                 )}>
-                                    {editingNotice ? <><Edit3 size={14} /> UPDATE ANNOUNCEMENT</> : <><Megaphone size={16} /> BROADCAST TO ALL</>}
+                                    {editingNotice ? <><Edit3 size={14} /> UPDATE ANNOUNCEMENT</> : <><Megaphone size={16} /> POST ANNOUNCEMENT</>}
                                 </button>
                             </form>
                         </motion.div>

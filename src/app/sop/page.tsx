@@ -115,52 +115,55 @@ export default function SOPViewerPage() {
     };
 
     return (
-        <div className="p-6 space-y-5 max-w-6xl mx-auto w-full">
-            <header className="flex justify-between items-end">
-                <div>
+        <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-6xl mx-auto w-full min-h-screen">
+            <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                        <Link href="/" className="text-zinc-500 hover:text-white transition-colors"><ArrowLeft size={16} /></Link>
-                        <h1 className="text-xl font-bold text-white tracking-tight">Standard Operating Procedure</h1>
+                        <Link href="/" className="text-zinc-500 hover:text-white transition-colors p-1"><ArrowLeft size={18} /></Link>
+                        <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Standard Operating Procedure</h1>
                     </div>
-                    <p className="text-xs text-zinc-500 mt-1">Geeks of Gurukul &middot; Effective from 1st April 2025</p>
+                    <p className="text-[10px] sm:text-xs text-zinc-500 pl-7 font-medium uppercase tracking-wider">Geeks of Gurukul &middot; Effective from 1st April 2025</p>
                 </div>
-                <div className="flex items-center gap-2">
-                    <button onClick={handleDownloadPDF} className="text-[10px] font-bold text-zinc-400 bg-zinc-800 hover:bg-zinc-700 px-4 py-2 rounded-xl border border-zinc-700 flex items-center gap-1.5 transition-colors">
-                        <Download size={12} /> Download PDF
+                <div className="flex items-center gap-2 w-full sm:w-auto pl-7 sm:pl-0">
+                    <button onClick={handleDownloadPDF} className="flex-1 sm:flex-none text-[10px] font-bold text-zinc-400 bg-zinc-900 hover:bg-zinc-800 px-4 py-2.5 rounded-xl border border-zinc-700 flex items-center justify-center gap-1.5 transition-colors shadow-sm">
+                        <Download size={14} /> PDF
                     </button>
                     {(user.role === "HR" || user.role === "FOUNDER") && (
-                        <Link href="/hr/sop" className="text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-4 py-2 rounded-xl border border-primary/20 flex items-center gap-1.5 transition-colors">
-                            <FileText size={12} /> Edit Full SOP
+                        <Link href="/hr/sop" className="flex-1 sm:flex-none text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-4 py-2.5 rounded-xl border border-primary/20 flex items-center justify-center gap-1.5 transition-colors shadow-sm">
+                            <FileText size={14} /> Edit
                         </Link>
                     )}
                 </div>
             </header>
 
             {/* Tabs */}
-            <div className="flex gap-1 bg-zinc-900 p-1 rounded-xl w-fit border border-zinc-800/50">
-                <button onClick={() => setActiveTab("document")} className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5", activeTab === "document" ? "bg-primary/20 text-primary" : "text-zinc-500 hover:text-zinc-300")}>
-                    <BookOpen size={13} /> Full Document
+            {/* Tabs */}
+            <div className="flex gap-1 bg-zinc-900 p-1 rounded-xl w-full sm:w-fit border border-zinc-800/50">
+                <button onClick={() => setActiveTab("document")} className={cn("flex-1 sm:flex-none px-4 py-2.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-2", activeTab === "document" ? "bg-primary/20 text-primary shadow-sm" : "text-zinc-500 hover:text-zinc-300")}>
+                    <BookOpen size={14} /> <span className="whitespace-nowrap">Document</span>
                 </button>
-                <button onClick={() => setActiveTab("changes")} className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 relative", activeTab === "changes" ? "bg-primary/20 text-primary" : "text-zinc-500 hover:text-zinc-300")}>
-                    <Bell size={13} /> SOP Changes
-                    {unreadNotifs.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">{unreadNotifs.length}</span>}
+                <button onClick={() => setActiveTab("changes")} className={cn("flex-1 sm:flex-none px-4 py-2.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-2 relative", activeTab === "changes" ? "bg-primary/20 text-primary shadow-sm" : "text-zinc-500 hover:text-zinc-300")}>
+                    <Bell size={14} /> <span className="whitespace-nowrap">Changes</span>
+                    {unreadNotifs.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-lg ring-2 ring-zinc-900">{unreadNotifs.length}</span>}
                 </button>
             </div>
 
             {activeTab === "document" ? (
-                <div className="flex gap-5">
+                <div className="flex flex-col lg:flex-row gap-6">
                     {showTOC && (
-                        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="w-64 shrink-0 sticky top-6 self-start">
-                            <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-4 space-y-2">
-                                <div className="flex justify-between items-center">
-                                    <h3 className="text-xs font-bold text-white flex items-center gap-1.5"><List size={13} /> Table of Contents</h3>
-                                    <button onClick={() => setShowTOC(false)} className="text-zinc-600 hover:text-zinc-400"><X size={12} /></button>
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="lg:w-72 shrink-0 lg:sticky lg:top-8 self-start w-full">
+                            <div className="bg-zinc-900/90 border border-zinc-800/50 rounded-2xl p-5 shadow-xl backdrop-blur-md">
+                                <div className="flex justify-between items-center mb-4 border-b border-zinc-800 pb-3">
+                                    <h3 className="text-[11px] font-black text-white flex items-center gap-2 uppercase tracking-widest"><List size={14} className="text-primary" /> Table of Contents</h3>
+                                    <button onClick={() => setShowTOC(false)} className="text-zinc-500 hover:text-white bg-zinc-800/50 hover:bg-zinc-800 p-1.5 rounded-lg transition-all"><X size={14} /></button>
                                 </div>
-                                <nav className="space-y-0.5 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                                <nav className="space-y-1.5 max-h-[40vh] lg:max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
                                     {toc.map((item, i) => (
-                                        <a key={i} href={`#${item.anchor}`} className={cn(
-                                            "block text-[10px] py-1 px-2 rounded-lg hover:bg-zinc-800/50 transition-colors truncate",
-                                            item.level === 2 ? "text-zinc-400 font-bold" : "text-zinc-500 pl-5"
+                                        <a key={i} href={`#${item.anchor}`} onClick={(e) => {
+                                            if (window.innerWidth < 1024) setShowTOC(false);
+                                        }} className={cn(
+                                            "block py-2 px-3 rounded-xl hover:bg-zinc-800 transition-all active:scale-[0.98]",
+                                            item.level === 2 ? "text-[10px] text-zinc-300 font-black uppercase tracking-wider bg-zinc-800/20" : "text-[10px] text-zinc-500 pl-8 font-medium border-l border-zinc-800 ml-2"
                                         )}>{item.text}</a>
                                     ))}
                                 </nav>
@@ -168,10 +171,13 @@ export default function SOPViewerPage() {
                         </motion.div>
                     )}
                     <div className="flex-1 min-w-0">
-                        {!showTOC && (
-                            <button onClick={() => setShowTOC(true)} className="mb-3 text-[10px] font-bold text-zinc-500 hover:text-zinc-300 flex items-center gap-1"><List size={12} /> Show Contents</button>
-                        )}
-                        <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-6 lg:p-8">
+                        <div className="flex justify-between items-center mb-4">
+                            {!showTOC && (
+                                <button onClick={() => setShowTOC(true)} className="text-[10px] font-black text-primary hover:text-primary/80 bg-primary/5 hover:bg-primary/10 px-4 py-2 rounded-xl border border-primary/10 flex items-center gap-2 transition-all shadow-sm"><List size={14} /> Open Contents</button>
+                            )}
+                            <div className="ml-auto text-[9px] font-medium text-zinc-600 uppercase tracking-widest hidden sm:block">Total Sections: {toc.length}</div>
+                        </div>
+                        <div className="bg-zinc-900/60 border border-zinc-800/50 rounded-3xl p-5 sm:p-8 lg:p-12 shadow-2xl backdrop-blur-sm overflow-x-hidden">
                             {renderMarkdown(masterSopContent)}
                         </div>
                     </div>
@@ -279,39 +285,39 @@ export default function SOPViewerPage() {
                             {/* Content: Old vs New for Updated, New Content for New */}
                             <div className="p-5 max-h-[55vh] overflow-y-auto custom-scrollbar">
                                 {selectedNotif.changeType === "updated" ? (
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <p className="text-[9px] font-bold text-red-400 uppercase tracking-widest mb-2 flex items-center gap-1">
-                                                <span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Previous Version
+                                    <div className="flex flex-col gap-6">
+                                        <div className="space-y-3">
+                                            <p className="text-[9px] font-black text-red-500 uppercase tracking-[0.2em] flex items-center gap-2 bg-red-500/5 w-fit px-3 py-1.5 rounded-full border border-red-500/10">
+                                                <span className="w-2 h-2 rounded-full bg-red-600 shadow-[0_0_8px_rgba(220,38,38,0.5)]" /> Previous Version
                                             </p>
-                                            <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-4 text-[10px] text-zinc-400 leading-relaxed whitespace-pre-wrap min-h-[150px]">
+                                            <div className="bg-zinc-950/50 border border-zinc-800/50 rounded-2xl p-5 text-[11px] text-zinc-400 leading-relaxed whitespace-pre-wrap min-h-[100px] font-medium italic opacity-60">
                                                 {selectedNotif.previousContent || "Previous content not available for this change."}
                                             </div>
                                         </div>
-                                        <div>
-                                            <p className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest mb-2 flex items-center gap-1">
-                                                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Current Version
+                                        <div className="space-y-3">
+                                            <p className="text-[9px] font-black text-emerald-500 uppercase tracking-[0.2em] flex items-center gap-2 bg-emerald-500/5 w-fit px-3 py-1.5 rounded-full border border-emerald-500/10">
+                                                <span className="w-2 h-2 rounded-full bg-emerald-600 shadow-[0_0_8px_rgba(5,150,105,0.5)]" /> Updated Version
                                             </p>
-                                            <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-4 text-[10px] text-zinc-400 leading-relaxed whitespace-pre-wrap min-h-[150px]">
+                                            <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 text-[11px] text-white leading-relaxed whitespace-pre-wrap min-h-[100px] shadow-inner font-medium">
                                                 {selectedNotif.newContent || "Current content preview not available."}
                                             </div>
                                         </div>
                                     </div>
                                 ) : selectedNotif.changeType === "new" ? (
-                                    <div>
-                                        <p className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest mb-2 flex items-center gap-1">
-                                            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Newly Added Content
+                                    <div className="space-y-3">
+                                        <p className="text-[9px] font-black text-emerald-500 uppercase tracking-[0.2em] flex items-center gap-2 bg-emerald-500/5 w-fit px-3 py-1.5 rounded-full border border-emerald-500/10">
+                                            <span className="w-2 h-2 rounded-full bg-emerald-600 shadow-[0_0_8px_rgba(5,150,105,0.5)]" /> New Section Added
                                         </p>
-                                        <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-4 text-[10px] text-zinc-400 leading-relaxed whitespace-pre-wrap min-h-[150px]">
+                                        <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 text-[11px] text-white leading-relaxed whitespace-pre-wrap min-h-[150px] font-medium">
                                             {selectedNotif.newContent || "This is a newly added SOP section. View the full document for details."}
                                         </div>
                                     </div>
                                 ) : (
-                                    <div>
-                                        <p className="text-[9px] font-bold text-red-400 uppercase tracking-widest mb-2 flex items-center gap-1">
-                                            <span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Deleted Content
+                                    <div className="space-y-3">
+                                        <p className="text-[9px] font-black text-red-500 uppercase tracking-[0.2em] flex items-center gap-2 bg-red-500/5 w-fit px-3 py-1.5 rounded-full border border-red-500/10">
+                                            <span className="w-2 h-2 rounded-full bg-red-600 shadow-[0_0_8px_rgba(220,38,38,0.5)]" /> Deleted Content
                                         </p>
-                                        <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-4 text-[10px] text-zinc-400 leading-relaxed whitespace-pre-wrap min-h-[150px]">
+                                        <div className="bg-zinc-950/50 border border-zinc-800/50 rounded-2xl p-5 text-[11px] text-zinc-500 leading-relaxed whitespace-pre-wrap min-h-[150px] line-through decoration-zinc-700">
                                             {selectedNotif.previousContent || "This SOP section has been removed."}
                                         </div>
                                     </div>

@@ -39,6 +39,9 @@ export default function LoginPage() {
 
     useEffect(() => {
         setMounted(true);
+        // Lock body scroll to prevent sliding
+        document.body.style.overflow = "hidden";
+
         const handleMouseMove = (e: MouseEvent) => {
             const { clientX, clientY } = e;
             const { innerWidth, innerHeight } = window;
@@ -46,7 +49,11 @@ export default function LoginPage() {
             mouseY.set(clientY - innerHeight / 2);
         };
         window.addEventListener("mousemove", handleMouseMove);
-        return () => window.removeEventListener("mousemove", handleMouseMove);
+        return () => {
+            window.removeEventListener("mousemove", handleMouseMove);
+            // Restore scroll on unmount
+            document.body.style.overflow = "unset";
+        };
     }, [mouseX, mouseY]);
 
     const handleLogin = async (e?: React.FormEvent) => {
@@ -59,7 +66,7 @@ export default function LoginPage() {
 
         setIsLoading(true);
         try {
-            const result = login(email, password, selectedRole);
+            const result = await login(email, password, selectedRole);
             if (!result.success) {
                 setError(result.msg || "Authentication failed.");
             }
@@ -73,7 +80,16 @@ export default function LoginPage() {
     if (!mounted) return null;
 
     return (
-        <div className="min-h-screen w-screen bg-black flex items-start lg:items-center justify-center relative overflow-x-hidden select-none font-sans py-8 lg:py-0">
+        <div className="fixed inset-0 bg-black flex items-start lg:items-center justify-center overflow-hidden select-none font-sans py-8 lg:py-0 ">
+            {/* FORCE NO SCROLL ON HTML/BODY */}
+            <style jsx global>{`
+                html, body {
+                    overflow: hidden !important;
+                    height: 100% !important;
+                    width: 100% !important;
+                    position: fixed !important;
+                }
+            `}</style>
 
             {/* HIGH-DEFINITION CRYSTAL 3D BACKGROUND */}
             <motion.div
@@ -89,7 +105,7 @@ export default function LoginPage() {
 
             {/* MAIN CONTENT HUB */}
             <motion.div
-                className="relative z-10 w-full max-w-[1400px] flex flex-col lg:flex-row items-center justify-between gap-8 lg:gap-20 px-6 lg:px-10 scale-100 lg:scale-[0.85] origin-top lg:origin-center mt-4 lg:mt-0"
+                className="relative z-10 w-full max-w-[1400px] flex flex-col lg:flex-row items-center justify-between gap-8 lg:gap-20 px-6 lg:px-10 scale-100 lg:scale-[0.78] origin-top lg:origin-center mt-4 lg:mt-0"
             >
 
                 {/* Left Branding - Compact & Professional */}

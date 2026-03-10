@@ -109,3 +109,10 @@ body {
 ::-webkit-scrollbar-track { background: var(--background); }
 ::-webkit-scrollbar-thumb { background: #1e1e1e; border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: #333; }
+
+/* Desktop scaling preservation */
+@media (min-width: 1024px) {
+  .desktop-zoom {
+    zoom: 1.1;
+  }
+}

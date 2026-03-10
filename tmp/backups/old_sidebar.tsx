@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -27,7 +27,6 @@ const personalMenu = [
     { label: "SOP", icon: FileText, path: "/sop" },
     { label: "Org Chart", icon: Network, path: "/hierarchy" },
     { label: "Flag Calendar", icon: Flag, path: "/flag-calendar" },
-    { label: "Change Password", icon: ShieldCheck, path: "/change-password" },
 ];
 
 const managerMenu = [
@@ -102,7 +101,7 @@ const ROLE_COLORS: Record<Role, { bg: string; text: string; label: string }> = {
     PROFESSOR: { bg: "bg-pink-500/20", text: "text-pink-400", label: "Professor" },
 };
 
-export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
+export default function Sidebar() {
     const { user, logout, getMyNotifications } = useAuth();
     const pathname = usePathname();
     const role = user?.role as Role;
@@ -112,20 +111,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
     const RoleIcon = role === "FOUNDER" ? Crown : role === "HR" ? ShieldCheck : role === "AD" || role === "HOI" ? Briefcase : User;
 
     return (
-        <>
-            {/* Backdrop for mobile */}
-            {isOpen && (
-                <div 
-                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 lg:hidden"
-                    onClick={onClose}
-                />
-            )}
-
-            <aside className={cn(
-                "w-56 h-full bg-[#0a0a0b] border-r border-zinc-800/50 flex flex-col py-5 px-3 shrink-0 transition-transform duration-300 ease-in-out z-50",
-                "fixed inset-y-0 left-0 lg:static lg:translate-x-0",
-                isOpen ? "translate-x-0 shadow-2xl shadow-primary/10" : "-translate-x-full"
-            )}>
+        <aside className="w-56 h-screen bg-[#0a0a0b] border-r border-zinc-800/50 flex flex-col py-5 px-3 shrink-0">
             <div className="flex items-center gap-2.5 px-3 mb-8">
                 {/* <div className="w-7 h-7 bg-primary rounded-md flex items-center justify-center text-primary-foreground text-xs font-bold">G</div> */}
                 <img
@@ -179,7 +165,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
                     <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-white truncate">{user?.name || "Guest"}</p>
                         <p className="text-[9px] text-primary font-medium">
-                            {roleStyle.label} {user?.id ? `· ${user.id}` : ""}
+                            {roleStyle.label} {user?.id ? `┬╖ ${user.id}` : ""}
                         </p>
                     </div>
                 </div>
@@ -189,6 +175,5 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
                 </button>
             </div>
         </aside>
-        </>
     );
 }

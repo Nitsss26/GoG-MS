@@ -92,12 +92,12 @@ export default function LeavePage() {
         <div className="p-6 space-y-6 max-w-6xl mx-auto w-full">
             <header className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-lg font-bold text-white">Absence Management</h1>
+                    <h1 className="text-lg font-bold text-white">Leave Management</h1>
                     <p className="text-xs text-muted">Manage workforce availability and personal leave credits.</p>
                 </div>
                 {!["HR", "FOUNDER"].includes(user.role) && (
                     <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-1.5 h-9 px-4">
-                        <Plus size={14} /> Log Request
+                        <Plus size={14} /> Request
                     </button>
                 )}
             </header>
@@ -125,7 +125,7 @@ export default function LeavePage() {
             {/* Leave Register */}
             <div className="card">
                 <div className="p-4 border-b border-border flex justify-between items-center">
-                    <h3 className="text-sm font-semibold text-white">Leave Application Register</h3>
+                    <h3 className="text-sm font-semibold text-white">Leave Applications</h3>
                     <div className="flex gap-2">
                         <span className="flex items-center gap-1.5 text-[10px] text-muted"><div className="w-1.5 h-1.5 rounded-full bg-primary" /> Approved</span>
                         <span className="flex items-center gap-1.5 text-[10px] text-muted"><div className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Pending</span>
@@ -144,7 +144,7 @@ export default function LeavePage() {
                         </thead>
                         <tbody className="divide-y divide-border">
                             {filteredLeaves.length === 0 ? (
-                                <tr><td colSpan={5} className="px-5 py-12 text-center text-muted">No active records in the absence register.</td></tr>
+                                <tr><td colSpan={5} className="px-5 py-12 text-center text-muted">No active records in the leave register.</td></tr>
                             ) : (
                                 filteredLeaves.map(req => (
                                     <tr key={req.id} className={cn("hover:bg-surface-light transition-colors group",
@@ -248,7 +248,7 @@ export default function LeavePage() {
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowModal(false)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
                         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="card w-full max-w-md p-6 relative z-10 space-y-6">
                             <div className="flex justify-between items-center">
-                                <h2 className="text-base font-bold text-white">Log Absence Request</h2>
+                                <h2 className="text-base font-bold text-white">Log Leave Request</h2>
                                 <button onClick={() => setShowModal(false)}><X size={18} className="text-muted hover:text-white" /></button>
                             </div>
                             <form onSubmit={handleApply} className="space-y-4">

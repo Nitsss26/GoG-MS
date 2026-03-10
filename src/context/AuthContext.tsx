@@ -61,8 +61,9 @@ export interface Employee extends User {
     biWeeklyScores?: {
         score: number;
         period: string;
-        date: string;
+        date?: string;
         points: number;
+        status?: string;
     }[];
     // Bank Details
     bankAccountName?: string;
@@ -100,6 +101,36 @@ export interface Employee extends User {
     experience?: any[];
     bankName?: string;
     accountNumber?: string;
+    // Database Snake Case Mapping (Direct from MongoDB)
+    full_name?: string;
+    phone_no_?: string;
+    father_name_or_mother_name?: string;
+    parents_phone_no_?: string;
+    permanent_address?: string;
+    bachelor_s_qualification____ex___b_tech__cse____iit_guwahati_?: string;
+    master_s_qualification____ex___m_tech__cse____iit_guwahati_?: string;
+    you_are_from_?: string;
+    current_designation_at_gog?: string;
+    upload_your_resume?: string;
+    upload_your_bachelor_s_passing_certificate?: string;
+    upload_your_master_s_passing_certificate?: string;
+    linkedin_id?: string;
+    bank_account_number?: string;
+    ifsc_code?: string;
+    account_holder_name?: string;
+    upi_id?: string;
+    "10th_marksheet"?: string;
+    "12th_marksheet"?: string;
+    aadhar_card?: string;
+    pan_card?: string;
+    passport_size_photo?: string;
+    bank_passbook___cancelled_cheque?: string;
+    experience_letter__if_any_?: string;
+    which_college_are_you_from_?: string;
+    date_of_birth?: string;
+    blood_group?: string;
+    upload_your_bachelor_s_marksheet__all_marksheet_together_?: string;
+    upload_your_masters_marksheet__all_marksheet_together_?: string;
 }
 export interface LeaveRequest {
     id: string; employeeId: string; employeeName: string; type: string;
@@ -234,24 +265,39 @@ const INITIAL_EMPLOYEES: Employee[] = [
         ifscCode: "UBIN0550647",
         upiId: "niteshshr123@oksbi",
         collegeName: "NIT",
-        fatherMotherName: "Ashok Kumar",
-        parentsPhone: "9781681700",
-        bachelorQual: "B.Tech (ECE) Major : NIT Jalandhar, B.Tech (CSE) Minor : NIT Jalandhar",
-        masterQual: "NA",
-        linkedinId: "https://www.linkedin.com/in/nitesh-shr-304539281?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=android_app",
-        resumeUrl: "https://drive.google.com/open?id=13zk7FlZ6TffLQ2QAhcvpH1hSO02xQIFr",
-        bachelorCertUrl: "https://drive.google.com/open?id=10Yk0jv-hmut2B_adfmPv6J13inXgpo_p",
-        marksheet10Url: "https://drive.google.com/open?id=1YSGezocgsOC1OgYY7hRaC2OAT1mmqunN",
-        marksheet12Url: "https://drive.google.com/open?id=1-Q_KQ_mukFANYyxoWjJuJzYJMKTvLv6w",
-        aadharCardUrl: "https://drive.google.com/open?id=1v2JZ_rk-0xvWeWsROhrX0s7whQUBYY1R",
-        panCardUrl: "https://drive.google.com/open?id=1cwyx0nhkuUUq6lolWl6LboYNh8vo-QFQ",
-        passportPhotoUrl: "https://drive.google.com/open?id=1qyVg149Y__iOMj9qfTIgbpX0wKA4x1Yd",
-        bankPassbookUrl: "https://drive.google.com/open?id=1DtXUChLNmuuFUR-Pg7hcWUl6Fe1rf2vV",
-        bachelorMarksheetUrl: "https://drive.google.com/open?id=1WP5H6us9EkJfdqdJlXaAb3gpDbTCHM2v",
+        // Additional mapping from provided JSON
+        father_name_or_mother_name: "Ashok Kumar",
+        parents_phone_no_: "9781681700",
+        permanent_address: "H.no 31 New Mahindra Colony, Amritsar",
+        bachelor_s_qualification____ex___b_tech__cse____iit_guwahati_: "B.Tech (ECE) Major : NIT Jalandhar, B.Tech (CSE) Minor : NIT Jalandhar",
+        master_s_qualification____ex___m_tech__cse____iit_guwahati_: "NA",
+        you_are_from_: "NIT",
+        current_designation_at_gog: "TL",
+        upload_your_resume: "https://drive.google.com/open?id=13zk7FlZ6TffLQ2QAhcvpH1hSO02xQIFr",
+        upload_your_bachelor_s_passing_certificate: "https://drive.google.com/open?id=10Yk0jv-hmut2B_adfmPv6J13inXgpo_p",
+        upload_your_master_s_passing_certificate: "",
+        linkedin_id: "https://www.linkedin.com/in/nitesh-shr-304539281?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=android_app",
+        bank_account_number: "506402010521771",
+        ifsc_code: "UBIN0550647",
+        account_holder_name: "Nitesh",
+        upi_id: "niteshshr123@oksbi",
+        "10th_marksheet": "https://drive.google.com/open?id=1YSGezocgsOC1OgYY7hRaC2OAT1mmqunN",
+        "12th_marksheet": "https://drive.google.com/open?id=1-Q_KQ_mukFANYyxoWjJuJzYJMKTvLv6w",
+        aadhar_card: "https://drive.google.com/open?id=1v2JZ_rk-0xvWeWsROhrX0s7whQUBYY1R",
+        pan_card: "https://drive.google.com/open?id=1cwyx0nhkuUUq6lolWl6LboYNh8vo-QFQ",
+        passport_size_photo: "https://drive.google.com/open?id=1qyVg149Y__iOMj9qfTIgbpX0wKA4x1Yd",
+        bank_passbook___cancelled_cheque: "https://drive.google.com/open?id=1DtXUChLNmuuFUR-Pg7hcWUl6Fe1rf2vV",
+        experience_letter__if_any_: "",
+        which_college_are_you_from_: "NIT",
+        date_of_birth: "26/08/2001",
+        blood_group: "A-",
+        upload_your_bachelor_s_marksheet__all_marksheet_together_: "https://drive.google.com/open?id=1WP5H6us9EkJfdqdJlXaAb3gpDbTCHM2v",
+        upload_your_masters_marksheet__all_marksheet_together_: "",
         biWeeklyScores: [
-            { period: "Feb 15 - Feb 28, 2026", score: 4.8, points: 480, date: "2026-02-28" },
-            { period: "Feb 01 - Feb 14, 2026", score: 4.5, points: 450, date: "2026-02-14" },
-            { period: "Jan 15 - Jan 31, 2026", score: 4.9, points: 490, date: "2026-01-31" }
+            { period: "Mar 01 - Mar 15, 2026", score: 4.2, points: 35, status: "Recorded" },
+            { period: "Feb 15 - Feb 28, 2026", score: 3.5, points: -45, status: "Recorded" },
+            { period: "Feb 01 - Feb 14, 2026", score: 4.8, points: 50, status: "Recorded" },
+            { period: "Jan 15 - Jan 31, 2026", score: 3, points: -80, status: "Recorded" }
         ],
         designationDate: "01-12-2025",
         fines: {
@@ -278,6 +324,51 @@ const INITIAL_EMPLOYEES: Employee[] = [
                 { amount: 100, reason: "Late Arrival", date: "2026-01-08" }
             ]
         }
+    },
+    {
+        id: "EMP100",
+        name: "Anirudha Rajodiya",
+        email: "anirudha@geeksofgurukul.com",
+        role: "PROFESSOR",
+        photoUrl: "https://drive.google.com/open?id=1Bnxj1GQwbBvUM-ywSJHJVaOAg8Og7XXN",
+        isOnboarded: true,
+        dept: "IIT",
+        designation: "SDE & Professor",
+        status: "Active",
+        joiningDate: "2024-01-01",
+        salary: 50000,
+        location: "sage-bhopal",
+        dateOfBirth: "?",
+        phone: "7869751211",
+        bloodGroup: "?",
+        reportsTo: ["EMP135"],
+        chancesRemaining: 3,
+        password: "26082001",
+        address: "Khejra road, Gomati Marriage Garden, Gulab Ganj Cantt, Guna, 473001, Madhya Pradesh",
+        bankAccountName: "Anirudha Rajodiya",
+        bankAccountNumber: "157869751211",
+        ifscCode: "INDB0000069",
+        upiId: "7869751211@pthdfc",
+        collegeName: "IIT",
+        fatherMotherName: "Devendra Kumar Rajodiya",
+        parentsPhone: "6260744385",
+        bachelorQual: "B.Tech (AGFE) IIT KHARAGPUR",
+        masterQual: "M.Tech (AGFE) IIT KHARAGPUR",
+        linkedinId: "www.linkedin.com/in/anirudha-rajodiya-6356b5221",
+        resumeUrl: "https://drive.google.com/open?id=11I0VWsYzVjPmkf08f5k3zMqObeaQgk3-",
+        bachelorCertUrl: "https://drive.google.com/open?id=1YTlb0MDrM_9FEC3Iz02LLZIYymz1TNy2",
+        masterCertUrl: "https://drive.google.com/open?id=1ENCMDOgsT0LZ0Q0HV7F_9Bned-OTJaNX",
+        marksheet10Url: "https://drive.google.com/open?id=1QltZjpZi_zMayWGpt1M8uQwxFc2RTlHu",
+        marksheet12Url: "https://drive.google.com/open?id=1g20oyaIyxPYwFeuGmYO8YkRaDgvLyDqb",
+        aadharCardUrl: "https://drive.google.com/open?id=1UA0dYmFBUlIxtJlJlKL_n2Bd4kX9Hhht",
+        panCardUrl: "https://drive.google.com/open?id=1mG0Ma-zEhmQqR2VUkfe3wCx1QZlzmfrO",
+        passportPhotoUrl: "https://drive.google.com/open?id=1Bnxj1GQwbBvUM-ywSJHJVaOAg8Og7XXN",
+        bankPassbookUrl: "https://drive.google.com/open?id=1PgHGUzgBUMmJ3bJyASP0dqO9jsQkDXpD",
+        biWeeklyScores: [
+            { period: "Feb 15 - Feb 28, 2026", score: 4.9, points: 490, date: "2026-02-28" },
+            { period: "Feb 01 - Feb 14, 2026", score: 4.8, points: 480, date: "2026-02-14" }
+        ],
+        designationDate: "2024-01-01"
     }
 ];
 const MASTER_SOP_CONTENT = `
@@ -727,7 +818,8 @@ const CUSTOM_SCHEDULE_RULES = [
             { location: "SGSU", in: "10:15", out: "16:00", days: ["Mon", "Wed"] },
         ],
         wfhDays: ["Sat"]
-    }
+    },
+    { nameRegex: /Nitesh/i, location: "sage-bhopal", in: "09:30", out: "16:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] }
 ];
 
 const INITIAL_RESPONSIBILITIES: AdditionalResponsibility[] = [
@@ -905,7 +997,9 @@ interface AuthContextType {
     getMyNotifications: () => PortalNotification[];
     activityLogs: PortalNotification[];
     getExpectedTiming: (employeeId: string, date?: string | Date) => { in: string; out: string; location: string };
+    authLoading: boolean;
     restoreAttendanceCredits: (employeeId: string) => void;
+    changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; msg: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -913,6 +1007,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // ─── PROVIDER ───
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
+    const [authLoading, setAuthLoading] = useState(true);
     const [employees, setEmployees] = useState<Employee[]>(INITIAL_EMPLOYEES);
     const [leaves, setLeaves] = useState<LeaveRequest[]>(INITIAL_LEAVES);
     const [meetings, setMeetings] = useState<MeetingRequest[]>(INITIAL_MEETINGS);
@@ -975,7 +1070,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             keysToRemove.forEach(k => localStorage.removeItem(k));
             localStorage.setItem("gog_data_version", DATA_VERSION);
         }
-        const su = s("gog_user"); if (su) setUser(su);
+        const su = s("gog_user"); 
+        if (su) {
+            // Persistence: 60 Day Expiry (60 * 24 * 60 * 60 * 1000)
+            const SIXTY_DAYS = 60 * 24 * 60 * 60 * 1000;
+            const now = Date.now();
+            const lastActive = su.lastActive || 0;
+            
+            if (now - lastActive > SIXTY_DAYS) {
+                localStorage.removeItem("gog_user");
+                setUser(null);
+            } else {
+                // Update lastActive to implement sliding window
+                const updatedUser = { ...su, lastActive: now };
+                setUser(updatedUser);
+                localStorage.setItem("gog_user", JSON.stringify(updatedUser));
+            }
+        }
+        setAuthLoading(false);
         const se = s("gog_employees"); if (se) setEmployees(se);
         const sl = s("gog_leaves"); if (sl) setLeaves(sl);
         const sm = s("gog_meetings"); if (sm) setMeetings(sm);
@@ -1003,7 +1115,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const res = await fetch("/api/employees");
                 const data = await res.json();
                 if (Array.isArray(data)) {
-                    setEmployees(data);
+                    // Merge DB employees over initial employees, prioritizing DB.
+                    const dbEmployees = data.map((dbEmp: any) => ({
+                        ...dbEmp,
+                        id: dbEmp.employeeId || dbEmp.id
+                    }));
+                    
+                    setEmployees(prev => {
+                        const merged = [...prev];
+                        dbEmployees.forEach(dbE => {
+                            const index = merged.findIndex(e => e.id === dbE.id || (e.email && dbE.email && e.email === dbE.email));
+                            if (index !== -1) {
+                                merged[index] = { ...merged[index], ...dbE };
+                            } else {
+                                merged.push(dbE);
+                            }
+                        });
+                        // Save merged employees (with DB passwords) to localStorage
+                        // so they are available immediately on next page load
+                        try { localStorage.setItem("gog_employees", JSON.stringify(merged)); } catch {}
+                        return merged;
+                    });
                 }
             } catch (err) {
                 console.error("Failed to fetch employees from database:", err);
@@ -1192,13 +1324,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // ─── AUTH ───
     const login = (email: string, password?: string, role?: string) => {
-        const emp = employees.find(e => e.email.toLowerCase().trim() === email.toLowerCase().trim());
+        const emp = employees.find(e => e.email && e.email.toLowerCase().trim() === email.toLowerCase().trim());
         if (!emp) return { success: false, msg: "Institutional account not found." };
-        if (password && emp.password !== password) return { success: false, msg: `Incorrect passkey.Expected: ${emp.password} ` };
-        if (role && emp.role !== role) return { success: false, msg: `Institutional role mismatch.Got: ${role}, Expected: ${emp.role} ` };
+        const expectedPw = emp.password || "26082001";
+        if (password && password !== expectedPw) return { success: false, msg: "Incorrect passkey." };
+        if (role && emp.role !== role) return { success: false, msg: "Institutional role mismatch." };
 
-        setUser(emp);
-        localStorage.setItem("gog_user", JSON.stringify(emp)); // Ensure persistence on login
+        const userWithExpiry = { ...emp, lastActive: Date.now() };
+        setUser(userWithExpiry);
+        localStorage.setItem("gog_user", JSON.stringify(userWithExpiry));
         router.push("/");
         return { success: true };
     };
@@ -1206,11 +1340,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updateOnboarding = (userId: string, data: any) => {
         setEmployees(prev => prev.map(e => e.id === userId ? { ...e, ...data, isOnboarded: true } : e));
         if (user?.id === userId) {
-            const updatedUser = { ...user, ...data, isOnboarded: true };
+            const updatedUser = { ...user, ...data, isOnboarded: true } as Employee;
             setUser(updatedUser);
             localStorage.setItem("gog_user", JSON.stringify(updatedUser));
         }
     };
+
+    const changePassword = async (currentPassword: string, newPassword: string) => {
+        if (!user) return { success: false, msg: "Not authenticated" };
+        try {
+            const res = await fetch('/api/employees/change-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                // Send both id and email so the API can find the employee reliably
+                body: JSON.stringify({ employeeId: user.id, employeeEmail: user.email, currentPassword, newPassword })
+            });
+            const data = await res.json();
+            if (data.success) {
+                const updatedUser = { ...user, password: newPassword } as Employee;
+                setUser(updatedUser);
+                setEmployees(prev => {
+                    const updated = prev.map(e => (e.id === user.id || e.email === user.email) ? { ...e, password: newPassword } : e);
+                    localStorage.setItem("gog_employees", JSON.stringify(updated));
+                    return updated;
+                });
+                localStorage.setItem("gog_user", JSON.stringify(updatedUser));
+                return { success: true, msg: "Password changed successfully! Login with your new password next time." };
+            } else {
+                return { success: false, msg: data.error || "Failed to update password" };
+            }
+        } catch (error: any) {
+            return { success: false, msg: "Network error. Please try again." };
+        }
+    };
+
     const addEmployee = (emp: Omit<Employee, "id" | "isOnboarded">) => {
         setEmployees(prev => [...prev, { ...emp, id: `EMP${uid()} `, isOnboarded: false }]);
     };
@@ -2303,7 +2466,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             requestAsset, assignAsset, updateAssetRequestStatus,
             addNotification, markNotificationRead, getMyNotifications,
             markAsPresentRequests, addMarkAsPresentRequest, resolveMarkAsPresentRequest, resolveDressCodeCheck, giveCredit,
-            getExpectedTiming, restoreAttendanceCredits
+            getExpectedTiming, restoreAttendanceCredits, changePassword, authLoading
         }}>
             {children}
         </AuthContext.Provider>

@@ -81,45 +81,50 @@ export default function ReimbursementPage() {
 
     return (
         <div className="p-6 space-y-6 max-w-5xl mx-auto w-full">
-            <header className="flex justify-between items-end flex-wrap gap-3">
-                <div>
+            <header className="flex justify-between items-center flex-wrap gap-3">
+                <div className="flex-1 min-w-[200px]">
                     <h1 className="text-xl font-bold text-white tracking-tight">Reimbursement Claims</h1>
                     <p className="text-xs text-zinc-400 mt-1">Submit and track your expense reimbursement requests.</p>
                 </div>
-                <button onClick={() => setShowForm(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-primary/20">
-                    <Plus size={14} /> New Claim
-                </button>
+                <div className="flex items-center justify-between w-full sm:w-auto sm:justify-end gap-2">
+                    <button onClick={() => setShowForm(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-primary/20 shrink-0">
+                        <Plus size={14} /> <span className="hidden sm:inline">New Claim</span><span className="sm:hidden">New Claim</span>
+                    </button>
+                    <select
+                        value={filterMonth}
+                        onChange={e => setFilterMonth(e.target.value)}
+                        className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-[10px] font-bold text-white outline-none focus:border-primary transition-colors min-w-[110px]"
+                    >
+                        {months.map(m => (
+                            <option key={m} value={m}>
+                                {new Date(m + "-01").toLocaleDateString("en-IN", { month: "short", year: "numeric" })}
+                            </option>
+                        ))}
+                    </select>
+                </div>
             </header>
 
-            {/* Month Filter */}
-            <div className="flex items-center gap-3">
-                <Filter size={14} className="text-zinc-500" />
-                <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-white font-bold">
-                    {months.map(m => <option key={m} value={m}>{new Date(m + "-01").toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</option>)}
-                </select>
-            </div>
-
             {/* KPIs */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-4 space-y-1">
-                    <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">Total This Month</p>
-                    <p className="text-lg font-bold text-white">₹{totalThisMonth.toLocaleString()}</p>
+            <div className="grid grid-cols-6 lg:grid-cols-5 gap-2 lg:gap-3">
+                <div className="col-span-2 lg:col-span-1 bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-3 lg:p-4 space-y-1 group hover:border-primary/20 transition-colors">
+                    <p className="text-[8px] lg:text-[9px] text-zinc-500 font-bold uppercase tracking-widest truncate">This Month</p>
+                    <p className="text-base lg:text-lg font-bold text-white">₹{totalThisMonth.toLocaleString()}</p>
                 </div>
-                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-4 space-y-1">
-                    <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">Pending</p>
-                    <p className="text-lg font-bold text-amber-400">{pendingCount}</p>
+                <div className="col-span-2 lg:col-span-1 bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-3 lg:p-4 space-y-1 group hover:border-amber-500/20 transition-colors">
+                    <p className="text-[8px] lg:text-[9px] text-zinc-500 font-bold uppercase tracking-widest truncate">Pending</p>
+                    <p className="text-base lg:text-lg font-bold text-amber-400">{pendingCount}</p>
                 </div>
-                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-4 space-y-1">
-                    <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">Approved</p>
-                    <p className="text-lg font-bold text-green-400">{approvedCount}</p>
+                <div className="col-span-2 lg:col-span-1 bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-3 lg:p-4 space-y-1 group hover:border-green-500/20 transition-colors">
+                    <p className="text-[8px] lg:text-[9px] text-zinc-500 font-bold uppercase tracking-widest truncate">Approved</p>
+                    <p className="text-base lg:text-lg font-bold text-green-400">{approvedCount}</p>
                 </div>
-                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-4 space-y-1">
-                    <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">Approved Amount</p>
-                    <p className="text-lg font-bold text-green-400">₹{approvedAmount.toLocaleString()}</p>
+                <div className="col-span-3 lg:col-span-1 bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-3 lg:p-4 space-y-1 group hover:border-green-500/20 transition-colors">
+                    <p className="text-[8px] lg:text-[9px] text-zinc-500 font-bold uppercase tracking-widest truncate">Approved Amount</p>
+                    <p className="text-base lg:text-lg font-bold text-green-400">₹{approvedAmount.toLocaleString()}</p>
                 </div>
-                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-4 space-y-1">
-                    <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">Rejected</p>
-                    <p className="text-lg font-bold text-red-400">{rejectedCount}</p>
+                <div className="col-span-3 lg:col-span-1 bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-3 lg:p-4 space-y-1 group hover:border-red-500/20 transition-colors">
+                    <p className="text-[8px] lg:text-[9px] text-zinc-500 font-bold uppercase tracking-widest truncate">Rejected</p>
+                    <p className="text-base lg:text-lg font-bold text-red-400">{rejectedCount}</p>
                 </div>
             </div>
 
