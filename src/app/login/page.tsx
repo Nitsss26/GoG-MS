@@ -80,14 +80,16 @@ export default function LoginPage() {
     if (!mounted) return null;
 
     return (
-        <div className="fixed inset-0 bg-black flex items-start lg:items-center justify-center overflow-hidden select-none font-sans py-8 lg:py-0 ">
-            {/* FORCE NO SCROLL ON HTML/BODY */}
+        <div className="min-h-screen lg:fixed lg:inset-0 bg-black flex items-start lg:items-center justify-center overflow-y-auto lg:overflow-hidden select-none font-sans md:-mt-8 py-8 lg:py-0 ">
+            {/* FORCE NO SCROLL ON HTML/BODY ONLY FOR DESKTOP */}
             <style jsx global>{`
-                html, body {
-                    overflow: hidden !important;
-                    height: 100% !important;
-                    width: 100% !important;
-                    position: fixed !important;
+                @media (min-width: 1024px) {
+                    html, body {
+                        overflow: hidden !important;
+                        height: 100% !important;
+                        width: 100% !important;
+                        position: fixed !important;
+                    }
                 }
             `}</style>
 
