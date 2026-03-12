@@ -361,7 +361,7 @@ export const getBirthdayTemplate = (employee: any) => {
         html: `
             <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; border: 1px solid #e5e7eb; border-radius: 16px; background-color: #ffffff; text-align: center;">
                 <div style="margin-bottom: 24px;">
-                    <img src="https://i.postimg.cc/4NdhCzDD/logo-(2).png" alt="GoG Logo" style="height: 40px; margin: 0 auto;">
+                    <img src="https://i.ibb.co/dJVbhnf7/logo-2.png" alt="GoG Logo" style="height: 40px; margin: 0 auto;">
                 </div>
                 <h1 style="color: #10b981; font-size: 28px; font-weight: 800; margin-bottom: 16px;">Happy Birthday, ${employee.name}! 🥳</h1>
                 <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">

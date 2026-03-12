@@ -118,7 +118,7 @@ export default function LoginPage() {
                         transition={{ duration: 0.8 }}
                     >
                         <img
-                            src="https://i.postimg.cc/4NdhCzDD/logo-(2).png"
+                            src="https://i.ibb.co/dJVbhnf7/logo-2.png"
                             alt="Geeks of Gurukul"
                             className="h-8 lg:h-11 mx-auto lg:mx-0 object-contain brightness-150 drop-shadow-lg"
                         />

@@ -1,22 +1,27 @@
 "use client";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { Shirt, CheckCircle, XCircle, Search, Filter, AlertTriangle, User as UserIcon } from "lucide-react";
+import { Shirt, CheckCircle, XCircle, Search, Filter, AlertTriangle, User as UserIcon, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function DressCodeVerificationPage() {
     const { user, attendanceRecords, employees, resolveDressCodeCheck } = useAuth();
+    const today = new Date().toISOString().split("T")[0];
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState<"All" | "Pending" | "Approved" | "Rejected">("Pending");
+    const [dateFilter, setDateFilter] = useState(today);
 
-    if (!user || user.role !== "HR") return null;
+    if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return null;
 
-    const today = new Date().toISOString().split("T")[0];
-
-    // Filter today's records that have images submitted
+    // Filter records that have images submitted
     const relevantRecords = attendanceRecords
-        .filter(r => r.date === today && r.dressCodeImageUrl)
-        .filter(r => statusFilter === "All" || r.dressCodeStatus === statusFilter)
+        .filter(r => r.dressCodeImageUrl)
+        .filter(r => {
+            if (statusFilter === "Pending") return r.dressCodeStatus === "Pending"; // Show ALL pending across any date
+            const statusMatch = statusFilter === "All" || r.dressCodeStatus === statusFilter;
+            const dateMatch = r.date === dateFilter;
+            return statusMatch && dateMatch;
+        })
         .filter(r => {
             const emp = employees.find(e => e.id === r.employeeId);
             if (!emp) return false;
@@ -31,24 +36,46 @@ export default function DressCodeVerificationPage() {
                         <div className="p-2 bg-purple-500/10 rounded-lg">
                             <Shirt size={20} className="text-purple-400" />
                         </div>
-                        <h1 className="text-2xl font-black text-white tracking-tight">Daily Dress Code Verification</h1>
+                        <h1 className="text-2xl font-black text-white tracking-tight">
+                            {statusFilter === "Pending" ? "Pending Dress Code Verification" : `Dress Code Verification: ${dateFilter}`}
+                        </h1>
                     </div>
-                    <p className="text-xs text-zinc-400">Review today's clock-in photos. Rejecting will add a flag and increment their monthly defaults.</p>
+                    <p className="text-xs text-zinc-400">
+                        {statusFilter === "Pending" 
+                            ? "Reviewing all pending clock-in photos across all dates." 
+                            : `Reviewing ${statusFilter.toLowerCase()} photos for ${dateFilter === today ? "today" : dateFilter}.`}
+                    </p>
                 </div>
 
-                <div className="flex bg-zinc-900 border border-zinc-800 rounded-xl p-1 shadow-lg">
-                    {["All", "Pending", "Approved", "Rejected"].map(filter => (
-                        <button
-                            key={filter}
-                            onClick={() => setStatusFilter(filter as any)}
-                            className={cn(
-                                "px-4 py-2 rounded-lg text-xs font-bold transition-all",
-                                statusFilter === filter ? "bg-zinc-800 text-white shadow" : "text-zinc-500 hover:text-zinc-300"
-                            )}
-                        >
-                            {filter}
-                        </button>
-                    ))}
+                <div className="flex flex-col md:flex-row gap-3">
+                    <div className="flex bg-zinc-900 border border-zinc-800 rounded-xl p-1 shadow-lg h-fit">
+                        {["All", "Pending", "Approved", "Rejected"].map(filter => (
+                            <button
+                                key={filter}
+                                onClick={() => setStatusFilter(filter as any)}
+                                className={cn(
+                                    "px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                                    statusFilter === filter ? "bg-zinc-800 text-white shadow" : "text-zinc-500 hover:text-zinc-300"
+                                )}
+                            >
+                                {filter}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-1 shadow-lg flex items-center gap-2 px-3">
+                        <Calendar size={14} className="text-zinc-500" />
+                        <input 
+                            type="date" 
+                            title="Filter submissions by date"
+                            value={dateFilter}
+                            onChange={(e) => {
+                                setDateFilter(e.target.value);
+                                if (statusFilter === "Pending") setStatusFilter("All"); // Switch to All if user specifically picks a date
+                            }}
+                            className="bg-transparent border-none outline-none text-xs font-black text-white py-1.5 focus:ring-0"
+                        />
+                    </div>
                 </div>
             </header>
 

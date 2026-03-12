@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import {
     Crown, Users, Ticket, Calendar, AlertTriangle, Clock, Activity,
-    Shield, ChevronRight, Bell, CheckCircle, XCircle, Eye
+    Shield, ChevronRight, Bell, CheckCircle, XCircle, Eye, Shirt
 } from "lucide-react";
 
 export default function FounderConsolePage() {
@@ -62,6 +62,7 @@ export default function FounderConsolePage() {
         { label: "Holiday Approvals", path: "/hr/holiday-approval", icon: Calendar },
         { label: "Attendance Override", path: "/hr/attendance-override", icon: Clock },
         { label: "SOP Management", path: "/hr/sop", icon: Shield },
+        { label: "Dress Code Verification", path: "/hr/dress-code", icon: Shirt },
         { label: "Report Misbehaviour", path: "/manager/misbehaviour", icon: AlertTriangle },
         { label: "Reimbursement Mgmt", path: "/hr/reimbursements", icon: Clock },
         { label: "Schedule Approval", path: "/hr/schedule-approval", icon: Clock },

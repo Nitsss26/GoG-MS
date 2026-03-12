@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Users, Calendar, LogOut, ShieldCheck, User, Clock,
     Briefcase, Award, Network, Megaphone, Ticket, Receipt,
     FileText, CalendarCheck, AlertTriangle, UserCog, Star, MapPin, ClipboardList,
-    Crown, Bell, Activity, Flag, ShieldAlert, Trophy, TrendingUp
+    Crown, Bell, Activity, Flag, ShieldAlert, Trophy, TrendingUp, Shirt
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -47,6 +47,7 @@ const hrMenu = [
     { label: "Workforce", icon: Users, path: "/employees" },
     { label: "Holiday Approval", icon: CalendarCheck, path: "/hr/holiday-approval" },
     { label: "Attendance Override", icon: ClipboardList, path: "/hr/attendance-override" },
+    { label: "Dress Code", icon: Shirt, path: "/hr/dress-code" },
     { label: "SOP Management", icon: FileText, path: "/hr/sop" },
     { label: "Reimbursements", icon: Receipt, path: "/hr/reimbursements" },
     { label: "PIP Management", icon: ShieldAlert, path: "/hr/pip" },

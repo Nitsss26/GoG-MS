@@ -786,6 +786,7 @@ const FALLBACK_TIMINGS: Record<string, { in: string; out: string }> = {
     "BBSR": { in: "09:30", out: "16:00" },
     "PKD": { in: "09:30", out: "16:00" },
     "VZM": { in: "09:30", out: "16:00" },
+    "BCE Mandideep": { in: "10:00", out: "16:00" },
 };
 
 const CUSTOM_SCHEDULE_RULES = [
@@ -809,7 +810,7 @@ const CUSTOM_SCHEDULE_RULES = [
     { nameRegex: /Amit Singh Patel/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
     { nameRegex: /Mayank Choudhary/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
     { nameRegex: /Priyanka Kumawat/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
-    { nameRegex: /Sujal Verma/i, location: "BGI Mandideep", in: "10:00", out: "16:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
+    { nameRegex: /Sujal Verma/i, location: "BCE Mandideep", in: "10:00", out: "16:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
     { nameRegex: /Prerna Saluja/i, location: "BGI Kokta", in: "09:35", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
     {
         nameRegex: /Abhishek Tiwari/i,
