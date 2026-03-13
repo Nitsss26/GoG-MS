@@ -132,8 +132,20 @@ export default function AttendancePage() {
 
     const handleMarkAsPresent = () => {
         if (!mapReason || mapProofUrls.length === 0) { alert("Reason and proofs are mandatory."); return; }
+        
+        // Determine request type
+        let type = "Late";
+        if (geoStatus === "denied" || !withinRadius) {
+            type = "Location mismatch";
+        }
+        // In a real scenario, we might check timing too.
+        
         addMarkAsPresentRequest({
-            employeeId: user.id, date: currentDate, reason: mapReason, proofUrls: mapProofUrls
+            employeeId: user.id, 
+            date: currentDate, 
+            reason: mapReason, 
+            proofUrls: mapProofUrls,
+            requestType: type // Added field
         });
         setShowMapForm(false);
     };
@@ -494,8 +506,8 @@ export default function AttendancePage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-zinc-800/50">
-                                    {teamAttendanceList.map(({ employee, record, status }) => (
-                                        <tr key={employee.id} className="hover:bg-zinc-800/30 transition-colors text-xs">
+                                    {teamAttendanceList.map(({ employee, record, status }, idx) => (
+                                        <tr key={employee.id || `team-att-${idx}`} className="hover:bg-zinc-800/30 transition-colors text-xs">
                                             <td className="px-4 py-3">
                                                 <p className="font-bold text-white">{employee.name}</p>
                                                 <p className="text-[10px] text-zinc-500">{employee.designation || employee.role}</p>

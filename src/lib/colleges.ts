@@ -15,60 +15,126 @@ export interface College {
 
 export const COLLEGES: College[] = [
     {
-        id: "sage-bhopal",
-        name: "SAGE University Bhopal",
-        shortName: "SAGE Bhopal",
-        lat: 23.2100,
-        lng: 77.4365,
+        id: "oriental-indore",
+        name: "Oriental University",
+        shortName: "Oriental University",
+        lat: 22.803159201664613,
+        lng: 75.85620736685242,
         radiusKm: 2,
-        address: "Bypass Road, Kailash Nagar, Bhopal",
-        city: "Bhopal",
-        state: "Madhya Pradesh"
-    },
-    {
-        id: "sage-indore",
-        name: "SAGE University Indore",
-        shortName: "SAGE Indore",
-        lat: 22.7530,
-        lng: 75.8937,
-        radiusKm: 2,
-        address: "Bypass Road, Indore",
+        address: "Sanwer Road, Jakhya, Indore, MP, 453555",
         city: "Indore",
         state: "Madhya Pradesh"
     },
     {
-        id: "barkatullah",
-        name: "Barkatullah University",
-        shortName: "BU Bhopal",
-        lat: 23.2076,
-        lng: 77.4171,
-        radiusKm: 1.5,
-        address: "Hoshangabad Road, Bhopal",
+        id: "sage-bhopal",
+        name: "Sage University Bhopal",
+        shortName: "SAGE Bhopal",
+        lat: 23.282547948166666,
+        lng: 77.45699878273547,
+        radiusKm: 2,
+        address: "Ayodhya Nagar, Bhopal, MP, 462041",
         city: "Bhopal",
         state: "Madhya Pradesh"
     },
     {
-        id: "centurion",
-        name: "Centurion University",
-        shortName: "Centurion",
-        lat: 19.2183,
-        lng: 84.6838,
+        id: "centurion-vizianagaram",
+        name: "Centurion University Vizianagaram",
+        shortName: "CUTM Vizianagaram",
+        lat: 18.18928156196229,
+        lng: 83.39240426672204,
         radiusKm: 2,
-        address: "Paralakhemundi, Gajapati",
-        city: "Paralakhemundi",
-        state: "Odisha"
+        address: "Rollavaka Village Bondapalli, AP, 535003",
+        city: "Vizianagaram",
+        state: "Andhra Pradesh"
     },
     {
-        id: "scope-global",
-        name: "Scope Global Skills University",
-        shortName: "Scope Global",
-        lat: 23.2599,
-        lng: 77.4126,
+        id: "sage-indore",
+        name: "Sage University Indore",
+        shortName: "SAGE Indore",
+        lat: 22.636632721551177,
+        lng: 75.85187466499627,
+        radiusKm: 2,
+        address: "Rau Bypass Road, Indore, MP, 452020",
+        city: "Indore",
+        state: "Madhya Pradesh"
+    },
+    {
+        id: "SDBC",
+        name: "Sushila Devi Bansal College of Technology",
+        shortName: "SDBC",
+        lat: 22.59777316921307,
+        lng: 75.78727275172537,
+        radiusKm: 2,
+        address: "AB Road, Umaria, Near Rau, Indore, Madhya Pradesh 453331",
+        city: "Indore",
+        state: "Madhya Pradesh"
+    },
+    {
+        id: "sgsu",
+        name: "Scope Global Skills University (SGSU)",
+        shortName: "SGSU",
+        lat: 23.2325, // Fallback coordinates if not provided precisely, assuming Bhopal
+        lng: 77.4332,
         radiusKm: 2,
         address: "Bhopal",
         city: "Bhopal",
         state: "Madhya Pradesh"
     },
+    {
+        id: "bansal-kokta",
+        name: "Bansal Institute of Research Technology & Science, Kokta",
+        shortName: "BGI Kokta",
+        lat: 23.32772697940546,
+        lng: 77.50723871685491,
+        radiusKm: 2,
+        address: "Raisen Road, Bhopal, MP, 462021",
+        city: "Bhopal",
+        state: "Madhya Pradesh"
+    },
+    {
+        id: "bansal-mandideep",
+        name: "Bansal College of Engineering, BGI, - Mandideep",
+        shortName: "BGI Mandideep",
+        lat: 23.03720391098222,
+        lng: 77.55742391129526,
+        radiusKm: 2,
+        address: "NH-12, near Bhopal, MP, 462046",
+        city: "Mandideep",
+        state: "Madhya Pradesh"
+    },
+    {
+        id: "centurion-bhubaneswar",
+        name: "Centurion University (CUTM) Bhubaneswar",
+        shortName: "CUTM Bhubaneswar",
+        lat: 20.187330026231606,
+        lng: 85.71089556297753,
+        radiusKm: 2,
+        address: "Ramachandrapur, Jatni, Bhubaneswar, Odisha, 752050",
+        city: "Bhubaneswar",
+        state: "Odisha"
+    },
+    {
+        id: "centurion-paralakhemundi",
+        name: "Centurion University (CUTM) Paralakhemundi",
+        shortName: "CUTM Paralakhemundi",
+        lat: 18.818788224302555,
+        lng: 84.1437052960369,
+        radiusKm: 2,
+        address: "Alluri Nagar, P.O. R Sitapur, Uppalada, PKD, Odisha",
+        city: "Paralakhemundi",
+        state: "Odisha"
+    },
+    {
+        id: "gyanveer",
+        name: "Gyanveer University (GU)",
+        shortName: "Gyanveer University",
+        lat: 23.87427599889863,
+        lng: 78.60787718177589,
+        radiusKm: 2,
+        address: "Village-Maa-Emliya, Rahatgarh, Sagar, MP, 470115",
+        city: "Sagar",
+        state: "Madhya Pradesh"
+    }
 ];
 
 export function getCollegeById(id: string): College | undefined {

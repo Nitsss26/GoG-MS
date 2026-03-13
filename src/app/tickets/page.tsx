@@ -26,12 +26,14 @@ export default function TicketsPage() {
     const isManager = ["AD", "HOI", "TL", "FOUNDER"].includes(user.role);
     const isUserInPIP = pipRecords.some(p => p.employeeId === user.id && p.status === "Active");
 
-    const myTickets = tickets.filter(t => t.raisedBy === user.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    const hrTickets = tickets.filter(t => t.targetCategory === "HR Desk" || t.targetCategory === "Attendance Override Request").sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
     const isHR = user.role === "HR";
+    const isFounder = user.role === "FOUNDER";
+    const isSystemAdmin = isHR || isFounder;
 
-    const displayTickets = isHR ? hrTickets : myTickets;
+    const myTickets = tickets.filter(t => t.raisedBy === user.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const hrTickets = tickets.filter(t => isFounder || t.targetCategory === "HR Desk" || t.targetCategory === "Attendance Override Request").sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const displayTickets = isSystemAdmin ? (isFounder ? tickets : hrTickets) : myTickets;
 
     const handleSubmitTicket = (e: React.FormEvent) => {
         e.preventDefault();

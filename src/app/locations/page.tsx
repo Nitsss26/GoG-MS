@@ -27,18 +27,18 @@ export default function LocationsPage() {
     const mapRef = useRef<any>(null);
     const isHR = user?.role === "HR" || user?.role === "FOUNDER";
 
-    const filtered = colleges.filter(c =>
+    const filtered = (colleges || []).filter(c =>
         c.name.toLowerCase().includes(search.toLowerCase()) ||
         c.shortName.toLowerCase().includes(search.toLowerCase()) ||
         c.city.toLowerCase().includes(search.toLowerCase())
     );
 
-    const collegeEmployeeCount = employees.reduce((acc, emp) => {
+    const collegeEmployeeCount = (employees || []).reduce((acc, emp) => {
         if (emp.location) acc[emp.location] = (acc[emp.location] || 0) + 1;
         return acc;
     }, {} as Record<string, number>);
 
-    const selectedEmps = employees.filter(e => e.location === selectedCollege);
+    const selectedEmps = (employees || []).filter(e => e.location === selectedCollege);
 
     const openEdit = (id: string) => {
         const c = colleges.find(x => x.id === id);
@@ -144,26 +144,27 @@ export default function LocationsPage() {
                                                     <div className="bg-zinc-800/50 p-1.5 rounded-lg">Lng: {college.lng.toFixed(4)}</div>
                                                 </div>
                                                 <div className="pt-2 border-t border-zinc-800/50 space-y-2">
-                                                    <p className="text-[10px] font-bold text-zinc-400 flex items-center gap-1.5 uppercase tracking-wider"><Clock size={10} /> Shift Schedules</p>
+                                                    <p className="text-[10px] font-bold text-primary flex items-center gap-1.5 uppercase tracking-widest"><Clock size={10} /> Live Roster & Timings</p>
                                                     <div className="space-y-1.5">
                                                         {selectedEmps.length > 0 ? selectedEmps.map(s => {
                                                             const timing = getExpectedTiming(s.id);
                                                             return (
-                                                                <div key={s.id} className="flex items-center justify-between gap-2 bg-zinc-900/50 border border-zinc-800/50 p-2 rounded-xl group hover:border-primary/20 transition-all">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <div className="w-5 h-5 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-[8px] font-bold">{s.name[0]}</div>
+                                                                <div key={s.id} className="flex items-center justify-between gap-2 bg-zinc-900/40 border border-zinc-800/50 p-2.5 rounded-xl group hover:border-primary/30 transition-all">
+                                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                                        <div className="w-6 h-6 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-[9px] font-black">{s.name[0]}</div>
                                                                         <div className="min-w-0">
-                                                                            <p className="text-[10px] text-zinc-200 font-bold leading-none truncate">{s.name}</p>
-                                                                            <p className="text-[8px] text-zinc-500 mt-1 uppercase tracking-tighter">{timing.location}</p>
+                                                                            <p className="text-[10px] text-white font-bold leading-none truncate">{s.name}</p>
+                                                                            <p className="text-[8px] text-zinc-500 mt-1 font-medium">{s.designation}</p>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="text-right shrink-0">
-                                                                        <p className="text-[9px] font-mono font-bold text-primary/80">{timing.in}</p>
-                                                                        <p className="text-[9px] font-mono text-zinc-500">{timing.out}</p>
+                                                                    <div className="text-right shrink-0 bg-primary/5 px-2 py-1 rounded-lg border border-primary/10">
+                                                                        <p className="text-[9px] font-mono font-black text-primary leading-none">{timing.in}</p>
+                                                                        <div className="h-[1px] w-full bg-primary/10 my-1"></div>
+                                                                        <p className="text-[9px] font-mono text-zinc-500 leading-none">{timing.out}</p>
                                                                     </div>
                                                                 </div>
                                                             );
-                                                        }) : <p className="text-[9px] text-zinc-600 italic px-2">No employees assigned</p>}
+                                                        }) : <p className="text-[9px] text-zinc-600 italic px-2 py-3 text-center bg-zinc-900/30 rounded-xl">No active roster for this location.</p>}
                                                     </div>
                                                 </div>
                                             </motion.div>
@@ -175,14 +176,13 @@ export default function LocationsPage() {
                     </div>
                 </div>
 
-                {/* Map View */}
                 <div className="flex-1 relative bg-zinc-950 z-0">
                     <MapComponent
-                        colleges={colleges}
+                        colleges={colleges || []}
                         selectedCollege={selectedCollege}
                         setSelectedCollege={setSelectedCollege}
                         mapRef={(map: any) => { mapRef.current = map; }}
-                        employees={employees}
+                        employees={employees || []}
                     />
                 </div>
             </div>

@@ -10,16 +10,16 @@ export default function WorkLocationPage() {
     const { user, getReportees, workSchedules, assignWorkSchedule, colleges } = useAuth();
     const [selectedEmp, setSelectedEmp] = useState("");
     const [schedule, setSchedule] = useState<Record<string, { location: string; clockInTime: string; clockOutTime: string }>>(
-        DAYS.reduce((acc, d) => ({ ...acc, [d]: { location: colleges[0]?.id || "", clockInTime: "09:00", clockOutTime: "18:00" } }), {})
+        DAYS.reduce((acc, d) => ({ ...acc, [d]: { location: (colleges && colleges[0]?.id) || "", clockInTime: "09:00", clockOutTime: "18:00" } }), {})
     );
     if (!user || !["FOUNDER", "AD", "HOI", "HR"].includes(user.role)) return null;
-    const reportees = getReportees(user.id);
+    const reportees = getReportees(user.id) || [];
 
     const handleSelect = (id: string) => {
         setSelectedEmp(id);
-        const existing = workSchedules.find(s => s.employeeId === id);
+        const existing = (workSchedules || []).find(s => s.employeeId === id);
         if (existing) setSchedule(existing.dayWise as any);
-        else setSchedule(DAYS.reduce((acc, d) => ({ ...acc, [d]: { location: colleges[0]?.id || "", clockInTime: "09:00", clockOutTime: "18:00" } }), {}));
+        else setSchedule(DAYS.reduce((acc, d) => ({ ...acc, [d]: { location: (colleges && colleges[0]?.id) || "", clockInTime: "09:00", clockOutTime: "18:00" } }), {}));
     };
 
     const handleSave = () => {
@@ -28,12 +28,12 @@ export default function WorkLocationPage() {
         assignWorkSchedule({ employeeId: selectedEmp, employeeName: emp?.name, dayWise: schedule });
     };
 
-    const existingSchedule = selectedEmp ? workSchedules.find(s => s.employeeId === selectedEmp) : null;
+    const existingSchedule = selectedEmp ? (workSchedules || []).find(s => s.employeeId === selectedEmp) : null;
 
     // Resolve location display name
     const getLocationLabel = (locId: string) => {
         if (locId === "WFH") return "🏠 WFH";
-        const c = colleges.find(x => x.id === locId);
+        const c = (colleges || []).find(x => x.id === locId);
         return c ? c.shortName : locId;
     };
 
@@ -49,8 +49,8 @@ export default function WorkLocationPage() {
                         {reportees.map(r => (
                             <button key={r.id} onClick={() => handleSelect(r.id)}
                                 className={cn("w-full p-3 flex items-center gap-2 text-left transition-colors", selectedEmp === r.id ? "bg-primary/10 border-l-2 border-primary" : "hover:bg-zinc-800/30")}>
-                                <div className="w-6 h-6 rounded-md bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-white">{r.name[0]}</div>
-                                <div><p className="text-[11px] font-bold text-white">{r.name}</p><p className="text-[9px] text-zinc-500">{r.designation}</p></div>
+                                <div className="w-6 h-6 rounded-md bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-white">{(r.name || "?")[0]}</div>
+                                <div className="min-w-0"><p className="text-[11px] font-bold text-white truncate">{r.name || "Unknown"}</p><p className="text-[9px] text-zinc-500 truncate">{r.designation || "No Designation"}</p></div>
                             </button>
                         ))}
                         {reportees.length === 0 && <div className="p-6 text-center text-xs text-zinc-500 italic">No reportees.</div>}
@@ -68,12 +68,12 @@ export default function WorkLocationPage() {
                                 {DAYS.map(day => (
                                     <div key={day} className="grid grid-cols-4 gap-2 items-center bg-zinc-800/30 rounded-xl p-3 border border-zinc-800/50">
                                         <span className="text-[11px] font-bold text-zinc-300">{day}</span>
-                                        <select value={schedule[day]?.location || ""} onChange={e => setSchedule({ ...schedule, [day]: { ...schedule[day], location: e.target.value } })} className="bg-zinc-800 border border-zinc-700 rounded-lg p-1.5 text-[10px] text-white">
-                                            {colleges.map(c => <option key={c.id} value={c.id}>{c.shortName}</option>)}
+                                        <select value={schedule?.[day]?.location || ""} onChange={e => setSchedule({ ...schedule, [day]: { ...schedule[day], location: e.target.value } })} className="bg-zinc-800 border border-zinc-700 rounded-lg p-1.5 text-[10px] text-white">
+                                            {(colleges || []).map(c => <option key={c.id} value={c.id}>{c.shortName}</option>)}
                                             <option value="WFH">🏠 Work From Home</option>
                                         </select>
-                                        <input type="time" value={schedule[day]?.clockInTime} onChange={e => setSchedule({ ...schedule, [day]: { ...schedule[day], clockInTime: e.target.value } })} className="bg-zinc-800 border border-zinc-700 rounded-lg p-1.5 text-[10px] text-white" />
-                                        <input type="time" value={schedule[day]?.clockOutTime} onChange={e => setSchedule({ ...schedule, [day]: { ...schedule[day], clockOutTime: e.target.value } })} className="bg-zinc-800 border border-zinc-700 rounded-lg p-1.5 text-[10px] text-white" />
+                                        <input type="time" value={schedule?.[day]?.clockInTime || "09:00"} onChange={e => setSchedule({ ...schedule, [day]: { ...schedule[day], clockInTime: e.target.value } })} className="bg-zinc-800 border border-zinc-700 rounded-lg p-1.5 text-[10px] text-white" />
+                                        <input type="time" value={schedule?.[day]?.clockOutTime || "18:00"} onChange={e => setSchedule({ ...schedule, [day]: { ...schedule[day], clockOutTime: e.target.value } })} className="bg-zinc-800 border border-zinc-700 rounded-lg p-1.5 text-[10px] text-white" />
                                     </div>
                                 ))}
                             </div>

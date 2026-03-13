@@ -746,8 +746,8 @@ export default function AnnouncementsPage() {
 
                                 <div className="pt-3 border-t border-zinc-900 flex justify-between items-center">
                                     <div className="flex items-center gap-2">
-                                        <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-400">{notice.createdBy[0]}</div>
-                                        <span className="text-[10px] font-bold text-zinc-500">{notice.createdBy}</span>
+                                        <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-400">{(notice?.createdBy || "U")[0]}</div>
+                                        <span className="text-[10px] font-bold text-zinc-500">{notice?.createdBy || "Unknown"}</span>
                                     </div>
                                     <button onClick={() => setViewNotice(notice)} className="text-[9px] text-primary font-bold hover:underline flex items-center gap-1"><Eye size={10} /> View</button>
                                 </div>
@@ -811,9 +811,9 @@ export default function AnnouncementsPage() {
                                     </div>
                                 )}
                                 <div className="pt-3 border-t border-zinc-800 flex items-center gap-2">
-                                    <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-400">{viewNotice.createdBy[0]}</div>
-                                    <span className="text-[10px] font-bold text-zinc-500">{viewNotice.createdBy}</span>
-                                    <span className="text-[9px] text-zinc-600 ml-auto">{viewNotice.createdAt}</span>
+                                    <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-400">{(viewNotice?.createdBy || "U")[0]}</div>
+                                    <span className="text-[10px] font-bold text-zinc-500">{viewNotice?.createdBy || "Unknown"}</span>
+                                    <span className="text-[9px] text-zinc-600 ml-auto">{viewNotice?.createdAt}</span>
                                 </div>
                             </div>
                         </motion.div>

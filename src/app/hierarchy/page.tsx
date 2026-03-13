@@ -240,8 +240,8 @@ function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: Or
                                     <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-0.5 h-8 bg-zinc-700/40" />
                                     <div className="absolute -top-3 px-3 py-1 bg-zinc-950 border border-rose-500/30 text-rose-400 text-[8px] sm:text-[9px] font-black uppercase tracking-widest rounded-lg shadow-xl z-20 whitespace-nowrap">Faculty & Professors</div>
                                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-1.5 sm:gap-4 w-full">
-                                        {sharedFaculty.map(child => (
-                                            <div key={child.id} className="relative flex justify-center">
+                                        {sharedFaculty.map((child, idx) => (
+                                            <div key={child.id || `faculty-${idx}`} className="relative flex justify-center">
                                                 <NodeCard node={child} />
                                             </div>
                                         ))}
@@ -306,7 +306,7 @@ function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1 break-all">
-                        <h3 className="text-[8px] sm:text-[10px] font-black text-white uppercase tracking-tight line-clamp-1">{node?.name || "Unknown"}</h3>
+                        <h3 className="text-[8px] sm:text-[10px] font-black text-white uppercase tracking-normal line-clamp-1">{node?.name || "Unknown"}</h3>
                         {/* Mock PIP Indicator */}
                         {node?.dept === "Sales" && node?.level === "Faculty" && (
                             <span className="w-1 h-1 rounded-full bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)] animate-pulse" title="Under Performance Improvement Plan (PIP)" />
@@ -356,7 +356,9 @@ function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
                     {node?.level ? levelIcon[node.level] : <User size={10} />}
                     <span className="truncate max-w-[40px] sm:max-w-none">{node?.level || "N/A"}</span>
                 </div>
-                <div className="text-[7px] sm:text-[9px] text-zinc-700 font-bold uppercase tracking-tight sm:tracking-widest">{node?.dept || ""}</div>
+                <div className="text-[7px] sm:text-[9px] text-zinc-700 font-bold uppercase tracking-tight sm:tracking-widest">
+                    {(node.level === "Management" || node.level === "Leadership") ? "" : (node?.dept || "")}
+                </div>
             </div>
 
             {hasChildren && onToggle && (

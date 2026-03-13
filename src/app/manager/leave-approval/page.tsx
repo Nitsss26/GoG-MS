@@ -9,9 +9,11 @@ export default function LeaveApprovalPage() {
     const [tab, setTab] = useState<"reportees" | "self">("reportees");
     if (!user || !["FOUNDER", "AD", "HOI", "HR"].includes(user.role)) return null;
 
-    const reportees = getReportees(user.id);
+    const reportees = getReportees(user.id) || [];
     const reporteeIds = reportees.map(r => r.id);
-    const reporteeLeaves = leaves.filter(l => reporteeIds.includes(l.employeeId)).sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    const isSystemAdmin = ["HR", "FOUNDER"].includes(user.role);
+
+    const reporteeLeaves = leaves.filter(l => isSystemAdmin || reporteeIds.includes(l.employeeId)).sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
     const selfLeaves = leaves.filter(l => l.employeeId === user.id).sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
 
     const displayed = tab === "reportees" ? reporteeLeaves : selfLeaves;
@@ -25,12 +27,12 @@ export default function LeaveApprovalPage() {
         <div className="p-6 space-y-6 max-w-5xl mx-auto w-full">
             <header>
                 <h1 className="text-xl font-bold text-white tracking-tight">Leave Management</h1>
-                <p className="text-xs text-zinc-400 mt-1">Approve or reject leave requests from your reportees.</p>
+                <p className="text-xs text-zinc-400 mt-1">{isSystemAdmin ? "Manage all employee leave requests across the organization." : "Approve or reject leave requests from your reportees."}</p>
             </header>
 
             <div className="flex gap-2 bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-1 w-fit">
                 <button onClick={() => setTab("reportees")} className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all", tab === "reportees" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}>
-                    Reportee Leaves ({reporteeLeaves.filter(l => l.status === "Pending").length} pending)
+                    {isSystemAdmin ? "Organization Leaves" : "Reportee Leaves"} ({reporteeLeaves.filter(l => l.status === "Pending").length} pending)
                 </button>
                 <button onClick={() => setTab("self")} className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all", tab === "self" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}>
                     My Leaves ({selfLeaves.length})
@@ -59,7 +61,7 @@ export default function LeaveApprovalPage() {
             <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl overflow-hidden">
                 <div className="p-4 border-b border-zinc-800/50 flex justify-between items-center">
                     <h3 className="text-sm font-semibold text-white">
-                        {tab === "reportees" ? "Reportee Requests & History" : "My Leave History"}
+                        {tab === "reportees" ? (isSystemAdmin ? "All Requests & History" : "Reportee Requests & History") : "My Leave History"}
                     </h3>
                 </div>
                 <div className="divide-y divide-zinc-800/50">
@@ -87,6 +89,15 @@ export default function LeaveApprovalPage() {
                                                 "text-red-400 bg-red-500/10 border-red-500/20"
                                     )}>{l.status}</span>
                                 </div>
+                                {l.proofUrls && l.proofUrls.length > 0 && (
+                                    <div className="flex flex-wrap gap-2 mt-2">
+                                        {l.proofUrls.map((url, idx) => (
+                                            <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-zinc-300 hover:text-white transition-colors">
+                                                <Calendar size={12} /> View Document {idx + 1}
+                                            </a>
+                                        ))}
+                                    </div>
+                                )}
                                 {tab === "reportees" && l.status === "Pending" && (
                                     <div className="flex flex-wrap gap-2 mt-2">
                                         <button onClick={() => { const reason = window.prompt("Reason for approval (Optional):"); approveLeave(l.id, reason || undefined); }} className="px-4 py-1.5 text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 rounded-lg hover:bg-green-500/20 transition-colors">Approve</button>

@@ -5,7 +5,7 @@ import { Employee, MarkAsPresentRequest, Attendance } from '@/models/Schemas';
 export async function POST(req: Request) {
     try {
         await dbConnect();
-        const { employeeId, date, reason, proofUrls } = await req.json();
+        const { employeeId, date, reason, proofUrls, requestType } = await req.json();
 
         const employee = await Employee.findOne({ id: employeeId });
         if (!employee) return NextResponse.json({ error: "Employee not found" }, { status: 404 });
@@ -19,6 +19,7 @@ export async function POST(req: Request) {
             date,
             reason,
             proofUrls,
+            requestType,
             status: "Pending",
             createdAt: new Date().toISOString()
         });
@@ -62,7 +63,7 @@ export async function GET(req: Request) {
 export async function PATCH(req: Request) {
     try {
         await dbConnect();
-        const { requestId, status, approverId, approverRole } = await req.json();
+        const { requestId, status, approverId, approverRole, requestType } = await req.json();
 
         const request = await MarkAsPresentRequest.findById(requestId);
         if (!request) return NextResponse.json({ error: "Request not found" }, { status: 404 });
@@ -76,19 +77,23 @@ export async function PATCH(req: Request) {
         });
 
         if (status === "Approved") {
+            const finalRequestType = requestType || request.requestType || "";
+            const isLate = finalRequestType.toLowerCase().includes("late");
+            const isLocation = finalRequestType.toLowerCase().includes("location");
+
             // Update attendance
             await Attendance.findOneAndUpdate(
                 { employeeId: request.employeeId, date: request.date },
                 {
                     status: "Present",
-                    flags: { late: true }, // Default flag as per request
+                    flags: { 
+                        late: !!isLate,
+                        locationDiff: !!isLocation
+                    },
                     isApprovedByHR: true
                 },
                 { upsert: true }
             );
-        } else if (status === "Rejected") {
-            // Refund credit if rejected? Usually not mentioned, let's keep it deducted as part of "opt for 3 times".
-            // "Can opt for 3 Times" implies usage of attempts.
         }
 
         await request.save();

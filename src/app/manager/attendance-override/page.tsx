@@ -13,15 +13,15 @@ export default function ManagerAttendanceOverridePage() {
     if (!user || !["HOI", "AD", "HR", "FOUNDER"].includes(user.role)) return null;
 
     const todayDate = new Date().toISOString().split("T")[0];
-    const reportees = getReportees(user.id);
+    const reportees = getReportees(user.id) || [];
 
     const mappedEmployees = useMemo(() => {
         return reportees.map(emp => {
-            const todayRecord = attendanceRecords.find(r => r.employeeId === emp.id && r.date === todayDate);
+            const todayRecord = (attendanceRecords || []).find(r => r.employeeId === emp.id && r.date === todayDate);
             const status = todayRecord ? todayRecord.status : "Absent";
 
             // Check for open tickets related to attendance for this employee
-            const activeTickets = tickets.filter(t =>
+            const activeTickets = (tickets || []).filter(t =>
                 t.status !== "Resolved" &&
                 (t.targetCategory === "Attendance Override Request" || t.targetCategory === "Attendance Appeal") &&
                 (t.targetEmployeeId === emp.id || t.raisedBy === emp.id)
@@ -37,10 +37,11 @@ export default function ManagerAttendanceOverridePage() {
                 creditsUsed,
                 creditsRemaining
             };
-        }).filter(emp =>
-            emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            emp.id.toLowerCase().includes(searchQuery.toLowerCase())
-        );
+        }).filter(emp => {
+            const nameMatch = (emp.name || "").toLowerCase().includes(searchQuery.toLowerCase());
+            const idMatch = (emp.id || "").toLowerCase().includes(searchQuery.toLowerCase());
+            return nameMatch || idMatch;
+        });
     }, [reportees, attendanceRecords, tickets, searchQuery, todayDate]);
 
     const handleGiveCredit = (e: React.FormEvent) => {
@@ -95,7 +96,7 @@ export default function ManagerAttendanceOverridePage() {
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
                                             <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center text-primary font-bold shadow-inner border border-white/5">
-                                                {emp.name[0]}
+                                                {(emp.name || "?")[0]}
                                             </div>
                                             <div>
                                                 <p className="font-bold text-white">{emp.name}</p>

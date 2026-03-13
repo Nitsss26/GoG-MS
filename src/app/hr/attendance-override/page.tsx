@@ -37,9 +37,9 @@ export default function AttendanceOverridePage() {
                 creditsRemaining
             };
         }).filter(emp =>
-            emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            emp.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            emp.role.toLowerCase().includes(searchQuery.toLowerCase())
+            (emp.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (emp.id || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (emp.role || "").toLowerCase().includes(searchQuery.toLowerCase())
         );
     }, [employees, attendanceRecords, tickets, searchQuery, todayDate]);
 
@@ -95,11 +95,11 @@ export default function AttendanceOverridePage() {
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
                                             <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center text-primary font-bold shadow-inner border border-white/5">
-                                                {emp.name[0]}
+                                                {(emp.name || "?")[0]}
                                             </div>
                                             <div>
-                                                <p className="font-bold text-white">{emp.name}</p>
-                                                <p className="text-[9px] text-zinc-500 font-bold tracking-wider">{emp.id} &middot; {emp.role}</p>
+                                                <p className="font-bold text-white">{emp.name || "Unknown"}</p>
+                                                <p className="text-[9px] text-zinc-500 font-bold tracking-wider">{emp.id} &middot; {emp.role || "N/A"}</p>
                                             </div>
                                         </div>
                                     </td>

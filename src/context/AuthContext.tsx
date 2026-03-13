@@ -2,6 +2,7 @@
 import { COLLEGES as INITIAL_COLLEGES, College } from "@/lib/colleges";
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { LucideIcon, Clock, MapPin, CheckCircle2, AlertTriangle, History, Calendar, User, Search, Filter, ArrowLeft, ArrowRight, Download, Eye, X, Plus, Edit2, Trash2, Save, MoreVertical, Shield, Briefcase, Mail, Phone, MapPin as Pin, Fingerprint, Camera, CameraOff, RefreshCw, Layers, Award, Star, TrendingUp, Info } from 'lucide-react';
 import {
     sendMail,
     getAuthorityEmails,
@@ -21,6 +22,7 @@ import {
     getAnnouncementTemplate,
     getSOPUpdateTemplate
 } from "@/lib/mail";
+import { CUSTOM_SCHEDULE_RULES, FALLBACK_TIMINGS, isThirdSaturday } from '@/lib/attendance-config';
 
 // ─── TYPES ───
 export type Role = "FOUNDER" | "HR" | "AD" | "TL" | "HOI" | "OM" | "FACULTY" | "PROFESSOR";
@@ -167,6 +169,7 @@ export interface SOPNotification { id: string; sopId: string; title: string; cha
 export interface MarkAsPresentRequest {
     id: string; employeeId: string; employeeName: string; date: string;
     reason: string; proofUrls?: string[];
+    requestType?: string;
     status: "Pending" | "Approved" | "Rejected";
     appliedAt: string;
 }
@@ -369,6 +372,100 @@ const INITIAL_EMPLOYEES: Employee[] = [
             { period: "Feb 01 - Feb 14, 2026", score: 4.8, points: 480, date: "2026-02-14" }
         ],
         designationDate: "2024-01-01"
+    },
+    {
+        id: "EMP501", name: "Suman Rajak", email: "suman@geeksofgurukul.com", role: "PROFESSOR",
+        designation: "SDE & Professor", status: "Active", isOnboarded: true,
+        dateOfBirth: "22/02/2001", password: "22022001", phone: "6295861588",
+        bloodGroup: "B+", dept: "IIT", location: "IIT",
+        fatherMotherName: "Biswanath Rajak", parentsPhone: "8972337294",
+        address: "AMLAGORA , GARHBETA , PASCHIM MEDINIPUR , PIN - 721121",
+        bachelorQual: "B.Tech (ECE): Bankura Unnayani Institute of Engineering",
+        masterQual: "M.Tech (Control System) : IIT Kharagpur",
+        collegeName: "IIT", linkedinId: "linkedin.com/in/suman-rajak-264137225",
+        bankAccountNumber: "42262692885", ifscCode: "SBIN0000202", bankAccountName: "Suman Rajak",
+        upiId: "rajaksuman56@oksbi",
+        resumeUrl: "https://drive.google.com/open?id=1ZZQvqKUXmv03fzndCECTKQa31lXxuTIg",
+        bachelorCertUrl: "https://drive.google.com/open?id=1Pbw95x2HvXLYHANdhNeNCXbnfglbpNLs",
+        masterCertUrl: "https://drive.google.com/open?id=1myxb1UDH97HhDB__vfWX4fOqKRuaMik8",
+        marksheet10Url: "https://drive.google.com/open?id=1MyhVPpy-zpVVwDi3PfaN_lOTTvKEh1uB",
+        marksheet12Url: "https://drive.google.com/open?id=1lkWOlJ0zhHtQK6wMenaVRYHFLpzBQbpj",
+        aadharCardUrl: "https://drive.google.com/open?id=1vy_xag1-WfeQsGxuIaEIe-qzZtSfMMje",
+        panCardUrl: "https://drive.google.com/open?id=1EtOL15K7buZ7MkffUIdVj-2FCJJYQHPs",
+        passportPhotoUrl: "https://drive.google.com/open?id=1mowA0YVj0XIACM9m7FEq8Da8VdRhGtkF",
+        bankPassbookUrl: "https://drive.google.com/open?id=1STGEnG9p67CFedva2xlzT4w3mSSeiF_T",
+        bachelorMarksheetUrl: "https://drive.google.com/open?id=15-ZYsSixbFdQi0yoHMwC9xSZT1JlzHbH",
+        masterMarksheetUrl: "https://drive.google.com/open?id=1K-9WwEimPULbyh69Tf8r9XEsKQ0iIo1h",
+        joiningDate: "2024-03-13", salary: 50000, chancesRemaining: 3
+    },
+    {
+        id: "OM501", name: "Abhishek Tiwari", email: "abhishek.tiwari@geeksofgurukul.com", role: "OM",
+        designation: "Operation Manager", status: "Active", isOnboarded: true,
+        dateOfBirth: "05/05/2000", password: "05052000", phone: "7999284901",
+        bloodGroup: "A+", dept: "Operations", location: "Other College",
+        fatherMotherName: "NIRBHAY TIWARI", parentsPhone: "8989961318",
+        address: "103 BALAJI APPARTEMENT MAHABALI NAGAR KOLAR ROAD BHOPAL",
+        bachelorQual: "B.TECH (IT)", masterQual: "MBA",
+        collegeName: "Other College", linkedinId: "linkedin.com/in/abhishek-tiwari-b632601a6/",
+        bankAccountNumber: "903110110013943", ifscCode: "BKID0009031", bankAccountName: "ABHISHEK TIWARI",
+        upiId: "7999284901@YBL",
+        resumeUrl: "https://drive.google.com/open?id=1WRdpCgVd0Ph0PSXmfzbjt_C3AQryKqoT",
+        bachelorCertUrl: "https://drive.google.com/open?id=1JUQnbPzuG7De8bPqYNwvBNH4weE6POJ2",
+        marksheet10Url: "https://drive.google.com/open?id=1wxIpd9KgKyVegoGqCTOqq1bdKAzQyFUp",
+        marksheet12Url: "https://drive.google.com/open?id=1bHrBPwBcXiHVbguXW6KQadqVABwgchLn",
+        aadharCardUrl: "https://drive.google.com/open?id=1AnZDGT3w7lU50LBuJUteICAtSDU6IMnG",
+        panCardUrl: "https://drive.google.com/open?id=1g4l2tIIusMQ31QzqdT4MBPqbgPP7dI5q",
+        passportPhotoUrl: "https://drive.google.com/open?id=1isZBpoAP3_JhPi2wcfLobIAJu9dzQQh6",
+        bankPassbookUrl: "https://drive.google.com/open?id=14lLDNRqx54i4a0l6YkF2tNeZboCLaTqC",
+        expLetterUrl: "https://drive.google.com/open?id=1jGDIRxvPjgayBSVs8V_I2tUDOxL9a63n",
+        bachelorMarksheetUrl: "https://drive.google.com/open?id=1DlFFBOJraYX7Sfb1vHnQ0JKIUUX2kbtX",
+        joiningDate: "2024-03-13", salary: 35000, chancesRemaining: 3
+    },
+    {
+        id: "EMP502", name: "Vipul Kumar Gond", email: "vipul.gond@geeksofgurukul.com", role: "PROFESSOR",
+        designation: "SDE & Professor", status: "Active", isOnboarded: true,
+        dateOfBirth: "01/09/2001", password: "01092001", phone: "9565006194",
+        bloodGroup: "O+", dept: "IIT", location: "IIT",
+        fatherMotherName: "Rajesh Prasad Gond", parentsPhone: "7651967219",
+        address: "Jalalabad , Ghazipur , Uttar Pradesh",
+        bachelorQual: "B.Tech", collegeName: "IIT", linkedinId: "www.linkedin.com/in/vipul1877",
+        bankAccountNumber: "415302011017116", ifscCode: "UBIN0541532", bankAccountName: "VIPUL KUMAR GOND",
+        upiId: "9565096194@ybl",
+        resumeUrl: "https://drive.google.com/open?id=1VFSGJ5D3akYI7xBCzvXMXnDDp6iEX8vb",
+        bachelorCertUrl: "https://drive.google.com/open?id=1VZKUFmTG8ikCH7KWAG_0-7bDK20vV1Fa",
+        marksheet10Url: "https://drive.google.com/open?id=1jfP4q9079EtGQIGYOgnzcAzIcGKc4bmP",
+        marksheet12Url: "https://drive.google.com/open?id=1NeVk7D5bqoplTrQbNXj7PNAdFjUD6XlF",
+        aadharCardUrl: "https://drive.google.com/open?id=1Ucsdsl-7QF0NvxcPmXVLIUoqusk33Kxp",
+        panCardUrl: "https://drive.google.com/open?id=1ddaq1rUJT6Ychup4uvegT-Xqcw0TAo9E",
+        passportPhotoUrl: "https://drive.google.com/open?id=1eylzoHxJLgtupBlE6tzc8VcCANO7PzmW",
+        bankPassbookUrl: "https://drive.google.com/open?id=1YIHTGExb7fjN2cyFZBo1d_h9tTP2zR-U",
+        expLetterUrl: "https://drive.google.com/open?id=1ikZ25fUJcVa_BGAe94OO6WFbf6Qf4S6b",
+        bachelorMarksheetUrl: "https://drive.google.com/open?id=1-s_UUS9KLTxQkq8pQYqgmfDSevU4z1R-",
+        joiningDate: "2024-03-13", salary: 50000, chancesRemaining: 3
+    },
+    {
+        id: "OM502", name: "Shriyansh Shrivastava", email: "shriyansh@geeksofgurukul.com", role: "OM",
+        designation: "Operation Manager", status: "Active", isOnboarded: true,
+        dateOfBirth: "04/08/2004", password: "04082004", phone: "9617923667",
+        bloodGroup: "A-", dept: "Operations", location: "Other College",
+        fatherMotherName: "Raju Shrivastava", parentsPhone: "9981324819",
+        address: "Bijora Jaisinagar Sagar 470125",
+        bachelorQual: "B. Tech.(CSE)", masterQual: "no",
+        collegeName: "Other College", linkedinId: "https://www.linkedin.com/in/shriyansh-shrivastva-1828542a6",
+        bankAccountNumber: "3711597326", ifscCode: "CBIN0284173", bankAccountName: "Shriyansh Shrivastava",
+        upiId: "9617923667@ybl",
+        resumeUrl: "https://drive.google.com/open?id=1iel7lOQ9Nv2FsmX83kiAhT_GTGJazvI-",
+        bachelorCertUrl: "https://drive.google.com/open?id=13EnhUyjeRmnf6eZm0mfuUtje4ERyWv0R",
+        masterCertUrl: "https://drive.google.com/open?id=1D6Otk6I3ZP3duE0bo9wVAvnrdvDZCoQh",
+        marksheet10Url: "https://drive.google.com/open?id=1OFZ_TmzdJRIHCoG7XsoFtK-tR_H95Ax8",
+        marksheet12Url: "https://drive.google.com/open?id=1SpIJh4QRb94q0sFS8dZ9qnFAPYcgJHwc",
+        aadharCardUrl: "https://drive.google.com/open?id=1_ft2TMtx06V8OOVq6OJFWzfQl2qasyI2",
+        panCardUrl: "https://drive.google.com/open?id=1hqRY16DOS_NsqW5Ov1z1XVkGdXY1e9Wm",
+        passportPhotoUrl: "https://drive.google.com/open?id=143dM0jjj65w3Zjwrww4YOuBJkNxxRN-W",
+        bankPassbookUrl: "https://drive.google.com/open?id=1Xgz9JIEDmU8jDYAbIauZM-sjE6DBUx1B",
+        bachelorMarksheetUrl: "https://drive.google.com/open?id=1cmCGWhWP5xKlVPTjPx-IMWLeKp58dpBF",
+        masterMarksheetUrl: "https://drive.google.com/open?id=1djOZNZlQmTbwOq4kddQPqNNpEAKZBBd1",
+        joiningDate: "2024-03-13", salary: 35000, chancesRemaining: 3
     }
 ];
 const MASTER_SOP_CONTENT = `
@@ -774,54 +871,7 @@ const INITIAL_SCHEDULES: WorkSchedule[] = [
     { employeeId: "OM002", employeeName: "Kavitha Nair", approvedByHR: true, assignedBy: "HOI001", assignedByName: "Ayush Chauhan", dayWise: { Mon: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "scope-global", clockInTime: "09:00", clockOutTime: "14:00" } } },
 ];
 
-const FALLBACK_TIMINGS: Record<string, { in: string; out: string }> = {
-    "BGI Kokta": { in: "09:30", out: "16:20" },
-    "BGI Mandideep": { in: "10:00", out: "16:30" },
-    "BGI Indore": { in: "09:30", out: "16:00" },
-    "OUI": { in: "09:30", out: "16:00" },
-    "SGSU": { in: "10:00", out: "16:00" },
-    "SUB": { in: "10:10", out: "15:40" },
-    "SUI": { in: "10:10", out: "15:40" },
-    "CUTM": { in: "09:30", out: "16:00" },
-    "BBSR": { in: "09:30", out: "16:00" },
-    "PKD": { in: "09:30", out: "16:00" },
-    "VZM": { in: "09:30", out: "16:00" },
-    "BCE Mandideep": { in: "10:00", out: "16:00" },
-};
-
-const CUSTOM_SCHEDULE_RULES = [
-    { nameRegex: /Ravi Ranjan/i, location: "BBSR", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
-    { nameRegex: /Vipul Kumar/i, location: "BBSR", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri"] },
-    { nameRegex: /Aman/i, location: "BBSR", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
-    { nameRegex: /Verman/i, location: "BBSR", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri"] },
-    { nameRegex: /Siddharda/i, location: "BBSR", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri"] },
-    { nameRegex: /Mriganka/i, location: "PKD", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
-    { nameRegex: /Sushant/i, location: "PKD", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
-    { nameRegex: /Chandan/i, location: "PKD", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
-    { nameRegex: /Jeet/i, location: "VZM", in: "09:30", out: "16:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
-    { nameRegex: /K\. Revanth/i, location: "VZM", in: "09:30", out: "17:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
-    { nameRegex: /Ankit Singh/i, location: "SUB", in: "08:30", out: "15:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri"], wfhDays: ["Sat"] },
-    { nameRegex: /Ayush Sahu/i, location: "SUB", in: "10:15", out: "16:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri"], wfhDays: ["Sat"] },
-    { nameRegex: /Ravi Bhushan Pratap/i, location: "SGSU", in: "10:15", out: "16:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri"], wfhDays: ["Sat"] },
-    { nameRegex: /Suman Rajak/i, location: "SGSU", in: "10:15", out: "16:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri"], wfhDays: ["Sat"] },
-    { nameRegex: /Sahil Burde/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
-    { nameRegex: /Pranjul Sahu/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
-    { nameRegex: /Mukesh Kumar/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
-    { nameRegex: /Amit Singh Patel/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
-    { nameRegex: /Mayank Choudhary/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
-    { nameRegex: /Priyanka Kumawat/i, location: "BGI Kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
-    { nameRegex: /Sujal Verma/i, location: "BCE Mandideep", in: "10:00", out: "16:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
-    { nameRegex: /Prerna Saluja/i, location: "BGI Kokta", in: "09:35", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], thirdSatWFH: true },
-    {
-        nameRegex: /Abhishek Tiwari/i,
-        multiLocation: [
-            { location: "SUB", in: "10:15", out: "16:30", days: ["Tue", "Thu", "Fri"] },
-            { location: "SGSU", in: "10:15", out: "16:00", days: ["Mon", "Wed"] },
-        ],
-        wfhDays: ["Sat"]
-    },
-    { nameRegex: /Nitesh/i, location: "sage-bhopal", in: "09:30", out: "16:30", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] }
-];
+// Shared constants moved to @/lib/attendance-config
 
 const INITIAL_RESPONSIBILITIES: AdditionalResponsibility[] = [
     { id: "ar1", employeeId: "OM001", employeeName: "Arjun Sharma", addedBy: "HOI003", description: "Coordinating inter-department tech workshops", date: "2024-02-20", status: "Approved", points: 15 },
@@ -912,13 +962,8 @@ const INITIAL_NOTICES: Notice[] = [
 ];
 const INITIAL_NOTIFICATIONS: PortalNotification[] = [];
 
-// Helper for 3rd Saturday logic
-const isThirdSaturday = (date: Date) => {
-    const day = date.getDay();
-    if (day !== 6) return false;
-    const dateNum = date.getDate();
-    return dateNum > 14 && dateNum <= 21;
-};
+
+// Helper for 3rd Saturday logic (Moved to @/lib/attendance-config)
 
 // ─── CONTEXT TYPE ───
 interface AuthContextType {
@@ -934,21 +979,21 @@ interface AuthContextType {
     colleges: College[];
     // Legacy arrays
     jobPostings: JobPosting[]; certificates: AchievementCertificate[]; resignationRequests: ResignationRequest[]; assets: Asset[]; assetRequests: AssetRequest[];
-    login: (email: string, password?: string, role?: string) => { success: boolean, msg?: string }; logout: () => void;
-    addNotice: (notice: Omit<Notice, "id" | "createdBy" | "createdAt">) => void;
-    addAnnouncement: (notice: Omit<Notice, "id" | "createdBy" | "createdAt">) => void;
-    editNotice: (id: string, data: { title?: string; content?: string; category?: Notice["category"] }) => void;
+    login: (email: string, password?: string, role?: string) => Promise<{ success: boolean, msg?: string }>; logout: () => void;
+    addNotice: (notice: Omit<Notice, "id" | "createdBy" | "createdAt">) => Promise<void>;
+    addAnnouncement: (notice: Omit<Notice, "id" | "createdBy" | "createdAt">) => Promise<void>;
+    editNotice: (id: string, data: { title?: string; content?: string; category?: Notice["category"] }) => Promise<void>;
     markAnnouncementRead: (noticeId: string) => void;
     updateProfile: (data: Partial<Employee>) => void; // Added updateProfile
-    clockIn: (location: string, time: string, dressCodeImageUrl?: string) => void;
-    clockOut: (time: string) => void;
-    raiseTicket: (targetCategory: string, subject: string, content: string, routeTo?: string, cc?: string[], proofUrls?: string[], targetEmployeeId?: string, targetDate?: string) => void;
-    resolveTicket: (id: string, notes: string) => void;
-    addLeaveRequest: (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName">) => void;
-    approveLeave: (id: string, reason?: string) => void;
-    rejectLeave: (id: string, applyLOP?: boolean, reason?: string) => void;
-    addReimbursement: (claim: Omit<ReimbursementClaim, "id" | "status" | "date" | "employeeId" | "employeeName">) => void;
-    updateReimbursementStatus: (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string) => void;
+    clockIn: (location: string, time: string, dressCodeImageUrl?: string) => Promise<void>;
+    clockOut: (time: string) => Promise<void>;
+    raiseTicket: (targetCategory: string, subject: string, content: string, routeTo?: string, cc?: string[], proofUrls?: string[], targetEmployeeId?: string, targetDate?: string) => Promise<void>;
+    resolveTicket: (id: string, notes: string) => Promise<void>;
+    addLeaveRequest: (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName">) => Promise<void>;
+    approveLeave: (id: string, reason?: string) => Promise<void>;
+    rejectLeave: (id: string, applyLOP?: boolean, reason?: string) => Promise<void>;
+    addReimbursement: (claim: Omit<ReimbursementClaim, "id" | "status" | "date" | "employeeId" | "employeeName">) => Promise<void>;
+    updateReimbursementStatus: (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string) => Promise<void>;
     proposeHoliday: (h: Omit<Holiday, "id" | "proposedBy" | "status" | "proposedByName">) => void;
     approveHoliday: (id: string, customMessage?: string) => void;
     updateSOP: (sop: Omit<SOP, "id" | "lastUpdated">) => void;
@@ -968,14 +1013,14 @@ interface AuthContextType {
     addRating: (employeeId: string, ratedBy: string, score: number, period: string, comment?: string) => void;
     assignWorkSchedule: (schedule: WorkSchedule) => void;
     approveWorkSchedule: (employeeId: string) => void;
-    addCollege: (college: Omit<College, "id">) => void;
-    updateCollege: (id: string, updates: Partial<College>) => void;
-    deleteCollege: (id: string) => void;
+    addCollege: (college: Omit<College, "id">) => Promise<void>;
+    updateCollege: (id: string, updates: Partial<College>) => Promise<void>;
+    deleteCollege: (id: string) => Promise<void>;
     addAdditionalResponsibility: (employeeId: string, description: string, points: number) => void;
     approveAdditionalResponsibility: (id: string, status: "Approved" | "Rejected") => void;
-    addMarkAsPresentRequest: (req: Omit<MarkAsPresentRequest, "id" | "status" | "appliedAt" | "employeeName">) => void;
+    addMarkAsPresentRequest: (req: Omit<MarkAsPresentRequest, "id" | "status" | "appliedAt" | "employeeName">) => Promise<void>;
     resolveMarkAsPresentRequest: (id: string, status: "Approved" | "Rejected") => void;
-    resolveDressCodeCheck: (recordId: string, status: "Approved" | "Rejected") => void;
+    resolveDressCodeCheck: (recordId: string, status: "Approved" | "Rejected") => Promise<void>;
     addBiWeeklyRating: (employeeId: string, score: number, period: string, points: number) => void;
     addMeetingRequest: (req: Omit<MeetingRequest, "id" | "status" | "employeeId" | "employeeName" | "createdAt">) => void;
     updateMeetingStatus: (id: string, status: MeetingRequest["status"], MOMData?: { screenshotUrls: string[], attendees: MeetingRequest["attendees"] }) => void;
@@ -1175,9 +1220,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
         };
 
+        const fetchData = async () => {
+            if (!user) return;
+            try {
+                // Fetch Tickets
+                const tRes = await fetch(`/api/tickets?userId=${user.id}&role=${user.role}`);
+                const tData = await tRes.json();
+                if (Array.isArray(tData)) setTickets(tData);
+
+                // Fetch Leaves
+                const lRes = await fetch(`/api/leaves?userId=${user.id}&role=${user.role}`);
+                const lData = await lRes.json();
+                if (Array.isArray(lData)) setLeaves(lData);
+
+                // Fetch Reimbursements
+                const rRes = await fetch(`/api/reimbursements?userId=${user.id}&role=${user.role}`);
+                const rData = await rRes.json();
+                if (Array.isArray(rData)) setReimbursements(rData);
+
+                // Fetch Notices
+                const nRes = await fetch("/api/notices");
+                const nData = await nRes.json();
+                if (Array.isArray(nData)) setNotices(nData);
+            } catch (err) {
+                console.error("Failed to fetch dashboard data:", err);
+            }
+        };
+
         fetchEmployees();
         fetchLocations();
-        if (user) fetchAttendance();
+        if (user) {
+            fetchAttendance();
+            fetchData();
+        }
     }, [user]);
 
     useEffect(() => {
@@ -1324,18 +1399,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     // ─── AUTH ───
-    const login = (email: string, password?: string, role?: string) => {
-        const emp = employees.find(e => e.email && e.email.toLowerCase().trim() === email.toLowerCase().trim());
-        if (!emp) return { success: false, msg: "Institutional account not found." };
-        const expectedPw = emp.password || "26082001";
-        if (password && password !== expectedPw) return { success: false, msg: "Incorrect passkey." };
-        if (role && emp.role !== role) return { success: false, msg: "Institutional role mismatch." };
+    const login = async (email: string, password?: string, role?: string) => {
+        try {
+            const res = await fetch("/api/auth/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password, role })
+            });
 
-        const userWithExpiry = { ...emp, lastActive: Date.now() };
-        setUser(userWithExpiry);
-        localStorage.setItem("gog_user", JSON.stringify(userWithExpiry));
-        router.push("/");
-        return { success: true };
+            const data = await res.json();
+
+            if (data.success && data.employee) {
+                const emp = data.employee;
+                const userWithExpiry = { ...emp, id: emp.employeeId || emp.id, lastActive: Date.now() };
+                setUser(userWithExpiry);
+                localStorage.setItem("gog_user", JSON.stringify(userWithExpiry));
+                
+                // Update employees list to ensure password/data is fresh
+                setEmployees(prev => {
+                    const updated = [...prev];
+                    const idx = updated.findIndex(e => e.id === userWithExpiry.id);
+                    if (idx !== -1) updated[idx] = { ...updated[idx], ...userWithExpiry };
+                    else updated.push(userWithExpiry);
+                    localStorage.setItem("gog_employees", JSON.stringify(updated));
+                    return updated;
+                });
+
+                router.push("/");
+                return { success: true };
+            } else {
+                return { success: false, msg: data.error || "Authentication failed." };
+            }
+        } catch (err) {
+            console.error("Login Error:", err);
+            return { success: false, msg: "Network error. Please try again." };
+        }
     };
     const logout = () => { setUser(null); localStorage.removeItem("gog_user"); router.push("/login"); };
     const updateOnboarding = (userId: string, data: any) => {
@@ -1380,24 +1478,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     // ─── NOTICES ───
-    const addNotice = (notice: Omit<Notice, "id" | "createdBy" | "createdAt">) => {
+    const addNotice = async (notice: Omit<Notice, "id" | "createdBy" | "createdAt">) => {
         if (!user) return;
         const newNotice: Notice = { ...notice, id: `N${uid()} `, createdBy: user.name, createdAt: new Date().toISOString().split("T")[0], readBy: [] };
-        setNotices(prev => [newNotice, ...prev]);
-
-        // --- EMAIL NOTIFICATION ---
-        const allEmails = employees.filter(e => e.email && e.status === "Active").map(e => e.email);
-        const { subject: mailSub, html: mailHtml } = getAnnouncementTemplate(newNotice);
-        sendMail({ to: allEmails, subject: mailSub, html: mailHtml });
-
-        try { localStorage.setItem("announcement_update", JSON.stringify({ id: newNotice.id, ts: Date.now() })); } catch { }
+        
+        try {
+            const res = await fetch("/api/notices", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(newNotice)
+            });
+            const data = await res.json();
+            if (data.id) {
+                setNotices(prev => [data, ...prev]);
+                // --- EMAIL NOTIFICATION ---
+                const allEmails = employees.filter(e => e.email && e.status === "Active").map(e => e.email);
+                const { subject: mailSub, html: mailHtml } = getAnnouncementTemplate(newNotice);
+                sendMail({ to: allEmails, subject: mailSub, html: mailHtml });
+                localStorage.setItem("announcement_update", JSON.stringify({ id: data.id, ts: Date.now() }));
+            }
+        } catch (err) { console.error(err); }
     };
     const addAnnouncement = addNotice;
 
-    const editNotice = (id: string, data: { title?: string; content?: string; category?: Notice["category"] }) => {
+    const editNotice = async (id: string, data: { title?: string; content?: string; category?: Notice["category"] }) => {
         if (!user) return;
-        setNotices(prev => prev.map(n => n.id === id ? { ...n, ...data, isEdited: true, editedAt: new Date().toISOString().split("T")[0] } : n));
-        try { localStorage.setItem("announcement_update", JSON.stringify({ id, action: "edit", ts: Date.now() })); } catch { }
+        try {
+            const res = await fetch("/api/notices", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, ...data, isEdited: true, editedAt: new Date().toISOString().split("T")[0] })
+            });
+            const updated = await res.json();
+            if (updated.id) {
+                setNotices(prev => prev.map(n => n.id === id ? updated : n));
+                localStorage.setItem("announcement_update", JSON.stringify({ id, action: "edit", ts: Date.now() }));
+            }
+        } catch (err) { console.error(err); }
     };
 
     const markAnnouncementRead = (noticeId: string) => {
@@ -1544,22 +1661,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
     };
 
-    const resolveDressCodeCheck = (recordId: string, status: "Approved" | "Rejected") => {
-        setAttendanceRecords(prev => {
-            const record = prev.find(r => r.id === recordId);
-            if (record && status === "Rejected") {
-                setEmployees(emps => emps.map(e => {
-                    if (e.id === record.employeeId) {
-                        const newDefaults = (e.dressCodeDefaults || 0) + 1;
-                        const { subject, html } = getDressCodeWarningTemplate(e, newDefaults);
-                        sendMail({ to: e.email, cc: getAuthorityEmails(e, employees), subject, html });
-                        return { ...e, dressCodeDefaults: newDefaults };
+    const resolveDressCodeCheck = async (recordId: string, status: "Approved" | "Rejected") => {
+        try {
+            const res = await fetch("/api/attendance/validate-dress", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ attendanceId: recordId, status, validatorId: user?.id })
+            });
+            const data = await res.json();
+            if (data.attendance) {
+                setAttendanceRecords(prev => prev.map(r => (r.id === recordId || (r as any)._id === recordId) ? { ...r, dressCodeStatus: status, flags: { ...r.flags, dressCode: status === "Rejected" } } : r));
+                
+                if (status === "Rejected") {
+                    const record = attendanceRecords.find(r => r.id === recordId);
+                    if (record) {
+                        setEmployees(emps => emps.map(e => {
+                            if (e.id === record.employeeId) {
+                                const newDefaults = (e.dressCodeDefaults || 0) + 1;
+                                return { ...e, dressCodeDefaults: newDefaults };
+                            }
+                            return e;
+                        }));
                     }
-                    return e;
-                }));
+                }
             }
-            return prev.map(r => r.id === recordId ? { ...r, dressCodeStatus: status, flags: { ...r.flags, dressCode: status === "Rejected" } } : r);
-        });
+        } catch (err) { console.error(err); }
     };
 
     // ─── BIRTHDAY AUTOMATION ───
@@ -1676,7 +1802,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     // ─── LEAVES ───
-    const addLeaveRequest = (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName">) => {
+    const addLeaveRequest = async (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName">) => {
         if (!user) return;
         const now = new Date();
         const appliedAt = now.toISOString();
@@ -1691,84 +1817,75 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             appliedAt
         };
 
-        setLeaves(prev => [newLeave, ...prev]);
-
-        // --- EMAIL NOTIFICATION ---
-        const raiser = employees.find(e => e.id === user.id);
-        const ccEmails = getAuthorityEmails(raiser, employees);
-        const hr = employees.find(e => e.role === "HR");
-        const rm = raiser?.reportsTo ? employees.find(e => e.id === raiser.reportsTo) : null;
-
-        const { subject: mailSub, html: mailHtml } = getLeaveTemplate(newLeave, "Pending");
-
-        // Ensure HOI and AD are also emailed 
-        const chain = getManagerChain(user.id);
-        const hoi = employees.find(e => e.role === "HOI" && chain.some(c => c.id === e.id));
-        const ad = employees.find(e => e.role === "AD" && chain.some(c => c.id === e.id));
-
-        const toList = [hr?.email, rm?.email, hoi?.email, ad?.email].filter(Boolean) as string[];
-        const finalCC = [...new Set([...ccEmails, raiser?.email].filter(Boolean) as string[])];
-
-        if (toList.length > 0) {
-            sendMail({
-                to: toList,
-                cc: finalCC,
-                subject: mailSub,
-                html: mailHtml
+        try {
+            const res = await fetch("/api/leaves", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(newLeave)
             });
-        }
+            const data = await res.json();
+            if (data.id) {
+                setLeaves(prev => [data, ...prev]);
+
+                // --- EMAIL NOTIFICATION ---
+                const raiser = employees.find(e => e.id === user.id);
+                const ccEmails = getAuthorityEmails(raiser, employees);
+                const hr = employees.find(e => e.role === "HR");
+                const rm = raiser?.reportsTo ? employees.find(e => e.id === raiser.reportsTo) : null;
+
+                const { subject: mailSub, html: mailHtml } = getLeaveTemplate(data, "Pending");
+
+                // Ensure HOI and AD are also emailed 
+                const chain = getManagerChain(user.id);
+                const hoi = employees.find(e => e.role === "HOI" && chain.some(c => c.id === e.id));
+                const ad = employees.find(e => e.role === "AD" && chain.some(c => c.id === e.id));
+
+                const toList = [hr?.email, rm?.email, hoi?.email, ad?.email].filter(Boolean) as string[];
+                const finalCC = [...new Set([...ccEmails, raiser?.email].filter(Boolean) as string[])];
+
+                if (toList.length > 0) {
+                    sendMail({ to: toList, cc: finalCC, subject: mailSub, html: mailHtml });
+                }
+            }
+        } catch (err) { console.error(err); }
     };
-    const approveLeave = (id: string, reason?: string) => setLeaves(prev => {
-        return prev.map(l => {
-            if (l.id === id) {
-                const updated = { ...l, status: "Approved" as const, reasonForAction: reason };
-
-                // --- EMAIL NOTIFICATION ---
-                const emp = employees.find(e => e.id === l.employeeId);
-                const ccEmails = getAuthorityEmails(emp, employees);
-                const { subject: mailSub, html: mailHtml } = getLeaveTemplate(updated, "Approved");
-
-                if (emp?.email) {
-                    sendMail({
-                        to: emp.email,
-                        cc: ccEmails,
-                        subject: mailSub,
-                        html: mailHtml
-                    });
-                }
-                return updated;
+    const approveLeave = async (id: string, reason?: string) => {
+        try {
+            const res = await fetch("/api/leaves", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, status: "Approved", reasonForAction: reason })
+            });
+            const updated = await res.json();
+            if (updated.id) {
+                setLeaves(prev => prev.map(l => l.id === id ? updated : l));
+                const emp = employees.find(e => e.id === updated.employeeId);
+                const { subject, html } = getLeaveTemplate(updated, "Approved");
+                if (emp?.email) sendMail({ to: emp.email, cc: getAuthorityEmails(emp, employees), subject, html });
             }
-            return l;
-        });
-    });
-    const rejectLeave = (id: string, applyLOP: boolean = false, reason?: string) => setLeaves(prev => {
-        return prev.map(l => {
-            if (l.id === id) {
-                // Point 7: If emergency leave rejected, 2 day LOP
-                const finalApplyLOP = applyLOP || (l.leaveType === "Emergency");
-                const updated = { ...l, status: "Rejected" as const, lossOfPayDays: finalApplyLOP ? 2 : (l.lossOfPayDays || 0), reasonForAction: reason };
-
-                // --- EMAIL NOTIFICATION ---
-                const emp = employees.find(e => e.id === l.employeeId);
-                const ccEmails = getAuthorityEmails(emp, employees);
-                const { subject: mailSub, html: mailHtml } = getLeaveTemplate(updated, "Rejected");
-
-                if (emp?.email) {
-                    sendMail({
-                        to: emp.email,
-                        cc: ccEmails,
-                        subject: mailSub,
-                        html: mailHtml
-                    });
-                }
-                return updated;
+        } catch (err) { console.error(err); }
+    };
+    const rejectLeave = async (id: string, applyLOP: boolean = false, reason?: string) => {
+        try {
+            const leave = leaves.find(l => l.id === id);
+            const finalApplyLOP = applyLOP || (leave?.leaveType === "Emergency");
+            const res = await fetch("/api/leaves", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, status: "Rejected", lossOfPayDays: finalApplyLOP ? 2 : (leave?.lossOfPayDays || 0), reasonForAction: reason })
+            });
+            const updated = await res.json();
+            if (updated.id) {
+                setLeaves(prev => prev.map(l => l.id === id ? updated : l));
+                const emp = employees.find(e => e.id === updated.employeeId);
+                const { subject, html } = getLeaveTemplate(updated, "Rejected");
+                if (emp?.email) sendMail({ to: emp.email, cc: getAuthorityEmails(emp, employees), subject, html });
             }
-            return l;
-        });
-    });
+        } catch (err) { console.error(err); }
+    };
 
     // ─── TICKETS ───
-    const raiseTicket = (targetCategory: string, subject: string, content: string, routeTo?: string, cc?: string[], proofUrls?: string[], targetEmployeeId?: string, targetDate?: string) => {
+    const raiseTicket = async (targetCategory: string, subject: string, content: string, routeTo?: string, cc?: string[], proofUrls?: string[], targetEmployeeId?: string, targetDate?: string) => {
         if (!user) return;
 
         // Point 8: Include Proof Mandatory
@@ -1839,112 +1956,93 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             targetDate
         };
 
-        setTickets(prev => [newTicket, ...prev]);
-
-        // --- EMAIL NOTIFICATION ---
-        const targetEmp = employees.find(e => e.id === finalRouteTo);
-        const raiser = employees.find(e => e.id === user.id);
-        const ccEmails = getAuthorityEmails(raiser, employees);
-        const { subject: mailSub, html: mailHtml } = getTicketTemplate(newTicket, 'raised');
-
-        if (targetEmp?.email) {
-            const finalCC = [...new Set([...ccEmails, raiser?.email].filter(Boolean) as string[])];
-            sendMail({
-                to: targetEmp.email,
-                cc: finalCC,
-                subject: mailSub,
-                html: mailHtml
+        try {
+            const res = await fetch("/api/tickets", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(newTicket)
             });
-        }
-    };
-    const resolveTicket = (id: string, notes: string) => {
-        setTickets(prev => {
-            const ticket = prev.find(t => t.id === id);
-            if (ticket) {
-                const isOverride = ticket.targetCategory === "Attendance Override Request";
-                const isAppeal = ticket.targetCategory === "Attendance Appeal";
+            const data = await res.json();
+            if (data.id) {
+                setTickets(prev => [data, ...prev]);
 
-                if (isOverride || isAppeal) {
-                    const targetEmpId = isOverride ? ticket.targetEmployeeId : ticket.raisedBy;
-                    const targetDate = isOverride ? ticket.targetDate : (ticket.targetDate || ticket.createdAt.split('T')[0]);
-
-                    if (targetEmpId && targetDate) {
-                        // Auto-override attendance
-                        markAttendanceOverride(targetEmpId, targetDate, `Approved via Ticket ${id} `);
-
-                        // Reverse PIP warnings if any
-                        setPipRecords(pips => pips.map(p =>
-                            p.employeeId === targetEmpId && p.status === "Active"
-                                ? { ...p, warnings: Math.max(0, p.warnings - 1) }
-                                : p
-                        ));
-                    }
+                // --- EMAIL NOTIFICATION ---
+                const targetEmp = employees.find(e => e.id === finalRouteTo);
+                const raiser = employees.find(e => e.id === user.id);
+                const { subject: mailSub, html: mailHtml } = getTicketTemplate(data, 'raised');
+                if (targetEmp?.email) {
+                    sendMail({ to: targetEmp.email, cc: [...getAuthorityEmails(raiser, employees), raiser?.email].filter(Boolean) as string[], subject: mailSub, html: mailHtml });
                 }
             }
-            return prev.map(t => {
-                if (t.id === id) {
-                    const updated = { ...t, status: "Resolved" as const, resolvedAt: new Date().toISOString(), resolutionNotes: notes };
-
-                    // --- EMAIL NOTIFICATION ---
-                    const raiser = employees.find(e => e.id === t.raisedBy);
-                    const ccEmails = getAuthorityEmails(raiser, employees);
-                    const { subject: mailSub, html: mailHtml } = getTicketTemplate(updated, 'resolved');
-
-                    if (raiser?.email) {
-                        sendMail({
-                            to: raiser.email,
-                            cc: ccEmails,
-                            subject: mailSub,
-                            html: mailHtml
-                        });
-                    }
-
-                    return updated;
-                }
-                return t;
+        } catch (err) { console.error(err); }
+    };
+    const resolveTicket = async (id: string, notes: string) => {
+        try {
+            const ticket = tickets.find(t => t.id === id);
+            const res = await fetch("/api/tickets", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, status: "Resolved", resolvedAt: new Date().toISOString(), resolutionNotes: notes })
             });
-        });
+            const updated = await res.json();
+            if (updated.id) {
+                setTickets(prev => prev.map(t => t.id === id ? updated : t));
+                
+                // Logic for attendance override if applicable
+                const isOverride = updated.targetCategory === "Attendance Override Request";
+                const isAppeal = updated.targetCategory === "Attendance Appeal";
+                if (isOverride || isAppeal) {
+                    const targetEmpId = isOverride ? updated.targetEmployeeId : updated.raisedBy;
+                    const targetDate = isOverride ? updated.targetDate : (updated.targetDate || updated.createdAt.split('T')[0]);
+                    if (targetEmpId && targetDate) {
+                        markAttendanceOverride(targetEmpId, targetDate, `Approved via Ticket ${id}`);
+                    }
+                }
+
+                const raiser = employees.find(e => e.id === updated.raisedBy);
+                const { subject, html } = getTicketTemplate(updated, 'resolved');
+                if (raiser?.email) sendMail({ to: raiser.email, cc: getAuthorityEmails(raiser, employees), subject, html });
+            }
+        } catch (err) { console.error(err); }
     };
 
     // ─── REIMBURSEMENTS ───
-    const addReimbursement = (claim: Omit<ReimbursementClaim, "id" | "status" | "date" | "employeeId" | "employeeName">) => {
+    const addReimbursement = async (claim: Omit<ReimbursementClaim, "id" | "status" | "date" | "employeeId" | "employeeName">) => {
         if (!user) return;
         const newClaim: ReimbursementClaim = { ...claim, id: `RMB${uid()} `, employeeId: user.id, employeeName: user.name, status: "Pending", date: new Date().toISOString().split("T")[0] };
-        setReimbursements(prev => [newClaim, ...prev]);
-
-        // --- EMAIL NOTIFICATION ---
-        const emp = employees.find(e => e.id === user.id);
-        const authorities = getAuthorityEmails(emp, employees);
-        const { subject: mailSub, html: mailHtml } = getReimbursementTemplate(newClaim);
-
-        // Ensure HR and TL (raiser) are on the list
-        const hrEmails = employees.filter(e => e.role === "HR").map(e => e.email).filter(Boolean) as string[];
-        const finalCC = [...new Set([...authorities, emp?.email].filter(Boolean) as string[])];
-
-        sendMail({ to: hrEmails, cc: finalCC, subject: mailSub, html: mailHtml });
-    };
-    const updateReimbursementStatus = (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string) => {
-        setReimbursements(prev => prev.map(r => {
-            if (r.id === id) {
-                const updated = { ...r, status, rejectionReason: reason || r.rejectionReason, hrRemarks: remarks || r.hrRemarks };
-
+        
+        try {
+            const res = await fetch("/api/reimbursements", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(newClaim)
+            });
+            const data = await res.json();
+            if (data.id) {
+                setReimbursements(prev => [data, ...prev]);
                 // --- EMAIL NOTIFICATION ---
-                const emp = employees.find(e => e.id === r.employeeId);
-                const ccEmails = getAuthorityEmails(emp, employees);
-                const { subject: mailSub, html: mailHtml } = getReimbursementTemplate(updated);
-
-                if (emp?.email) {
-                    sendMail({
-                        to: emp.email,
-                        cc: ccEmails,
-                        subject: mailSub,
-                        html: mailHtml
-                    });
-                }
-                return updated;
+                const emp = employees.find(e => e.id === user.id);
+                const { subject, html } = getReimbursementTemplate(data);
+                const hrEmails = employees.filter(e => e.role === "HR").map(e => e.email).filter(Boolean) as string[];
+                sendMail({ to: hrEmails, cc: [...getAuthorityEmails(emp, employees), emp?.email].filter(Boolean) as string[], subject, html });
             }
-            return r;
-        }));
+        } catch (err) { console.error(err); }
+    };
+    const updateReimbursementStatus = async (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string) => {
+        try {
+            const res = await fetch("/api/reimbursements", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, status, rejectionReason: reason, hrRemarks: remarks })
+            });
+            const updated = await res.json();
+            if (updated.id) {
+                setReimbursements(prev => prev.map(r => r.id === id ? updated : r));
+                const emp = employees.find(e => e.id === updated.employeeId);
+                const { subject, html } = getReimbursementTemplate(updated);
+                if (emp?.email) sendMail({ to: emp.email, cc: getAuthorityEmails(emp, employees), subject, html });
+            }
+        } catch (err) { console.error(err); }
     };
 
     // ─── HOLIDAYS ───

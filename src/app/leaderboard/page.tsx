@@ -225,7 +225,7 @@ export default function LeaderboardPage() {
 
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
                         {omRankings.map((s, i) => (
-                            <LeaderboardBox key={s.employeeId} data={s} rank={i + 1} type="OM" onRespClick={() => setSelectedEmpForResp(s)} />
+                            <LeaderboardBox key={s.employeeId || `om-${i}`} data={s} rank={i + 1} type="OM" onRespClick={() => setSelectedEmpForResp(s)} />
                         ))}
                     </div>
                 </section>
@@ -244,7 +244,7 @@ export default function LeaderboardPage() {
 
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
                         {facultyRankings.map((s, i) => (
-                            <LeaderboardBox key={s.employeeId} data={s} rank={i + 1} type="FACULTY" onRespClick={() => setSelectedEmpForResp(s)} />
+                            <LeaderboardBox key={s.employeeId || `faculty-${i}`} data={s} rank={i + 1} type="FACULTY" onRespClick={() => setSelectedEmpForResp(s)} />
                         ))}
                     </div>
                 </section>

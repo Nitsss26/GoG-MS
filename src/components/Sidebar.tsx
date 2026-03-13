@@ -71,7 +71,7 @@ const HR_ROLES: Role[] = ["FOUNDER", "HR"];
 function NavSection({ title, items, pathname }: { title: string; items: typeof coreMenu; pathname: string }) {
     return (
         <div>
-            <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-3 px-3">{title}</p>
+            {title && title !== "Personal" && <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-3 px-3">{title}</p>}
             <div className="space-y-0.5">
                 {items.map((item) => {
                     const isActive = pathname === item.path || (item.path !== "/" && pathname.startsWith(item.path));

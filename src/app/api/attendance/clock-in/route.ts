@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { Employee, Attendance, WorkSchedule, Location } from '@/models/Schemas';
 import { getDistance } from '@/lib/utils';
+import { getExpectedTimingInternal } from '@/lib/attendance-utils';
 
 export async function POST(req: Request) {
     try {
         await dbConnect();
-        const { employeeId, lat, lng, imageUrl } = await req.json();
+        const { employeeId, lat, lng, dressCodeImageUrl } = await req.json();
 
         // 1. Fetch Employee
         const employee = await Employee.findOne({ id: employeeId });
@@ -21,17 +22,26 @@ export async function POST(req: Request) {
         const now = new Date();
         const currentTime = now.getHours() * 60 + now.getMinutes();
 
-        // 3. Fetch Work Schedule
+        // 3. Fetch Work Schedule or use Unified Config
         let schedule = await WorkSchedule.findOne({ employeeId, date: today, status: "Approved" });
-        if (!schedule) {
-            // Default schedule if none exists (fallback)
-            schedule = {
-                clockInTime: "09:30",
-                location: employee.location || "bhopal"
-            } as any;
+        let expectedIn = "09:30";
+        let expectedLocationId = employee.location || "bhopal";
+
+        if (schedule) {
+            expectedIn = schedule.clockInTime;
+            expectedLocationId = schedule.location;
+        } else {
+            // Use unified config fallback
+            const resolved = getExpectedTimingInternal(employee.name, employee.location, today);
+            expectedIn = resolved.in;
+            expectedLocationId = resolved.location;
+            
+            if (resolved.isWFH) {
+                return NextResponse.json({ error: "Today is marked as WFH for you. No office clock-in required." }, { status: 400 });
+            }
         }
 
-        const [schedHours, schedMins] = (schedule?.clockInTime || "09:30").split(':').map(Number);
+        const [schedHours, schedMins] = expectedIn.split(':').map(Number);
         const schedTime = schedHours * 60 + schedMins;
 
         // 4. Strict Timing Check (Must be before scheduled time)
@@ -46,8 +56,8 @@ export async function POST(req: Request) {
         }
 
         // 5. Geofencing Check
-        const campus = await Location.findOne({ id: schedule?.location });
-        if (!campus) return NextResponse.json({ error: "Assigned campus location not found" }, { status: 404 });
+        const campus = await Location.findOne({ id: expectedLocationId });
+        if (!campus) return NextResponse.json({ error: `Assigned campus location (${expectedLocationId}) not found` }, { status: 404 });
 
         const distance = getDistance(lat, lng, campus.lat, campus.lng);
         if (distance > (campus.radiusKm || 2)) {
@@ -61,7 +71,7 @@ export async function POST(req: Request) {
                 clockIn: now.toTimeString().split(' ')[0],
                 location: campus.id,
                 status: "Present",
-                clockInImageUrl: imageUrl,
+                dressCodeImageUrl: dressCodeImageUrl,
                 dressCodeStatus: "Pending"
             },
             { upsert: true, new: true }

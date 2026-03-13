@@ -24,7 +24,8 @@ export default function BiWeeklyReportPage() {
 
     const myReportees = useMemo(() => {
         if (!user) return [];
-        return getReportees(user.id).filter(e => e.status === "Active");
+        const reports = getReportees(user.id) || [];
+        return reports.filter(e => e.status === "Active");
     }, [user, employees, getReportees]);
 
     const handleSubmit = async (e: React.FormEvent) => {
