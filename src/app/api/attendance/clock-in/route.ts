@@ -19,10 +19,17 @@ export async function POST(req: Request) {
         }
 
         const now = new Date();
-        const today = now.toISOString().split('T')[0];
-        const currentTime = now.getHours() * 60 + now.getMinutes();
+        const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+        const istTime = new Date(istString);
+        
+        const today = istTime.getFullYear() + "-" + 
+                     (istTime.getMonth() + 1).toString().padStart(2, '0') + "-" + 
+                     istTime.getDate().toString().padStart(2, '0');
+        
+        const currentTime = istTime.getHours() * 60 + istTime.getMinutes();
+        
         const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-        const todayDayName = dayNames[now.getDay()];
+        const todayDayName = dayNames[istTime.getDay()];
 
         // 3. Fetch Work Schedule or use Unified Config
         let schedule = await WorkSchedule.findOne({ 
@@ -79,11 +86,13 @@ export async function POST(req: Request) {
         const attendance = await Attendance.findOneAndUpdate(
             { employeeId, date: today },
             {
-                clockIn: now.toTimeString().split(' ')[0],
-                location: isWFH ? "WFH" : campus?.id,
-                status: "Present",
-                dressCodeImageUrl: dressCodeImageUrl,
-                dressCodeStatus: "Pending"
+                $set: {
+                    clockIn: istTime.getHours().toString().padStart(2, '0') + ":" + istTime.getMinutes().toString().padStart(2, '0') + ":" + istTime.getSeconds().toString().padStart(2, '0'),
+                    location: isWFH ? "WFH" : campus?.id,
+                    status: "Present",
+                    dressCodeImageUrl: dressCodeImageUrl,
+                    dressCodeStatus: "Pending"
+                }
             },
             { upsert: true, new: true }
         );

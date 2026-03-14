@@ -7,7 +7,13 @@ export async function POST(req: Request) {
     try {
         await dbConnect();
         const { employeeId, time } = await req.json();
-        const today = new Date().toISOString().split("T")[0];
+        const now = new Date();
+        const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+        const istTime = new Date(istString);
+        
+        const today = istTime.getFullYear() + "-" + 
+                     (istTime.getMonth() + 1).toString().padStart(2, '0') + "-" + 
+                     istTime.getDate().toString().padStart(2, '0');
 
         // 1. Fetch Employee
         const employee = await Employee.findOne({ id: employeeId });
@@ -17,7 +23,7 @@ export async function POST(req: Request) {
         const outTotalMins = outHours * 60 + outMins;
 
         const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-        const todayDayName = dayNames[new Date().getDay()];
+        const todayDayName = dayNames[istTime.getDay()];
 
         // 2. Get Expected Out Time
         let schedule = await WorkSchedule.findOne({ 
@@ -48,8 +54,10 @@ export async function POST(req: Request) {
         const record = await Attendance.findOneAndUpdate(
             { employeeId, date: today },
             {
-                clockOut: time,
-                $set: { "flags.earlyOut": isEarly }
+                $set: {
+                    clockOut: time,
+                    "flags.earlyOut": isEarly
+                }
             },
             { new: true }
         );
