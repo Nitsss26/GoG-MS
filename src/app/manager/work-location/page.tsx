@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function WorkLocationPage() {
-    const { user, getReportees, workSchedules, assignWorkSchedule, colleges } = useAuth();
+    const { user, getReportees, workSchedules, assignWorkSchedule, colleges, getExpectedTiming } = useAuth();
     const [selectedEmp, setSelectedEmp] = useState("");
     const [schedule, setSchedule] = useState<Record<string, { location: string; clockInTime: string; clockOutTime: string }>>(
         DAYS.reduce((acc, d) => ({ ...acc, [d]: { location: (colleges && colleges[0]?.id) || "", clockInTime: "09:00", clockOutTime: "18:00" } }), {})
@@ -18,14 +18,38 @@ export default function WorkLocationPage() {
     const handleSelect = (id: string) => {
         setSelectedEmp(id);
         const existing = (workSchedules || []).find(s => s.employeeId === id);
-        if (existing) setSchedule(existing.dayWise as any);
-        else setSchedule(DAYS.reduce((acc, d) => ({ ...acc, [d]: { location: (colleges && colleges[0]?.id) || "", clockInTime: "09:00", clockOutTime: "18:00" } }), {}));
+        if (existing) {
+            setSchedule(existing.dayWise as any);
+        } else {
+            // Pre-fill from predefined timing and location for each day
+            const defaultSchedule = DAYS.reduce((acc, day) => {
+                // Find a date for this day of the week to get the expected timing
+                const today = new Date();
+                const dayIndex = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(day);
+                const diff = dayIndex - today.getDay();
+                const targetDay = new Date(today);
+                targetDay.setDate(today.getDate() + (diff < 0 ? diff + 7 : diff));
+                
+                const expected = getExpectedTiming(id, targetDay);
+                
+                return {
+                    ...acc,
+                    [day]: {
+                        location: expected.location === "Office" ? ((colleges && colleges[0]?.id) || "") : expected.location,
+                        clockInTime: expected.in,
+                        clockOutTime: expected.out
+                    }
+                };
+            }, {});
+            setSchedule(defaultSchedule as any);
+        }
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!selectedEmp) return;
         const emp = reportees.find(r => r.id === selectedEmp);
-        assignWorkSchedule({ employeeId: selectedEmp, employeeName: emp?.name, dayWise: schedule });
+        await assignWorkSchedule({ employeeId: selectedEmp, employeeName: emp?.name, dayWise: schedule });
+        alert("Schedule saved successfully to both backend and local state!");
     };
 
     const existingSchedule = selectedEmp ? (workSchedules || []).find(s => s.employeeId === selectedEmp) : null;

@@ -1247,8 +1247,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
         };
 
+        const fetchWorkSchedules = async () => {
+            try {
+                const res = await fetch("/api/schedule/set");
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    // Group individual daily entries by employeeId
+                    const grouped = data.reduce((acc: any, curr: any) => {
+                        if (!acc[curr.employeeId]) {
+                            acc[curr.employeeId] = {
+                                employeeId: curr.employeeId,
+                                employeeName: curr.employeeName,
+                                approvedByHR: curr.status === "Approved",
+                                assignedBy: curr.assignedBy,
+                                assignedByName: curr.assignedByName,
+                                dayWise: {}
+                            };
+                        }
+                        acc[curr.employeeId].dayWise[curr.date] = {
+                            location: curr.location,
+                            clockInTime: curr.clockInTime,
+                            clockOutTime: curr.clockOutTime
+                        };
+                        // If any day is not approved, keep status pending for the group (optional)
+                        if (curr.status !== "Approved") acc[curr.employeeId].approvedByHR = false;
+                        return acc;
+                    }, {});
+                    setWorkSchedules(Object.values(grouped));
+                }
+            } catch (err) {
+                console.error("Failed to fetch work schedules:", err);
+            }
+        };
+
         fetchEmployees();
         fetchLocations();
+        fetchWorkSchedules();
         if (user) {
             fetchAttendance();
             fetchData();
@@ -1303,7 +1337,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const emp = employees.find(e => e.id === employeeId);
         if (!emp) return { in: "09:30", out: "18:00", location: "Office" };
 
-        // 1. Check Custom Rules (regex-based as requested)
+        // 1. User-assigned Schedules (via Manager Interface / "Live" Backend)
+        // This is THE source of truth as requested by the user.
+        const userSchedule = workSchedules.find(s => s.employeeId === employeeId);
+        if (userSchedule?.dayWise) {
+            // Check for specific date first (YYYY-MM-DD), then for weekday (Mon, Tue...)
+            const s = userSchedule.dayWise[dateStr] || userSchedule.dayWise[weekday];
+            if (s) {
+                return { in: s.clockInTime, out: s.clockOutTime, location: s.location };
+            }
+        }
+
+        // 2. Check Custom Rules (regex-based fallbacks)
         for (const rule of CUSTOM_SCHEDULE_RULES) {
             if (rule.nameRegex.test(emp.name)) {
                 // Multi-location Logic
@@ -1319,22 +1364,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
 
                 // Standard Custom Days
-                if ((rule as any).days?.includes(weekday)) {
-                    return { in: (rule as any).in as string, out: (rule as any).out as string, location: (rule as any).location as string };
+                if (rule.days?.includes(weekday)) {
+                    return { in: rule.in as string, out: rule.out as string, location: rule.location as string };
                 }
-            }
-        }
-
-        // 2. User-assigned Schedules (via Manager Interface)
-        const userSchedule = workSchedules.find(s => s.employeeId === employeeId);
-        if (userSchedule?.dayWise) {
-            if (userSchedule.dayWise[dateStr]) {
-                const s = userSchedule.dayWise[dateStr];
-                return { in: s.clockInTime, out: s.clockOutTime, location: s.location };
-            }
-            if (userSchedule.dayWise[weekday]) {
-                const s = userSchedule.dayWise[weekday];
-                return { in: s.clockInTime, out: s.clockOutTime, location: s.location };
             }
         }
 
@@ -1347,12 +1379,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             // Priority 2: Try resolving through formal COLLEGES list
             const resolved = INITIAL_COLLEGES.find(c =>
+                c.id === collegeShortName || 
                 c.shortName.toLowerCase() === collegeShortName.toLowerCase() ||
                 c.name.toLowerCase().includes(collegeShortName.toLowerCase())
             );
-            if (resolved && FALLBACK_TIMINGS[resolved.shortName as keyof typeof FALLBACK_TIMINGS]) {
-                const fb2 = FALLBACK_TIMINGS[resolved.shortName as keyof typeof FALLBACK_TIMINGS];
-                return { in: fb2.in, out: fb2.out, location: resolved.shortName };
+            if (resolved && FALLBACK_TIMINGS[resolved.id as keyof typeof FALLBACK_TIMINGS]) {
+                const fb2 = FALLBACK_TIMINGS[resolved.id as keyof typeof FALLBACK_TIMINGS];
+                return { in: fb2.in, out: fb2.out, location: resolved.id };
             }
         }
 
@@ -1372,11 +1405,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return employees.filter(e => ["AD", "TL", "HOI", "OM", "FACULTY", "PROFESSOR"].includes(e.role));
         }
         if (manager.role === "AD") {
-            return employees.filter(e => ["HOI", "OM", "FACULTY", "PROFESSOR"].includes(e.role));
+            return employees.filter(e => !["FOUNDER", "HR"].includes(e.role));
         }
         if (manager.role === "HOI") {
-            // HOI can manage ALL OMs and Faculties/Professors as requested (30+ employees)
-            return employees.filter(e => ["OM", "FACULTY", "PROFESSOR"].includes(e.role));
+            // HOI can manage ALL employees except FOUNDER and HR as requested
+            return employees.filter(e => !["FOUNDER", "HR"].includes(e.role));
         }
 
         // Default reportsTo logic for others
@@ -1545,13 +1578,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const expected = getExpectedTiming(user.id);
         const startTime = expected.in;
 
-        if (time > startTime) {
+        // Convert times to minutes for comparison
+        const timeToMins = (t: string) => {
+            const [h, m] = t.split(':').map(Number);
+            return h * 60 + m;
+        };
+
+        const nowMins = timeToMins(time);
+        const startMins = timeToMins(startTime);
+
+        if (nowMins > startMins) {
             alert(`Clock-in Disabled: You are late (Start: ${startTime}). You are now marked as 'On Leave' for today. Please use 'Mark as Present' credits to appeal.`);
             return;
         }
 
+        if (nowMins < startMins - 30) {
+            alert(`Too Early: Clock-in window opens 30 mins before your scheduled time (${startTime}). Please try after ${new Date(new Date().setHours(Math.floor((startMins - 30) / 60), (startMins - 30) % 60)).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}.`);
+            return;
+        }
+
         // Image Requirement
-        if (!dressCodeImageUrl) {
+        if (!dressCodeImageUrl && expected.location !== "WFH") {
             alert("Selfie/Dress-code image is mandatory for clock-in.");
             return;
         }
@@ -1672,17 +1719,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (data.attendance) {
                 setAttendanceRecords(prev => prev.map(r => (r.id === recordId || (r as any)._id === recordId) ? { ...r, dressCodeStatus: status, flags: { ...r.flags, dressCode: status === "Rejected" } } : r));
                 
-                if (status === "Rejected") {
-                    const record = attendanceRecords.find(r => r.id === recordId);
-                    if (record) {
-                        setEmployees(emps => emps.map(e => {
-                            if (e.id === record.employeeId) {
-                                const newDefaults = (e.dressCodeDefaults || 0) + 1;
-                                return { ...e, dressCodeDefaults: newDefaults };
+                const points = status === "Approved" ? 2 : -5;
+                const record = attendanceRecords.find(r => r.id === recordId);
+                
+                if (record) {
+                    setEmployees(emps => emps.map(e => {
+                        if (e.id === record.employeeId) {
+                            const newDefaults = status === "Rejected" ? (e.dressCodeDefaults || 0) + 1 : (e.dressCodeDefaults || 0);
+                            
+                            // Update bi-weekly scores
+                            const currentPeriod = "Mar 01 - Mar 15, 2026"; // Current period based on system time 2026-03-14
+                            const scores = [...(e.biWeeklyScores || [])];
+                            let periodIndex = scores.findIndex(s => s.period === currentPeriod);
+                            
+                            if (periodIndex === -1) {
+                                scores.push({ period: currentPeriod, score: 0, points: points, status: "Recording" });
+                            } else {
+                                scores[periodIndex] = { ...scores[periodIndex], points: (scores[periodIndex].points || 0) + points };
                             }
-                            return e;
-                        }));
-                    }
+
+                            return { ...e, dressCodeDefaults: newDefaults, biWeeklyScores: scores };
+                        }
+                        return e;
+                    }));
                 }
             }
         } catch (err) { console.error(err); }
@@ -2365,13 +2424,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     // ─── WORK SCHEDULE ───
-    const assignWorkSchedule = (schedule: WorkSchedule) => {
+    const assignWorkSchedule = async (schedule: WorkSchedule) => {
         const enriched = { ...schedule, assignedBy: user?.id, assignedByName: user?.name, approvedByHR: false };
         setWorkSchedules(prev => {
             const existing = prev.findIndex(s => s.employeeId === schedule.employeeId);
             if (existing >= 0) { const nw = [...prev]; nw[existing] = enriched; return nw; }
             return [...prev, enriched];
         });
+
+        // --- BACKEND PERSISTENCE ---
+        try {
+            for (const [day, details] of Object.entries(schedule.dayWise)) {
+                await fetch("/api/schedule/set", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        employeeId: schedule.employeeId,
+                        employeeName: schedule.employeeName,
+                        date: day,
+                        location: details.location,
+                        clockInTime: details.clockInTime,
+                        clockOutTime: details.clockOutTime,
+                        assignedBy: user?.id,
+                        assignedByName: user?.name,
+                        role: user?.role
+                    })
+                });
+            }
+        } catch (err) {
+            console.error("Failed to persist schedule to DB:", err);
+        }
 
         // --- EMAIL NOTIFICATION ---
         const emp = employees.find(e => e.id === schedule.employeeId);
@@ -2387,8 +2469,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
         }
     };
-    const approveWorkSchedule = (employeeId: string) => {
+    const approveWorkSchedule = async (employeeId: string) => {
         setWorkSchedules(prev => prev.map(s => s.employeeId === employeeId ? { ...s, approvedByHR: true } : s));
+        try {
+            await fetch("/api/schedule/approve", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ employeeId })
+            });
+        } catch (err) {
+            console.error("Failed to approve schedule in backend:", err);
+        }
     };
 
 

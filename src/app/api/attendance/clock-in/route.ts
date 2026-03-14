@@ -18,12 +18,19 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Founders are exempt from clock-in/out" }, { status: 400 });
         }
 
-        const today = new Date().toISOString().split('T')[0];
         const now = new Date();
+        const today = now.toISOString().split('T')[0];
         const currentTime = now.getHours() * 60 + now.getMinutes();
+        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        const todayDayName = dayNames[now.getDay()];
 
         // 3. Fetch Work Schedule or use Unified Config
-        let schedule = await WorkSchedule.findOne({ employeeId, date: today, status: "Approved" });
+        let schedule = await WorkSchedule.findOne({ 
+            employeeId, 
+            $or: [{ date: today }, { date: todayDayName }]
+            // Removed status: "Approved" to allow HOI assignments to take immediate effect
+        });
+
         let expectedIn = "09:30";
         let expectedLocationId = employee.location || "bhopal";
 
@@ -35,16 +42,12 @@ export async function POST(req: Request) {
             const resolved = getExpectedTimingInternal(employee.name, employee.location, today);
             expectedIn = resolved.in;
             expectedLocationId = resolved.location;
-            
-            if (resolved.isWFH) {
-                return NextResponse.json({ error: "Today is marked as WFH for you. No office clock-in required." }, { status: 400 });
-            }
         }
 
         const [schedHours, schedMins] = expectedIn.split(':').map(Number);
         const schedTime = schedHours * 60 + schedMins;
 
-        // 4. Strict Timing Check (Must be before scheduled time)
+        // 4. Window Timing Check (30 min window before scheduled time)
         if (currentTime > schedTime) {
             // Auto-mark as On Leave if not already clocked in and time passed
             await Attendance.findOneAndUpdate(
@@ -55,13 +58,21 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Clock-in time has passed. You are marked as On Leave. Please request 'Mark as Present'." }, { status: 403 });
         }
 
-        // 5. Geofencing Check
-        const campus = await Location.findOne({ id: expectedLocationId });
-        if (!campus) return NextResponse.json({ error: `Assigned campus location (${expectedLocationId}) not found` }, { status: 404 });
+        if (currentTime < schedTime - 30) {
+            return NextResponse.json({ error: `Too early to clock-in. Window opens at ${Math.floor((schedTime - 30) / 60).toString().padStart(2, '0')}:${((schedTime - 30) % 60).toString().padStart(2, '0')}` }, { status: 403 });
+        }
 
-        const distance = getDistance(lat, lng, campus.lat, campus.lng);
-        if (distance > (campus.radiusKm || 2)) {
-            return NextResponse.json({ error: `Not in geofence of ${campus.name}. Distance: ${distance.toFixed(2)}km` }, { status: 403 });
+        // 5. Geofencing Check (Skip if WFH)
+        const isWFH = expectedLocationId.toLowerCase() === "wfh";
+        let campus = null;
+        if (!isWFH) {
+            campus = await Location.findOne({ id: expectedLocationId });
+            if (!campus) return NextResponse.json({ error: `Assigned campus location (${expectedLocationId}) not found` }, { status: 404 });
+
+            const distance = getDistance(lat, lng, campus.lat, campus.lng);
+            if (distance > (campus.radiusKm || 2)) {
+                return NextResponse.json({ error: `Not in geofence of ${campus.name}. Distance: ${distance.toFixed(2)}km` }, { status: 403 });
+            }
         }
 
         // 6. Clock-in
@@ -69,7 +80,7 @@ export async function POST(req: Request) {
             { employeeId, date: today },
             {
                 clockIn: now.toTimeString().split(' ')[0],
-                location: campus.id,
+                location: isWFH ? "WFH" : campus?.id,
                 status: "Present",
                 dressCodeImageUrl: dressCodeImageUrl,
                 dressCodeStatus: "Pending"
@@ -77,7 +88,32 @@ export async function POST(req: Request) {
             { upsert: true, new: true }
         );
 
-        return NextResponse.json({ message: "Clock-in successful", attendance });
+        // 7. Update Employee Points (+2 for correct clock-in)
+        const currentPeriod = "Mar 01 - Mar 15, 2026";
+        const points = 2;
+        const employeeUpdate = await Employee.findOneAndUpdate(
+            { id: employeeId, "biWeeklyScores.period": currentPeriod },
+            { $inc: { "biWeeklyScores.$.points": points } },
+            { new: true }
+        );
+
+        if (!employeeUpdate) {
+            await Employee.findOneAndUpdate(
+                { id: employeeId },
+                {
+                    $push: {
+                        biWeeklyScores: {
+                            period: currentPeriod,
+                            score: 0,
+                            points: points,
+                            status: "Recording"
+                        }
+                    }
+                }
+            );
+        }
+
+        return NextResponse.json({ message: "Clock-in successful", record: attendance, pointsAwarded: points });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

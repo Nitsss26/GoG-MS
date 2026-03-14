@@ -1,0 +1,240 @@
+[{
+  "_id": {
+    "$oid": "69addfd0dcc330764254cb9e"
+  },
+  "id": "centurion-bhubaneswar",
+  "name": "Centurion University (CUTM) Bhubaneswar",
+  "shortName": "CUTM Bhubaneswar",
+  "lat": 20.176947,
+  "lng": 85.707729,
+  "radiusKm": 2,
+  "address": "Ramachandrapur, Jatni, Bhubaneswar, Odisha, 752050",
+  "city": "Bhubaneswar",
+  "state": "Odisha",
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69addfd0dcc330764254cb97"
+  },
+  "id": "bansal-mandideep",
+  "name": "Bansal College of Engineering, BGI, - Mandideep",
+  "shortName": "BGI Mandideep",
+  "lat": 23.03720391098222,
+  "lng": 77.55742391129526,
+  "radiusKm": 2,
+  "address": "NH-12, near Bhopal, MP, 462046",
+  "city": "Mandideep",
+  "state": "Madhya Pradesh",
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69addfd0dcc330764254cb99"
+  },
+  "id": "bansal-kokta",
+  "name": "Bansal Institute of Research Technology & Science, Kokta",
+  "shortName": "BGI Kokta",
+  "lat": 23.269452,
+  "lng": 77.509497,
+  "radiusKm": 2,
+  "address": "Raisen Road, Bhopal, MP, 462021",
+  "city": "Bhopal",
+  "state": "Madhya Pradesh",
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69addfd0dcc330764254cb9a"
+  },
+  "id": "gyanveer",
+  "name": "Gyanveer University (GU)",
+  "shortName": "Gyanveer University",
+  "lat": 23.87427599889863,
+  "lng": 78.60787718177589,
+  "radiusKm": 2,
+  "address": "Village-Maa-Emliya, Rahatgarh, Sagar, MP, 470115",
+  "city": "Sagar",
+  "state": "Madhya Pradesh",
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69addfd0dcc330764254cb9d"
+  },
+  "id": "centurion-paralakhemundi",
+  "name": "Centurion University (CUTM) Paralakhemundi",
+  "shortName": "CUTM Paralakhemundi",
+  "lat": 18.818788224302555,
+  "lng": 84.1437052960369,
+  "radiusKm": 2,
+  "address": "Alluri Nagar, P.O. R Sitapur, Uppalada, PKD, Odisha",
+  "city": "Paralakhemundi",
+  "state": "Odisha",
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69addfd0dcc330764254cb98"
+  },
+  "id": "scope-global",
+  "name": "Scope Global Skills University (SGSU)",
+  "shortName": "SGSU",
+  "lat": 23.154472,
+  "lng": 77.478716,
+  "radiusKm": 2,
+  "address": "Central India's 1st Skill University, Bhopal",
+  "city": "Bhopal",
+  "state": "Madhya Pradesh",
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69addfd0dcc330764254cba0"
+  },
+  "id": "oriental-indore",
+  "name": "Oriental University",
+  "shortName": "Oriental University",
+  "lat": 22.802552,
+  "lng": 75.85635,
+  "radiusKm": 2,
+  "address": "Sanwer Road, Jakhya, Indore, MP, 453555",
+  "city": "Indore",
+  "state": "Madhya Pradesh",
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69addfd0dcc330764254cb9b"
+  },
+  "id": "sage-bhopal",
+  "name": "Sage University Bhopal",
+  "shortName": "SAGE Bhopal",
+  "lat": 23.184109,
+  "lng": 77.522191,
+  "radiusKm": 2,
+  "address": "Ayodhya Nagar, Bhopal, MP, 462041",
+  "city": "Bhopal",
+  "state": "Madhya Pradesh",
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69addfd0dcc330764254cb9c"
+  },
+  "id": "centurion-vizianagaram",
+  "name": "Centurion University Vizianagaram",
+  "shortName": "CUTM Vizianagaram",
+  "lat": 18.189786,
+  "lng": 83.388425,
+  "radiusKm": 2,
+  "address": "Rollavaka Village Bondapalli, AP, 535003",
+  "city": "Vizianagaram",
+  "state": "Andhra Pradesh",
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69addfd0dcc330764254cb9f"
+  },
+  "id": "sage-indore",
+  "name": "Sage University Indore",
+  "shortName": "SAGE Indore",
+  "lat": 22.636632721551177,
+  "lng": 75.85187466499627,
+  "radiusKm": 2,
+  "address": "Rau Bypass Road, Indore, MP, 452020",
+  "city": "Indore",
+  "state": "Madhya Pradesh",
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69b361a6b0273dbb7a4a7626"
+  },
+  "id": "SDBC",
+  "name": "Sushila Devi Bansal College of Technology",
+  "shortName": "SDBC",
+  "lat": 22.59748,
+  "lng": 75.787466,
+  "radiusKm": 2,
+  "address": "AB Road, Umaria, Near Rau, Indore, Madhya Pradesh 453331",
+  "city": "Indore",
+  "state": "Madhya Pradesh",
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "69b36d0857fdde904a9782a0"
+  },
+  "id": "sgsu",
+  "__v": 0,
+  "address": "Bhopal",
+  "city": "Bhopal",
+  "lat": 23.154472,
+  "lng": "77.478716",
+  "name": "Scope Global Skills University (SGSU)",
+  "radiusKm": 2,
+  "shortName": "SGSU",
+  "state": "Madhya Pradesh"
+},
+{
+  "_id": {
+    "$oid": "69b36d0857fdde904a9782a1"
+  },
+  "id": "bansi-kokta",
+  "__v": 0,
+  "address": "Kokta, Bhopal",
+  "city": "Bhopal",
+  "lat": 23.267874766410966,
+  "lng": 77.5089131650162,
+  "name": "Bansal Institute of Research Technology & Science, Kokta",
+  "radiusKm": 2,
+  "shortName": "BGI Kokta",
+  "state": "Madhya Pradesh"
+},
+{
+  "_id": {
+    "$oid": "69b36d0857fdde904a9782a2"
+  },
+  "id": "bce-mandideep",
+  "__v": 0,
+  "address": "Mandideep",
+  "city": "Mandideep",
+  "lat": 23.037134097357068,
+  "lng": 77.55757438035224,
+  "name": "Bansal College of Engineering, Mandideep",
+  "radiusKm": 2,
+  "shortName": "BCE Mandideep",
+  "state": "Madhya Pradesh"
+},
+{
+  "_id": {
+    "$oid": "69b36d0957fdde904a9782a3"
+  },
+  "id": "cutm-bbsr",
+  "__v": 0,
+  "address": "Bhubaneswar",
+  "city": "Bhubaneswar",
+  "lat": 20.178496425093297,
+  "lng": 85.70762188821803,
+  "name": "Centurion University (CUTM) Bhubaneswar",
+  "radiusKm": 2,
+  "shortName": "CUTM Bhubaneswar",
+  "state": "Odisha"
+},
+{
+  "_id": {
+    "$oid": "69b36d0957fdde904a9782a4"
+  },
+  "id": "cutm-pkd",
+  "__v": 0,
+  "address": "Paralakhemundi",
+  "city": "Paralakhemundi",
+  "lat": 31.636551,
+  "lng": 74.901152,
+  "name": "Centurion University (CUTM) Paralakhemundi",
+  "radiusKm": 2,
+  "shortName": "CUTM Paralakhemundi",
+  "state": "Odisha"
+}]

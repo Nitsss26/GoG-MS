@@ -13,10 +13,10 @@ export async function PATCH(req: Request) {
         if (!attendance) return NextResponse.json({ error: "Attendance record not found" }, { status: 404 });
 
         attendance.dressCodeStatus = status;
+        const points = status === "Approved" ? 2 : -5;
+        
         if (status === "Rejected") {
             attendance.flags.dressCode = true;
-            // Also ensure misconduct or other relevant flags are updated if needed
-            // For now, only dressCode is required as per request (Orange Flag)
             
             // Send warning email
             const employee = await Employee.findOne({ id: attendance.employeeId });
@@ -33,7 +33,32 @@ export async function PATCH(req: Request) {
         }
 
         await attendance.save();
-        return NextResponse.json({ message: `Dress code ${status}`, attendance });
+
+        // Update Employee Points
+        const currentPeriod = "Mar 01 - Mar 15, 2026";
+        const employeeUpdate = await Employee.findOneAndUpdate(
+            { id: attendance.employeeId, "biWeeklyScores.period": currentPeriod },
+            { $inc: { "biWeeklyScores.$.points": points } },
+            { new: true }
+        );
+
+        if (!employeeUpdate) {
+            await Employee.findOneAndUpdate(
+                { id: attendance.employeeId },
+                {
+                    $push: {
+                        biWeeklyScores: {
+                            period: currentPeriod,
+                            score: 0,
+                            points: points,
+                            status: "Recording"
+                        }
+                    }
+                }
+            );
+        }
+
+        return NextResponse.json({ message: `Dress code ${status}`, attendance, pointsAwarded: points });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
