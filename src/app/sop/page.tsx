@@ -44,18 +44,27 @@ function renderMarkdown(md: string) {
     };
 
     for (let i = 0; i < lines.length; i++) {
-        const t = lines[i].trim();
+        const line = lines[i];
+        const t = line.trim();
+        const indent = line.search(/\S/);
+        const style = indent > 0 ? { marginLeft: `${indent * 0.5}rem` } : {};
+
         if (!t) { flushList(); elements.push(<div key={`br-${i}`} className="h-2" />); continue; }
         if (t === "---") { flushList(); elements.push(<hr key={`hr-${i}`} className="border-zinc-700/50 my-4" />); continue; }
-        if (t.startsWith("> ")) { flushList(); elements.push(<div key={`bq-${i}`} className="border-l-2 border-amber-500/50 pl-4 py-2 bg-amber-500/5 rounded-r-lg my-2"><p className="text-[11px] text-amber-300/80 leading-relaxed">{fmt(t.slice(2))}</p></div>); continue; }
+        if (t.startsWith("> ")) { flushList(); elements.push(<div key={`bq-${i}`} style={style} className="border-l-2 border-amber-500/50 pl-4 py-2 bg-amber-500/5 rounded-r-lg my-2"><p className="text-[11px] text-amber-300/80 leading-relaxed">{fmt(t.slice(2))}</p></div>); continue; }
         if (t.startsWith("# ")) { flushList(); elements.push(<h1 key={`h1-${i}`} id={`section-${i}`} className="text-xl font-black text-white mt-6 mb-3 tracking-tight">{fmt(t.slice(2))}</h1>); continue; }
         if (t.startsWith("## ")) { flushList(); elements.push(<h2 key={`h2-${i}`} id={`section-${i}`} className="text-base font-bold text-white mt-5 mb-2 border-b border-zinc-800/50 pb-2">{fmt(t.slice(3))}</h2>); continue; }
         if (t.startsWith("### ")) { flushList(); elements.push(<h3 key={`h3-${i}`} id={`section-${i}`} className="text-sm font-bold text-zinc-200 mt-4 mb-1.5">{fmt(t.slice(4))}</h3>); continue; }
-        if (t.startsWith("- ")) { if (!inList) { flushList(); inList = true; } listItems.push(<li key={`li-${i}`} className="text-[11px] text-zinc-400 leading-relaxed flex gap-2"><span className="text-primary mt-0.5 shrink-0">&bull;</span><span>{fmt(t.slice(2))}</span></li>); continue; }
+        if (t.startsWith("- ")) { if (!inList) { flushList(); inList = true; } listItems.push(<li key={`li-${i}`} style={style} className="text-[11px] text-zinc-400 leading-relaxed flex gap-2"><span className="text-primary mt-0.5 shrink-0">&bull;</span><span>{fmt(t.slice(2))}</span></li>); continue; }
         const ol = t.match(/^(\d+)\.\s/);
-        if (ol) { if (!inOrderedList) { flushList(); inOrderedList = true; } orderedItems.push(<li key={`oli-${i}`} className="text-[11px] text-zinc-400 leading-relaxed">{fmt(t.slice(ol[0].length))}</li>); continue; }
+        if (ol) {
+            if (!inOrderedList) { flushList(); inOrderedList = true; }
+            const num = parseInt(ol[1]);
+            orderedItems.push(<li key={`oli-${i}`} value={num} style={style} className="text-[11px] text-zinc-400 leading-relaxed">{fmt(t.slice(ol[0].length))}</li>);
+            continue;
+        }
         flushList();
-        elements.push(<p key={`p-${i}`} className="text-[11px] text-zinc-400 leading-relaxed">{fmt(t)}</p>);
+        elements.push(<p key={`p-${i}`} style={style} className="text-[11px] text-zinc-400 leading-relaxed">{fmt(t)}</p>);
     }
     flushList();
     return elements;
@@ -95,7 +104,7 @@ export default function SOPViewerPage() {
             .replace(/^### (.+)$/gm, "<h3 style='font-size:14px;font-weight:bold;margin:14px 0 6px;'>$1</h3>")
             .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>")
             .replace(/^- (.+)$/gm, "<li style='margin:4px 0 4px 20px;font-size:13px;'>$1</li>")
-            .replace(/^(\d+)\. (.+)$/gm, "<li style='margin:4px 0 4px 20px;font-size:13px;list-style-type:decimal;'>$2</li>")
+            .replace(/^(\d+)\. (.+)$/gm, (match, num, text) => `<li value="${num}" style="margin:4px 0 4px 20px;font-size:13px;list-style-type:decimal;">${text}</li>`)
             .replace(/^> (.+)$/gm, "<blockquote style='border-left:3px solid #ccc;padding:8px 12px;margin:10px 0;background:#f9f9f9;font-size:12px;color:#555;'>$1</blockquote>")
             .replace(/^---$/gm, "<hr style='margin:20px 0;border:none;border-top:1px solid #ddd;'>")
             .replace(/\n\n/g, "<br><br>").replace(/\n/g, "<br>");

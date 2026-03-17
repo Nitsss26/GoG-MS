@@ -1,0 +1,76 @@
+﻿--- Last 10 Employees ---
+[
+  {
+    "_id": "69b365ee57fdde904a97829e",
+    "designation": "Operation Manager",
+    "id": "OM502",
+    "name": "Shriyansh Shrivastava",
+    "role": "OM"
+  },
+  {
+    "_id": "69b365ee57fdde904a97829c",
+    "designation": "Operation Manager",
+    "id": "OM501",
+    "name": "Abhishek Tiwari",
+    "role": "OM"
+  },
+  {
+    "_id": "69ae3feb7467cebeb202a46e",
+    "id": "FND003",
+    "name": "COO",
+    "role": "FOUNDER",
+    "designation": "Chief Operating Officer"
+  },
+  {
+    "_id": "69ae3feb7467cebeb202a46d",
+    "id": "FND002",
+    "name": "CTO",
+    "role": "FOUNDER",
+    "designation": "Chief Technology Officer"
+  },
+  {
+    "_id": "69ae3feb7467cebeb202a46c",
+    "id": "FND001",
+    "name": "CEO",
+    "role": "FOUNDER",
+    "designation": "Chief Executive Officer"
+  },
+  {
+    "_id": "69b365ee57fdde904a97829d",
+    "designation": "SDE & Professor",
+    "id": "EMP502",
+    "name": "Vipul Kumar Gond",
+    "role": "PROFESSOR"
+  },
+  {
+    "_id": "69b365ee57fdde904a97829b",
+    "designation": "SDE & Professor",
+    "id": "EMP501",
+    "name": "Suman Rajak",
+    "role": "PROFESSOR"
+  },
+  {
+    "_id": "69ae3feb7467cebeb202a490",
+    "id": "EMP135",
+    "name": "Sidhartha Paikaray",
+    "role": "HOI",
+    "designation": "HOI"
+  },
+  {
+    "_id": "69ae3feb7467cebeb202a48f",
+    "id": "EMP132",
+    "name": "Yamini ziniwal",
+    "role": "OM",
+    "designation": "Operation Manager"
+  },
+  {
+    "_id": "69ae3feb7467cebeb202a48e",
+    "id": "EMP131",
+    "name": "Jyotiprakash maharana",
+    "role": "OM",
+    "designation": "Operation Manager"
+  }
+]
+
+--- Checking if new employees already exist ---
+[]

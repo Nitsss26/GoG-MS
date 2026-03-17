@@ -16,6 +16,7 @@ const coreMenu = [
     { label: "Dashboard", icon: LayoutDashboard, path: "/" },
     { label: "Attendance", icon: Clock, path: "/attendance" },
     { label: "Leave", icon: Calendar, path: "/leave" },
+    { label: "Org Chart", icon: Network, path: "/hierarchy" },
     { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
     { label: "Tickets", icon: Ticket, path: "/tickets" },
     { label: "Reimbursement", icon: Receipt, path: "/reimbursement" },
@@ -25,7 +26,6 @@ const personalMenu = [
     { label: "My Profile", icon: User, path: "/profile" },
     { label: "Announcements", icon: Megaphone, path: "/announcements" },
     { label: "SOP", icon: FileText, path: "/sop" },
-    { label: "Org Chart", icon: Network, path: "/hierarchy" },
     { label: "Flag Calendar", icon: Flag, path: "/flag-calendar" },
     { label: "Change Password", icon: ShieldCheck, path: "/change-password" },
 ];
