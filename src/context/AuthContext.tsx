@@ -1366,19 +1366,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                 // ─── HARDCODED HOI MAPPING ───
                 // Sidhartha Paikaray Group (Group 3: Centurion University / Eastern Regions)
-                const sidharthaIds = ["EMP112", "OM502", "EMP113", "EMP116", "EMP111", "EMP119", "EMP118"];
-                const sidharthaRegex = /Ravi Ranjan|Vipul Kumar|Aman|Verman|Siddharda|Mriganka|Sushant|Chandan|Jyotiprakash/i;
+                const sidharthaIds = ["OM502", "EMP113", "EMP116", "EMP111", "EMP119", "EMP118", "EMP129"];
+                const sidharthaRegex = /Ravi Ranjan|Vipul Kumar|Aman|Verman|Siddharda|Mriganka|Sushant|Chandan|Jyotiprakash|Kandula revanth|Baddigam/i;
                 const isSidharthaSub = sidharthaIds.includes(emp.id) || sidharthaRegex.test(emp.name);
 
                 // Ayush Chauhan Group (Image Group)
-                const ayushIds = ["EMP106", "EMP115"];
-                const ayushRegex = /Rahul|Siddhant|Nishal|Sumit|Avikal|Vinay|Anirudha|Shekhar|Aniket|Yamini|Shriyansh|Ankit|Suman|Amit/i;
+                const ayushIds = ["EMP106", "EMP115", "EMP112"];
+                const ayushRegex = /Rahul|Siddhant|Nishal|Sumit|Avikal|Vinay|Anirudha|Shekhar|Aniket|Yamini|Vivek Haldkar/i;
                 const isAyushSub = ayushIds.includes(emp.id) || (ayushRegex.test(emp.name) && !isSidharthaSub);
 
-                if (isSidharthaSub) {
+                // Sachin Group
+                const sachinRegex = /Suman Rajak/i;
+                const isSachinSub = sachinRegex.test(emp.name);
+
+                // Special Case: Shriyansh Shrivastava (Growth Manager)
+                if (emp.id === "OM502" || /Shriyansh Shrivastava/i.test(emp.name)) {
+                    designation = "Growth Manager";
+                    level = "Leadership";
+                    parentId = "FND001";
+                } else if (isSidharthaSub) {
                     parentId = "HOI003";
                 } else if (isAyushSub) {
                     parentId = "HOI001";
+                } else if (isSachinSub) {
+                    parentId = "HOI002";
                 } else if (emp.role === "OM" || emp.role === "PROFESSOR" || emp.role === "FACULTY") {
                     // Default for other academic/ops staff is Sachin
                     if (parentId !== "HOI001" && parentId !== "HOI003") {

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Trophy, Star, Flag, Award, ChevronLeft, Users, Shield, X, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
+import { resolveImageUrl } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 export default function LeaderboardPage() {
@@ -438,8 +439,20 @@ function LeaderboardBox({ data, rank, type, onRespClick }: { data: any; rank: nu
                     "w-12 h-12 sm:w-14 sm:h-14 md:w-20 md:h-20 rounded-2xl md:rounded-3xl border-2 md:border-4 overflow-hidden shadow-2xl transition-all duration-500 transform group-hover:scale-105 relative z-10 bg-[#222]",
                     rank === 1 ? "border-yellow-500" : rank === 2 ? "border-zinc-300" : rank === 3 ? "border-amber-600" : "border-white/5"
                 )}>
-                    {data.emp?.photoUrl ? (
-                        <img src={data.emp.photoUrl} alt="" className="w-full h-full object-cover" />
+                    {data.emp?.photoUrl || data.emp?.passport_size_photo || data.emp?.upload_your_passport_size_photo ? (
+                        <img 
+                            src={resolveImageUrl(data.emp?.photoUrl || data.emp?.passport_size_photo || data.emp?.upload_your_passport_size_photo)} 
+                            alt="" 
+                            className="w-full h-full object-cover" 
+                            onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                                (e.target as HTMLImageElement).parentElement!.classList.add('flex', 'items-center', 'justify-center');
+                                const initial = document.createElement('span');
+                                initial.innerText = data.emp?.name?.[0] || 'U';
+                                initial.className = "text-lg sm:text-xl md:text-2xl font-black text-zinc-700";
+                                (e.target as HTMLImageElement).parentElement!.appendChild(initial);
+                            }}
+                        />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center text-lg sm:text-xl md:text-2xl font-black text-zinc-700">
                             {data.emp?.name?.[0]}

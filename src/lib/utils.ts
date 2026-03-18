@@ -15,3 +15,15 @@ export function getDistance(lat1: number, lon1: number, lat2: number, lon2: numb
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
 }
+
+export function resolveImageUrl(url?: string): string {
+    if (!url) return "";
+    if (url.includes("drive.google.com")) {
+        // Extract ID from various Google Drive URL formats
+        const idMatch = url.match(/id=([^&]+)/) || url.match(/\/d\/([^/]+)/);
+        if (idMatch && idMatch[1]) {
+            return `https://docs.google.com/uc?export=view&id=${idMatch[1]}`;
+        }
+    }
+    return url;
+}

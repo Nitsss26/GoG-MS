@@ -237,13 +237,15 @@ function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: Or
                 {/* Horizontal line connecting all Leadership nodes */}
                 {(leadershipNodes.length > 0) && (
                     <div className="relative flex flex-row gap-6 sm:gap-12 relative">
-                        {leadershipNodes.length > 1 && (
-                            <div className="absolute top-0 left-0 right-0 h-[3px] bg-zinc-500/60"
-                                style={{ width: `calc(100% - ${100 / leadershipNodes.length}%)`, left: `${50 / leadershipNodes.length}%` }} />
-                        )}
-
-                        {leadershipNodes.map(ln => (
+                        {leadershipNodes.map((ln, i) => (
                             <div key={ln.id} className="relative flex flex-col items-center">
+                                {/* Horizontal Line segments for Leadership */}
+                                {leadershipNodes.length > 1 && (
+                                    <>
+                                        {i !== 0 && <div className="absolute top-[-32px] sm:top-[-48px] left-0 w-1/2 h-[3px] bg-zinc-500/60" />}
+                                        {i !== leadershipNodes.length - 1 && <div className="absolute top-[-32px] sm:top-[-48px] right-0 w-1/2 h-[3px] bg-zinc-500/60" />}
+                                    </>
+                                )}
                                 <div className="absolute -top-8 sm:-top-12 left-1/2 -translate-x-[1.5px] w-[3px] h-8 sm:h-12 bg-zinc-500/60" />
                                 <NodeCard node={ln} />
                                 <div className="w-[3px] h-6 sm:h-10 bg-zinc-500/60" />
@@ -256,21 +258,19 @@ function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: Or
                 {/* HOI Layer and their specific reportees */}
                 {hoiNodes.length > 0 && (
                     <div className="flex flex-row gap-8 sm:gap-16 items-start justify-center pt-8 relative">
-                        {/* Horizontal Bridge Line Connecting all HOIs to the Leadership level above */}
-                        <div className="absolute top-0 left-0 right-0 flex items-center justify-center">
-                            <div className="h-[3px] bg-zinc-500/60"
-                                style={{
-                                    width: `calc(100% - ${100 / hoiNodes.length}%)`,
-                                    left: `${50 / hoiNodes.length}%`
-                                }} />
-                        </div>
-
-                        {hoiNodes.map(hn => {
+                        {hoiNodes.map((hn, i) => {
                             const myOMs = allNodes.filter(n => n.parentId === hn.id && n.level === "OM");
                             const myFaculty = allNodes.filter(n => n.parentId === hn.id && n.level === "Faculty");
 
                             return (
                                 <div key={hn.id} className="relative flex flex-col items-center gap-8">
+                                    {/* Horizontal Line segments for HOIs */}
+                                    {hoiNodes.length > 1 && (
+                                        <>
+                                            {i !== 0 && <div className="absolute top-[-32px] left-0 w-1/2 h-[3px] bg-zinc-500/60" />}
+                                            {i !== hoiNodes.length - 1 && <div className="absolute top-[-32px] right-0 w-1/2 h-[3px] bg-zinc-500/60" />}
+                                        </>
+                                    )}
                                     {/* Vertical line up to top level bridge */}
                                     <div className="absolute -top-8 left-1/2 -translate-x-[1.5px] w-[3px] h-8 bg-zinc-500/60" />
 
@@ -347,6 +347,7 @@ function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
         "C-Suite": "from-amber-400/30 to-amber-600/30 border-amber-500/40 text-amber-500",
         "Management": "from-blue-400/30 to-blue-600/30 border-blue-500/40 text-blue-400",
         "Leadership": "from-purple-400/30 to-purple-600/30 border-purple-500/40 text-purple-400",
+        "GrowthManager": "from-orange-400/40 to-orange-600/40 border-orange-500/60 text-orange-400 shadow-[0_0_20px_rgba(249,115,22,0.4)]",
         "OM": "from-indigo-400/30 to-indigo-600/30 border-indigo-500/40 text-indigo-400",
         "Faculty": "from-rose-400/30 to-pink-600/30 border-rose-500/40 text-rose-400"
     };
@@ -366,13 +367,14 @@ function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
                 "group relative bg-zinc-950 border rounded-xl transition-all shadow-xl hover:shadow-primary/5 min-w-[130px] sm:min-w-[210px]",
                 isCompact ? "p-1 sm:p-2 border-zinc-800" : "p-2 sm:p-3 border-zinc-800/80 hover:border-primary/50",
                 node.level === "C-Suite" ? "animate-[pulse_3s_infinite] border-amber-500/60 shadow-[0_0_30px_rgba(245,158,11,0.6)] ring-1 ring-amber-500/30" :
-                    node.level === "Management" ? "border-blue-500/50 shadow-[0_0_30px_rgba(59,130,246,0.6)] ring-1 ring-blue-500/20" :
-                        node.level === "Leadership" ? "border-purple-500/50 shadow-[0_0_30px_rgba(139,92,246,0.6)] ring-1 ring-purple-500/20" : ""
+                    node.designation === "Growth Manager" ? "border-orange-500/60 shadow-[0_0_30px_rgba(249,115,22,0.6)] ring-1 ring-orange-500/30 font-black" :
+                        node.level === "Management" ? "border-blue-500/50 shadow-[0_0_30px_rgba(59,130,246,0.6)] ring-1 ring-blue-500/20" :
+                            node.level === "Leadership" ? "border-purple-500/50 shadow-[0_0_30px_rgba(139,92,246,0.6)] ring-1 ring-purple-500/20" : ""
             )}
         >
             <div className={cn(
                 "absolute inset-0 bg-gradient-to-br opacity-5 rounded-xl",
-                colors[node.level]
+                node.designation === "Growth Manager" ? colors["GrowthManager"] : colors[node.level]
             )} />
 
             <div className="relative flex items-center gap-1.5 sm:gap-2">
@@ -429,10 +431,10 @@ function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
             <div className="mt-2 sm:mt-3 flex items-center justify-between">
                 <div className={cn(
                     "flex items-center gap-1 text-[7px] sm:text-[8px] font-black uppercase tracking-[0.1em] sm:tracking-[0.2em] px-1.5 sm:px-2 py-0.5 rounded-full border",
-                    node?.level ? colors[node.level] : "text-zinc-500 border-zinc-700"
+                    node.designation === "Growth Manager" ? colors["GrowthManager"] : (node?.level ? colors[node.level] : "text-zinc-500 border-zinc-700")
                 )}>
-                    {node?.level ? levelIcon[node.level] : <User size={10} />}
-                    <span className="truncate max-w-[40px] sm:max-w-none">{node?.level || "N/A"}</span>
+                    {node.designation === "Growth Manager" ? <Star size={10} /> : (node?.level ? levelIcon[node.level] : <User size={10} />)}
+                    <span className="truncate max-w-[40px] sm:max-w-none">{node.designation === "Growth Manager" ? "Growth" : (node?.level || "N/A")}</span>
                 </div>
                 <div className="text-[7px] sm:text-[9px] text-zinc-700 font-bold uppercase tracking-tight sm:tracking-widest">
                     {(node.level === "Management" || node.level === "Leadership") ? "" : (node?.dept || "")}
