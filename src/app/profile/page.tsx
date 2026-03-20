@@ -38,8 +38,9 @@ export default function ProfilePage() {
         setStatus(null);
         try {
             const result = await uploadToCloudinary(file);
-            updateProfile({ photoUrl: result.secure_url });
+            await updateProfile({ photoUrl: result.secure_url });
             setStatus({ type: 'success', msg: "Profile photo updated successfully!" });
+
         } catch (err: any) {
             setStatus({ type: 'error', msg: err.message || "Failed to upload photo" });
         } finally {

@@ -2946,11 +2946,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const assignAsset = (assetId: string, employeeId: string) => setAssets(prev => prev.map(a => a.id === assetId ? { ...a, assignedTo: employeeId, status: "Assigned" as const } : a));
     const updateAssetRequestStatus = (id: string, status: AssetRequest["status"]) => setAssetRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
 
-    const updateProfile = (data: Partial<Employee>) => {
+    const updateProfile = async (data: Partial<Employee>) => {
         if (!user) return;
         setEmployees(prev => prev.map(e => e.id === user.id ? { ...e, ...data } : e));
         setUser(prev => prev ? { ...prev, ...data } : null);
+
+        try {
+            await fetch("/api/employees", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: user.id, ...data })
+            });
+
+            // Update localStorage for immediate persistence across tabs
+            const updatedUser = user ? { ...user, ...data } : null;
+            if (updatedUser) {
+                localStorage.setItem("gog_user", JSON.stringify(updatedUser));
+                // Update employees in localStorage too so it's consistent
+                const se = localStorage.getItem("gog_employees");
+                if (se) {
+                    try {
+                        const emps = JSON.parse(se);
+                        const updatedEmps = emps.map((e: any) => e.id === user.id ? { ...e, ...data } : e);
+                        localStorage.setItem("gog_employees", JSON.stringify(updatedEmps));
+                    } catch (e) { console.error("Could not update gog_employees in localStorage", e); }
+                }
+            }
+        } catch (err) {
+            console.error("Failed to update profile in database:", err);
+        }
     };
+
 
     // ─── NOTIFICATIONS ───
     const addNotification = (to: string, toName: string, message: string, type: PortalNotification["type"]) => {
