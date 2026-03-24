@@ -1397,13 +1397,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     }
                 }
 
+                const finalName = emp.id === "FND003" ? "Neeraj Sahu" : emp.name;
+                const finalDesignation = emp.id === "FND003" ? "COO" : designation;
+
                 return {
                     id: emp.id,
-                    name: emp.name,
-                    designation: designation,
+                    name: finalName,
+                    designation: finalDesignation,
                     level,
                     parentId: parentId,
-                    photoInitial: emp.name?.[0]?.toUpperCase() || "U",
+                    photoInitial: finalName?.[0]?.toUpperCase() || "U",
                     dept: emp.dept || "Unassigned"
                 };
             });

@@ -1,7 +1,7 @@
 "use client";
 import { useAuth } from "@/context/AuthContext";
-import { useState, useEffect } from "react";
-import { cn } from "@/lib/utils";
+import { useState, useEffect, useMemo } from "react";
+import { cn, resolveImageUrl } from "@/lib/utils";
 import { INDIAN_HOLIDAYS_2026, FLAG_CONFIG } from "@/lib/colleges";
 import {
     Calendar, Star, Megaphone, FileText, MessageSquare, Send, X, Clock, AlertTriangle, Users,
@@ -220,12 +220,89 @@ function FloatingChatbot({ sops }: { sops: any[] }) {
 
 // â”€â”€â”€ MAIN DASHBOARD â”€â”€â”€
 export default function Home() {
-    const { user, employees, notices, sops, attendanceRecords, holidays, performanceStars, leaves, pipRecords, reimbursements, tickets, getReportees, sopNotifications, getExpectedTiming } = useAuth();
+    const { user, employees, notices, sops, attendanceRecords, holidays, performanceStars, leaves, pipRecords, reimbursements, tickets, getReportees, sopNotifications, getExpectedTiming, additionalResponsibilities } = useAuth();
     const [mounted, setMounted] = useState(false);
     const [todayStr, setTodayStr] = useState("");
     const [selectedNotice, setSelectedNotice] = useState<any>(null);
 
     useEffect(() => { setMounted(true); setTodayStr(new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })); }, []);
+
+    const stats = useMemo(() => {
+        if (!employees || !performanceStars) return [];
+
+        return performanceStars.map(s => {
+            const emp = employees.find(e => e.id === s.employeeId);
+            if (!emp) return null;
+
+            const blockedEmails = ["ayush.chouhan@geeksofgurukul.com", "sachin@geeksofgurukul.com", "ayush@geeksofgurukul.com", "skgupta272829@gmail.com"];
+            if (blockedEmails.includes(emp.email?.toLowerCase())) return null;
+
+            const myAttendance = attendanceRecords.filter(r => r.employeeId === s.employeeId);
+
+            const flagsList = myAttendance.flatMap(r => {
+                return Object.entries(r.flags || {})
+                    .filter(([_, value]) => value === true)
+                    .map(([key, _]) => key);
+            });
+
+            const lateFlags = flagsList.filter(f => f === 'late').length;
+            const dressFlags = flagsList.filter(f => f === 'dressCode').length;
+            const misconductFlags = flagsList.filter(f => f === 'misconduct').length;
+            const performanceFlags = flagsList.filter(f => f === 'performance').length;
+            const meetingFlags = flagsList.filter(f => f === 'meetingAbsent').length;
+
+            const totalFlags = flagsList.length;
+            const hasRecentFlags = totalFlags > 0;
+
+            const responsibilities = additionalResponsibilities.filter(r => r.employeeId === s.employeeId && r.status === "Approved");
+
+            let points = 0;
+
+            const presentDays = myAttendance.filter(r => r.status === "Present").length;
+            points += (presentDays - lateFlags) * 2;
+            points -= lateFlags * 5;
+
+            const dressCheckedDays = myAttendance.filter(r => r.dressCodeStatus === "Approved" || r.dressCodeStatus === "Rejected").length;
+            points += (dressCheckedDays - dressFlags) * 2;
+            points -= dressFlags * 5;
+
+            if (s.rating > 4.2) {
+                points += s.rating * 10;
+            } else if (s.rating >= 2 && s.rating < 3.5) {
+                points += (s.rating - 5) * 10;
+            } else if (s.rating < 2) {
+                points += (s.rating - 5) * 20;
+            }
+
+            if (!hasRecentFlags) points += 100;
+
+            points -= misconductFlags * 50;
+            points -= performanceFlags * 20;
+            points -= meetingFlags * 10;
+
+            const responsibilityPoints = responsibilities.reduce((acc, curr) => acc + (curr.points || 0), 0);
+            points += responsibilityPoints;
+
+            const calculatedStars = Math.min(5, Math.max(0, 3.0 + (points / 200) * 0.5));
+
+            return {
+                ...s,
+                emp,
+                calculatedStars,
+                totalPoints: points,
+                flagsCount: totalFlags,
+                flagCounts: {
+                    yellow: lateFlags + flagsList.filter(f => f === 'earlyOut' || f === 'locationDiff').length,
+                    red: misconductFlags,
+                    orange: dressFlags,
+                    black: meetingFlags,
+                    blue: performanceFlags
+                }
+            };
+        }).filter((item): item is NonNullable<typeof item> => item !== null)
+          .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount);
+    }, [employees, performanceStars, attendanceRecords, additionalResponsibilities]);
+
 
     if (!user || !mounted) return null;
 
@@ -370,26 +447,15 @@ export default function Home() {
                         <div className="space-y-3">
                             <div className="flex justify-between items-end border-b border-border/50 pb-1.5">
                                 <h4 className="text-[10px] font-black text-yellow-500 uppercase tracking-[0.1em]">OM of the Month</h4>
-                                <span className="text-[8px] text-muted-foreground font-bold">MARCH 2026</span>
+                                <span className="text-[8px] text-muted-foreground font-bold">{new Date().toLocaleString("en-IN", { month: "long", year: "numeric" }).toUpperCase()}</span>
                             </div>
                             <div className="grid gap-2">
-                                {performanceStars
-                                    .filter(s => {
-                                        const emp = employees.find(e => e.id === s.employeeId);
-                                        return emp?.role === "OM";
-                                    })
-                                    .sort((a, b) => b.rating - a.rating)
+                                {stats
+                                    .filter(s => s.emp?.role === "OM")
                                     .slice(0, 3)
                                     .map((s, i) => {
-                                        const emp = employees.find(e => e.id === s.employeeId);
+                                        const emp = s.emp;
                                         const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉";
-                                        const att = attendanceRecords.filter(r => r.employeeId === s.employeeId);
-
-                                        const red = att.filter(r => r.flags?.misconduct).length;
-                                        const orange = att.filter(r => r.flags?.dressCode).length;
-                                        const yellow = att.filter(r => r.flags?.late || r.flags?.earlyOut || r.flags?.locationDiff).length;
-                                        const black = att.filter(r => r.flags?.meetingAbsent).length;
-                                        const blue = att.filter(r => r.flags?.performance).length;
 
                                         return (
                                             <div key={s.employeeId} className={cn("relative p-2.5 rounded-xl border transition-all flex items-center gap-3 overflow-hidden",
@@ -400,9 +466,9 @@ export default function Home() {
                                                         i === 0 ? "border-yellow-500/30" : "border-border"
                                                     )}>
                                                         {emp?.photoUrl ? (
-                                                            <img src={emp.photoUrl} alt={emp.name} className="w-full h-full object-cover" />
+                                                            <img src={resolveImageUrl(emp.photoUrl)} alt={emp.name} className="w-full h-full object-cover" />
                                                         ) : (
-                                                            <span>{emp?.name[0]}</span>
+                                                            <span>{emp?.name?.[0]}</span>
                                                         )}
                                                     </div>
                                                     <div className={cn("absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full border-2 border-zinc-900 flex items-center justify-center text-[10px] font-black shadow-xl",
@@ -416,20 +482,19 @@ export default function Home() {
                                                 <div className="text-right">
                                                     <div className="flex gap-0.5 justify-end">
                                                         {Array.from({ length: 5 }).map((_, j) => (
-                                                            <Star key={j} size={8} className={j < Math.floor(s.stars || 0) ? "text-yellow-500 fill-yellow-500" : "text-zinc-700"} />
+                                                            <Star key={j} size={8} className={j < Math.floor(s.calculatedStars || 0) ? "text-yellow-500 fill-yellow-500" : "text-zinc-700"} />
                                                         ))}
                                                     </div>
 
-                                                    {/* Flags Indicator - MOVED BELOW STARS */}
                                                     <div className="flex gap-0.5 justify-end mt-1 flex-wrap" style={{ maxWidth: '70px' }}>
-                                                        {Array.from({ length: red }).map((_, idx) => <span key={`r${idx}`} title="Misconduct"><Flag size={10} className="text-red-500 fill-red-500/20" /></span>)}
-                                                        {Array.from({ length: orange }).map((_, idx) => <span key={`o${idx}`} title="Dress Code"><Flag size={10} className="text-orange-500 fill-orange-500/20" /></span>)}
-                                                        {Array.from({ length: yellow }).map((_, idx) => <span key={`y${idx}`} title="Late/Timeline"><Flag size={10} className="text-yellow-500 fill-yellow-500/20" /></span>)}
-                                                        {Array.from({ length: black }).map((_, idx) => <span key={`b${idx}`} title="Meeting Absent"><Flag size={10} className="text-zinc-600 fill-zinc-900" /></span>)}
-                                                        {Array.from({ length: blue }).map((_, idx) => <span key={`bl${idx}`} title="Performance"><Flag size={10} className="text-blue-500 fill-blue-500/20" /></span>)}
+                                                        {Array.from({ length: s.flagCounts.red }).map((_, idx) => <span key={`r${idx}`} title="Misconduct"><Flag size={10} className="text-red-500 fill-red-500/20" /></span>)}
+                                                        {Array.from({ length: s.flagCounts.orange }).map((_, idx) => <span key={`o${idx}`} title="Dress Code"><Flag size={10} className="text-orange-500 fill-orange-500/20" /></span>)}
+                                                        {Array.from({ length: s.flagCounts.yellow }).map((_, idx) => <span key={`y${idx}`} title="Late/Timeline"><Flag size={10} className="text-yellow-500 fill-yellow-500/20" /></span>)}
+                                                        {Array.from({ length: s.flagCounts.black }).map((_, idx) => <span key={`b${idx}`} title="Meeting Absent"><Flag size={10} className="text-zinc-600 fill-zinc-900" /></span>)}
+                                                        {Array.from({ length: s.flagCounts.blue }).map((_, idx) => <span key={`bl${idx}`} title="Performance"><Flag size={10} className="text-blue-500 fill-blue-500/20" /></span>)}
                                                     </div>
 
-                                                    <p className="text-[10px] font-black text-white mt-1">{s.rating || 0}</p>
+                                                    <p className="text-[10px] font-black text-white mt-1">{s.totalPoints.toFixed(0)}</p>
                                                 </div>
                                             </div>
                                         );
@@ -442,27 +507,15 @@ export default function Home() {
                         <div className="space-y-3">
                             <div className="flex justify-between items-end border-b border-border/50 pb-1.5">
                                 <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.1em]">Professor of the Month</h4>
-                                <span className="text-[8px] text-muted-foreground font-bold">MARCH 2026</span>
+                                <span className="text-[8px] text-muted-foreground font-bold">{new Date().toLocaleString("en-IN", { month: "long", year: "numeric" }).toUpperCase()}</span>
                             </div>
                             <div className="grid gap-2">
-                                {performanceStars
-                                    .filter(s => {
-                                        const emp = employees.find(e => e.id === s.employeeId);
-                                        if (!emp) return false;
-                                        return (emp.role === "PROFESSOR" || emp.role === "FACULTY");
-                                    })
-                                    .sort((a, b) => b.rating - a.rating)
+                                {stats
+                                    .filter(s => s.emp?.role === "PROFESSOR" || s.emp?.role === "FACULTY")
                                     .slice(0, 3)
                                     .map((s, i) => {
-                                        const emp = employees.find(e => e.id === s.employeeId);
+                                        const emp = s.emp;
                                         const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉";
-                                        const att = attendanceRecords.filter(r => r.employeeId === s.employeeId);
-
-                                        const red = att.filter(r => r.flags?.misconduct).length;
-                                        const orange = att.filter(r => r.flags?.dressCode).length;
-                                        const yellow = att.filter(r => r.flags?.late || r.flags?.earlyOut || r.flags?.locationDiff).length;
-                                        const black = att.filter(r => r.flags?.meetingAbsent).length;
-                                        const blue = att.filter(r => r.flags?.performance).length;
 
                                         return (
                                             <div key={s.employeeId} className={cn("relative p-2.5 rounded-xl border transition-all flex items-center gap-3 overflow-hidden",
@@ -473,9 +526,9 @@ export default function Home() {
                                                         i === 0 ? "border-emerald-500/30" : "border-border"
                                                     )}>
                                                         {emp?.photoUrl ? (
-                                                            <img src={emp.photoUrl} alt={emp.name} className="w-full h-full object-cover" />
+                                                            <img src={resolveImageUrl(emp.photoUrl)} alt={emp.name} className="w-full h-full object-cover" />
                                                         ) : (
-                                                            <span>{emp?.name[0]}</span>
+                                                            <span>{emp?.name?.[0]}</span>
                                                         )}
                                                     </div>
                                                     <div className={cn("absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full border-2 border-zinc-900 flex items-center justify-center text-[10px] font-black shadow-xl",
@@ -489,22 +542,21 @@ export default function Home() {
                                                 <div className="text-right">
                                                     <div className="flex gap-0.5 justify-end">
                                                         {Array.from({ length: 5 }).map((_, j) => (
-                                                            <Star key={j} size={8} className={j < Math.floor(s.stars || 0) ? "text-yellow-400 fill-yellow-400" : "text-zinc-700"} />
+                                                            <Star key={j} size={8} className={j < Math.floor(s.calculatedStars || 0) ? "text-yellow-400 fill-yellow-400" : "text-zinc-700"} />
                                                         ))}
                                                     </div>
 
-                                                    {/* Flags Indicator - MOVED BELOW STARS */}
                                                     <div className="flex gap-0.5 justify-end mt-1 flex-wrap" style={{ maxWidth: '70px' }}>
-                                                        {Array.from({ length: red }).map((_, idx) => <span key={`r${idx}`} title="Misconduct"><Flag size={10} className="text-red-500 fill-red-500/20" /></span>)}
-                                                        {Array.from({ length: orange }).map((_, idx) => <span key={`o${idx}`} title="Dress Code"><Flag size={10} className="text-orange-500 fill-orange-500/20" /></span>)}
-                                                        {Array.from({ length: yellow }).map((_, idx) => <span key={`y${idx}`} title="Late/Timeline"><Flag size={10} className="text-yellow-500 fill-yellow-500/20" /></span>)}
-                                                        {Array.from({ length: black }).map((_, idx) => <span key={`b${idx}`} title="Meeting Absent"><Flag size={10} className="text-zinc-600 fill-zinc-900" /></span>)}
-                                                        {Array.from({ length: blue }).map((_, idx) => <span key={`bl${idx}`} title="Performance"><Flag size={10} className="text-blue-500 fill-blue-500/20" /></span>)}
+                                                        {Array.from({ length: s.flagCounts.red }).map((_, idx) => <span key={`r${idx}`} title="Misconduct"><Flag size={10} className="text-red-500 fill-red-500/20" /></span>)}
+                                                        {Array.from({ length: s.flagCounts.orange }).map((_, idx) => <span key={`o${idx}`} title="Dress Code"><Flag size={10} className="text-orange-500 fill-orange-500/20" /></span>)}
+                                                        {Array.from({ length: s.flagCounts.yellow }).map((_, idx) => <span key={`y${idx}`} title="Late/Timeline"><Flag size={10} className="text-yellow-500 fill-yellow-500/20" /></span>)}
+                                                        {Array.from({ length: s.flagCounts.black }).map((_, idx) => <span key={`b${idx}`} title="Meeting Absent"><Flag size={10} className="text-zinc-600 fill-zinc-900" /></span>)}
+                                                        {Array.from({ length: s.flagCounts.blue }).map((_, idx) => <span key={`bl${idx}`} title="Performance"><Flag size={10} className="text-blue-500 fill-blue-500/20" /></span>)}
                                                     </div>
 
                                                     <div className="flex items-center justify-end gap-1 mt-1">
                                                         <Activity size={8} className="text-emerald-400" />
-                                                        <span className="text-[9px] font-black text-white">{s.rating || 0}</span>
+                                                        <span className="text-[9px] font-black text-white">{s.totalPoints.toFixed(0)}</span>
                                                     </div>
                                                 </div>
                                             </div>

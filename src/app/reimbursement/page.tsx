@@ -27,7 +27,6 @@ export default function ReimbursementPage() {
     const [uploading, setUploading] = useState(false);
     const proofRef = useRef<HTMLInputElement>(null);
     const [viewClaim, setViewClaim] = useState<ReimbursementClaim | null>(null);
-    const [imageModal, setImageModal] = useState<string | null>(null);
 
     // Month filter
     const now = new Date();
@@ -189,24 +188,22 @@ export default function ReimbursementPage() {
                                 <div className="space-y-2">
                                     <p className="text-[9px] text-zinc-500 font-bold uppercase">Proof Images</p>
                                     <div className="grid grid-cols-3 gap-2">
-                                        {viewClaim.proofUrls.map((url, i) => (
-                                            <img key={i} src={url} alt={`Proof ${i + 1}`} onClick={() => setImageModal(url)} className="w-full h-24 object-cover rounded-lg border border-zinc-800 cursor-pointer hover:border-primary/50 transition-colors" />
-                                        ))}
+                                        {viewClaim.proofUrls.map((url, i) => {
+                                            let previewUrl = url;
+                                            if (!url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
+                                            else if (url.toLowerCase().endsWith('.pdf')) previewUrl = url.replace(/\.pdf$/i, '.jpg');
+
+                                            return (
+                                                <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                                                    <img src={previewUrl} alt={`Proof ${i + 1}`} className="w-full h-24 object-cover rounded-lg border border-zinc-800 cursor-pointer hover:border-primary/50 transition-colors" />
+                                                </a>
+                                            )
+                                        })}
                                     </div>
                                 </div>
                             )}
                             <p className="text-[9px] text-zinc-600 pt-2 border-t border-zinc-800">Submitted on {viewClaim.date}</p>
                         </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
-
-            {/* Full Image Modal */}
-            <AnimatePresence>
-                {imageModal && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={() => setImageModal(null)}>
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/90" />
-                        <motion.img initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} src={imageModal} className="relative z-10 max-w-[90vw] max-h-[85vh] rounded-xl object-contain" />
                     </div>
                 )}
             </AnimatePresence>
@@ -268,15 +265,21 @@ export default function ReimbursementPage() {
                                     <input ref={proofRef} type="file" accept="image/*,.pdf" multiple className="hidden" onChange={handleProofUpload} />
                                     {proofUrls.length > 0 && (
                                         <div className="flex flex-wrap gap-2">
-                                            {proofUrls.map((url, i) => (
-                                                <div key={i} className="relative group">
-                                                    <img src={url} alt={`Proof ${i + 1}`} className="w-16 h-16 object-cover rounded-lg border border-zinc-800" />
-                                                    <button type="button" onClick={() => setProofUrls(prev => prev.filter((_, j) => j !== i))}
-                                                        className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <X size={8} className="text-white" />
-                                                    </button>
-                                                </div>
-                                            ))}
+                                            {proofUrls.map((url, i) => {
+                                                let previewUrl = url;
+                                                if (!url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
+                                                else if (url.toLowerCase().endsWith('.pdf')) previewUrl = url.replace(/\.pdf$/i, '.jpg');
+
+                                                return (
+                                                    <div key={i} className="relative group">
+                                                        <img src={previewUrl} alt={`Proof Preview ${i + 1}`} className="w-16 h-16 object-cover rounded-lg border border-zinc-800" />
+                                                        <button type="button" onClick={() => setProofUrls(prev => prev.filter((_, j) => j !== i))}
+                                                            className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <X size={8} className="text-white" />
+                                                        </button>
+                                                    </div>
+                                                )
+                                            })}
                                         </div>
                                     )}
                                 </div>

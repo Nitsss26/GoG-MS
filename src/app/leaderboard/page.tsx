@@ -164,7 +164,7 @@ export default function LeaderboardPage() {
                         <h1 className="text-3xl md:text-6xl font-black text-white tracking-tighter leading-none">
                             LEADER<span className="text-primary italic">BOARD</span>
                         </h1>
-                        <p className="text-zinc-500 text-[10px] font-black tracking-[0.2em] uppercase">Institute Performance Rankings &middot; March 2026</p>
+                        <p className="text-zinc-500 text-[10px] font-black tracking-[0.2em] uppercase">Institute Performance Rankings &middot; {new Date().toLocaleString("en-IN", { month: "long", year: "numeric" }).toUpperCase()}</p>
                     </div>
                 </div>
 

@@ -27,6 +27,7 @@ export default function AttendancePage() {
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [clockInError, setClockInError] = useState<string | null>(null);
+    const [activeLocation, setActiveLocation] = useState<string | null>(null);
 
     // Mark as present states
     const [showMapForm, setShowMapForm] = useState(false);
@@ -83,14 +84,37 @@ export default function AttendancePage() {
         setGeoStatus("requesting");
         setClockInError(null);
         if (!navigator.geolocation) { setGeoStatus("denied"); setClockInError("Geolocation not supported."); return; }
-        if (!college) { setGeoStatus("denied"); setClockInError("No college mapped for today's location."); return; }
+        if (emp.role !== "HOI" && !college) { setGeoStatus("denied"); setClockInError("No college mapped for today's location."); return; }
         navigator.geolocation.getCurrentPosition(
             (pos) => {
-                const dist = haversineDistance(pos.coords.latitude, pos.coords.longitude, college.lat, college.lng);
+                let targetCollege = college;
+                let dist = 999999;
+                
+                if (emp.role === "HOI" && colleges.length > 0) {
+                    let closestCollege = colleges[0];
+                    let minDistance = 999999;
+
+                    for (const c of colleges) {
+                        const d = haversineDistance(pos.coords.latitude, pos.coords.longitude, c.lat, c.lng);
+                        if (d < minDistance) {
+                            minDistance = d;
+                            closestCollege = c;
+                        }
+                    }
+                    
+                    targetCollege = closestCollege;
+                    dist = minDistance;
+                } else if (targetCollege) {
+                    dist = haversineDistance(pos.coords.latitude, pos.coords.longitude, targetCollege.lat, targetCollege.lng);
+                } else {
+                    setGeoStatus("denied"); setClockInError("No college mapped for location."); return;
+                }
+
                 setDistanceKm(parseFloat(dist.toFixed(2)));
-                setWithinRadius(dist <= college.radiusKm);
+                setWithinRadius(dist <= targetCollege!.radiusKm);
+                setActiveLocation(targetCollege!.shortName);
                 setGeoStatus("granted");
-                if (dist > college.radiusKm) setClockInError(`You are ${dist.toFixed(1)} km from ${college.shortName}. Maximum: ${college.radiusKm} km.`);
+                if (dist > targetCollege!.radiusKm) setClockInError(`You are ${dist.toFixed(1)} km from ${targetCollege!.shortName}. Maximum: ${targetCollege!.radiusKm} km.`);
             },
             () => { setGeoStatus("denied"); setClockInError("Location access denied."); },
             { enableHighAccuracy: true, timeout: 10000 }
@@ -127,7 +151,7 @@ export default function AttendancePage() {
         if (!withinRadius) { setClockInError(`Out of range (${distanceKm} km).`); return; }
         if (!dressCodeUrl) { setClockInError("Upload dress code photo first."); return; }
         const timeNow = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
-        clockIn(displayLocation, timeNow, dressCodeUrl);
+        clockIn(activeLocation || displayLocation, timeNow, dressCodeUrl);
     };
 
     const handleMarkAsPresent = () => {
@@ -269,8 +293,8 @@ export default function AttendancePage() {
                                             <div className="flex items-center gap-3">
                                                 <MapPin size={16} className={withinRadius ? "text-green-400" : "text-red-400"} />
                                                 <div>
-                                                    <p className={cn("text-xs font-bold", withinRadius ? "text-green-400" : "text-red-400")}>{withinRadius ? `✓ Within ${college?.shortName} Radius` : `✗ Out of Range — ${college?.shortName}`}</p>
-                                                    <p className="text-[9px] text-zinc-500">Distance: {distanceKm} km (Max: {college?.radiusKm} km)</p>
+                                                    <p className={cn("text-xs font-bold", withinRadius ? "text-green-400" : "text-red-400")}>{withinRadius ? `✓ Within ${activeLocation || displayLocation} Radius` : `✗ Out of Range — ${activeLocation || displayLocation}`}</p>
+                                                    <p className="text-[9px] text-zinc-500">Distance: {distanceKm} km</p>
                                                 </div>
                                             </div>
                                             {!withinRadius && !showMapForm && (
@@ -549,13 +573,13 @@ export default function AttendancePage() {
                                                     {isHRorFounder && record?.dressCodeImageUrl && record.dressCodeStatus === "Pending" && (
                                                         <div className="flex gap-1 mt-1">
                                                             <button
-                                                                onClick={() => resolveDressCodeCheck(record.id, "Approved")}
+                                                                onClick={() => resolveDressCodeCheck(record.id || (record as any)._id, "Approved")}
                                                                 className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded-sm hover:bg-emerald-500/30 font-bold"
                                                             >
                                                                 ✓ Approve Dress
                                                             </button>
                                                             <button
-                                                                onClick={() => resolveDressCodeCheck(record.id, "Rejected")}
+                                                                onClick={() => resolveDressCodeCheck(record.id || (record as any)._id, "Rejected")}
                                                                 className="text-[8px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded-sm hover:bg-red-500/30 font-bold"
                                                             >
                                                                 ✗ Reject

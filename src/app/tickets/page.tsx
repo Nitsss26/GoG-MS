@@ -9,11 +9,17 @@ import { AlertCircle, Clock, CheckCircle2, MessageSquare, Plus, FileText, ArrowR
 export default function TicketsPage() {
     const { user, raiseTicket, resolveTicket, tickets, getReportees, employees, restoreAttendanceCredits, pipRecords } = useAuth();
     const [showNewTicketModal, setShowNewTicketModal] = useState(false);
-    const [ticketForm, setTicketForm] = useState({
+    const [ticketForm, setTicketForm] = useState<{
+        targetCategory: string;
+        subject: string;
+        content: string;
+        targetEmployeeIds: string[];
+        targetDate: string;
+    }>({
         targetCategory: "HR Desk",
         subject: "",
         content: "",
-        targetEmployeeId: "",
+        targetEmployeeIds: [],
         targetDate: new Date().toISOString().split('T')[0]
     });
     const [proofUrls, setProofUrls] = useState<string[]>([]);
@@ -29,29 +35,47 @@ export default function TicketsPage() {
     const isHR = user.role === "HR";
     const isFounder = user.role === "FOUNDER";
     const isSystemAdmin = isHR || isFounder;
+    const isHOI = user.role === "HOI";
 
     const myTickets = tickets.filter(t => t.raisedBy === user.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     const hrTickets = tickets.filter(t => isFounder || t.targetCategory === "HR Desk" || t.targetCategory === "Attendance Override Request").sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     const displayTickets = isSystemAdmin ? (isFounder ? tickets : hrTickets) : myTickets;
 
-    const handleSubmitTicket = (e: React.FormEvent) => {
+    const handleSubmitTicket = async (e: React.FormEvent) => {
         e.preventDefault();
-        // Mandatory proof for all except Attendance Override Request
-        if (ticketForm.targetCategory !== "Attendance Override Request" && proofUrls.length === 0) return;
+        // Proof is mandatory for ALL tickets now
+        if (proofUrls.length === 0) return;
 
-        raiseTicket(
-            ticketForm.targetCategory as any,
-            ticketForm.subject,
-            ticketForm.content,
-            undefined,
-            undefined,
-            proofUrls,
-            ticketForm.targetCategory === "Attendance Override Request" ? ticketForm.targetEmployeeId : undefined,
-            ticketForm.targetCategory === "Attendance Override Request" ? ticketForm.targetDate : undefined
-        );
+        if (ticketForm.targetCategory === "Attendance Override Request") {
+            const targets = ticketForm.targetEmployeeIds.length > 0 ? ticketForm.targetEmployeeIds : [user.id];
+            for (const targetId of targets) {
+                await raiseTicket(
+                    ticketForm.targetCategory as any,
+                    ticketForm.subject,
+                    ticketForm.content,
+                    undefined,
+                    undefined,
+                    proofUrls,
+                    targetId,
+                    ticketForm.targetDate
+                );
+            }
+        } else {
+            await raiseTicket(
+                ticketForm.targetCategory as any,
+                ticketForm.subject,
+                ticketForm.content,
+                undefined,
+                undefined,
+                proofUrls,
+                undefined,
+                undefined
+            );
+        }
+        
         setShowNewTicketModal(false);
-        setTicketForm({ targetCategory: "HR Desk", subject: "", content: "", targetEmployeeId: "", targetDate: new Date().toISOString().split('T')[0] });
+        setTicketForm({ targetCategory: "HR Desk", subject: "", content: "", targetEmployeeIds: [], targetDate: new Date().toISOString().split('T')[0] });
         setProofUrls([]);
     };
 
@@ -183,22 +207,21 @@ export default function TicketsPage() {
                                         <div className="bg-zinc-900/50 p-3 rounded-lg border border-zinc-800/50">
                                             <p className="text-[11px] text-zinc-300 leading-relaxed">{ticket.content}</p>
                                         </div>
-                                        <div className="flex flex-wrap items-center gap-3">
-                                            {ticket.proofUrls && ticket.proofUrls.length > 0 && (
-                                                <div className="flex flex-wrap gap-2">
-                                                    {ticket.proofUrls.map((url, i) => (
-                                                        <a key={i} href={url} target="_blank" rel="noopener" className="flex items-center gap-1.5 bg-surface-light border border-border rounded-md px-2 py-1 text-[9px] text-zinc-400 hover:text-primary transition-colors">
-                                                            <ImageIcon size={10} /> Proof {i + 1}
+                                        {ticket.proofUrls && ticket.proofUrls.length > 0 && (
+                                            <div className="flex flex-wrap gap-2">
+                                                {ticket.proofUrls.map((url, i) => {
+                                                    let previewUrl = url;
+                                                    if (!url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
+                                                    else if (url.toLowerCase().endsWith('.pdf')) previewUrl = url.replace(/\.pdf$/i, '.jpg');
+
+                                                    return (
+                                                        <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                                                            <img src={previewUrl} alt={`Proof ${i + 1}`} className="w-9 h-9 object-cover rounded-md border border-zinc-700 hover:border-primary transition-colors" />
                                                         </a>
-                                                    ))}
-                                                </div>
-                                            )}
-                                            {ticket.cc && ticket.cc.length > 0 && (
-                                                <div className="flex items-center gap-2 text-[9px] text-zinc-500 bg-zinc-800/30 px-2 py-1 rounded-md border border-zinc-700/30">
-                                                    <span className="font-bold text-zinc-400">CC:</span> {ticket.cc.join(", ")}
-                                                </div>
-                                            )}
-                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                         {ticket.resolutionNotes && (
                                             <div className="bg-primary/5 p-3 rounded-lg border border-primary/10">
                                                 <p className="text-[10px] font-bold text-primary mb-1 uppercase tracking-widest">Resolution Notes</p>
@@ -207,21 +230,7 @@ export default function TicketsPage() {
                                         )}
                                     </div>
                                     {(isHR || (ticket.routeTo === user.id && ticket.status !== "Resolved")) && (
-                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex flex-wrap gap-2">
-                                            {isHR && (
-                                                <button
-                                                    onClick={() => {
-                                                        const targetId = ticket.targetEmployeeId || ticket.raisedBy;
-                                                        if (targetId) {
-                                                            restoreAttendanceCredits(targetId);
-                                                            resolveTicket(ticket.id, "Credits restored, flags cleared, and issue resolved by HR due to genuine circumstances/holiday.");
-                                                        }
-                                                    }}
-                                                    className="btn-outline py-1.5 px-3 text-[10px] h-auto border-purple-500/20 text-purple-500 hover:bg-purple-500/10 whitespace-nowrap"
-                                                >
-                                                    Restore Credits & Clear Flags
-                                                </button>
-                                            )}
+                                        <div className="flex flex-wrap gap-2 items-center">
                                             <button
                                                 onClick={() => {
                                                     const note = ticket.targetCategory === "Attendance Override Request"
@@ -268,7 +277,7 @@ export default function TicketsPage() {
                                         <option value="Misconduct">Misconduct / Institute Issues</option>
                                         <option value="Academic">Academic / Student Concerns</option>
                                         <option value="Technical">Technical Issues</option>
-                                        {isManager && <option value="Attendance Override Request">Attendance Override Request</option>}
+                                        <option value="Attendance Override Request">Attendance Override Request</option>
                                     </select>
                                 </div>
 
@@ -276,17 +285,32 @@ export default function TicketsPage() {
                                     <>
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-bold text-muted uppercase tracking-widest font-mono">Select Employee</label>
-                                            <select
-                                                required
-                                                className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary"
-                                                value={ticketForm.targetEmployeeId}
-                                                onChange={e => setTicketForm({ ...ticketForm, targetEmployeeId: e.target.value })}
-                                            >
-                                                <option value="">Choose Employee...</option>
-                                                {myReportees.map(r => (
-                                                    <option key={r.id} value={r.id}>{r.name} ({r.id})</option>
-                                                ))}
-                                            </select>
+                                            {isHOI ? (
+                                                <select
+                                                    required
+                                                    multiple
+                                                    className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary h-28"
+                                                    value={ticketForm.targetEmployeeIds}
+                                                    onChange={e => {
+                                                        const opts = Array.from(e.target.selectedOptions, option => option.value);
+                                                        setTicketForm({ ...ticketForm, targetEmployeeIds: opts });
+                                                    }}
+                                                >
+                                                    <option value={user.id}>{user.name} (Yourself)</option>
+                                                    {myReportees.map(r => (
+                                                        <option key={r.id} value={r.id}>{r.name} ({r.id})</option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <select
+                                                    required
+                                                    disabled
+                                                    className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-zinc-500 outline-none cursor-not-allowed"
+                                                    value={user.id}
+                                                >
+                                                    <option value={user.id}>{user.name} (Yourself)</option>
+                                                </select>
+                                            )}
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-bold text-muted uppercase tracking-widest font-mono">Target Date</label>
@@ -325,14 +349,14 @@ export default function TicketsPage() {
                                 </div>
                                 <div className="space-y-1.5 col-span-2">
                                     <label className="text-[10px] font-bold text-muted uppercase tracking-widest flex justify-between">
-                                        <span>Proof {ticketForm.targetCategory === "Attendance Override Request" ? "(Optional)" : "(Mandatory)"}</span>
+                                        <span>Proof (Mandatory)</span>
                                         {proofUrls.length > 0 && <span className="text-green-500">✓ {proofUrls.length} file(s)</span>}
                                     </label>
                                     {!uploading ? (
                                         <div
                                             onClick={() => fileRef.current?.click()}
                                             className={cn("w-full border-2 border-dashed rounded-lg p-4 text-center hover:bg-surface-light transition-colors cursor-pointer group",
-                                                proofUrls.length === 0 && ticketForm.targetCategory !== "Attendance Override Request" ? "border-amber-500/30" : "border-green-500/30"
+                                                proofUrls.length === 0 ? "border-amber-500/30" : "border-green-500/30"
                                             )}
                                         >
                                             <Upload size={20} className="mx-auto text-zinc-600 group-hover:text-primary transition-colors mb-2" />
@@ -363,7 +387,7 @@ export default function TicketsPage() {
                                 <button type="button" onClick={() => setShowNewTicketModal(false)} className="btn-outline text-xs py-2 px-6">Cancel</button>
                                 <button
                                     type="submit"
-                                    disabled={ticketForm.targetCategory !== "Attendance Override Request" && proofUrls.length === 0}
+                                    disabled={proofUrls.length === 0}
                                     className="btn-primary text-xs py-2 px-6 disabled:opacity-50 disabled:cursor-not-allowed group"
                                 >
                                     Submit Ticket <ArrowRight size={14} className="inline ml-1 group-hover:translate-x-1 transition-transform" />

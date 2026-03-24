@@ -17,7 +17,8 @@ import {
     Maximize2,
     Briefcase,
     GraduationCap,
-    Users
+    Users,
+    Heart
 } from "lucide-react";
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -71,7 +72,7 @@ export default function HierarchyPage() {
             <motion.div
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="relative overflow-hidden rounded-[2rem] border border-zinc-800/40 bg-zinc-900/10 backdrop-blur-xl p-6 sm:p-8 group"
+                className="relative overflow-hidden rounded-[2.5rem] border border-zinc-800/40 bg-zinc-900/10 backdrop-blur-xl p-8 sm:p-10 group min-h-[240px] flex flex-col justify-center font-[family-name:var(--font-outfit)]"
             >
                 {/* Indian Flag Themed Background Images */}
                 <div className="absolute inset-0 flex opacity-40 pointer-events-none overflow-hidden">
@@ -96,45 +97,40 @@ export default function HierarchyPage() {
                 <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-3xl -mr-16 -mt-16" />
                 <div className="absolute bottom-0 left-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl -ml-16 -mb-16" />
 
-                <div className="relative flex flex-col md:flex-row items-center gap-6 md:gap-10">
-                    <div className="flex flex-col items-center md:items-start shrink-0">
+                <div className="relative grid grid-cols-1 md:grid-cols-3 items-center gap-6 md:gap-4 h-full">
+                    {/* Orange Side: Foundation Info */}
+                    <div className="flex flex-col items-center md:items-start">
                         <div className="flex items-center gap-2 mb-2">
                             <div className="px-3 py-1 rounded-full bg-zinc-950/80 border border-primary/50 text-[9px] font-black text-primary uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(var(--primary),0.4)] backdrop-blur-md">
                                 Est. 26 March 2023
                             </div>
                         </div>
-                        <h2 className="text-xl sm:text-2xl font-black tracking-tight text-center md:text-left uppercase">
+                        <h2 className="text-xl sm:text-3xl font-black tracking-tight text-center md:text-left uppercase">
                             <span className="bg-gradient-to-br from-white via-zinc-400 to-zinc-600 bg-clip-text text-transparent">Foundation</span>{' '}
                             <span className="text-primary drop-shadow-[0_0_8px_rgba(var(--primary),0.5)]">Day</span>
                         </h2>
                     </div>
 
-                    <div className="hidden md:block h-12 w-px bg-zinc-800/60" />
-
-                    <div className="flex-1 space-y-3 text-center md:text-left">
-                        <h3 className="text-sm sm:text-lg font-bold text-white tracking-tight">
+                    {/* White Side: Mission Statement */}
+                    <div className="flex flex-col space-y-4 text-center">
+                        <h3 className="text-sm sm:text-xl font-extrabold text-white tracking-tight leading-tight">
                             Founded with a dream to empower <span className="bg-gradient-to-r from-[#FF9933] via-[#FFFFFF] to-[#138808] bg-clip-text text-transparent drop-shadow-sm font-black tracking-widest px-1">BHARAT</span>
                         </h3>
-                        <p className="text-[11px] sm:text-sm text-zinc-400 font-medium italic leading-relaxed max-w-3xl">
-                            "To our incredible team: You are the <span className="text-zinc-200">pillars</span> of this company and the heartbeat of our mission. Every day your passion turns our vision into reality. We are honored to build the future of our nation together with you."
+                        <p className="text-[11px] sm:text-[15px] text-zinc-200 font-medium italic leading-relaxed">
+                            "To our incredible team: You are the <span className="text-primary font-black">pillars</span> of this company and the heartbeat of our mission. Every day your passion turns our vision into reality. We are honored to build the future of our nation together with you."
                         </p>
                     </div>
 
-                    <div className="shrink-0 flex flex-col items-center md:items-end gap-1.5">
-                        <div className="flex -space-x-1.5">
-                            {[1, 2, 3, 4, 5].map(i => (
-                                <motion.div 
-                                    key={i} 
-                                    initial={{ scale: 0.8 }}
-                                    animate={{ scale: 1 }}
-                                    transition={{ delay: i * 0.1, repeat: Infinity, repeatType: 'reverse', duration: 2 }}
-                                    className="w-6 h-6 rounded-full border border-zinc-800 bg-zinc-950 flex items-center justify-center shadow-lg"
-                                >
-                                    <Star size={10} className="text-amber-500 fill-amber-500/40" />
-                                </motion.div>
-                            ))}
-                        </div>
-                        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">With Love & Gratitude</span>
+                    {/* Green Side: Gratitude & Heart */}
+                    <div className="flex flex-col items-center md:items-end gap-3">
+                        <motion.div 
+                            animate={{ scale: [1, 1.2, 1] }}
+                            transition={{ repeat: Infinity, duration: 1.5 }}
+                            className="w-12 h-12 rounded-2xl bg-zinc-950/80 border border-red-500/20 flex items-center justify-center shadow-[0_0_20px_rgba(239,68,68,0.2)] backdrop-blur-md mb-1"
+                        >
+                            <Heart size={24} className="text-red-500 fill-red-500/40" />
+                        </motion.div>
+                        <span className="text-[11px] font-black text-zinc-400 uppercase tracking-[0.2em] text-center md:text-right">With Love & Gratitude</span>
                     </div>
                 </div>
             </motion.div>

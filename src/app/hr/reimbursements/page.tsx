@@ -22,7 +22,6 @@ export default function HRReimbursementsPage() {
     const [actionModal, setActionModal] = useState<{ id: string; action: "reject" | "approve-pending" | "approve-done" } | null>(null);
     const [reason, setReason] = useState("");
     const [remarks, setRemarks] = useState("");
-    const [imageModal, setImageModal] = useState<string | null>(null);
     const [statusFilter, setStatusFilter] = useState("All");
 
     const now = new Date();
@@ -186,9 +185,17 @@ export default function HRReimbursementsPage() {
                                         {/* Proof Thumbnails */}
                                         {r.proofUrls && r.proofUrls.length > 0 && (
                                             <div className="flex gap-1.5">
-                                                {r.proofUrls.slice(0, 3).map((url, i) => (
-                                                    <img key={i} src={url} alt="" className="w-10 h-10 object-cover rounded-lg border border-zinc-800 cursor-pointer hover:border-primary/50" onClick={() => setImageModal(url)} />
-                                                ))}
+                                                {r.proofUrls.slice(0, 3).map((url, i) => {
+                                                    let previewUrl = url;
+                                                    if (!url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
+                                                    else if (url.toLowerCase().endsWith('.pdf')) previewUrl = url.replace(/\.pdf$/i, '.jpg');
+
+                                                    return (
+                                                        <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                                                            <img src={previewUrl} alt="" className="w-10 h-10 object-cover rounded-lg border border-zinc-800 cursor-pointer hover:border-primary/50" />
+                                                        </a>
+                                                    )
+                                                })}
                                                 {r.proofUrls.length > 3 && <span className="text-[8px] text-zinc-500 self-center">+{r.proofUrls.length - 3}</span>}
                                             </div>
                                         )}
@@ -260,9 +267,17 @@ export default function HRReimbursementsPage() {
                                 <div className="space-y-2">
                                     <p className="text-[9px] text-zinc-500 font-bold uppercase">Proof / Invoices ({reviewClaim.proofUrls.length} files)</p>
                                     <div className="grid grid-cols-3 gap-2">
-                                        {reviewClaim.proofUrls.map((url, i) => (
-                                            <img key={i} src={url} alt={`Proof ${i + 1}`} onClick={() => setImageModal(url)} className="w-full h-28 object-cover rounded-lg border border-zinc-800 cursor-pointer hover:border-primary/50 transition-colors" />
-                                        ))}
+                                        {reviewClaim.proofUrls.map((url, i) => {
+                                            let previewUrl = url;
+                                            if (!url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
+                                            else if (url.toLowerCase().endsWith('.pdf')) previewUrl = url.replace(/\.pdf$/i, '.jpg');
+                                            
+                                            return (
+                                                <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                                                    <img src={previewUrl} alt={`Invoice Preview ${i + 1}`} className="w-full h-28 object-cover rounded-lg border border-zinc-800 cursor-pointer hover:border-primary/50 transition-colors" />
+                                                </a>
+                                            )
+                                        })}
                                     </div>
                                 </div>
                             )}
@@ -320,15 +335,6 @@ export default function HRReimbursementsPage() {
                 )}
             </AnimatePresence>
 
-            {/* Full Image Modal */}
-            <AnimatePresence>
-                {imageModal && (
-                    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={() => setImageModal(null)}>
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/90" />
-                        <motion.img initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} src={imageModal} className="relative z-10 max-w-[90vw] max-h-[85vh] rounded-xl object-contain" />
-                    </div>
-                )}
-            </AnimatePresence>
         </div>
     );
 }

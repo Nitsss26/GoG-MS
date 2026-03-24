@@ -145,13 +145,13 @@ export default function DressCodeVerificationPage() {
                                 {record.dressCodeStatus === "Pending" && (
                                     <div className="grid grid-cols-2 divide-x divide-zinc-800 border-t border-zinc-800">
                                         <button
-                                            onClick={() => resolveDressCodeCheck(record.id, "Rejected")}
+                                            onClick={() => resolveDressCodeCheck(record.id || (record as any)._id, "Rejected")}
                                             className="p-3 flex items-center justify-center gap-2 hover:bg-red-500/10 text-zinc-400 hover:text-red-400 transition-colors font-bold text-xs group/btn"
                                         >
                                             <XCircle size={16} className="group-hover/btn:scale-110 transition-transform" /> Reject
                                         </button>
                                         <button
-                                            onClick={() => resolveDressCodeCheck(record.id, "Approved")}
+                                            onClick={() => resolveDressCodeCheck(record.id || (record as any)._id, "Approved")}
                                             className="p-3 flex items-center justify-center gap-2 hover:bg-emerald-500/10 text-zinc-400 hover:text-emerald-400 transition-colors font-bold text-xs group/btn"
                                         >
                                             <CheckCircle size={16} className="group-hover/btn:scale-110 transition-transform" /> Approve

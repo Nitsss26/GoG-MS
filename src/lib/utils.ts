@@ -25,5 +25,8 @@ export function resolveImageUrl(url?: string): string {
             return `https://docs.google.com/uc?export=view&id=${idMatch[1]}`;
         }
     }
+    if (url.includes("cloudinary.com") && !url.match(/\.[a-zA-Z0-9]+$/)) {
+        return `${url}.jpg`;
+    }
     return url;
 }

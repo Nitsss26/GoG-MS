@@ -6,10 +6,10 @@ import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Calendar, Flag, AlertTriangle } from "lucide-react";
 
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function FlagCalendarPage() {
-    const { user, attendanceRecords, holidays, employees } = useAuth();
+    const { user, attendanceRecords, holidays, employees, leaves } = useAuth();
     const now = new Date();
     const [month, setMonth] = useState(now.getMonth());
     const [year, setYear] = useState(now.getFullYear());
@@ -37,47 +37,24 @@ export default function FlagCalendarPage() {
     const lastDay = new Date(year, month + 1, 0);
     const daysInMonth = lastDay.getDate();
 
-    // Adjust start day: 0=Mon, 5=Sat, skip Sun
-    let startDow = firstDay.getDay(); // 0=Sun .. 6=Sat
-    startDow = startDow === 0 ? -1 : startDow - 1; // Mon=0, Sat=5, Sun=-1
+    const startDow = firstDay.getDay(); // 0=Sun .. 6=Sat
 
     const weeks: (number | null)[][] = [];
-    let week: (number | null)[] = new Array(6).fill(null);
+    let week: (number | null)[] = new Array(7).fill(null);
     let dayNum = 1;
 
     // Fill first week
-    if (startDow >= 0 && startDow < 6) {
-        for (let i = startDow; i < 6 && dayNum <= daysInMonth; i++) {
-            const d = new Date(year, month, dayNum);
-            if (d.getDay() !== 0) { // Skip Sundays
-                week[i] = dayNum;
-            }
-            dayNum++;
-        }
-        // Skip Sunday after Saturday
-        if (dayNum <= daysInMonth) {
-            const nextD = new Date(year, month, dayNum);
-            if (nextD.getDay() === 0) dayNum++;
-        }
-    } else {
-        // Month starts on Sunday, skip it
-        dayNum = 2;
-        week[0] = dayNum;
+    for (let i = startDow; i < 7 && dayNum <= daysInMonth; i++) {
+        week[i] = dayNum;
         dayNum++;
     }
     weeks.push(week);
 
     while (dayNum <= daysInMonth) {
-        week = new Array(6).fill(null);
-        for (let i = 0; i < 6 && dayNum <= daysInMonth; i++) {
-            const d = new Date(year, month, dayNum);
-            if (d.getDay() !== 0) {
-                week[i] = dayNum;
-                dayNum++;
-            } else {
-                dayNum++; // Skip Sunday
-                i--; // Don't consume a slot
-            }
+        week = new Array(7).fill(null);
+        for (let i = 0; i < 7 && dayNum <= daysInMonth; i++) {
+            week[i] = dayNum;
+            dayNum++;
         }
         weeks.push(week);
     }
@@ -86,22 +63,49 @@ export default function FlagCalendarPage() {
 
     const getApprovedHolidays = (d: string) => holidays.filter(h => h.date === d && h.status === "Approved");
     const getIndianHoliday = (d: string) => INDIAN_HOLIDAYS_2026.find(h => h.date === d);
+    const getLeaveStatus = (d: string) => leaves?.find(l => l.employeeId === selectedEmployeeId && l.status === "Approved" && d >= l.startDate && d <= l.endDate);
 
     const getFlags = (d: string) => {
         const rec = records.find(r => r.date === d);
-        if (!rec) return [];
-        return Object.entries(rec.flags).filter(([_, v]) => v).map(([k]) => k);
+        let activeFlags = rec ? Object.entries(rec.flags).filter(([_, v]) => v).map(([k]) => k) : [];
+        
+        // Absent Logic
+        const dateObj = new Date(d);
+        const isSunday = dateObj.getDay() === 0;
+        const isHoliday = getApprovedHolidays(d).length > 0 || !!getIndianHoliday(d);
+        const isOnLeave = !!getLeaveStatus(d);
+        const isWorkingDay = !isSunday && !isHoliday && !isOnLeave;
+        const isPastMar17 = d >= "2026-03-17";
+        const isPastToday = d > now.toISOString().split("T")[0];
+
+        if (!rec && isWorkingDay && isPastMar17 && !isPastToday) {
+            activeFlags.push("absent");
+        }
+        
+        return activeFlags;
     };
 
     // Monthly flag summary
     const monthFlags: Record<string, number> = {};
     Object.keys(FLAG_CONFIG).forEach(k => monthFlags[k] = 0);
+    
+    // Add flags from records
     records.forEach(rec => {
         const d = new Date(rec.date);
         if (d.getMonth() === month && d.getFullYear() === year) {
             Object.entries(rec.flags).filter(([_, v]) => v).forEach(([k]) => { monthFlags[k] = (monthFlags[k] || 0) + 1; });
         }
     });
+    
+    // Add absent flags for days up to today in the month
+    for (let i = 1; i <= daysInMonth; i++) {
+        const ds = dateStr(i);
+        const isSameMonthYear = month === now.getMonth() && year === now.getFullYear();
+        // Since we already calculated logic in getFlags, just reuse it for the visual count
+        if (getFlags(ds).includes("absent")) {
+            monthFlags["absent"] = (monthFlags["absent"] || 0) + 1;
+        }
+    }
     const totalFlags = Object.values(monthFlags).reduce((a, b) => a + b, 0);
 
     const prev = () => { if (month === 0) { setMonth(11); setYear(year - 1); } else setMonth(month - 1); setSelectedDay(null); };
@@ -158,7 +162,7 @@ export default function FlagCalendarPage() {
                 </div>
 
                 {/* Day Headers */}
-                <div className="grid grid-cols-6 border-b border-zinc-800/50">
+                <div className="grid grid-cols-7 border-b border-zinc-800/50">
                     {DAYS.map(d => (
                         <div key={d} className="py-2 text-center text-[9px] font-bold text-zinc-500 uppercase tracking-widest">{d}</div>
                     ))}
@@ -167,7 +171,7 @@ export default function FlagCalendarPage() {
                 {/* Calendar Grid */}
                 <div className="divide-y divide-zinc-800/30">
                     {weeks.map((wk, wi) => (
-                        <div key={wi} className="grid grid-cols-6">
+                        <div key={wi} className="grid grid-cols-7">
                             {wk.map((day, di) => {
                                 if (!day) return <div key={di} className="min-h-[80px] border-r border-zinc-800/30 last:border-r-0 bg-zinc-950/30" />;
 
@@ -215,7 +219,7 @@ export default function FlagCalendarPage() {
                                         )}
 
                                         {/* Leave dot */}
-                                        {rec?.status === "On Leave" && (
+                                        {(rec?.status === "On Leave" || getLeaveStatus(ds)) && (
                                             <div className="flex gap-1 mt-2">
                                                 <div className="w-3.5 h-3.5 rounded-full bg-pink-400 shadow-[0_0_5px_rgba(0,0,0,0.5)]" title="On Leave" />
                                             </div>
@@ -246,20 +250,47 @@ export default function FlagCalendarPage() {
 
                     {(() => {
                         const rec = records.find(r => r.date === selectedDay);
-                        if (!rec) return <p className="text-xs text-zinc-500 italic">No attendance record for this day.</p>;
-                        const flags = Object.entries(rec.flags).filter(([_, v]) => v);
+                        const leave = getLeaveStatus(selectedDay);
+                        const flagsRaw = getFlags(selectedDay);
+                        
+                        if (!rec && !leave) {
+                            if (flagsRaw.includes("absent")) {
+                                return (
+                                    <div className="space-y-2 mt-4">
+                                        <p className="text-xs text-red-500 font-bold border border-red-500/20 bg-red-500/10 p-2.5 rounded-lg flex items-center gap-2">
+                                            <span className="text-base">❌</span> Absent — No clock-in record found
+                                        </p>
+                                    </div>
+                                );
+                            }
+                            return <p className="text-xs text-zinc-500 italic">No attendance record for this day.</p>;
+                        }
+                        
+                        if (leave && !rec) {
+                            return (
+                                <div className="space-y-2 mt-4">
+                                    <p className="text-xs text-pink-400 font-bold border border-pink-400/20 bg-pink-400/10 p-2.5 rounded-lg flex items-center gap-2">
+                                        <span className="text-base">🏖️</span> On Leave — {leave.reason || "Approved"}
+                                    </p>
+                                </div>
+                            );
+                        }
+
+                        // Display existing record details
+                        // If we are here, rec exists!
+                        const recFlags = Object.entries(rec!.flags).filter(([_, v]) => v).map(([k]) => k);
                         return (
                             <div className="space-y-2">
                                 <div className="grid grid-cols-3 gap-3 text-xs">
-                                    <div><p className="text-[9px] text-zinc-500 font-bold uppercase">Clock In</p><p className="text-white">{rec.clockIn}</p></div>
-                                    <div><p className="text-[9px] text-zinc-500 font-bold uppercase">Clock Out</p><p className="text-white">{rec.clockOut || "—"}</p></div>
-                                    <div><p className="text-[9px] text-zinc-500 font-bold uppercase">Location</p><p className="text-white">{rec.location}</p></div>
+                                    <div><p className="text-[9px] text-zinc-500 font-bold uppercase">Clock In</p><p className="text-white">{rec!.clockIn}</p></div>
+                                    <div><p className="text-[9px] text-zinc-500 font-bold uppercase">Clock Out</p><p className="text-white">{rec!.clockOut || "—"}</p></div>
+                                    <div><p className="text-[9px] text-zinc-500 font-bold uppercase">Location</p><p className="text-white">{rec!.location}</p></div>
                                 </div>
-                                {flags.length > 0 ? (
+                                {recFlags.length > 0 ? (
                                     <div className="space-y-1.5">
                                         <p className="text-[9px] text-zinc-500 font-bold uppercase">Flags</p>
                                         <div className="flex gap-2 flex-wrap">
-                                            {flags.map(([k]) => (
+                                            {recFlags.map((k) => (
                                                 <span key={k} className={cn("text-[9px] font-bold px-2.5 py-1 rounded-full border", FLAG_CONFIG[k]?.color)}>
                                                     {FLAG_CONFIG[k]?.emoji} {FLAG_CONFIG[k]?.label}
                                                 </span>

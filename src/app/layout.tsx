@@ -33,12 +33,17 @@
 
 
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import SidebarWrapper from "@/components/SidebarWrapper";
 
 const inter = Inter({ subsets: ["latin"] });
+const outfit = Outfit({ 
+    weight: ["300", "400", "500", "600", "700", "800", "900"],
+    subsets: ["latin"],
+    variable: '--font-outfit',
+});
 
 export const metadata: Metadata = {
     title: "GoG OMS",
@@ -70,7 +75,7 @@ export default function RootLayout({
                     }
                 `}</style>
             </head>
-            <body className={`${inter.className} min-h-screen bg-background text-foreground flex overflow-hidden`}>
+            <body className={`${inter.className} ${outfit.variable} min-h-screen bg-background text-foreground flex overflow-hidden`}>
                 <AuthProvider>
                     <SidebarWrapper>
                         {children}
