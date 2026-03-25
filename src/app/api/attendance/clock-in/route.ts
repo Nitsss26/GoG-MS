@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import { Employee, Attendance, WorkSchedule, Location } from '@/models/Schemas';
 import { getDistance } from '@/lib/utils';
 import { getExpectedTimingInternal } from '@/lib/attendance-utils';
+import { COLLEGES } from '@/lib/colleges';
 
 export async function POST(req: Request) {
     try {
@@ -65,8 +66,17 @@ export async function POST(req: Request) {
         const isWFH = expectedLocationId.toLowerCase() === "wfh";
         let campus = null;
         if (!isWFH) {
+            if (typeof lat !== 'number' || typeof lng !== 'number') {
+                return NextResponse.json({ error: "Location coordinates missing from request." }, { status: 400 });
+            }
+
             if (employee.role === "HOI" || employee.role === "OM") {
-                const allCampuses = await Location.find({});
+                const dbCampuses = await Location.find({});
+                const map = new Map();
+                for (const c of COLLEGES) map.set(c.id, c);
+                for (const c of dbCampuses) map.set(c.id, c);
+                const allCampuses = Array.from(map.values());
+
                 let inAnyCampus = false;
                 let closestCampus = null;
                 for(const c of allCampuses) {
@@ -82,7 +92,9 @@ export async function POST(req: Request) {
                 }
                 campus = closestCampus;
             } else {
-                campus = await Location.findOne({ id: expectedLocationId });
+                let dbCampus = await Location.findOne({ id: expectedLocationId });
+                campus = dbCampus || COLLEGES.find(c => c.id === expectedLocationId);
+
                 if (!campus) return NextResponse.json({ error: `Assigned campus location (${expectedLocationId}) not found` }, { status: 404 });
 
                 const distance = getDistance(lat, lng, campus.lat, campus.lng);

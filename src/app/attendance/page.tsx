@@ -23,6 +23,8 @@ export default function AttendancePage() {
     const [geoStatus, setGeoStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
     const [distanceKm, setDistanceKm] = useState<number | null>(null);
     const [withinRadius, setWithinRadius] = useState(false);
+    const [userLat, setUserLat] = useState<number | null>(null);
+    const [userLng, setUserLng] = useState<number | null>(null);
     const [dressCodeUrl, setDressCodeUrl] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
@@ -87,6 +89,8 @@ export default function AttendancePage() {
         if (emp.role !== "HOI" && emp.role !== "OM" && !college) { setGeoStatus("denied"); setClockInError("No college mapped for today's location."); return; }
         navigator.geolocation.getCurrentPosition(
             (pos) => {
+                setUserLat(pos.coords.latitude);
+                setUserLng(pos.coords.longitude);
                 let targetCollege = college;
                 let dist = 999999;
                 
@@ -151,7 +155,7 @@ export default function AttendancePage() {
         if (!withinRadius) { setClockInError(`Out of range (${distanceKm} km).`); return; }
         if (!dressCodeUrl) { setClockInError("Upload dress code photo first."); return; }
         const timeNow = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
-        clockIn(activeLocation || displayLocation, timeNow, dressCodeUrl);
+        clockIn(activeLocation || displayLocation, timeNow, dressCodeUrl, userLat ?? undefined, userLng ?? undefined);
     };
 
     const handleMarkAsPresent = () => {

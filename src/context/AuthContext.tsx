@@ -1256,7 +1256,7 @@ interface AuthContextType {
     editNotice: (id: string, data: { title?: string; content?: string; category?: Notice["category"] }) => Promise<void>;
     markAnnouncementRead: (noticeId: string) => void;
     updateProfile: (data: Partial<Employee>) => void; // Added updateProfile
-    clockIn: (location: string, time: string, dressCodeImageUrl?: string) => Promise<void>;
+    clockIn: (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number) => Promise<void>;
     clockOut: (time: string) => Promise<void>;
     raiseTicket: (targetCategory: string, subject: string, content: string, routeTo?: string, cc?: string[], proofUrls?: string[], targetEmployeeId?: string, targetDate?: string) => Promise<void>;
     resolveTicket: (id: string, notes: string) => Promise<void>;
@@ -1890,7 +1890,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // ─── ATTENDANCE ───
     // ─── ATTENDANCE ───
-    const clockIn = async (location: string, time: string, dressCodeImageUrl?: string) => {
+    const clockIn = async (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number) => {
         if (!user) return;
 
         // Founders skip all restrictions
@@ -1899,7 +1899,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const res = await fetch("/api/attendance/clock-in", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ employeeId: user.id, location, time, dressCodeImageUrl, role: user.role, skipChecks: true })
+                    body: JSON.stringify({ employeeId: user.id, location, time, dressCodeImageUrl, role: user.role, skipChecks: true, lat, lng })
                 });
                 const data = await res.json();
                 if (data.record) setAttendanceRecords(prev => [...prev, data.record]);
@@ -1937,7 +1937,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const res = await fetch("/api/attendance/clock-in", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ employeeId: user.id, location, time, dressCodeImageUrl, role: user.role })
+                body: JSON.stringify({ employeeId: user.id, location, time, dressCodeImageUrl, role: user.role, lat, lng })
             });
             const data = await res.json();
             if (data.record) {
