@@ -192,7 +192,7 @@ export default function FounderConsolePage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {employees.map((emp) => (
+                            {employees.filter(emp => !["CEO", "CTO", "COO"].includes(emp.designation || "") && emp.role !== "FOUNDER").map((emp) => (
                                 <tr key={emp.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/20 transition-colors">
                                     <td className="py-2.5 pr-4 text-xs font-mono text-primary font-bold">{emp.id}</td>
                                     <td className="py-2.5 pr-4 text-xs text-white font-medium">{emp.name}</td>

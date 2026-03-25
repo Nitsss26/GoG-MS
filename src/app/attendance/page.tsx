@@ -84,13 +84,13 @@ export default function AttendancePage() {
         setGeoStatus("requesting");
         setClockInError(null);
         if (!navigator.geolocation) { setGeoStatus("denied"); setClockInError("Geolocation not supported."); return; }
-        if (emp.role !== "HOI" && !college) { setGeoStatus("denied"); setClockInError("No college mapped for today's location."); return; }
+        if (emp.role !== "HOI" && emp.role !== "OM" && !college) { setGeoStatus("denied"); setClockInError("No college mapped for today's location."); return; }
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 let targetCollege = college;
                 let dist = 999999;
                 
-                if (emp.role === "HOI" && colleges.length > 0) {
+                if ((emp.role === "HOI" || emp.role === "OM") && colleges.length > 0) {
                     let closestCollege = colleges[0];
                     let minDistance = 999999;
 
@@ -188,7 +188,9 @@ export default function AttendancePage() {
     const showsTeamRoster = isHRorFounder || reportees.length > 0;
 
     // Choose which employees to display in the roster
-    const employeesToShow = isHRorFounder ? employees : reportees;
+    const employeesToShow = isHRorFounder 
+        ? employees.filter(e => !["CEO", "CTO", "COO"].includes(e.designation || "") && e.role !== "FOUNDER" && e.name !== "Sujal Verma") 
+        : reportees.filter(e => e.name !== "Sujal Verma");
 
     // Compute attendance for the chosen list
     const computeTeamAttendance = () => {

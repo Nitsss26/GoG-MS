@@ -54,16 +54,8 @@ export async function POST(req: Request) {
         const [schedHours, schedMins] = expectedIn.split(':').map(Number);
         const schedTime = schedHours * 60 + schedMins;
 
-        // 4. Window Timing Check (30 min window before scheduled time)
-        if (currentTime > schedTime) {
-            // Auto-mark as On Leave if not already clocked in and time passed
-            await Attendance.findOneAndUpdate(
-                { employeeId, date: today },
-                { status: "On Leave", flags: { late: true } },
-                { upsert: true }
-            );
-            return NextResponse.json({ error: "Clock-in time has passed. You are marked as On Leave. Please request 'Mark as Present'." }, { status: 403 });
-        }
+        // 4. Window Timing Check
+        const isLate = currentTime > schedTime;
 
         if (currentTime < schedTime - 30) {
             return NextResponse.json({ error: `Too early to clock-in. Window opens at ${Math.floor((schedTime - 30) / 60).toString().padStart(2, '0')}:${((schedTime - 30) % 60).toString().padStart(2, '0')}` }, { status: 403 });
@@ -73,27 +65,46 @@ export async function POST(req: Request) {
         const isWFH = expectedLocationId.toLowerCase() === "wfh";
         let campus = null;
         if (!isWFH) {
-            campus = await Location.findOne({ id: expectedLocationId });
-            if (!campus) return NextResponse.json({ error: `Assigned campus location (${expectedLocationId}) not found` }, { status: 404 });
+            if (employee.role === "HOI" || employee.role === "OM") {
+                const allCampuses = await Location.find({});
+                let inAnyCampus = false;
+                let closestCampus = null;
+                for(const c of allCampuses) {
+                    const d = getDistance(lat, lng, c.lat, c.lng);
+                    if (d <= (c.radiusKm || 2)) {
+                        inAnyCampus = true;
+                        closestCampus = c;
+                        break;
+                    }
+                }
+                if (!inAnyCampus) {
+                    return NextResponse.json({ error: "Not in geofence of any college." }, { status: 403 });
+                }
+                campus = closestCampus;
+            } else {
+                campus = await Location.findOne({ id: expectedLocationId });
+                if (!campus) return NextResponse.json({ error: `Assigned campus location (${expectedLocationId}) not found` }, { status: 404 });
 
-            const distance = getDistance(lat, lng, campus.lat, campus.lng);
-            if (distance > (campus.radiusKm || 2)) {
-                return NextResponse.json({ error: `Not in geofence of ${campus.name}. Distance: ${distance.toFixed(2)}km` }, { status: 403 });
+                const distance = getDistance(lat, lng, campus.lat, campus.lng);
+                if (distance > (campus.radiusKm || 2)) {
+                    return NextResponse.json({ error: `Not in geofence of ${campus.name}. Distance: ${distance.toFixed(2)}km` }, { status: 403 });
+                }
             }
         }
 
         // 6. Clock-in
+        const updateData: any = {
+            clockIn: istTime.getHours().toString().padStart(2, '0') + ":" + istTime.getMinutes().toString().padStart(2, '0') + ":" + istTime.getSeconds().toString().padStart(2, '0'),
+            location: isWFH ? "WFH" : campus?.id,
+            status: "Present",
+            dressCodeImageUrl: dressCodeImageUrl,
+            dressCodeStatus: "Pending",
+            ...(isLate ? { "flags.late": true } : {})
+        };
+
         const attendance = await Attendance.findOneAndUpdate(
             { employeeId, date: today },
-            {
-                $set: {
-                    clockIn: istTime.getHours().toString().padStart(2, '0') + ":" + istTime.getMinutes().toString().padStart(2, '0') + ":" + istTime.getSeconds().toString().padStart(2, '0'),
-                    location: isWFH ? "WFH" : campus?.id,
-                    status: "Present",
-                    dressCodeImageUrl: dressCodeImageUrl,
-                    dressCodeStatus: "Pending"
-                }
-            },
+            { $set: updateData },
             { upsert: true, new: true }
         );
 

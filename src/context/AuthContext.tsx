@@ -1490,8 +1490,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         .filter((e: any) => {
                             // Strictly remove erroneous "HOI" records as requested
                             if (e.id === "HOI" || e.name === "HOI" || e.designation === "HOI") return false;
-                            // Remove any HOI that isn't in our core list (HOI001, HOI002, HOI003)
-                            if (e.role === "HOI" && !["HOI001", "HOI002", "HOI003"].includes(e.id)) return false;
                             return true;
                         });
 
@@ -1922,10 +1920,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const nowMins = timeToMins(time);
         const startMins = timeToMins(startTime);
 
-        if (nowMins > startMins) {
-            alert(`Clock-in Disabled: You are late (Start: ${startTime}). You are now marked as 'On Leave' for today. Please use 'Mark as Present' credits to appeal.`);
-            return;
-        }
+        // The backend will handle marking flags for late clock-ins
 
         if (nowMins < startMins - 30) {
             alert(`Too Early: Clock-in window opens 30 mins before your scheduled time (${startTime}). Please try after ${new Date(new Date().setHours(Math.floor((startMins - 30) / 60), (startMins - 30) % 60)).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}.`);
