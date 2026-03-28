@@ -21,7 +21,7 @@ export async function POST(req: Request) {
             "Amit Singh Patel": { in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], location: "bansal-kokta" },
             "Mayank Choudhary": { in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], location: "bansal-kokta" },
             "Priyanka Kumawat": { in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], location: "bansal-kokta" },
-            "Sujal Verma": { in: "10:00", out: "16:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], location: "bansal-mandideep" },
+
             "Prerna Saluja": { in: "09:35", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], location: "bansal-kokta" },
             "Abhishek Tiwari": { 
                 special: true,

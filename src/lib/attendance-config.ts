@@ -38,7 +38,7 @@ export const CUSTOM_SCHEDULE_RULES = [
     { nameRegex: /Amit Singh Patel/i, location: "bansal-kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
     { nameRegex: /Mayank Choudhary/i, location: "bansal-kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
     { nameRegex: /Priyanka Kumawat/i, location: "bansal-kokta", in: "09:30", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
-    { nameRegex: /Sujal Verma/i, location: "bansal-mandideep", in: "10:00", out: "16:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
+
     { nameRegex: /Prerna Saluja/i, location: "bansal-kokta", in: "09:35", out: "16:20", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] },
     { nameRegex: /Rahul/i, location: "sage-indore", in: "09:30", out: "16:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri"] },
     { nameRegex: /Siddhant/i, location: "sage-indore", in: "09:30", out: "16:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri"] },

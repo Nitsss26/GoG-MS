@@ -5,7 +5,8 @@ import {
     LayoutDashboard, Users, Calendar, LogOut, ShieldCheck, User, Clock,
     Briefcase, Award, Network, Megaphone, Ticket, Receipt,
     FileText, CalendarCheck, AlertTriangle, UserCog, Star, MapPin, ClipboardList,
-    Crown, Bell, Activity, Flag, ShieldAlert, Trophy, TrendingUp, Shirt
+    Crown, Bell, Activity, Flag, ShieldAlert, Trophy, TrendingUp, Shirt,
+    BookOpen, Timer, Mic, GraduationCap
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -63,10 +64,19 @@ const founderMenu = [
     { label: "Workforce", icon: Users, path: "/employees" },
 ];
 
+const facultyMenu = [
+    { label: "Faculty Dashboard", icon: GraduationCap, path: "/faculty" },
+    { label: "Sprint Plan", icon: CalendarCheck, path: "/faculty/sprint-plan" },
+    { label: "My Lectures", icon: Timer, path: "/faculty/lectures" },
+    { label: "Lecture Report", icon: Mic, path: "/faculty/lecture-report" },
+];
+
 // Roles that can see Manager Suite
 const MANAGER_ROLES: Role[] = ["FOUNDER", "AD", "HOI"];
 // Roles that can see HR Administration
 const HR_ROLES: Role[] = ["FOUNDER", "HR"];
+// Roles that can see Faculty Suite
+const FACULTY_ROLES: Role[] = ["FACULTY", "PROFESSOR"];
 
 function NavSection({ title, items, pathname }: { title: string; items: typeof coreMenu; pathname: string }) {
     return (
@@ -152,6 +162,11 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
                 {/* HR Administration: Visible to FOUNDER, HR */}
                 {role && HR_ROLES.includes(role) && (
                     <NavSection title="HR Administration" items={hrMenu} pathname={pathname} />
+                )}
+
+                {/* Faculty Suite: Visible to FACULTY, PROFESSOR */}
+                {role && FACULTY_ROLES.includes(role) && (
+                    <NavSection title="Faculty Suite" items={facultyMenu} pathname={pathname} />
                 )}
 
                 {/* Founder Console: Visible to FOUNDER only */}

@@ -193,8 +193,8 @@ export default function AttendancePage() {
 
     // Choose which employees to display in the roster
     const employeesToShow = isHRorFounder 
-        ? employees.filter(e => !["CEO", "CTO", "COO"].includes(e.designation || "") && e.role !== "FOUNDER" && e.name !== "Sujal Verma") 
-        : reportees.filter(e => e.name !== "Sujal Verma");
+        ? employees.filter(e => !["CEO", "CTO", "COO"].includes(e.designation || "") && e.role !== "FOUNDER") 
+        : reportees;
 
     // Compute attendance for the chosen list
     const computeTeamAttendance = () => {

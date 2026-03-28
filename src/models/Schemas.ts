@@ -207,6 +207,73 @@ const PIPRecordSchema = new Schema({ id: { type: String, unique: true }, employe
 const AdditionalResponsibilitySchema = new Schema({ id: { type: String, unique: true }, employeeId: String, employeeName: String, addedBy: String, description: String, date: String, status: String, points: Number });
 
 
+// Sprint Plan Schema — Weekly teaching schedule uploaded by faculty
+const SprintPlanSchema = new Schema({
+    facultyId: { type: String, required: true },
+    facultyName: { type: String, required: true },
+    college: { type: String, required: true },
+    weekStartDate: { type: String, required: true },
+    weekEndDate: { type: String, required: true },
+    stream: { type: String },
+    year: { type: String },
+    isLocked: { type: Boolean, default: false },
+    lockedAt: { type: String },
+    entries: [{
+        day: { type: String, required: true },
+        date: { type: String, required: true },
+        timeStart: { type: String, required: true },
+        timeStop: { type: String, required: true },
+        stream: { type: String },
+        year: { type: String },
+        semester: { type: String },
+        subjectCode: { type: String },
+        subjectName: { type: String, required: true },
+        topics: { type: String, required: true }
+    }],
+    changeRequests: [{
+        requestedAt: { type: String },
+        reason: { type: String },
+        status: { type: String, default: "Pending", enum: ["Pending", "Approved", "Rejected"] },
+        approvedBy: { type: String },
+        approvedAt: { type: String },
+        changes: { type: String }
+    }]
+}, { timestamps: true });
+
+// Lecture Report Schema — Daily lecture record per session
+const LectureReportSchema = new Schema({
+    facultyId: { type: String, required: true },
+    facultyName: { type: String, required: true },
+    date: { type: String, required: true },
+    college: { type: String, required: true },
+    lectureNumber: { type: Number, required: true },
+    sprintPlanId: { type: String },
+    courseName: { type: String, required: true },
+    topicsCovered: { type: String, required: true },
+    scheduledDuration: { type: Number },
+    stream: { type: String },
+    year: { type: String },
+    semester: { type: String },
+    classStartTime: { type: String },
+    classEndTime: { type: String },
+    actualDurationMinutes: { type: Number },
+    numberOfAttendees: { type: Number },
+    totalStudents: { type: Number },
+    classPhotoUrl: { type: String },
+    classPhotoLat: { type: Number },
+    classPhotoLng: { type: Number },
+    issuesFaced: { type: String },
+    reasonForLessAttendance: { type: String },
+    recordingUrl: { type: String },
+    recordingDurationSeconds: { type: Number },
+    transcription: { type: String },
+    summary: { type: String },
+    aiAnalysisAt: { type: String },
+    keywords: [{ type: String }],
+    status: { type: String, default: "Scheduled", enum: ["Scheduled", "In Progress", "Completed"] },
+    warnings: [{ type: String }]
+}, { timestamps: true });
+
 // Location Schema for Campus / University Geo-Coordinates
 const LocationSchema = new Schema({
     id: { type: String, required: true, unique: true },
@@ -233,3 +300,5 @@ export const ReimbursementClaim = mongoose.models.ReimbursementClaim || mongoose
 export const PIPRecord = mongoose.models.PIPRecord || mongoose.model('PIPRecord', PIPRecordSchema);
 export const AdditionalResponsibility = mongoose.models.AdditionalResponsibility || mongoose.model('AdditionalResponsibility', AdditionalResponsibilitySchema);
 export const Location = mongoose.models.Location || mongoose.model('Location', LocationSchema);
+export const SprintPlan = mongoose.models.SprintPlan || mongoose.model('SprintPlan', SprintPlanSchema);
+export const LectureReport = mongoose.models.LectureReport || mongoose.model('LectureReport', LectureReportSchema);
