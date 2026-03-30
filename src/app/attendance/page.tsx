@@ -1,11 +1,10 @@
 "use client";
-
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useAuth, Employee } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { FLAG_CONFIG } from "@/lib/colleges";
 import { cn } from "@/lib/utils";
-import { Clock, MapPin, CheckCircle2, LogIn, LogOut, History, AlertTriangle, Camera, Upload, X, Navigation, Loader2, Image as ImageIcon, Home, FileText, Users } from "lucide-react";
+import { Clock, MapPin, CheckCircle2, LogIn, LogOut, History, AlertTriangle, Camera, Upload, X, Navigation, Loader2, Image as ImageIcon, Home, FileText, Users, Calendar } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -17,7 +16,7 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 export default function AttendancePage() {
-    const { user, employees, clockIn, clockOut, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests, colleges, resolveDressCodeCheck, getExpectedTiming } = useAuth();
+    const { user, employees, clockIn, clockOut, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests, colleges, resolveDressCodeCheck, getExpectedTiming, holidays } = useAuth();
     const [currentTime, setCurrentTime] = useState<string | null>(null);
     const [currentDate, setCurrentDate] = useState<string | null>(null);
     const [geoStatus, setGeoStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
@@ -33,6 +32,11 @@ export default function AttendancePage() {
 
     // Mark as present states
     const [showMapForm, setShowMapForm] = useState(false);
+    const [isCameraOpen, setIsCameraOpen] = useState(false);
+    const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+    const [capturedDataUrl, setCapturedDataUrl] = useState<string | null>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
     const [mapReason, setMapReason] = useState("");
     const [mapProofUrls, setMapProofUrls] = useState<string[]>([]);
     const [mapUploading, setMapUploading] = useState(false);
@@ -49,12 +53,60 @@ export default function AttendancePage() {
         return () => clearInterval(timer);
     }, []);
 
-    // Move all hooks ABOVE the early return!
     const [selectedGlobalDate, setSelectedGlobalDate] = useState<string>("");
 
     useEffect(() => {
         if (currentDate && !selectedGlobalDate) setSelectedGlobalDate(currentDate);
-    }, [currentDate]);
+    }, [currentDate, selectedGlobalDate]);
+
+    const isHRorFounder = user?.role === "HR" || user?.role === "FOUNDER";
+    const reportees = useMemo(() => {
+        if (!user) return [];
+        return employees.filter(e => Array.isArray(e.reportsTo) ? e.reportsTo.includes(user.id) : e.reportsTo === user.id);
+    }, [employees, user]);
+
+    const showsTeamRoster = isHRorFounder || reportees.length > 0;
+
+    const employeesToShow = useMemo(() => {
+        if (!user) return [];
+        let list = isHRorFounder 
+            ? employees.filter((e: Employee) => !["CEO", "CTO", "COO"].includes(e.designation || "") && e.role !== "FOUNDER") 
+            : reportees;
+        
+        // Fix: Always include self in the list
+        if (!list.find((e: Employee) => e.id === user.id)) {
+            const self = employees.find(e => e.id === user.id);
+            if (self) list = [self, ...list];
+        }
+        return list;
+    }, [isHRorFounder, employees, reportees, user]);
+
+    // Compute attendance for the chosen list
+    const teamAttendanceList = useMemo(() => {
+        if (!showsTeamRoster || !user || !selectedGlobalDate) return [];
+        return employeesToShow.map((employee: Employee) => {
+            const record = attendanceRecords.find((r: any) => r.employeeId === employee.id && r.date === selectedGlobalDate);
+            // Fix: Fetch daily location from work schedules instead of static employee field
+            const scheduledLocation = getExpectedTiming(employee.id, selectedGlobalDate).location;
+
+            // Fix: Check if it's a holiday for this employee's SCHEDULED location
+            const empHoliday = holidays.find(h => 
+                h.date === selectedGlobalDate && 
+                h.status === "Approved" && 
+                (h.forAll || h.collegeIds?.includes(scheduledLocation || ""))
+            );
+
+            let status = record ? (record.clockOut ? "Clocked Out" : "Working") : "Absent";
+            if (!record && empHoliday) {
+                status = "Holiday";
+            }
+
+            return { employee, record, status, scheduledLocation };
+        }).sort((a: any, b: any) => {
+            const w: Record<string, number> = { "Working": 2, "Clocked Out": 1, "Holiday": 0.5, "Absent": 0 };
+            return w[b.status] - w[a.status];
+        });
+    }, [employeesToShow, attendanceRecords, selectedGlobalDate, showsTeamRoster, user, holidays]);
 
     if (!user || !currentTime || !currentDate) return null;
     const emp = user as Employee;
@@ -125,11 +177,91 @@ export default function AttendancePage() {
         );
     };
 
+    const startCamera = async () => {
+        setClockInError(null);
+        setUploadError(null);
+        setCapturedDataUrl(null);
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } 
+            });
+            setCameraStream(stream);
+            setIsCameraOpen(true);
+            // Delay source assignment to ensure ref availability in modal
+            setTimeout(() => { if (videoRef.current) videoRef.current.srcObject = stream; }, 100);
+        } catch (err: any) {
+            setClockInError("Camera access denied. Please enable camera permissions.");
+            console.error(err);
+        }
+    };
+
+    const stopCamera = () => {
+        if (cameraStream) {
+            cameraStream.getTracks().forEach(track => track.stop());
+            setCameraStream(null);
+        }
+        setIsCameraOpen(false);
+        setCapturedDataUrl(null);
+    };
+
+    const capturePhoto = () => {
+        if (!videoRef.current || !canvasRef.current || !cameraStream) return;
+        
+        const video = videoRef.current;
+        // Fix for "Empty file" error: Ensure video is ready and has dimensions
+        if (video.readyState < 2 || video.videoWidth === 0) {
+            setUploadError("Camera not ready. Please wait a moment.");
+            return;
+        }
+
+        const canvas = canvasRef.current;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+            // Apply mirroring to canvas to match the preview
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+            setCapturedDataUrl(dataUrl);
+            // Do NOT stop camera yet, wait for user to click "Use Photo"
+        }
+    };
+
+    const handleUsePhoto = async () => {
+        if (!capturedDataUrl) return;
+        
+        setUploading(true);
+        setUploadError(null);
+        try {
+            const blob = await (await fetch(capturedDataUrl)).blob();
+            const file = new File([blob], `attendance_${user!.id}_${Date.now()}.jpg`, { type: "image/jpeg" });
+            const result = await uploadToCloudinary(file);
+            setDressCodeUrl(result.secure_url);
+            stopCamera(); // Stop only after successful upload/approval
+        } catch (err: any) {
+            setUploadError("Upload failed: " + err.message);
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const retakePhoto = () => {
+        setCapturedDataUrl(null);
+        // Ensure video stream is still active or restart if needed
+        if (videoRef.current && cameraStream) {
+            videoRef.current.srcObject = cameraStream;
+        }
+    };
+
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: "dressCode" | "mapProof") => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         if (type === "dressCode") {
+            // This is now handled by capturePhoto, but kept for logic safety
             setUploading(true);
             setUploadError(null);
             try { const result = await uploadToCloudinary(file); setDressCodeUrl(result.secure_url); }
@@ -143,8 +275,16 @@ export default function AttendancePage() {
         }
     };
 
+    const scheduledLocationToday = getExpectedTiming(emp.id, currentDate).location;
+    const isHolidayToday = holidays.find((h: any) => 
+        h.date === currentDate && 
+        h.status === "Approved" && 
+        (h.forAll || h.collegeIds?.includes(scheduledLocationToday || ""))
+    );
+
     const handleCheckIn = () => {
         setClockInError(null);
+        if (isHolidayToday) { setClockInError(`Today is a holiday: ${isHolidayToday.name}. Attendance is disabled.`); return; }
         if (isDefaulter) { setClockInError("Cannot clock in as a defaulter. Please contact HR."); return; }
         if (isWFH) {
             const timeNow = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -187,33 +327,6 @@ export default function AttendancePage() {
 
     const myLogs = attendanceRecords.filter(r => r.employeeId === user.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    const isHRorFounder = emp.role === "HR" || emp.role === "FOUNDER";
-    const reportees = employees.filter(e => Array.isArray(e.reportsTo) ? e.reportsTo.includes(user.id) : e.reportsTo === user.id);
-    const showsTeamRoster = isHRorFounder || reportees.length > 0;
-
-    // Choose which employees to display in the roster
-    const employeesToShow = isHRorFounder 
-        ? employees.filter(e => !["CEO", "CTO", "COO"].includes(e.designation || "") && e.role !== "FOUNDER") 
-        : reportees;
-
-    // Compute attendance for the chosen list
-    const computeTeamAttendance = () => {
-        return employeesToShow.map(employee => {
-            const record = attendanceRecords.find(r => r.employeeId === employee.id && r.date === selectedGlobalDate);
-            const status = record ? (record.clockOut ? "Clocked Out" : "Working") : "Absent";
-            return {
-                employee,
-                record,
-                status
-            };
-        }).sort((a, b) => {
-            // Sort by Working > Clocked Out > Absent
-            const w: Record<string, number> = { "Working": 2, "Clocked Out": 1, "Absent": 0 };
-            return w[b.status] - w[a.status];
-        });
-    };
-
-    const teamAttendanceList = showsTeamRoster ? computeTeamAttendance() : [];
 
     return (
         <div className="p-4 sm:p-6 space-y-6 max-w-5xl mx-auto w-full">
@@ -326,36 +439,163 @@ export default function AttendancePage() {
                                     )}
                                 </div>
 
-                                {/* Step 2: Dress Code Photo */}
+                                {/* Step 2: Dress Code Photo (Live Camera Trigger) */}
                                 {!showMapForm && (
-                                    <div className="space-y-2">
+                                    <div className="space-y-3">
                                         <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Step 2: Dress Code Photo</p>
-                                        <p className="text-[9px] text-zinc-500">Upload a clear photo showing I-Card, Badge, and Blazer.</p>
-                                        {!dressCodeUrl ? (
-                                            <div>
-                                                <div className="border-2 border-dashed border-zinc-700 rounded-xl p-6 text-center hover:border-purple-500/50 transition-colors cursor-pointer"
-                                                    onClick={() => fileInputRef.current?.click()}>
-                                                    {uploading ? (
-                                                        <div className="flex flex-col items-center gap-2"><Loader2 size={24} className="text-purple-400 animate-spin" /><p className="text-xs text-purple-400 font-bold">Uploading to cloud...</p></div>
-                                                    ) : (
-                                                        <><Camera size={24} className="mx-auto text-zinc-600 mb-2" /><p className="text-xs text-zinc-400 font-bold">Click to upload dress code photo</p><p className="text-[9px] text-zinc-600 mt-1">JPG, PNG, WEBP · Max 10MB</p></>
-                                                    )}
+                                        <p className="text-[9px] text-zinc-500">A live selfie showing I-Card, Badge, and Blazer is mandatory.</p>
+                                        
+                                        {!dressCodeUrl && (
+                                            <button 
+                                                onClick={startCamera}
+                                                className="w-full border-2 border-dashed border-primary/30 rounded-2xl p-8 text-center hover:border-primary transition-all bg-primary/5 group active:scale-95"
+                                            >
+                                                {uploading ? (
+                                                    <div className="flex flex-col items-center gap-2">
+                                                        <Loader2 size={28} className="text-primary animate-spin" />
+                                                        <p className="text-xs text-primary font-bold">Processing Verification...</p>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+                                                            <Camera size={26} className="text-primary" />
+                                                        </div>
+                                                        <p className="text-xs text-white font-bold">Launch Camera Verification</p>
+                                                        <p className="text-[9px] text-zinc-500 mt-1 uppercase tracking-tighter">Live Session Mandatory</p>
+                                                    </>
+                                                )}
+                                            </button>
+                                        )}
+
+                                        {dressCodeUrl && (
+                                            <div className="flex items-center gap-4 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
+                                                <div className="relative">
+                                                    <img src={dressCodeUrl} alt="Dress code" className="w-16 h-16 rounded-xl object-cover border-2 border-emerald-500/30" />
+                                                    <div className="absolute -top-2 -right-2 bg-emerald-500 text-white rounded-full p-0.5 shadow-lg">
+                                                        <CheckCircle2 size={12} />
+                                                    </div>
                                                 </div>
-                                                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, "dressCode")} />
-                                                {uploadError && <p className="text-[10px] text-red-400 mt-1">{uploadError}</p>}
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center gap-3 p-3 bg-green-500/5 border border-green-500/20 rounded-xl">
-                                                <img src={dressCodeUrl} alt="Dress code" className="w-12 h-12 rounded-lg object-cover border border-zinc-700" />
                                                 <div className="flex-1">
-                                                    <p className="text-xs font-bold text-green-400">✓ Photo Uploaded</p>
-                                                    <a href={dressCodeUrl} target="_blank" rel="noopener" className="text-[9px] text-primary hover:underline">View full image ↗</a>
+                                                    <p className="text-xs font-bold text-emerald-400">✓ Photo Verified</p>
+                                                    <p className="text-[10px] text-zinc-500 mt-0.5">Live capture successfully processed via Cloudinary.</p>
+                                                    <a href={dressCodeUrl} target="_blank" rel="noopener" className="text-[10px] text-primary hover:underline font-bold mt-1 inline-block">Review Proof ↗</a>
                                                 </div>
-                                                <button onClick={() => setDressCodeUrl(null)} className="text-zinc-500 hover:text-red-400"><X size={14} /></button>
+                                                <button 
+                                                    onClick={() => { setDressCodeUrl(null); startCamera(); }} 
+                                                    className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                >
+                                                    <X size={20} />
+                                                </button>
                                             </div>
                                         )}
+                                        {uploadError && <p className="text-[10px] text-red-400 mt-1 flex items-center gap-1 bg-red-500/5 px-2 py-1 rounded border border-red-500/20"><AlertTriangle size={12}/> {uploadError}</p>}
                                     </div>
                                 )}
+
+                                {/* Holiday Notice Overlay for Attendance Section */}
+                                {isHolidayToday && !hasCheckedIn && (
+                                    <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex flex-col items-center text-center gap-2">
+                                        <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
+                                            <Calendar size={20} className="text-blue-400" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-xs font-bold text-white uppercase tracking-widest">{isHolidayToday.name}</h4>
+                                            <p className="text-[10px] text-zinc-400 mt-1">Attendance is disabled today for your location.</p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* --- PROFESSIONAL CAMERA MODAL --- */}
+                                <AnimatePresence>
+                                    {isCameraOpen && (
+                                        <motion.div 
+                                            initial={{ opacity: 0 }} 
+                                            animate={{ opacity: 1 }} 
+                                            exit={{ opacity: 0 }} 
+                                            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 sm:p-8"
+                                        >
+                                            <div className="relative w-full max-w-2xl bg-zinc-900 rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden flex flex-col">
+                                                {/* Header */}
+                                                <div className="px-6 py-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
+                                                    <div>
+                                                        <h3 className="text-sm font-black text-white flex items-center gap-2">
+                                                            <Camera size={18} className="text-primary" /> DRESS CODE VERIFICATION
+                                                        </h3>
+                                                        <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-0.5">Secure Live Session</p>
+                                                    </div>
+                                                    <button 
+                                                        onClick={stopCamera} 
+                                                        className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-700 transition-all"
+                                                    >
+                                                        <X size={20} />
+                                                    </button>
+                                                </div>
+
+                                                {/* Camera Window */}
+                                                <div className="relative flex-1 bg-black aspect-video flex items-center justify-center group">
+                                                    {!capturedDataUrl ? (
+                                                        <>
+                                                            <video 
+                                                                ref={videoRef} 
+                                                                autoPlay 
+                                                                playsInline 
+                                                                muted 
+                                                                className="w-full h-full object-cover mirror"
+                                                            />
+                                                            <div className="absolute top-4 right-4 flex items-center gap-2 bg-red-500/90 text-white text-[9px] font-black px-2 py-1 rounded-full animate-pulse">
+                                                                <div className="w-1.5 h-1.5 rounded-full bg-white" /> LIVE CAMERA
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <img src={capturedDataUrl} alt="Preview" className="w-full h-full object-cover" />
+                                                            <div className="absolute top-4 right-4 bg-blue-500 text-white text-[9px] font-black px-2 py-1 rounded-full">
+                                                                PREVIEW MODE
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                    <canvas ref={canvasRef} className="hidden" />
+                                                    
+                                                    {uploading && (
+                                                        <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-4">
+                                                            <Loader2 size={40} className="text-primary animate-spin" />
+                                                            <p className="text-xs font-bold text-white tracking-widest">ENCRYPTING & UPLOADING...</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Controls */}
+                                                <div className="p-8 bg-zinc-900 flex justify-center items-center">
+                                                    {!capturedDataUrl ? (
+                                                        <button 
+                                                            onClick={capturePhoto}
+                                                            className="group relative w-20 h-20 rounded-full border-4 border-zinc-700 p-1 hover:border-primary transition-all active:scale-95"
+                                                        >
+                                                            <div className="w-full h-full rounded-full bg-white shadow-xl flex items-center justify-center transition-all group-hover:scale-90" />
+                                                        </button>
+                                                    ) : (
+                                                        <div className="flex flex-col sm:flex-row gap-4 w-full">
+                                                            <button 
+                                                                onClick={retakePhoto} 
+                                                                disabled={uploading}
+                                                                className="flex-1 py-4 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-black rounded-2xl border border-zinc-700 transition-all flex items-center justify-center gap-2 uppercase tracking-widest disabled:opacity-50"
+                                                            >
+                                                                <Camera size={14} /> Retake
+                                                            </button>
+                                                            <button 
+                                                                onClick={handleUsePhoto} 
+                                                                disabled={uploading}
+                                                                className="flex-[2] py-4 bg-primary hover:bg-primary-dark text-black text-xs font-black rounded-2xl shadow-xl shadow-primary/20 transition-all flex items-center justify-center gap-2 uppercase tracking-widest disabled:opacity-50"
+                                                            >
+                                                                {uploading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Confirm & Upload
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </>
                         )}
 
@@ -403,7 +643,7 @@ export default function AttendancePage() {
                             </div>
                         )}
 
-                        {!showMapForm && !isDefaulter && (
+                        {!showMapForm && !isDefaulter && !isHolidayToday && (
                             <button onClick={handleCheckIn} disabled={isWFH ? false : (!withinRadius || !dressCodeUrl)}
                                 className={cn("w-full py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all",
                                     (isWFH || (withinRadius && dressCodeUrl)) ? "bg-green-500 hover:bg-green-600 text-white shadow-lg shadow-green-500/20" : "bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700"
@@ -508,14 +748,18 @@ export default function AttendancePage() {
                         />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                         <div className="bg-zinc-800/30 border border-zinc-700/50 p-3 rounded-xl flex items-center justify-between">
                             <span className="text-xs font-bold text-zinc-400 block">{isHRorFounder ? "Total Staff" : "Team Size"}</span>
                             <span className="text-lg font-black text-white">{employeesToShow.length}</span>
                         </div>
                         <div className="bg-green-500/5 border border-green-500/20 p-3 rounded-xl flex items-center justify-between">
                             <span className="text-xs font-bold text-green-400 block">Present Today</span>
-                            <span className="text-lg font-black text-white">{teamAttendanceList.filter(l => l.status !== "Absent").length}</span>
+                            <span className="text-lg font-black text-white">{teamAttendanceList.filter(l => l.status === "Working" || l.status === "Clocked Out").length}</span>
+                        </div>
+                        <div className="bg-amber-500/5 border border-amber-500/20 p-3 rounded-xl flex items-center justify-between">
+                            <span className="text-xs font-bold text-amber-500 block">Holiday</span>
+                            <span className="text-lg font-black text-white">{teamAttendanceList.filter(l => l.status === "Holiday").length}</span>
                         </div>
                         <div className="bg-red-500/5 border border-red-500/20 p-3 rounded-xl flex items-center justify-between">
                             <span className="text-xs font-bold text-red-400 block">Absent Today</span>
@@ -536,7 +780,7 @@ export default function AttendancePage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-zinc-800/50">
-                                    {teamAttendanceList.map(({ employee, record, status }, idx) => (
+                                    {teamAttendanceList.map(({ employee, record, status, scheduledLocation }: any, idx: number) => (
                                         <tr key={employee.id || `team-att-${idx}`} className="hover:bg-zinc-800/30 transition-colors text-xs">
                                             <td className="px-4 py-3">
                                                 <p className="font-bold text-white">{employee.name}</p>
@@ -546,7 +790,8 @@ export default function AttendancePage() {
                                                 <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold border",
                                                     status === "Working" ? "bg-green-500/10 text-green-400 border-green-500/20" :
                                                         status === "Clocked Out" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
-                                                            "bg-zinc-800 text-zinc-500 border-zinc-700"
+                                                            status === "Holiday" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
+                                                                "bg-zinc-800 text-zinc-500 border-zinc-700"
                                                 )}>
                                                     {status}
                                                 </span>
@@ -559,8 +804,12 @@ export default function AttendancePage() {
                                                     </div>
                                                 ) : <span className="text-zinc-600">—</span>}
                                             </td>
-                                            <td className="px-4 py-3 text-[10px] text-zinc-400">
-                                                {record ? record.location : "—"}
+                                            <td className="px-4 py-3 text-[10px]">
+                                                {record ? (
+                                                    <span className="text-zinc-400">{record.location}</span>
+                                                ) : (
+                                                    <span className="text-zinc-500 italic">Scheduled: {scheduledLocation || "—"}</span>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex flex-col gap-1.5 min-w-[120px]">

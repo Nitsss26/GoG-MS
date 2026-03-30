@@ -73,7 +73,7 @@ export default function TicketsPage() {
                 undefined
             );
         }
-        
+
         setShowNewTicketModal(false);
         setTicketForm({ targetCategory: "HR Desk", subject: "", content: "", targetEmployeeIds: [], targetDate: new Date().toISOString().split('T')[0] });
         setProofUrls([]);
@@ -278,6 +278,7 @@ export default function TicketsPage() {
                                         <option value="Academic">Academic / Student Concerns</option>
                                         <option value="Technical">Technical Issues</option>
                                         <option value="Attendance Override Request">Attendance Override Request</option>
+                                        <option value="Others">Others</option>
                                     </select>
                                 </div>
 

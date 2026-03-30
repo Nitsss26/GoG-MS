@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 export default function HolidaysPage() {
     const { user, holidays, proposeHoliday, colleges } = useAuth();
     const [showForm, setShowForm] = useState(false);
-    const [form, setForm] = useState({ name: "", date: "", collegeId: "", forAll: false });
+    const [form, setForm] = useState({ name: "", date: "", collegeIds: [] as string[], forAll: false });
     const [proofUrl, setProofUrl] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
@@ -29,17 +29,17 @@ export default function HolidaysPage() {
             name: form.name,
             date: form.date,
             proofUrl: proofUrl || undefined,
-            collegeId: form.forAll ? undefined : (form.collegeId || undefined),
+            collegeIds: form.forAll ? [] : form.collegeIds,
             forAll: form.forAll || undefined,
         });
-        setForm({ name: "", date: "", collegeId: "", forAll: false });
+        setForm({ name: "", date: "", collegeIds: [], forAll: false });
         setProofUrl(null);
         setShowForm(false);
     };
 
-    const getCollegeName = (id?: string) => {
-        if (!id) return null;
-        return colleges.find(c => c.id === id)?.shortName || id;
+    const getCollegeNames = (ids?: string[]) => {
+        if (!ids || ids.length === 0) return null;
+        return ids.map(id => colleges.find(c => c.id === id)?.shortName || id).join(", ");
     };
 
     return (
@@ -61,9 +61,9 @@ export default function HolidaysPage() {
                                         <span className="text-[10px] text-zinc-500">{h.date}</span>
                                         <span className="text-[10px] text-zinc-600">·</span>
                                         <span className="text-[10px] text-zinc-500">by {h.proposedByName || h.proposedBy}</span>
-                                        {h.collegeId && (
+                                        {h.collegeIds && h.collegeIds.length > 0 && (
                                             <span className="text-[8px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-full border border-blue-500/20 flex items-center gap-0.5">
-                                                <Building2 size={8} /> {getCollegeName(h.collegeId)}
+                                                <Building2 size={8} /> {getCollegeNames(h.collegeIds)}
                                             </span>
                                         )}
                                         {h.forAll && (
@@ -103,15 +103,29 @@ export default function HolidaysPage() {
                                     <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Applies To</label>
                                     <div className="flex items-center gap-3">
                                         <label className="flex items-center gap-1.5 cursor-pointer">
-                                            <input type="checkbox" checked={form.forAll} onChange={e => setForm({ ...form, forAll: e.target.checked, collegeId: "" })} className="rounded border-zinc-700 bg-zinc-800 text-primary" />
+                                            <input type="checkbox" checked={form.forAll} onChange={e => setForm({ ...form, forAll: e.target.checked, collegeIds: [] })} className="rounded border-zinc-700 bg-zinc-800 text-primary" />
                                             <span className="text-xs text-zinc-300">All Colleges</span>
                                         </label>
                                     </div>
                                     {!form.forAll && (
-                                        <select value={form.collegeId} onChange={e => setForm({ ...form, collegeId: e.target.value })} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-xs text-white">
-                                            <option value="">Select College</option>
-                                            {colleges.map(c => <option key={c.id} value={c.id}>{c.shortName} — {c.city}</option>)}
-                                        </select>
+                                        <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-2 bg-zinc-800/50 rounded-lg border border-zinc-700/50">
+                                            {colleges.map(c => (
+                                                <label key={c.id} className="flex items-center gap-2 cursor-pointer p-1.5 hover:bg-zinc-700/50 rounded transition-colors">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={form.collegeIds.includes(c.id)}
+                                                        onChange={(e) => {
+                                                            const newIds = e.target.checked 
+                                                                ? [...form.collegeIds, c.id]
+                                                                : form.collegeIds.filter(id => id !== c.id);
+                                                            setForm({ ...form, collegeIds: newIds });
+                                                        }}
+                                                        className="rounded border-zinc-600 bg-zinc-800 text-primary"
+                                                    />
+                                                    <span className="text-[10px] text-zinc-300 font-medium truncate">{c.shortName}</span>
+                                                </label>
+                                            ))}
+                                        </div>
                                     )}
                                 </div>
 

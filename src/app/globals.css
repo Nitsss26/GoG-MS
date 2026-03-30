@@ -116,3 +116,7 @@ body {
     zoom: 1.1;
   }
 }
+
+.mirror {
+  transform: scaleX(-1);
+}

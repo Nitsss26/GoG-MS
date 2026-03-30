@@ -138,7 +138,7 @@ export interface LeaveRequest {
     id: string; employeeId: string; employeeName: string; type: string;
     startDate: string; endDate: string; days: number;
     status: "Pending" | "Approved" | "Rejected"; classification: "Paid" | "Unpaid";
-    leaveType: "Planned" | "Emergency"; reason?: string; proofUrls?: string[];
+    leaveType: "Planned" | "Emergency" | "Short"; reason?: string; proofUrls?: string[];
     lossOfPayDays?: number;
     emergencyCategory?: "Accident" | "Death" | "In Hospital";
     appliedAt?: string;
@@ -190,7 +190,7 @@ export interface Ticket {
     targetDate?: string;
 }
 export interface Holiday {
-    id: string; name: string; date: string; collegeId?: string;
+    id: string; name: string; date: string; collegeIds?: string[];
     status: "Proposed" | "Approved"; proposedBy: string; proposedByName?: string;
     proofUrl?: string; customMessage?: string; forAll?: boolean;
 }
@@ -292,7 +292,7 @@ const INITIAL_EMPLOYEES: Employee[] = [
         location: "Head Office"
     },
     {
-        id: "HOI001",
+        id: "EMP101",
         name: "Ayush Chauhan",
         email: "ayush@gog.com",
         role: "HOI",
@@ -305,10 +305,10 @@ const INITIAL_EMPLOYEES: Employee[] = [
         chancesRemaining: 3,
         joiningDate: "2023-03-26",
         salary: 75000,
-        location: "sage-bhopal"
+        location: "bansal-mandideep"
     },
     {
-        id: "HOI002",
+        id: "EMP102",
         name: "Sachin Kumar Gupta",
         email: "sachin@gog.com",
         role: "HOI",
@@ -321,10 +321,10 @@ const INITIAL_EMPLOYEES: Employee[] = [
         chancesRemaining: 3,
         joiningDate: "2023-03-26",
         salary: 75000,
-        location: "sage-indore"
+        location: "bansal-kokta"
     },
     {
-        id: "HOI003",
+        id: "EMP135",
         name: "Sidhartha Paikaray",
         email: "sidhartha@gog.com",
         role: "HOI",
@@ -979,21 +979,21 @@ const INITIAL_ATTENDANCE: AttendanceRecord[] = [
         meetingAbsent: d === "17",
         locationDiff: d === "05",
     })),
-    // HOI001 - Ayush Chauhan — has late
-    ...FEB26_WORKING.map((d, i) => _a(`a10_${i} `, "HOI001", d,
+    // EMP101 - Ayush Chauhan — has late
+    ...FEB26_WORKING.map((d, i) => _a(`a10_${i} `, "EMP101", d,
         d === "11" ? "10:00" : "09:00",
         "19:00", "SAGE Bhopal", {
         late: d === "11",
     })),
-    // HOI002 - Sachin Kumar — has earlyOut
-    ...FEB26_WORKING.map((d, i) => _a(`a11_${i} `, "HOI002", d,
+    // EMP102 - Sachin Kumar — has earlyOut
+    ...FEB26_WORKING.map((d, i) => _a(`a11_${i} `, "EMP102", d,
         "09:00",
         d === "20" ? "15:00" : "18:30",
         "SAGE Indore", {
         earlyOut: d === "20",
     })),
-    // HOI003 - Sidhartha Paikaray — clean month
-    ...FEB26_WORKING.map((d, i) => _a(`a12_${i} `, "HOI003", d, "09:00", "18:30", "Centurion", {})),
+    // EMP135 - Sidhartha Paikaray — clean month
+    ...FEB26_WORKING.map((d, i) => _a(`a12_${i} `, "EMP135", d, "09:00", "18:30", "Centurion", {})),
     // HR001 - Vivek Yadav — has late
     ...FEB26_WORKING.map((d, i) => _a(`a13_${i} `, "HR001", d,
         d === "09" ? "10:15" : "09:00", "18:00", "SAGE Bhopal", { late: d === "09" })),
@@ -1075,21 +1075,21 @@ const INITIAL_LEAVES: LeaveRequest[] = [
 ];
 
 const INITIAL_TICKETS: Ticket[] = [
-    { id: "TKT001", raisedBy: "FAC001", employeeName: "Anil Kumar", targetCategory: "Technical", subject: "Laptop Screen Flickering", content: "My laptop screen has been flickering for the past 2 days. Unable to work properly.", status: "Open", createdAt: "2024-02-25T10:30:00", routeTo: "TL001", cc: ["OM001", "HOI003", "HR001"] },
+    { id: "TKT001", raisedBy: "FAC001", employeeName: "Anil Kumar", targetCategory: "Technical", subject: "Laptop Screen Flickering", content: "My laptop screen has been flickering for the past 2 days. Unable to work properly.", status: "Open", createdAt: "2024-02-25T10:30:00", routeTo: "TL001", cc: ["OM001", "EMP135", "HR001"] },
     { id: "TKT002", raisedBy: "FAC003", employeeName: "Priya Singh", targetCategory: "HR Desk", subject: "Salary Slip Query", content: "My February salary slip shows incorrect deductions. Please review.", status: "In Progress", createdAt: "2024-02-24T14:00:00", routeTo: "HR001", cc: ["AD001"] },
 ];
 
 const INITIAL_REIMBURSEMENTS: ReimbursementClaim[] = [
     { id: "RMB001", employeeId: "FAC001", employeeName: "Anil Kumar", email: "anil@gog.com", phone: "9876543219", type: "Travel", amount: 2500, monthYear: "2026-03", description: "Auto fare for client meeting at Vijay Nagar campus", status: "Pending", date: "2026-03-03" },
     { id: "RMB002", employeeId: "OM001", employeeName: "Arjun Sharma", email: "arjun@gog.com", phone: "9876543216", type: "Internet", amount: 1000, monthYear: "2026-03", description: "Monthly internet recharge for WFH days", status: "Approved - Pending Payment", hrRemarks: "Verified WFH records. Approved for this month.", date: "2026-03-01" },
-    { id: "RMB003", employeeId: "HOI001", employeeName: "Ayush Chauhan", email: "ayush@gog.com", phone: "9876543213", type: "Food", amount: 800, monthYear: "2026-02", description: "Team lunch expense for project kickoff", status: "Approved - Payment Done", hrRemarks: "Payment processed via NEFT.", date: "2026-02-25" },
+    { id: "RMB003", employeeId: "EMP101", employeeName: "Ayush Chauhan", email: "ayush@gog.com", phone: "9876543213", type: "Food", amount: 800, monthYear: "2026-02", description: "Team lunch expense for project kickoff", status: "Approved - Payment Done", hrRemarks: "Payment processed via NEFT.", date: "2026-02-25" },
     { id: "RMB004", employeeId: "FAC002", employeeName: "Sneha Reddy", email: "sneha@gog.com", phone: "9876543220", type: "Medical", amount: 4500, monthYear: "2026-03", description: "OPD consultation and prescribed medicines", status: "Pending", date: "2026-03-04" },
     { id: "RMB005", employeeId: "OM002", employeeName: "Kavitha Nair", email: "kavitha@gog.com", phone: "9876543217", type: "Stationery", amount: 650, monthYear: "2026-02", description: "Notebooks, pens & whiteboard markers for training sessions", status: "Approved - Payment Done", hrRemarks: "Receipts verified. Paid.", date: "2026-02-18" },
     { id: "RMB006", employeeId: "FAC003", employeeName: "Priya Singh", email: "priya@gog.com", phone: "9876543221", type: "Books & Certification", amount: 3200, monthYear: "2026-03", description: "AWS Cloud Practitioner exam fee", status: "Pending", date: "2026-03-02" },
     { id: "RMB007", employeeId: "OM001", employeeName: "Arjun Sharma", email: "arjun@gog.com", phone: "9876543216", type: "Equipment", amount: 1800, monthYear: "2026-02", description: "Wireless mouse and keyboard for office use", status: "Rejected", rejectionReason: "Equipment should be requisitioned through IT department, not reimbursement.", date: "2026-02-10" },
     { id: "RMB008", employeeId: "FAC004", employeeName: "Meera Das", email: "meera@gog.com", phone: "9876543222", type: "Travel", amount: 1200, monthYear: "2026-03", description: "Cab fare for student placement drive at TCS office", status: "Pending", date: "2026-03-05" },
     { id: "RMB009", employeeId: "FAC001", employeeName: "Anil Kumar", email: "anil@gog.com", phone: "9876543219", type: "Phone & Data", amount: 500, monthYear: "2026-02", description: "Mobile recharge for official calls", status: "Approved - Pending Payment", hrRemarks: "Approved. Will process by month end.", date: "2026-02-20" },
-    { id: "RMB010", employeeId: "HOI001", employeeName: "Ayush Chauhan", email: "ayush@gog.com", phone: "9876543213", type: "Fuel", amount: 3500, monthYear: "2026-03", description: "Petrol expense for campus visits during surprise audits", status: "Pending", date: "2026-03-04" },
+    { id: "RMB010", employeeId: "EMP101", employeeName: "Ayush Chauhan", email: "ayush@gog.com", phone: "9876543213", type: "Fuel", amount: 3500, monthYear: "2026-03", description: "Petrol expense for campus visits during surprise audits", status: "Pending", date: "2026-03-04" },
 ];
 
 const INITIAL_HOLIDAYS: Holiday[] = [
@@ -1097,7 +1097,7 @@ const INITIAL_HOLIDAYS: Holiday[] = [
     { id: "hol2", name: "Holi", date: "2026-03-03", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true, customMessage: "Happy Holi! Office remains closed. Enjoy the festival of colors!" },
     { id: "hol3", name: "Holi (Dhuleti)", date: "2026-03-04", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
     { id: "hol4", name: "Ram Navami", date: "2026-04-02", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
-    { id: "hol5", name: "Good Friday", date: "2026-04-03", status: "Proposed", proposedBy: "HOI001", proposedByName: "Ayush Chauhan", collegeId: "sage-bhopal" },
+    { id: "hol5", name: "Good Friday", date: "2026-04-03", status: "Proposed", proposedBy: "EMP101", proposedByName: "Ayush Chauhan", collegeIds: ["sage-bhopal"] },
     { id: "hol6", name: "Independence Day", date: "2026-08-15", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
     { id: "hol7", name: "Gandhi Jayanti", date: "2026-10-02", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
     { id: "hol8", name: "Dussehra", date: "2026-10-02", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
@@ -1119,33 +1119,36 @@ const INITIAL_STARS: PerformanceStar[] = [
     { employeeId: "OM001", stars: 5, rating: 4.8, badges: ["On Time", "Good Dress Code", "0 Flags", "Additional Responsibilities"] },
     { employeeId: "OM002", stars: 3, rating: 3.9, badges: ["Good Dress Code"] },
     { employeeId: "OM003", stars: 4, rating: 4.1, badges: ["On Time"] },
-    { employeeId: "HOI001", stars: 5, rating: 4.7, badges: ["On Time", "0 Flags", "Good Dress Code"] },
-    { employeeId: "HOI002", stars: 4, rating: 4.1, badges: ["On Time"] },
-    { employeeId: "HOI003", stars: 4, rating: 4.4, badges: ["On Time", "Good Dress Code"] },
+    { employeeId: "EMP101", stars: 5, rating: 4.7, badges: ["On Time", "0 Flags", "Good Dress Code"] },
+    { employeeId: "EMP102", stars: 4, rating: 4.1, badges: ["On Time"] },
+    { employeeId: "EMP135", stars: 4, rating: 4.4, badges: ["On Time", "Good Dress Code"] },
 ];
 
 const INITIAL_RATINGS: Rating[] = [
-    { id: "r1", employeeId: "OM001", employeeName: "Arjun Sharma", ratedBy: "HOI003", ratedByName: "Sidhartha Paikaray", score: 4.5, period: "Feb 1-15", comment: "Excellent coordination", date: "2024-02-16" },
-    { id: "r2", employeeId: "FAC001", employeeName: "Anil Kumar", ratedBy: "HOI003", ratedByName: "Sidhartha Paikaray", score: 4.2, period: "Feb 1-15", comment: "Good teaching quality", date: "2024-02-16" },
-    { id: "r3", employeeId: "FAC002", employeeName: "Meera Das", ratedBy: "HOI003", ratedByName: "Sidhartha Paikaray", score: 3.5, period: "Feb 1-15", comment: "Needs improvement in punctuality", date: "2024-02-16" },
+    { id: "r1", employeeId: "OM001", employeeName: "Arjun Sharma", ratedBy: "EMP135", ratedByName: "Sidhartha Paikaray", score: 4.5, period: "Feb 1-15", comment: "Excellent coordination", date: "2024-02-16" },
+    { id: "r2", employeeId: "FAC001", employeeName: "Anil Kumar", ratedBy: "EMP135", ratedByName: "Sidhartha Paikaray", score: 4.2, period: "Feb 1-15", comment: "Good teaching quality", date: "2024-02-16" },
+    { id: "r3", employeeId: "FAC002", employeeName: "Meera Das", ratedBy: "EMP135", ratedByName: "Sidhartha Paikaray", score: 3.5, period: "Feb 1-15", comment: "Needs improvement in punctuality", date: "2024-02-16" },
 ];
 
 const INITIAL_MISBEHAVIOURS: MisbehaviourReport[] = [
-    { id: "mb1", reportedBy: "HOI001", reportedByName: "Ayush Chauhan", employeeId: "FAC004", employeeName: "Rahul Das", type: "Performance", description: "Failed to submit assignment reports for 2 consecutive weeks.", date: "2024-02-10", ccList: ["AD001", "HR001"], meetingScheduled: true, meetingStep: 2 },
+    { id: "mb1", reportedBy: "EMP101", reportedByName: "Ayush Chauhan", employeeId: "FAC004", employeeName: "Rahul Das", type: "Performance", description: "Failed to submit assignment reports for 2 consecutive weeks.", date: "2024-02-10", ccList: ["AD001", "HR001"], meetingScheduled: true, meetingStep: 2 },
 ];
 
 const INITIAL_SCHEDULES: WorkSchedule[] = [
-    { employeeId: "FAC001", employeeName: "Anil Kumar", approvedByHR: true, assignedBy: "HOI001", assignedByName: "Ayush Chauhan", dayWise: { Mon: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "14:00" } } },
-    { employeeId: "FAC002", employeeName: "Sneha Reddy", approvedByHR: true, assignedBy: "HOI001", assignedByName: "Ayush Chauhan", dayWise: { Mon: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "WFH", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "14:00" } } },
-    { employeeId: "OM001", employeeName: "Arjun Sharma", approvedByHR: true, assignedBy: "HOI003", assignedByName: "Sidhartha Paikaray", dayWise: { Mon: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Tue: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Wed: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Thu: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Fri: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Sat: { location: "WFH", clockInTime: "10:00", clockOutTime: "14:00" } } },
-    { employeeId: "FAC003", employeeName: "Priya Singh", approvedByHR: true, assignedBy: "HOI001", assignedByName: "Ayush Chauhan", dayWise: { Mon: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "17:00" }, Tue: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "17:00" }, Wed: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "17:00" }, Thu: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "17:00" }, Fri: { location: "WFH", clockInTime: "09:00", clockOutTime: "17:00" }, Sat: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "14:00" } } },
-    { employeeId: "OM002", employeeName: "Kavitha Nair", approvedByHR: true, assignedBy: "HOI001", assignedByName: "Ayush Chauhan", dayWise: { Mon: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "scope-global", clockInTime: "09:00", clockOutTime: "14:00" } } },
+    { employeeId: "FAC001", employeeName: "Anil Kumar", approvedByHR: true, assignedBy: "EMP101", assignedByName: "Ayush Chauhan", dayWise: { Mon: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "14:00" } } },
+    { employeeId: "FAC002", employeeName: "Sneha Reddy", approvedByHR: true, assignedBy: "EMP101", assignedByName: "Ayush Chauhan", dayWise: { Mon: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "WFH", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "14:00" } } },
+    { employeeId: "OM001", employeeName: "Arjun Sharma", approvedByHR: true, assignedBy: "EMP135", assignedByName: "Sidhartha Paikaray", dayWise: { Mon: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Tue: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Wed: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Thu: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Fri: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Sat: { location: "WFH", clockInTime: "10:00", clockOutTime: "14:00" } } },
+    { employeeId: "FAC003", employeeName: "Priya Singh", approvedByHR: true, assignedBy: "EMP101", assignedByName: "Ayush Chauhan", dayWise: { Mon: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "17:00" }, Tue: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "17:00" }, Wed: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "17:00" }, Thu: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "17:00" }, Fri: { location: "WFH", clockInTime: "09:00", clockOutTime: "17:00" }, Sat: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "14:00" } } },
+    { employeeId: "OM002", employeeName: "Kavitha Nair", approvedByHR: true, assignedBy: "EMP101", assignedByName: "Ayush Chauhan", dayWise: { Mon: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "scope-global", clockInTime: "09:00", clockOutTime: "14:00" } } },
+    { employeeId: "EMP101", employeeName: "Ayush Chauhan", approvedByHR: true, assignedBy: "FND001", assignedByName: "Chintan Vatsa Jha", dayWise: { Mon: { location: "bansal-mandideep", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "bansal-mandideep", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "bansal-mandideep", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "bansal-mandideep", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "bansal-mandideep", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "bansal-mandideep", clockInTime: "09:00", clockOutTime: "14:00" } } },
+    { employeeId: "EMP102", employeeName: "Sachin Kumar Gupta", approvedByHR: true, assignedBy: "FND001", assignedByName: "Chintan Vatsa Jha", dayWise: { Mon: { location: "bansal-kokta", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "bansal-kokta", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "bansal-kokta", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "bansal-kokta", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "bansal-kokta", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "bansal-kokta", clockInTime: "09:00", clockOutTime: "14:00" } } },
+    { employeeId: "EMP135", employeeName: "Sidhartha Paikaray", approvedByHR: true, assignedBy: "FND001", assignedByName: "Chintan Vatsa Jha", dayWise: { Mon: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Tue: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Wed: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Thu: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Fri: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Sat: { location: "centurion", clockInTime: "09:30", clockOutTime: "14:00" } } },
 ];
 
 // Shared constants moved to @/lib/attendance-config
 
 const INITIAL_RESPONSIBILITIES: AdditionalResponsibility[] = [
-    { id: "ar1", employeeId: "OM001", employeeName: "Arjun Sharma", addedBy: "HOI003", description: "Coordinating inter-department tech workshops", date: "2024-02-20", status: "Approved", points: 15 },
+    { id: "ar1", employeeId: "OM001", employeeName: "Arjun Sharma", addedBy: "EMP135", description: "Coordinating inter-department tech workshops", date: "2024-02-20", status: "Approved", points: 15 },
 ];
 
 const INITIAL_NOTICES: Notice[] = [
@@ -1345,9 +1348,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const orgHierarchy = useMemo<OrgNode[]>(() => {
         return employees
             .filter(emp => {
-                // Strict redundant filter to remove "HOI" duplicates not caught by fetch filter
+                // Remove specific HOI duplicates if they exist without restricting to specific IDs
                 if (emp.id === "HOI" || emp.name === "HOI") return false;
-                if (emp.role === "HOI" && !["HOI001", "HOI002", "HOI003"].includes(emp.id)) return false;
                 return true;
             })
             .map(emp => {
@@ -1364,37 +1366,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                 let parentId = Array.isArray(emp.reportsTo) ? emp.reportsTo[0] : emp.reportsTo;
 
-                // ─── HARDCODED HOI MAPPING ───
-                // Sidhartha Paikaray Group (Group 3: Centurion University / Eastern Regions)
-                const sidharthaIds = ["OM502", "EMP113", "EMP116", "EMP111", "EMP119", "EMP118", "EMP129"];
-                const sidharthaRegex = /Ravi Ranjan|Vipul Kumar|Aman|Verman|Siddharda|Mriganka|Sushant|Chandan|Jyotiprakash|Kandula revanth|Baddigam/i;
-                const isSidharthaSub = sidharthaIds.includes(emp.id) || sidharthaRegex.test(emp.name);
-
-                // Ayush Chauhan Group (Image Group)
-                const ayushIds = ["EMP106", "EMP115", "EMP112"];
-                const ayushRegex = /Rahul|Siddhant|Nishal|Sumit|Avikal|Vinay|Anirudha|Shekhar|Aniket|Yamini|Vivek Haldkar/i;
-                const isAyushSub = ayushIds.includes(emp.id) || (ayushRegex.test(emp.name) && !isSidharthaSub);
-
-                // Sachin Group
-                const sachinRegex = /Suman Rajak/i;
-                const isSachinSub = sachinRegex.test(emp.name);
-
-                // Special Case: Shriyansh Shrivastava (Growth Manager)
-                if (emp.id === "OM502" || /Shriyansh Shrivastava/i.test(emp.name)) {
-                    designation = "Growth Manager";
-                    level = "Leadership";
-                    parentId = "FND001";
-                } else if (isSidharthaSub) {
-                    parentId = "HOI003";
-                } else if (isAyushSub) {
-                    parentId = "HOI001";
-                } else if (isSachinSub) {
-                    parentId = "HOI002";
-                } else if (emp.role === "OM" || emp.role === "PROFESSOR" || emp.role === "FACULTY") {
-                    // Default for other academic/ops staff is Sachin
-                    if (parentId !== "HOI001" && parentId !== "HOI003") {
-                        parentId = "HOI002";
-                    }
+                // Fallback for academic/ops staff to ensure they have a parent if reportsTo is missing
+                if (!parentId && (emp.role === "OM" || emp.role === "PROFESSOR" || emp.role === "FACULTY")) {
+                    // Logic for default reporting to be dynamic if possible, 
+                    // otherwise default to Founder (or stay unassigned)
+                    parentId = "FND001"; 
                 }
 
                 const finalName = emp.id === "FND003" ? "Neeraj Sahu" : emp.name;
@@ -1499,7 +1475,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                             const index = merged.findIndex(e => e.id === dbE.id || (e.email && dbE.email && e.email === dbE.email));
                             if (index !== -1) {
                                 // PROTECT core data for these specific IDs to ensure names/designations are never overridden by DB
-                                const protectedIds = ["FND001", "FND002", "FND003", "HOI001", "HOI002", "HOI003", "EMP104", "EMP108", "EMP127"];
+                                const protectedIds = ["FND001", "FND002", "FND003", "EMP104", "EMP108", "EMP127"];
                                 if (protectedIds.includes(merged[index].id)) {
                                     const { name, designation, ...restOfDbData } = dbE;
                                     merged[index] = { ...merged[index], ...restOfDbData };
@@ -1529,6 +1505,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
             } catch (err) {
                 console.error("Failed to fetch locations:", err);
+            }
+        };
+        const fetchHolidays = async () => {
+            try {
+                const res = await fetch("/api/holidays");
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    setHolidays(data);
+                }
+            } catch (err) {
+                console.error("Failed to fetch holidays:", err);
             }
         };
         const fetchAttendance = async () => {
@@ -1615,6 +1602,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         fetchEmployees();
         fetchLocations();
+        fetchHolidays();
         fetchWorkSchedules();
         if (user) {
             fetchAttendance();
@@ -1663,7 +1651,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // ─── HELPERS ───
     const getExpectedTiming = useCallback((employeeId: string, date: string | Date = new Date()) => {
-        const d = typeof date === 'string' ? new Date(date) : date;
+        const d = typeof date === 'string' ? (date ? new Date(date) : new Date()) : date;
+        
+        // Handle invalid date objects to prevent runtime RangeError
+        if (isNaN(d.getTime())) {
+            const emp = employees.find(e => e.id === employeeId);
+            return { in: "09:30", out: "18:00", location: emp?.location || "Office" };
+        }
+
         const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
         const dateStr = d.toISOString().split('T')[0];
 
@@ -2193,6 +2188,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // ─── LEAVES ───
     const addLeaveRequest = async (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName">) => {
         if (!user) return;
+        
+        if (req.leaveType === "Short" && !req.reason) {
+            alert("A detailed reason is mandatory for Short Leave.");
+            return;
+        }
+
         const now = new Date();
         const appliedAt = now.toISOString();
 
@@ -2302,24 +2303,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const isHOI = user.role === "HOI";
         const isAD = user.role === "AD";
 
-        if (targetCategoryNormalized.includes("hr") || targetCategoryNormalized.includes("account") || targetCategoryNormalized.includes("attendance")) {
-            // HR issues [Accounts/HR] - To HR, CC: Founders
+        if (targetCategoryNormalized.includes("hr") || targetCategoryNormalized.includes("account") || targetCategoryNormalized.includes("attendance") || targetCategoryNormalized.includes("others")) {
+            // HR/Accounts/Attendance/Others - To HR, CC: Founders
             finalRouteTo = hrId;
-            finalCC = [...new Set([...finalCC, ...founders])];
+            finalCC = [...new Set([...finalCC, ...founders, ...hrEmployees.map(h => h.id)])];
         } else if (targetCategoryNormalized.includes("misconduct") || targetCategoryNormalized.includes("academic") || targetCategoryNormalized.includes("student")) {
-            // Misconduct/Institute Issues/Academic - To RM, CC: All above RM, HR
-            finalRouteTo = (Array.isArray(rm) ? rm[0] : (rm || hrId));
+            // Institutional Issues - To RM (Fallback HR), CC: All above RM, HR, Founders
+            const rmId = (Array.isArray(rm) ? rm[0] : (rm || hrId));
+            finalRouteTo = rmId;
             const aboveRM = managerChain.slice(1).map(m => m.id);
-            finalCC = [...new Set([...finalCC, ...aboveRM, ...hrEmployees.map(h => h.id)])];
+            finalCC = [...new Set([...finalCC, ...aboveRM, ...hrEmployees.map(h => h.id), ...founders])];
         } else if (targetCategoryNormalized.includes("technical")) {
-            // Technical Issues - To TL, CC: RM, All above RM, HR
-            const tl = employees.find(e => e.role === "TL")?.id;
-            finalRouteTo = tl || (Array.isArray(rm) ? rm[0] : (rm || hrId));
-            finalCC = [...new Set([...finalCC, ...(Array.isArray(rm) ? rm : [rm || ""]), ...managerChain.slice(1).map(m => m.id), ...hrEmployees.map(h => h.id)].filter(Boolean))];
+            // Technical - To TL, CC: RM, All above RM, HR
+            const tlId = employees.find(e => e.role === "TL")?.id;
+            finalRouteTo = tlId || (Array.isArray(rm) ? rm[0] : (rm || hrId));
+            finalCC = [...new Set([...finalCC, ...(Array.isArray(rm) ? rm : [rm || ""]), ...managerChain.slice(1).map(m => m.id), ...hrEmployees.map(h => h.id), ...founders].filter(Boolean))];
         } else {
-            // Default ticket routing
             finalRouteTo = (Array.isArray(rm) ? rm[0] : (rm || hrId));
-            finalCC = [...new Set([...finalCC])];
+            finalCC = [...new Set([...finalCC, ...hrEmployees.map(h => h.id), ...founders])];
         }
 
         // Enforce resolution authority rules based on raiser
@@ -2356,11 +2357,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setTickets(prev => [data, ...prev]);
 
                 // --- EMAIL NOTIFICATION ---
-                const targetEmp = employees.find(e => e.id === finalRouteTo);
                 const raiser = employees.find(e => e.id === user.id);
+                // Robust target identification: Always fall back to HR if specified target is invalid
+                const targetEmp = employees.find(e => e.id === finalRouteTo) || employees.find(e => e.id === hrId);
+                
                 const { subject: mailSub, html: mailHtml } = getTicketTemplate(data, 'raised');
                 if (targetEmp?.email) {
-                    sendMail({ to: targetEmp.email, cc: [...getAuthorityEmails(raiser, employees), raiser?.email].filter(Boolean) as string[], subject: mailSub, html: mailHtml });
+                    sendMail({ 
+                        to: targetEmp.email, 
+                        cc: [...getAuthorityEmails(raiser, employees), raiser?.email].filter(Boolean) as string[], 
+                        subject: mailSub, 
+                        html: mailHtml 
+                    });
                 }
             }
         } catch (err) { console.error(err); }
@@ -2409,6 +2417,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const data = await res.json();
             if (data.id) {
                 setReimbursements(prev => [data, ...prev]);
+
                 // --- EMAIL NOTIFICATION ---
                 const emp = employees.find(e => e.id === user.id);
                 const { subject, html } = getReimbursementTemplate(data);
@@ -2427,6 +2436,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const updated = await res.json();
             if (updated.id) {
                 setReimbursements(prev => prev.map(r => r.id === id ? updated : r));
+
                 const emp = employees.find(e => e.id === updated.employeeId);
                 const { subject, html } = getReimbursementTemplate(updated);
                 if (emp?.email) sendMail({ to: emp.email, cc: getAuthorityEmails(emp, employees), subject, html });
@@ -2435,55 +2445,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     // ─── HOLIDAYS ───
-    const proposeHoliday = (h: Omit<Holiday, "id" | "proposedBy" | "status" | "proposedByName">) => {
+    const proposeHoliday = async (h: Omit<Holiday, "id" | "proposedBy" | "status" | "proposedByName">) => {
         if (!user) return;
-        const newHol: Holiday = { ...h, id: `HOL${uid()} `, proposedBy: user.id, proposedByName: user.name, status: "Proposed" };
-        setHolidays(prev => [...prev, newHol]);
-
-        // --- EMAIL NOTIFICATION ---
-        const ccEmails = getAuthorityEmails(user, employees);
-        const { subject: mailSub, html: mailHtml } = getHolidayTemplate(newHol, "Proposed");
-        const hr = employees.find(e => e.role === "HR");
-
-        if (hr?.email) {
-            sendMail({
-                to: hr.email,
-                cc: ccEmails,
-                subject: mailSub,
-                html: mailHtml
+        const isHRorFounder = user.role === "HR" || user.role === "FOUNDER";
+        const newHol: Holiday = { 
+            ...h, 
+            id: `HOL${uid()}`, 
+            proposedBy: user.id, 
+            proposedByName: user.name, 
+            status: isHRorFounder ? "Approved" : "Proposed" 
+        };
+        
+        try {
+            const res = await fetch("/api/holidays", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(newHol)
             });
-        }
-    };
-    const approveHoliday = (id: string, customMessage?: string) => {
-        setHolidays(prev => prev.map(h => {
-            if (h.id === id) {
-                const updated = { ...h, status: "Approved" as const, customMessage: customMessage || h.customMessage };
+            const saved = await res.json();
+            if (saved.id) {
+                setHolidays(prev => [...prev, saved]);
 
-                // --- EMAIL NOTIFICATION ---
+                if (isHRorFounder) {
+                    const msg = h.customMessage || `${h.name} on ${h.date} is declared as a holiday.`;
+                    addAnnouncement({ 
+                        title: `Holiday: ${h.name}`, content: msg, category: "General" 
+                    });
+                }
+
+                const ccEmails = getAuthorityEmails(user, employees);
+                const { subject: mailSub, html: mailHtml } = getHolidayTemplate(saved, saved.status);
+                const hr = employees.find(e => e.role === "HR");
+                if (hr?.email) sendMail({ to: hr.email, cc: ccEmails, subject: mailSub, html: mailHtml });
+            }
+        } catch (err) { console.error(err); }
+    };
+    const approveHoliday = async (id: string, customMessage?: string) => {
+        try {
+            const res = await fetch("/api/holidays", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, status: "Approved", customMessage })
+            });
+            const updated = await res.json();
+            if (updated.id) {
+                setHolidays(prev => prev.map(h => h.id === id ? updated : h));
+
                 const ccEmails = getAuthorityEmails(user, employees);
                 const { subject: mailSub, html: mailHtml } = getHolidayTemplate(updated, "Approved");
-
-                // All employees should technically be notified, but for now we'll send to RM/HOIs or just founders
                 const founders = employees.filter(e => e.role === "FOUNDER").map(f => f.email).filter(Boolean) as string[];
+                sendMail({ to: founders, cc: ccEmails, subject: mailSub, html: mailHtml });
 
-                sendMail({
-                    to: founders,
-                    cc: ccEmails,
-                    subject: mailSub,
-                    html: mailHtml
+                const msg = customMessage || `${updated.name} on ${updated.date} has been approved as an official holiday.`;
+                addAnnouncement({ 
+                    title: `Holiday: ${updated.name}`, content: msg, category: "General" 
                 });
-
-                return updated;
             }
-            return h;
-        }));
-
-        // Auto-announce
-        const hol = holidays.find(h => h.id === id);
-        if (hol) {
-            const msg = customMessage || `${hol.name} on ${hol.date} has been approved as an official holiday.`;
-            setNotices(prev => [{ id: `N${uid()} `, title: `Holiday: ${hol.name} `, content: msg, category: "General" as const, createdBy: user?.name || "HR", createdAt: new Date().toISOString().split("T")[0] }, ...prev]);
-        }
+        } catch (err) { console.error(err); }
     };
 
     // ─── SOP ───
@@ -2975,6 +2993,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
+
+    useEffect(() => {
+        const fetchHolidays = async () => {
+            try {
+                const res = await fetch("/api/holidays");
+                const data = await res.json();
+                if (Array.isArray(data)) setHolidays(data);
+            } catch (err) { console.error("Holiday fetch error:", err); }
+        };
+        if (user) fetchHolidays();
+    }, [user]);
 
     // ─── NOTIFICATIONS ───
     const addNotification = (to: string, toName: string, message: string, type: PortalNotification["type"]) => {

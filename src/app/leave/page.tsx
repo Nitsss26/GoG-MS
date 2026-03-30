@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, Employee } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { motion, AnimatePresence } from "framer-motion";
 import { Calendar, Plus, CheckCircle2, XCircle, X, Clock, HelpCircle, AlertCircle, Upload, Loader2 } from "lucide-react";
@@ -17,13 +17,15 @@ export default function LeavePage() {
         days: 1,
         classification: "Paid" as "Paid" | "Unpaid",
         leaveType: "Planned" as "Planned" | "Emergency",
-        emergencyCategory: undefined as "Accident" | "Death" | "In Hospital" | undefined
+        emergencyCategory: undefined as "Accident" | "Death" | "In Hospital" | undefined,
+        reason: ""
     });
     const [proofUrls, setProofUrls] = useState<string[]>([]);
     const [uploading, setUploading] = useState(false);
     const proofInputRef = useRef<HTMLInputElement>(null);
 
     if (!user) return null;
+    const emp = user as Employee;
 
     const handleApply = (e: React.FormEvent) => {
         e.preventDefault();
@@ -63,7 +65,8 @@ export default function LeavePage() {
             days: 1,
             classification: "Paid",
             leaveType: "Planned",
-            emergencyCategory: undefined
+            emergencyCategory: undefined,
+            reason: ""
         });
         setProofUrls([]);
     };
@@ -256,7 +259,15 @@ export default function LeavePage() {
                                     <div className="space-y-1">
                                         <label className="text-[9px] font-bold text-muted uppercase tracking-widest">Type</label>
                                         <select className="w-full bg-surface-light border border-border rounded-lg p-2.5 text-xs text-white" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })}>
-                                            <option>Casual Leave</option><option>Sick Leave</option><option>Privilege Leave</option><option>Maternity Leave</option>
+                                            <option>Casual Leave</option>
+                                            <option>Sick Leave</option>
+                                            <option>Privilege Leave</option>
+                                            <option>Maternity Leave</option>
+                                            {/* Short Leave exclusively for BGI-Kokta staff (Professors/Faculty) */}
+                                            {((user.role === "PROFESSOR" || user.role === "FACULTY" || user.role === "HOI") && 
+                                              (emp.location?.toLowerCase().includes("kokta") || emp.location?.toLowerCase().includes("bansal-kokta") || emp.location?.toLowerCase().includes("bgi-kokta"))) && (
+                                                <option>Short Leave</option>
+                                            )}
                                         </select>
                                     </div>
                                     <div className="space-y-1">
@@ -322,6 +333,16 @@ export default function LeavePage() {
                                 <div className="space-y-1">
                                     <label className="text-[9px] font-bold text-muted uppercase tracking-widest">Cumulative Days</label>
                                     <input type="number" required min="1" step="0.5" className="w-full bg-surface-light border border-border rounded-lg p-2.5 text-xs text-white" value={formData.days} onChange={e => setFormData({ ...formData, days: Number(e.target.value) })} />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[9px] font-bold text-muted uppercase tracking-widest">Detailed Reason for Leave</label>
+                                    <textarea 
+                                        required 
+                                        placeholder="Please provide a professional reason for your absence..."
+                                        className="w-full bg-surface-light border border-border rounded-lg p-2.5 text-xs text-white min-h-[80px]" 
+                                        value={formData.reason} 
+                                        onChange={e => setFormData({ ...formData, reason: e.target.value })} 
+                                    />
                                 </div>
                                 <div className={cn("bg-primary/5 border border-primary/20 rounded-lg p-4 flex items-start gap-3", formData.leaveType === "Emergency" && "border-amber-500/30 bg-amber-500/5")}>
                                     {formData.leaveType === "Emergency" ? <AlertCircle size={16} className="text-amber-500 shrink-0 mt-0.5" /> : <HelpCircle size={16} className="text-primary shrink-0 mt-0.5" />}

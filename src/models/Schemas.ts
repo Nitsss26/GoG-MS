@@ -203,6 +203,19 @@ const ReimbursementClaimSchema = new Schema({
     hrRemarks: { type: String },
     date: { type: String, required: true }
 });
+const HolidaySchema = new Schema({
+    id: { type: String, unique: true },
+    name: { type: String, required: true },
+    date: { type: String, required: true },
+    collegeIds: [String],
+    status: { type: String, default: "Proposed", enum: ["Proposed", "Approved"] },
+    proposedBy: { type: String },
+    proposedByName: { type: String },
+    proofUrl: { type: String },
+    customMessage: { type: String },
+    forAll: { type: Boolean, default: false }
+});
+
 const PIPRecordSchema = new Schema({ id: { type: String, unique: true }, employeeId: String, employeeName: String, reason: String, startDate: String, status: String, warnings: Number, disclaimer: String });
 const AdditionalResponsibilitySchema = new Schema({ id: { type: String, unique: true }, employeeId: String, employeeName: String, addedBy: String, description: String, date: String, status: String, points: Number });
 
@@ -299,6 +312,7 @@ export const Ticket = mongoose.models.Ticket || mongoose.model('Ticket', TicketS
 export const ReimbursementClaim = mongoose.models.ReimbursementClaim || mongoose.model('ReimbursementClaim', ReimbursementClaimSchema);
 export const PIPRecord = mongoose.models.PIPRecord || mongoose.model('PIPRecord', PIPRecordSchema);
 export const AdditionalResponsibility = mongoose.models.AdditionalResponsibility || mongoose.model('AdditionalResponsibility', AdditionalResponsibilitySchema);
+export const Holiday = mongoose.models.Holiday || mongoose.model('Holiday', HolidaySchema);
 export const Location = mongoose.models.Location || mongoose.model('Location', LocationSchema);
 export const SprintPlan = mongoose.models.SprintPlan || mongoose.model('SprintPlan', SprintPlanSchema);
 export const LectureReport = mongoose.models.LectureReport || mongoose.model('LectureReport', LectureReportSchema);

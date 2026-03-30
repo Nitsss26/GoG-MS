@@ -9,13 +9,16 @@ export default function HolidayApprovalPage() {
     const { user, holidays, approveHoliday, proposeHoliday, colleges } = useAuth();
     const [approveMessages, setApproveMessages] = useState<Record<string, string>>({});
     const [showCreate, setShowCreate] = useState(false);
-    const [createForm, setCreateForm] = useState({ name: "", date: "", collegeId: "", forAll: true, customMessage: "" });
+    const [createForm, setCreateForm] = useState({ name: "", date: "", collegeIds: [] as string[], forAll: true, customMessage: "" });
 
     if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return null;
 
     const pendingHolidays = holidays.filter(h => h.status === "Proposed");
     const approvedHolidays = holidays.filter(h => h.status === "Approved");
-    const getCollegeName = (id?: string) => id ? (colleges.find(c => c.id === id)?.shortName || id) : null;
+    const getCollegeNames = (ids?: string[]) => {
+        if (!ids || ids.length === 0) return null;
+        return ids.map(id => colleges.find(c => c.id === id)?.shortName || id).join(", ");
+    };
 
     const handleApprove = (id: string) => {
         approveHoliday(id, approveMessages[id] || undefined);
@@ -27,15 +30,11 @@ export default function HolidayApprovalPage() {
         proposeHoliday({
             name: createForm.name,
             date: createForm.date,
-            collegeId: createForm.forAll ? undefined : (createForm.collegeId || undefined),
+            collegeIds: createForm.forAll ? [] : createForm.collegeIds,
             forAll: createForm.forAll || undefined,
             customMessage: createForm.customMessage || undefined,
         });
-        // Auto-approve since HR is creating it
-        setTimeout(() => {
-            const latest = holidays[holidays.length]; // will be handled by the next render
-        }, 100);
-        setCreateForm({ name: "", date: "", collegeId: "", forAll: true, customMessage: "" });
+        setCreateForm({ name: "", date: "", collegeIds: [], forAll: true, customMessage: "" });
         setShowCreate(false);
     };
 
@@ -58,9 +57,9 @@ export default function HolidayApprovalPage() {
                                         <h4 className="text-xs font-bold text-white">{h.name}</h4>
                                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                             <span className="text-[10px] text-zinc-500">{h.date} · by {h.proposedByName}</span>
-                                            {h.collegeId && (
+                                            {h.collegeIds && h.collegeIds.length > 0 && (
                                                 <span className="text-[8px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-full border border-blue-500/20 flex items-center gap-0.5">
-                                                    <Building2 size={8} /> {getCollegeName(h.collegeId)}
+                                                    <Building2 size={8} /> {getCollegeNames(h.collegeIds)}
                                                 </span>
                                             )}
                                             {h.forAll && (
@@ -100,7 +99,7 @@ export default function HolidayApprovalPage() {
                                     <p className="text-xs font-bold text-white">{h.name}</p>
                                     <div className="flex items-center gap-2 mt-0.5">
                                         <span className="text-[10px] text-zinc-500">{h.date}</span>
-                                        {h.collegeId && <span className="text-[8px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-full border border-blue-500/20"><Building2 size={8} className="inline" /> {getCollegeName(h.collegeId)}</span>}
+                                        {h.collegeIds && h.collegeIds.length > 0 && <span className="text-[8px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-full border border-blue-500/20"><Building2 size={8} className="inline" /> {getCollegeNames(h.collegeIds)}</span>}
                                         {h.forAll && <span className="text-[8px] font-bold text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full border border-green-500/20"><Globe size={8} className="inline" /> All</span>}
                                         {h.customMessage && <span className="text-[9px] text-zinc-600 italic truncate max-w-[250px]">"{h.customMessage}"</span>}
                                     </div>
@@ -130,14 +129,28 @@ export default function HolidayApprovalPage() {
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Applies To</label>
                                     <label className="flex items-center gap-1.5 cursor-pointer">
-                                        <input type="checkbox" checked={createForm.forAll} onChange={e => setCreateForm({ ...createForm, forAll: e.target.checked, collegeId: "" })} className="rounded border-zinc-700 bg-zinc-800 text-primary" />
+                                        <input type="checkbox" checked={createForm.forAll} onChange={e => setCreateForm({ ...createForm, forAll: e.target.checked, collegeIds: [] })} className="rounded border-zinc-700 bg-zinc-800 text-primary" />
                                         <span className="text-xs text-zinc-300">All Colleges</span>
                                     </label>
                                     {!createForm.forAll && (
-                                        <select value={createForm.collegeId} onChange={e => setCreateForm({ ...createForm, collegeId: e.target.value })} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-xs text-white">
-                                            <option value="">Select College</option>
-                                            {colleges.map(c => <option key={c.id} value={c.id}>{c.shortName} — {c.city}</option>)}
-                                        </select>
+                                        <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-2 bg-zinc-800 border border-zinc-700 rounded-lg">
+                                            {colleges.map(c => (
+                                                <label key={c.id} className="flex items-center gap-2 cursor-pointer p-1 rounded hover:bg-zinc-700/50">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={createForm.collegeIds.includes(c.id)}
+                                                        onChange={(e) => {
+                                                            const newIds = e.target.checked 
+                                                                ? [...createForm.collegeIds, c.id]
+                                                                : createForm.collegeIds.filter(id => id !== c.id);
+                                                            setCreateForm({ ...createForm, collegeIds: newIds });
+                                                        }}
+                                                        className="rounded border-zinc-600 bg-zinc-900 text-primary"
+                                                    />
+                                                    <span className="text-[10px] text-zinc-300 truncate">{c.shortName}</span>
+                                                </label>
+                                            ))}
+                                        </div>
                                     )}
                                 </div>
                                 <div className="space-y-1.5">

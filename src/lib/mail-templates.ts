@@ -1,14 +1,73 @@
+// --- HELPERS ---
+
+export const formatDate = (dateStr: string) => {
+    if (!dateStr) return "N/A";
+    // Handle standard YYYY-MM-DD or ISO strings
+    try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr; // Return as-is if invalid date
+        return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+    } catch (e) {
+        return dateStr;
+    }
+};
+
+/**
+ * Wraps email content in a professional GoG OMS themed layout.
+ */
+const ProfessionalWrapper = (title: string, content: string, color: string = "#10b981") => {
+    return `
+        <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+            <!-- Header -->
+            <div style="background-color: #0d0f12; padding: 24px; text-align: center; border-bottom: 4px solid ${color};">
+                <img src="https://i.ibb.co/QFQL6V9q/logo-2.png" alt="Geeks of Gurukul" style="height: 32px; display: block; margin: 0 auto; filter: brightness(1.5);">
+            </div>
+            
+            <!-- Body -->
+            <div style="padding: 32px 24px;">
+                <h1 style="color: #111827; font-size: 22px; font-weight: 800; margin: 0 0 16px 0; letter-spacing: -0.025em;">${title}</h1>
+                <div style="color: #4b5563; font-size: 15px; line-height: 1.6;">
+                    ${content}
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #f3f4f6;">
+                <p style="color: #9ca3af; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; margin: 0;">
+                    &copy; 2026 Geeks of Gurukul
+                </p>
+            </div>
+        </div>
+    `;
+};
+
+/**
+ * Creates a formatted data table for email details.
+ */
+const DataTable = (items: { label: string; value: any; color?: string }[]) => {
+    return `
+        <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+            ${items.map(item => `
+                <tr>
+                    <td style="padding: 10px 0; color: #10b981; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; width: 40%; border-bottom: 1px solid #f3f4f6;">${item.label}</td>
+                    <td style="padding: 10px 0; color: ${item.color || '#111827'}; font-size: 14px; font-weight: 500; border-bottom: 1px solid #f3f4f6;">${item.value || 'N/A'}</td>
+                </tr>
+            `).join('')}
+        </table>
+    `;
+};
+
 /**
  * Recursively fetches all managers in the reporting line.
- * Also includes HR and Founders as per requirements.
  */
 export const getAuthorityEmails = (employee: any, allEmployees: any[]) => {
     const authorities: Set<string> = new Set();
+    let current = employee;
 
     // 1. Recursive Hierarchy Traversal
-    let current = employee;
     while (current && current.reportsTo) {
-        const manager = allEmployees.find(e => e.id === current.reportsTo);
+        const managerId = Array.isArray(current.reportsTo) ? current.reportsTo[0] : current.reportsTo;
+        const manager = allEmployees.find(e => e.id === managerId);
         if (manager && manager.email) {
             authorities.add(manager.email.toLowerCase());
             current = manager;
@@ -17,362 +76,351 @@ export const getAuthorityEmails = (employee: any, allEmployees: any[]) => {
         }
     }
 
-    // 2. Founders
-    const founders = allEmployees.filter(e => e.role === "FOUNDER").map(e => e.email.toLowerCase());
+    // 2. Founders (Restore oversight)
+    const founders = allEmployees.filter(e => e.role === "FOUNDER" && e.email).map(e => e.email!.toLowerCase());
     founders.forEach(email => authorities.add(email));
 
-    // 3. HR
-    const hrEmails = allEmployees.filter(e => e.role === "HR").map(e => e.email.toLowerCase());
+    // 3. HR (Restore oversight)
+    const hrEmails = allEmployees.filter(e => e.role === "HR" && e.email).map(e => e.email!.toLowerCase());
     hrEmails.forEach(email => authorities.add(email));
 
-    // Ensure the employee's own email (initiator) is included in CC
     if (employee && employee.email) {
         authorities.add(employee.email.toLowerCase());
     }
-
     return Array.from(authorities);
+};
+
+const getPriorityConfig = (category: string) => {
+    const cat = (category || "").toLowerCase();
+    if (cat.includes("hr") || cat.includes("account")) {
+        return { label: "High Priority (Critical)", color: "#ef4444", time: "8 Hours" };
+    }
+    if (cat.includes("attendance") || cat.includes("others")) {
+        return { label: "Medium Priority", color: "#3b82f6", time: "16 Hours" };
+    }
+    return { label: "Normal Priority", color: "#f59e0b", time: "24 Hours" };
 };
 
 // --- EMAIL TEMPLATES ---
 
 export const getTicketTemplate = (ticket: any, type: 'raised' | 'resolved') => {
-    if (type === 'raised') {
-        return {
-            subject: `[TICKET RAISED] ${ticket.subject} - ${ticket.id}`,
-            html: `
-                <div style="font-family: sans-serif; padding: 20px; color: #333;">
-                    <h2 style="color: #10b981;">New Ticket Raised</h2>
-                    <p><strong>Ticket ID:</strong> ${ticket.id}</p>
-                    <p><strong>Raised By:</strong> ${ticket.employeeName}</p>
-                    <p><strong>Category:</strong> ${ticket.targetCategory}</p>
-                    <p><strong>Subject:</strong> ${ticket.subject}</p>
-                    <div style="background: #f4f4f4; padding: 15px; border-radius: 8px; margin: 10px 0;">
-                        <strong>Description:</strong><br/>
-                        ${ticket.content}
-                    </div>
-                    <p>This is an automated mail from GOG OMS.</p>
-                </div>
-            `
-        };
-    } else {
+    const priority = getPriorityConfig(ticket.targetCategory);
+    const title = type === 'raised' ? "Support Ticket Raised" : "Support Ticket Resolved";
+
+    const fields = [
+        { label: "Ticket ID", value: ticket.id },
+        { label: "Priority", value: priority.label, color: priority.color },
+        { label: "Subject", value: ticket.subject },
+        { label: "Category", value: ticket.targetCategory },
+        { label: "Raiser", value: ticket.employeeName },
+        { label: "Date", value: formatDate(ticket.createdAt) }
+    ];
+
+    const content = DataTable(fields);
+
+    if (type === 'resolved') {
         return {
             subject: `[TICKET RESOLVED] ${ticket.subject} - ${ticket.id}`,
-            html: `
-                <div style="font-family: sans-serif; padding: 20px; color: #333;">
-                    <h2 style="color: #10b981;">Ticket Resolved</h2>
-                    <p><strong>Ticket ID:</strong> ${ticket.id}</p>
-                    <p><strong>Subject:</strong> ${ticket.subject}</p>
-                    <div style="background: #e6fffa; padding: 15px; border-radius: 8px; margin: 10px 0;">
-                        <strong>Resolution Notes:</strong><br/>
-                        ${ticket.resolutionNotes || 'No notes provided.'}
-                    </div>
-                    <p>Status: <strong>RESOLVED</strong></p>
-                    <p>Please check your dashboard for further details.</p>
+            html: ProfessionalWrapper(title, content + `
+                <div style="background-color: #ecfdf5; border-radius: 8px; padding: 16px; margin-top: 20px; border-left: 4px solid #10b981;">
+                    <strong style="color: #065f46; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 4px;">Resolution Summary</strong>
+                    <p style="margin: 0; color: #047857; font-size: 14px;">${ticket.resolutionNotes || 'The issue has been resolved successfully.'}</p>
                 </div>
-            `
+            `, "#10b981")
         };
     }
+
+    return {
+        subject: `[TICKET RAISED] ${ticket.subject} - ${ticket.id}`,
+        html: ProfessionalWrapper(title, content + `
+            <div style="background-color: #f8fafc; border-radius: 8px; padding: 16px; margin-top: 20px; border-left: 4px solid ${priority.color};">
+                <p style="margin: 0; color: #475569; font-size: 13px;"><strong>Issue Summary:</strong> ${ticket.content}</p>
+            </div>
+            <p style="margin-top: 20px; color: ${priority.color}; font-size: 12px; font-weight: 700;">
+                ⏱️ Resolution Commitment: This ticket is scheduled for resolution within ${priority.time}.
+            </p>
+        `, priority.color)
+    };
 };
 
 export const getLeaveTemplate = (leave: any, status: 'Pending' | 'Approved' | 'Rejected') => {
     const statusColor = status === 'Approved' ? '#10b981' : status === 'Rejected' ? '#ef4444' : '#f59e0b';
+    const title = `Leave Request ${status}`;
+
+    const cleanReason = (leave.reason && leave.reason !== "undefined") ? leave.reason : "Professional reason not detailed";
+
+    const content = DataTable([
+        { label: "Employee Name", value: leave.employeeName },
+        { label: "Leave Type", value: `${leave.type} (${leave.leaveType})` },
+        { label: "Duration", value: `${formatDate(leave.startDate)} to ${formatDate(leave.endDate)} (${leave.days} days)` },
+        { label: "Reason", value: cleanReason },
+        { label: "Current Status", value: status.toUpperCase(), color: statusColor }
+    ]);
+
     return {
-        subject: `[LEAVE ${status.toUpperCase()}] ${leave.employeeName} - ${leave.startDate}`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333;">
-                <h2 style="color: ${statusColor};">Leave Request ${status}</h2>
-                <p><strong>Employee:</strong> ${leave.employeeName}</p>
-                <p><strong>Type:</strong> ${leave.type} (${leave.leaveType})</p>
-                <p><strong>Duration:</strong> ${leave.startDate} to ${leave.endDate} (${leave.days} days)</p>
-                <p><strong>Reason:</strong> ${leave.reason}</p>
-                <p><strong>Current Status:</strong> <span style="color: ${statusColor}; font-weight: bold;">${status}</span></p>
-                ${leave.lossOfPayDays ? `<p style="color: #ef4444;"><strong>Loss of Pay applied:</strong> ${leave.lossOfPayDays} days</p>` : ''}
-            </div>
-        `
+        subject: `[LEAVE ${status.toUpperCase()}] ${leave.employeeName} - ${formatDate(leave.startDate)}`,
+        html: ProfessionalWrapper(title, content + (leave.lossOfPayDays ?
+            `<p style="color: #ef4444; font-weight: bold; margin-top: 10px;">⚠️ Loss of Pay (LOP): ${leave.lossOfPayDays} days applied.</p>` : ''), statusColor)
     };
 };
 
 export const getMisbehaviourTemplate = (report: any) => {
+    const title = "Disciplinary Notice";
+    const content = DataTable([
+        { label: "Employee", value: report.employeeName },
+        { label: "Issue Type", value: report.type },
+        { label: "Date Issued", value: formatDate(report.date) },
+        { label: "Description", value: report.description }
+    ]);
     return {
         subject: `[DISCIPLINARY NOTICE] ${report.type} Issue - ${report.employeeName}`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333; border: 1px solid #ef4444; border-radius: 8px;">
-                <h2 style="color: #ef4444;">Formal Disciplinary Notice</h2>
-                <p>Dear ${report.employeeName},</p>
-                <p>A <strong>${report.type} Issue</strong> has been reported regarding your conduct.</p>
-                <div style="background: #fff5f5; padding: 15px; border-left: 4px solid #ef4444;">
-                    <strong>Description:</strong><br/>
-                    ${report.description}
-                </div>
-                <p><strong>Date:</strong> ${report.date}</p>
-                <p>This entry has been recorded in your performance file. Please adhere to the organizational guidelines.</p>
-            </div>
-        `
+        html: ProfessionalWrapper(title, content + `
+            <p style="margin-top: 20px; font-weight: bold; color: #ef4444;">This notice has been appended to your performance records. Immediate rectification is expected.</p>
+        `, "#ef4444")
     };
 };
 
 export const getPIPAddTemplate = (pip: any) => {
+    const title = "Performance Plan (PIP)";
+    const content = DataTable([
+        { label: "Employee", value: pip.employeeName },
+        { label: "Effective From", value: formatDate(pip.startDate) },
+        { label: "Primary Reason", value: pip.reason }
+    ]);
     return {
-        subject: `[URGENT] Performance Improvement Plan (PIP) Enrollment - ${pip.employeeName}`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333; background: #fffbeb; border: 1px solid #f59e0b;">
-                <h2 style="color: #d97706;">Performance Improvement Plan Notice</h2>
-                <p>Dear ${pip.employeeName},</p>
-                <p>This is to inform you that you have been placed under a <strong>Performance Improvement Plan (PIP)</strong>.</p>
-                <p><strong>Reason:</strong> ${pip.reason}</p>
-                <p><strong>Start Date:</strong> ${pip.startDate}</p>
-                <div style="background: #fff; padding: 10px; border: 1px solid #f59e0b; margin-top: 15px;">
-                    <strong>Disclaimer:</strong><br/>
-                    ${pip.disclaimer}
-                </div>
-                <p style="margin-top: 20px;">We expect immediate improvement in your performance metrics.</p>
+        subject: `[URGENT] Performance Improvement Plan (PIP) Notice - ${pip.employeeName}`,
+        html: ProfessionalWrapper(title, content + `
+            <div style="background-color: #fffbeb; border: 1px solid #fef3c7; padding: 16px; border-radius: 8px; margin-top: 20px;">
+                <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #92400e;"><strong>Official Disclaimer:</strong> ${pip.disclaimer}</p>
             </div>
-        `
+        `, "#f59e0b")
     };
 };
 
 export const getReimbursementTemplate = (claim: any) => {
-    return {
-        subject: `[REIMBURSEMENT UPDATE] Status Changed to ${claim.status}`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333;">
-                <h2 style="color: #10b981;">Reimbursement Claim Update</h2>
-                <p><strong>Claim ID:</strong> ${claim.id}</p>
-                <p><strong>Description:</strong> ${claim.description}</p>
-                <p><strong>Amount:</strong> ₹${claim.amount}</p>
-                <p><strong>New Status:</strong> <strong>${claim.status}</strong></p>
-                ${claim.rejectionReason ? `<p style="color: #ef4444;"><strong>Rejection Reason:</strong> ${claim.rejectionReason}</p>` : ''}
-                ${claim.hrRemarks ? `<p><strong>HR Remarks:</strong> ${claim.hrRemarks}</p>` : ''}
+    const statusColor = claim.status?.includes('Rejected') ? '#ef4444' : '#10b981';
+    const title = "Reimbursement Update";
+
+    // Comprehensive fields from claim
+    const content = DataTable([
+        { label: "Claim ID", value: claim.id },
+        { label: "Employee", value: claim.employeeName },
+        { label: "Expense Type", value: claim.type },
+        { label: "Exp. Period", value: claim.monthYear },
+        { label: "Total Amount", value: `₹${claim.amount || 0}`, color: "#111827" },
+        { label: "Description", value: claim.description },
+        { label: "Status", value: claim.status.toUpperCase(), color: "#ef4444" }
+    ]);
+
+    let feedback = "";
+    if (claim.driveLink || (claim.proofUrls && claim.proofUrls.length > 0)) {
+        feedback += `
+            <div style="margin-top: 20px; padding: 16px; background-color: #f8fafc; border-radius: 8px;">
+                <strong style="font-size: 12px; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 8px;">Supporting Proofs</strong>
+                ${claim.driveLink ? `<a href="${claim.driveLink}" style="color: #10b981; font-size: 14px; text-decoration: none; display: block; margin-bottom: 4px;">📂 Google Drive Folder ↗</a>` : ''}
+                ${(claim.proofUrls || []).map((url: string, i: number) => `<a href="${url}" style="color: #10b981; font-size: 14px; text-decoration: none; display: block; margin-bottom: 4px;">📄 View Bill ${i + 1} ↗</a>`).join('')}
             </div>
-        `
+        `;
+    }
+
+    if (claim.rejectionReason) feedback += `<p style="color: #ef4444; margin-top: 15px; font-weight: 600;">⚠️ Rejection Reason: ${claim.rejectionReason}</p>`;
+    if (claim.hrRemarks) feedback += `<p style="color: #4b5563; margin-top: 5px; font-style: italic;">Note: ${claim.hrRemarks}</p>`;
+
+    return {
+        subject: `[REIMBURSEMENT] ${claim.status.toUpperCase()} - ${claim.id}`,
+        html: ProfessionalWrapper(title, content + feedback, statusColor)
     };
 };
 
 export const getMoMTemplate = (meeting: any, mom: any) => {
+    const title = "Minutes of Meeting (MoM)";
+    const content = DataTable([
+        { label: "Purpose", value: meeting.purpose },
+        { label: "Meeting Date", value: formatDate(meeting.date) },
+        { label: "Location/Mode", value: "Institutional Platform" }
+    ]);
     return {
         subject: `[MoM] Minutes of Meeting - ${meeting.purpose}`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333;">
-                <h2 style="color: #10b981;">Minutes of Meeting (MoM)</h2>
-                <p><strong>Meeting:</strong> ${meeting.purpose}</p>
-                <p><strong>Date:</strong> ${meeting.date}</p>
-                <div style="background: #f4f4f4; padding: 15px; border-radius: 8px;">
-                    <strong>Discussion Summary:</strong><br/>
-                    ${mom.content}
-                </div>
-                <div style="background: #e6fffa; padding: 15px; border-radius: 8px; margin-top: 10px;">
-                    <strong>Final Decision:</strong><br/>
-                    ${mom.decision}
-                </div>
-                <p style="margin-top: 15px;">This MoM has been shared with all relevant authorities.</p>
+        html: ProfessionalWrapper(title, content + `
+            <div style="margin-top: 20px; border-top: 1px solid #f3f4f6; padding-top: 16px;">
+                <h3 style="font-size: 14px; text-transform: uppercase; color: #111827;">Discussion Points</h3>
+                <div style="background-color: #f9fafb; padding: 12px; border-radius: 6px; font-size: 14px;">${mom.content}</div>
+                <h3 style="font-size: 14px; text-transform: uppercase; color: #10b981; margin-top: 16px;">Final Decision</h3>
+                <div style="background-color: #ecfdf5; padding: 12px; border-radius: 6px; font-size: 14px; color: #065f46; font-weight: 600;">${mom.decision}</div>
             </div>
-        `
+        `, "#10b981")
     };
 };
 
 export const getAdditionalResponsibilityTemplate = (resp: any) => {
+    const title = "Additional Responsibility Assigned";
+    const content = DataTable([
+        { label: "Assigned To", value: resp.employeeName },
+        { label: "Description", value: resp.description },
+        { label: "Effective Date", value: formatDate(resp.date) },
+        { label: "Perf. Points", value: `+${resp.points} Points` }
+    ]);
     return {
-        subject: `[NEW RESPONSIBILITY] Additional Responsibilities Assigned - ${resp.employeeName}`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333;">
-                <h2 style="color: #10b981;">Additional Responsibility Assigned</h2>
-                <p>Dear ${resp.employeeName},</p>
-                <p>You have been assigned the following additional responsibilities:</p>
-                <div style="background: #f4f4f4; padding: 15px; border-radius: 8px;">
-                    ${resp.description}
-                </div>
-                <p><strong>Effective Date:</strong> ${resp.date}</p>
-                <p><strong>Performance Points:</strong> ${resp.points}</p>
-                <p>Thank you for your contribution to the organization.</p>
-            </div>
-        `
+        subject: `[RESPONSIBILITY] New Mandate Assigned - ${resp.employeeName}`,
+        html: ProfessionalWrapper(title, content + `
+            <p style="margin-top: 20px; color: #10b981; font-weight: bold;">We appreciate your dedication towards taking on more impact within the organization.</p>
+        `, "#10b981")
     };
 };
 
 export const getMarkAsPresentTemplate = (req: any, status: 'Pending' | 'Approved' | 'Rejected') => {
     const statusColor = status === 'Approved' ? '#10b981' : status === 'Rejected' ? '#ef4444' : '#f59e0b';
+    const title = `Attendance Appeal ${status}`;
+    const content = DataTable([
+        { label: "Employee", value: `${req.employeeName} (${req.employeeId})` },
+        { label: "Appeal Date", value: formatDate(req.date) },
+        { label: "Stated Reason", value: req.reason },
+        { label: "Status", value: status.toUpperCase(), color: statusColor }
+    ]);
     return {
-        subject: `[ATTENDANCE APPEAL] ${status.toUpperCase()} - ${req.employeeName} (${req.date})`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333; border: 1px solid ${statusColor}; border-radius: 8px;">
-                <h2 style="color: ${statusColor};">Attendance Appeal ${status}</h2>
-                <p><strong>Employee:</strong> ${req.employeeName} (${req.employeeId})</p>
-                <p><strong>Date:</strong> ${req.date}</p>
-                <div style="background: #f8fafc; padding: 15px; border-radius: 6px; margin: 10px 0;">
-                    <strong>Reason:</strong> ${req.reason}
-                </div>
-                ${req.proofUrls?.length ? `<p><strong>Proofs attached:</strong> ${req.proofUrls.length} files</p>` : ''}
-                <p><strong>Final Decision:</strong> <span style="color: ${statusColor}; font-weight: bold;">${status}</span></p>
-                ${status === 'Approved' ? '<p style="color: #10b981;">Note: Attendance has been marked as Present with a Late Clock-in flag.</p>' : ''}
-                <p style="font-size: 11px; color: #666; margin-top: 20px;">This is an automated response from GOG Attendance Systems.</p>
-            </div>
-        `
+        subject: `[ATTENDANCE APPEAL] ${status.toUpperCase()} - ${req.employeeName}`,
+        html: ProfessionalWrapper(title, content + (status === 'Approved' ?
+            '<p style="color: #10b981; font-size: 13px; margin-top: 10px;">The record has been updated with a "Late Clock-in" flag for HR compliance.</p>' : ''), statusColor)
     };
 };
 
 export const getOverrideTemplate = (req: any, status: 'Pending' | 'Approved' | 'Rejected') => {
     const statusColor = status === 'Approved' ? '#10b981' : status === 'Rejected' ? '#ef4444' : '#f59e0b';
+    const title = `Attendance Override Request ${status}`;
+    const content = DataTable([
+        { label: "Target Employee", value: req.employeeName },
+        { label: "Requested By", value: req.requestedByName },
+        { label: "Reasoning", value: req.reason },
+        { label: "Override Status", value: status.toUpperCase(), color: statusColor }
+    ]);
     return {
-        subject: `[ATTENDANCE OVERRIDE] ${status.toUpperCase()} - Requested by ${req.requestedByName} for ${req.employeeName}`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333; border: 1px solid #6366f1; border-radius: 8px;">
-                <h2 style="color: #6366f1;">Attendance Override ${status}</h2>
-                <p><strong>Target Employee:</strong> ${req.employeeName} (${req.employeeId})</p>
-                <p><strong>Requested By:</strong> ${req.requestedByName}</p>
-                <p><strong>Reason for Override:</strong> ${req.reason}</p>
-                <div style="background: #f5f3ff; padding: 15px; border-radius: 6px; margin: 10px 0;">
-                    <strong>Official Communication Log:</strong> This request has been logged in the Founder's communication log for compliance.
-                </div>
-                <p><strong>Status:</strong> <span style="color: ${statusColor}; font-weight: bold;">${status}</span></p>
-                <p style="font-size: 11px; color: #666; margin-top: 20px;">GoG OMS Override Management</p>
-            </div>
-        `
+        subject: `[OVERRIDE] Attendance System Manual Update - ${status.toUpperCase()}`,
+        html: ProfessionalWrapper(title, content + `
+            <p style="font-size: 11px; padding: 12px; background: #f8fafc; border-radius: 4px; margin-top: 10px; color: #64748b;">This log has been recorded in the executive communication history.</p>
+        `, "#6366f1")
     };
 };
 
 export const getWorkScheduleTemplate = (schedule: any, isAdmin: boolean) => {
+    const title = "Work Schedule Update";
+    const content = DataTable([
+        { label: "Employee", value: schedule.employeeName },
+        { label: "Assigned By", value: schedule.assignedByName },
+        { label: "Effective", value: "Immediately" }
+    ]);
     return {
-        subject: `[WORK SCHEDULE] Location & Timing Assignment Update`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333;">
-                <h2 style="color: #10b981;">Work Schedule Assignment</h2>
-                <p>Dear ${schedule.employeeName},</p>
-                <p>Your work location and timing schedule has been updated.</p>
-                <p><strong>Effective immediately.</strong></p>
-                <div style="background: #f4f4f4; padding: 15px; border-radius: 8px;">
-                    <strong>Schedule Details:</strong><br/>
-                    Please view the 'Work Schedule' section on your dashboard for day-wise details and clock-in/out timings.
-                </div>
-                <p><strong>Assigned By:</strong> ${schedule.assignedByName}</p>
-                <p>Status: ${schedule.approvedByHR ? 'Approved' : 'Pending HR Approval'}</p>
-            </div>
-        `
+        subject: `[SCHEDULE] New Timing Assignment Update`,
+        html: ProfessionalWrapper(title, content + `
+            <p style="margin-top: 15px;">Your daily timings and location assignments have been revised. Please check the <strong>Institutional Portal Dashboard</strong> for day-wise breakdown.</p>
+        `, "#10b981")
     };
 };
 
 export const getHolidayTemplate = (holiday: any, status: 'Proposed' | 'Approved') => {
+    const title = `${status} Holiday Notice`;
+    const content = DataTable([
+        { label: "Holiday Name", value: holiday.name },
+        { label: "Event Date", value: formatDate(holiday.date) },
+        { label: "Classification", value: holiday.category },
+        { label: "Public Status", value: status }
+    ]);
     return {
-        subject: `[HOLIDAY ${status.toUpperCase()}] ${holiday.name} - ${holiday.date}`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333;">
-                <h2 style="color: #10b981;">New Holiday ${status}</h2>
-                <p><strong>Holiday:</strong> ${holiday.name}</p>
-                <p><strong>Date:</strong> ${holiday.date}</p>
-                <p><strong>Category:</strong> ${holiday.category}</p>
-                <p><strong>Status:</strong> ${status}</p>
-                ${holiday.customMessage ? `<div style="background: #e6fffa; padding: 10px; border-radius: 5px;">${holiday.customMessage}</div>` : ''}
-            </div>
-        `
+        subject: `[HOLIDAY ${status.toUpperCase()}] ${holiday.name} - ${formatDate(holiday.date)}`,
+        html: ProfessionalWrapper(title, content + (holiday.customMessage ? `<div style="background-color: #ecfdf5; padding: 12px; border-radius: 6px; margin-top: 10px; color: #065f46;">${holiday.customMessage}</div>` : ''), "#10b981")
     };
 };
 
 export const getDressCodeWarningTemplate = (employee: any, defaults: number) => {
+    const title = "Dress Code Violation";
+    const content = DataTable([
+        { label: "Employee", value: employee.name },
+        { label: "Total Defaults", value: `${defaults} of 3`, color: "#ef4444" }
+    ]);
     return {
-        subject: `[WARNING] Dress Code Policy Violation - ${employee.name}`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333; background: #fff5f5; border: 1px solid #ef4444;">
-                <h2 style="color: #ef4444;">Dress Code Violation Warning</h2>
-                <p>Dear ${employee.name},</p>
-                <p>This is a formal warning regarding your adherence to the organizational dress code policy.</p>
-                <p>You have now reached <strong>${defaults}</strong> dress code defaults.</p>
-                <p style="color: #ef4444; font-weight: bold;">Note: After 3 defaults, you will be restricted from marking attendance as a defaulter.</p>
-                <p>Please ensure strict compliance with the formal dress code (White shirt, Black pants, Black blazer, Formal shoes) moving forward.</p>
+        subject: `[OFFICIAL WARNING] Policy Violation Notice - ${employee.name}`,
+        html: ProfessionalWrapper(title, content + `
+            <div style="background-color: #fef2f2; border: 1px solid #fee2e2; padding: 16px; border-radius: 8px; margin-top: 15px;">
+                <p style="margin: 0; color: #b91c1c; font-size: 14px; line-height: 1.6;">
+                    <strong>Mandatory Protocol:</strong> White Shirt, Black Formal Pants, Black Blazer, and Formal Shoes. <br/>
+                    <span style="font-weight: 800; text-transform: uppercase;">Final Warning:</span> Reaching 3 defaults will result in restricted attendance access.
+                </p>
             </div>
-        `
+        `, "#ef4444")
     };
 };
 
 export const getRatingTemplate = (rating: any) => {
+    const title = "Performance Assessment";
+    const stars = Array.from({ length: 5 }).map((_, i) => `<span style="color: ${i < rating.score ? '#f59e0b' : '#d1d5db'}; font-size: 24px;">★</span>`).join('');
+
+    const content = DataTable([
+        { label: "Evaluation Period", value: rating.period },
+        { label: "Aggregate Score", value: `${rating.score} / 5`, color: "#b91c1c" },
+        { label: "Evaluator", value: rating.ratedByName }
+    ]);
+
     return {
-        subject: `[PERFORMANCE RATING] Bi-weekly Score: ${rating.score}/5 - ${rating.period}`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333;">
-                <h2 style="color: #10b981;">New Performance Rating Issued</h2>
-                <p>Dear ${rating.employeeName},</p>
-                <p>You have received a new performance rating for the period: <strong>${rating.period}</strong>.</p>
-                <div style="background: #fdf2f2; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #fee2e2;">
-                    <p style="font-size: 18px; margin: 0;">Rating: <strong style="color: #b91c1c;">${rating.score} / 5</strong></p>
-                    <div style="margin-top: 10px;">
-                        ${Array.from({ length: 5 }).map((_, i) => `<span style="color: ${i < rating.score ? '#f59e0b' : '#d1d5db'}; font-size: 24px;">★</span>`).join('')}
-                    </div>
+        subject: `[SCORE] Academic/Perf Assessment Result: ${rating.score}/5`,
+        html: ProfessionalWrapper(title, `
+            <div style="text-align: center; margin-bottom: 20px;">
+                <div style="display: inline-block; background: #fff7ed; padding: 10px 20px; border-radius: 100px; border: 1px solid #ffedd5;">
+                    ${stars}
                 </div>
-                ${rating.comment ? `
-                <div style="background: #f4f4f4; padding: 15px; border-radius: 8px;">
-                    <strong>Feedback/Remarks:</strong><br/>
-                    ${rating.comment}
-                </div>` : ''}
-                <p style="margin-top: 20px;">Rated By: ${rating.ratedByName}</p>
-                <p style="font-size: 11px; color: #666;">This rating influences your position on the global GoG Leaderboard.</p>
             </div>
-        `
+            ${content}
+            ${rating.comment ? `
+            <div style="background-color: #f8fafc; padding: 16px; border-radius: 8px; margin-top: 15px; border-left: 4px solid #64748b;">
+                <strong style="color: #334155; font-size: 12px; text-transform: uppercase;">Direct Feedback</strong>
+                <p style="margin: 5px 0 0 0; color: #475569; font-style: italic;">"${rating.comment}"</p>
+            </div>` : ''}
+        `, "#10b981")
     };
 };
 
 export const getAnnouncementTemplate = (ann: any) => {
     const catColor = ann.category === "Urgent" ? "#ef4444" : "#10b981";
+    const title = ann.title;
+
     return {
         subject: `[ANNOUNCEMENT] ${ann.title}`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333; border-top: 4px solid ${catColor};">
-                <h2 style="color: ${catColor};">${ann.title}</h2>
-                <p style="color: #666; font-size: 12px;">Category: ${ann.category} | Date: ${ann.createdAt || new Date().toISOString().split('T')[0]}</p>
-                <div style="background: #fff; padding: 15px; border: 1px solid #eee; border-radius: 8px; margin: 15px 0; line-height: 1.6;">
-                    ${ann.content.replace(/\n/g, '<br/>')}
-                </div>
-                ${ann.imageUrls && ann.imageUrls.length > 0 ? `
-                <div style="margin-top: 20px;">
-                    ${ann.imageUrls.map((url: string) => `<img src="${url}" style="max-width: 100%; border-radius: 8px; margin-bottom: 10px; border: 1px solid #eee;" />`).join('')}
-                </div>` : ''}
-                <p style="margin-top: 20px; font-size: 12px; color: #999;">Published By: ${ann.createdBy}</p>
-            </div>
-        `
+        html: ProfessionalWrapper(title, `
+            <p style="color: #6b7280; font-size: 12px; margin-bottom: 12px;">Published on ${formatDate(ann.createdAt)} | Category: ${ann.category}</p>
+            <div style="line-height: 1.8; color: #1f2937;">${ann.content.replace(/\n/g, '<br/>')}</div>
+            ${ann.imageUrls?.length > 0 ? `<div style="margin-top: 20px;">${ann.imageUrls.map((url: string) => `<img src="${url}" style="width: 100%; border-radius: 8px; margin-bottom: 12px; border: 1px solid #f3f4f6; object-fit: cover; max-height: 300px;"/>`).join('')}</div>` : ''}
+            <p style="font-size: 12px; color: #9ca3af; margin-top: 24px;">Issued by: ${ann.createdBy}</p>
+        `, catColor)
     };
 };
 
-export const getSOPUpdateTemplate = (sop: any, type: 'new' | 'updated' | 'deleted' | 'unknown') => {
-    const typeLabel = type.toUpperCase();
+export const getSOPUpdateTemplate = (sop: any, type: string) => {
     const typeColor = type === 'new' ? '#10b981' : type === 'updated' ? '#f59e0b' : '#ef4444';
+    const title = `SOP ${type.toUpperCase()}`;
+
+    const content = DataTable([
+        { label: "Document Title", value: sop.title },
+        { label: "Version No.", value: `v${sop.version}` },
+        { label: "Initiated By", value: sop.changedBy || "Admin" }
+    ]);
 
     return {
-        subject: `[SOP ${typeLabel}] Documentation Change - ${sop.title}`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333;">
-                <h2 style="color: ${typeColor};">SOP Documentation ${typeLabel}</h2>
-                <p>An SOP document has been <strong>${type}</strong> by <strong>${sop.changedBy || sop.changedByRole || 'Admin'}</strong>.</p>
-                <div style="background: #f8fafc; padding: 15px; border-left: 4px solid ${typeColor}; border-radius: 4px; margin: 15px 0;">
-                    <p style="margin: 0;"><strong>Title:</strong> ${sop.title}</p>
-                    <p style="margin: 5px 0 0 0;"><strong>Version:</strong> v${sop.version}</p>
-                </div>
-                ${sop.changelog ? `
-                <div style="background: #f4f4f4; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                    <strong>What's Changed:</strong><br/>
-                    ${sop.changelog}
-                </div>` : ''}
-                <p>Please review the updated SOPs in the Documentation section of your dashboard.</p>
-                <p style="font-size: 11px; color: #666; margin-top: 20px;">GoG OMS Documentation Control System</p>
+        subject: `[POLICY] Standard Operating Procedure Update - ${sop.title}`,
+        html: ProfessionalWrapper(title, content + `
+            <div style="background-color: #f3f4f6; padding: 16px; border-radius: 8px; margin-top: 20px;">
+                <strong style="font-size: 12px; color: #4b5563; text-transform: uppercase;">Changelog</strong>
+                <p style="margin: 4px 0 0 0; color: #111827; font-size: 14px;">${sop.changelog || "Reference documentation library for details."}</p>
             </div>
-        `
+        `, typeColor)
     };
 };
 
 export const getBirthdayTemplate = (employee: any) => {
+    const title = `Happy Birthday, ${employee.name}!`;
     return {
         subject: `🎂 Happy Birthday ${employee.name}! - Geeks of Gurukul`,
-        html: `
-            <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; border: 1px solid #e5e7eb; border-radius: 16px; background-color: #ffffff; text-align: center;">
-                <div style="margin-bottom: 24px;">
-                    <img src="https://i.ibb.co/dJVbhnf7/logo-2.png" alt="GoG Logo" style="height: 40px; margin: 0 auto;">
-                </div>
-                <h1 style="color: #10b981; font-size: 28px; font-weight: 800; margin-bottom: 16px;">Happy Birthday, ${employee.name}! 🥳</h1>
-                <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
-                    On behalf of everyone at <strong>Geeks of Gurukul</strong>, we wish you a fantastic day filled with joy, laughter, and your favorite things. We are grateful for your hard work and contribution to our team.
-                </p>
-                <div style="font-size: 80px; margin: 32px 0;">🎂</div>
-                <p style="color: #9ca3af; font-size: 14px; margin-top: 40px; border-top: 1px solid #f3f4f6; pt: 20px;">
-                    Wishing you a great year ahead!<br/>
-                    <strong>The GoG Management Team</strong>
-                </p>
-            </div>
-        `
+        html: ProfessionalWrapper(title, `
+            <p style="text-align: center; font-size: 16px;">Wishing you a fantastic day filled with joy and celebration. <br/> We are proud to have you in the <strong>Geeks of Gurukul</strong> family!</p>
+            <div style="text-align: center; font-size: 60px; margin: 30px 0;">🎉🎂✨</div>
+            <p style="text-align: center; color: #10b981; font-weight: 800; font-size: 18px;">Enjoy your special day!</p>
+        `, "#10b981")
     };
 };
