@@ -14,9 +14,9 @@ export default function ReimbursementPage() {
     const { user, reimbursements, addReimbursement } = useAuth();
     const router = useRouter();
 
-    // HR/Founder should see the management page
+    // Administrative roles should see the management page
     useEffect(() => {
-        if (user && (user.role === "HR" || user.role === "FOUNDER")) {
+        if (user && ["HR", "FOUNDER", "AD", "HOI", "OM"].includes(user.role)) {
             router.replace("/hr/reimbursements");
         }
     }, [user, router]);

@@ -8,7 +8,7 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 
 export default function EmployeesPage() {
-    const { user, employees, addEmployee } = useAuth();
+    const { user, employees, addEmployee, getReportees } = useAuth();
     const [searchTerm, setSearchTerm] = useState("");
     const [activeTab, setActiveTab] = useState("All");
     const [locationFilter, setLocationFilter] = useState("All");
@@ -38,7 +38,8 @@ export default function EmployeesPage() {
     };
 
     // Strict Role-Based Access Control
-    if (user.role !== "HR" && user.role !== "FOUNDER") {
+    const isManagement = ["HR", "FOUNDER", "HOI", "AD", "OM"].includes(user.role);
+    if (!isManagement) {
         return (
             <div className="h-[70vh] flex flex-col items-center justify-center space-y-4 p-6 text-center">
                 <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center text-amber-500">
@@ -53,8 +54,10 @@ export default function EmployeesPage() {
         );
     }
 
-    const categories = ["All", ...new Set(employees.map(e => e.dept))];
-    const locations = ["All", ...new Set(employees.map(e => e.location))];
+    const viewableEmployees = getReportees(user.id);
+
+    const categories = ["All", ...new Set(viewableEmployees.map(e => e.dept))];
+    const locations = ["All", ...new Set(viewableEmployees.map(e => e.location))];
     const statuses = ["All", "Active", "On Leave", "On Site", "Resigned"];
     const roleLevels = ["All", "HR", "AD", "HOI", "OM", "TL", "Faculty"];
 
@@ -64,7 +67,7 @@ export default function EmployeesPage() {
         return "Faculty";
     };
 
-    const filteredEmployees = employees.filter(emp => {
+    const filteredEmployees = viewableEmployees.filter(emp => {
         const matchesSearch = emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             emp.dept.toLowerCase().includes(searchTerm.toLowerCase()) ||
             emp.designation.toLowerCase().includes(searchTerm.toLowerCase());
@@ -194,7 +197,7 @@ export default function EmployeesPage() {
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[9px] font-bold text-muted uppercase tracking-widest">Professional Email</label>
-                                        <input type="email" required className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white" placeholder="arjun@gog.com" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
+                                        <input type="email" required className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white" placeholder="arjun@geeksofgurukul.com" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">

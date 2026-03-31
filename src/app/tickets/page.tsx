@@ -28,16 +28,15 @@ export default function TicketsPage() {
 
     if (!user) return null;
 
-    const myReportees = getReportees(user.id);
-    const isManager = ["AD", "HOI", "TL", "FOUNDER"].includes(user.role);
+    const reportees = getReportees(user.id);
+    const reporteeIds = reportees.map(r => r.id);
     const isUserInPIP = pipRecords.some(p => p.employeeId === user.id && p.status === "Active");
-
     const isHR = user.role === "HR";
     const isFounder = user.role === "FOUNDER";
     const isSystemAdmin = isHR || isFounder;
     const isHOI = user.role === "HOI";
 
-    const myTickets = tickets.filter(t => t.raisedBy === user.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const myTickets = tickets.filter(t => t.raisedBy === user.id || reporteeIds.includes(t.raisedBy)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     const hrTickets = tickets.filter(t => isFounder || t.targetCategory === "HR Desk" || t.targetCategory === "Attendance Override Request").sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     const displayTickets = isSystemAdmin ? (isFounder ? tickets : hrTickets) : myTickets;
@@ -298,7 +297,7 @@ export default function TicketsPage() {
                                                     }}
                                                 >
                                                     <option value={user.id}>{user.name} (Yourself)</option>
-                                                    {myReportees.map(r => (
+                                                    {reportees.map(r => (
                                                         <option key={r.id} value={r.id}>{r.name} ({r.id})</option>
                                                     ))}
                                                 </select>

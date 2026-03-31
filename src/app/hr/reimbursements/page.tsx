@@ -17,7 +17,7 @@ const ROLE_TAGS: Record<string, { label: string; color: string }> = {
 };
 
 export default function HRReimbursementsPage() {
-    const { user, employees, reimbursements, updateReimbursementStatus } = useAuth();
+    const { user, employees, reimbursements, updateReimbursementStatus, getReportees } = useAuth();
     const [reviewClaim, setReviewClaim] = useState<ReimbursementClaim | null>(null);
     const [actionModal, setActionModal] = useState<{ id: string; action: "reject" | "approve-pending" | "approve-done" } | null>(null);
     const [reason, setReason] = useState("");
@@ -27,7 +27,11 @@ export default function HRReimbursementsPage() {
     const now = new Date();
     const [filterMonth, setFilterMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
 
-    if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return null;
+    const isManagementView = user?.role && ["HR", "FOUNDER", "AD", "HOI", "OM"].includes(user.role);
+    if (!user || !isManagementView) return null;
+
+    const reportees = getReportees(user.id);
+    const reporteeIds = reportees.map(r => r.id);
 
     const months: string[] = [];
     for (let i = 0; i < 12; i++) {
@@ -42,6 +46,7 @@ export default function HRReimbursementsPage() {
 
     const filtered = reimbursements
         .filter(r => r.monthYear === filterMonth)
+        .filter(r => (user?.role === "HR" || user?.role === "FOUNDER") || reporteeIds.includes(r.employeeId))
         .filter(r => statusFilter === "All" || r.status === statusFilter)
         .sort((a, b) => {
             const order = ["Pending", "Approved - Pending Payment", "Approved - Payment Done", "Rejected"];

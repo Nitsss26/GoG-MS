@@ -8,7 +8,7 @@ import { Calendar, Plus, CheckCircle2, XCircle, X, Clock, HelpCircle, AlertCircl
 import { cn } from "@/lib/utils";
 
 export default function LeavePage() {
-    const { user, leaves, addLeaveRequest, approveLeave, rejectLeave } = useAuth();
+    const { user, leaves, addLeaveRequest, approveLeave, rejectLeave, getReportees } = useAuth();
     const [showModal, setShowModal] = useState(false);
     const [formData, setFormData] = useState({
         type: "Casual Leave",
@@ -84,7 +84,11 @@ export default function LeavePage() {
         setUploading(false);
     };
 
-    const filteredLeaves = user.role === "HR" ? leaves : leaves.filter(l => l.employeeId === user.id);
+    const reportees = getReportees(user.id);
+    const reporteeIds = reportees.map(r => r.id);
+    const filteredLeaves = (user.role === "HR" || user.role === "FOUNDER") 
+        ? leaves 
+        : leaves.filter(l => l.employeeId === user.id || reporteeIds.includes(l.employeeId));
 
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
@@ -222,7 +226,7 @@ export default function LeavePage() {
                                                     </div>
                                                 )}
 
-                                                {user.role === "HR" && req.status === "Pending" ? (
+                                                {(user.role === "HR" || user.role === "FOUNDER" || reporteeIds.includes(req.employeeId)) && req.status === "Pending" ? (
                                                     <div className="flex gap-2">
                                                         <button onClick={() => { const reason = window.prompt("Reason for approval (Optional):"); approveLeave(req.id, reason || undefined); }} className="h-8 w-8 flex items-center justify-center bg-primary/10 text-primary border border-primary/20 rounded-lg hover:bg-primary transition-colors hover:text-white">
                                                             <CheckCircle2 size={14} />

@@ -8,15 +8,21 @@ import { resolveImageUrl } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 export default function LeaderboardPage() {
-    const { employees, performanceStars, attendanceRecords, additionalResponsibilities } = useAuth();
+    const { user, employees, performanceStars, attendanceRecords, additionalResponsibilities, getReportees } = useAuth();
 
     const [showRules, setShowRules] = useState(false);
     const [selectedEmpForResp, setSelectedEmpForResp] = useState<any>(null);
 
     const stats = useMemo(() => {
-        if (!employees || !performanceStars) return [];
+        if (!employees || !performanceStars || !user) return [];
 
-        return performanceStars.map(s => {
+        const reportees = getReportees(user.id);
+        const reporteeIds = reportees.map(r => r.id);
+        const isSystemAdmin = user.role === "HR" || user.role === "FOUNDER";
+
+        // Leaderboard: Global rankings for everyone
+        return performanceStars
+            .map(s => {
             const emp = employees.find(e => e.id === s.employeeId);
             if (!emp) return null;
 

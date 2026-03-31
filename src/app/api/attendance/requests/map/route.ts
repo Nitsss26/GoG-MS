@@ -16,6 +16,7 @@ export async function POST(req: Request) {
 
         const request = await MarkAsPresentRequest.create({
             employeeId,
+            employeeName: employee.name || "Unknown",
             date,
             reason,
             proofUrls,

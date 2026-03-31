@@ -227,10 +227,18 @@ export default function Home() {
 
     useEffect(() => { setMounted(true); setTodayStr(new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })); }, []);
 
-    const stats = useMemo(() => {
-        if (!employees || !performanceStars) return [];
+    // Manager/Reportee logic needed for stats filtering
+    const isManagerRole = user?.role ? ["FOUNDER", "AD", "HOI", "OM"].includes(user.role) : false;
+    const reportees = (user && (isManagerRole || user?.role === "HR")) ? getReportees(user.id) : [];
+    const reporteeIds = reportees.map(r => r.id);
 
-        return performanceStars.map(s => {
+    const stats = useMemo(() => {
+        if (!user || !employees || !performanceStars) return [];
+
+        // Leaderboard: Global rankings for everyone
+        let filteredStars = performanceStars;
+
+        return filteredStars.map(s => {
             const emp = employees.find(e => e.id === s.employeeId);
             if (!emp) return null;
 
@@ -301,7 +309,7 @@ export default function Home() {
             };
         }).filter((item): item is NonNullable<typeof item> => item !== null)
           .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount);
-    }, [employees, performanceStars, attendanceRecords, additionalResponsibilities]);
+    }, [employees, performanceStars, attendanceRecords, additionalResponsibilities, user?.id, user?.role, reporteeIds]);
 
 
     if (!user || !mounted) return null;
@@ -334,9 +342,6 @@ export default function Home() {
     });
 
     // Manager stats
-    const isManagerRole = ["FOUNDER", "AD", "HOI"].includes(role);
-    const reportees = (isManagerRole || role === "HR") ? getReportees(user.id) : [];
-    const reporteeIds = reportees.map(r => r.id);
     const pendingLeaves = leaves.filter(l => reporteeIds.includes(l.employeeId) && l.status === "Pending");
     const expected = getExpectedTiming(user.id);
 

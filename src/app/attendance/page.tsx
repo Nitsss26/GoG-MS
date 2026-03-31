@@ -16,7 +16,7 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 export default function AttendancePage() {
-    const { user, employees, clockIn, clockOut, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests, colleges, resolveDressCodeCheck, getExpectedTiming, holidays } = useAuth();
+    const { user, employees, clockIn, clockOut, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests, colleges, resolveDressCodeCheck, getExpectedTiming, holidays, getReportees } = useAuth();
     const [currentTime, setCurrentTime] = useState<string | null>(null);
     const [currentDate, setCurrentDate] = useState<string | null>(null);
     const [geoStatus, setGeoStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
@@ -62,8 +62,8 @@ export default function AttendancePage() {
     const isHRorFounder = user?.role === "HR" || user?.role === "FOUNDER";
     const reportees = useMemo(() => {
         if (!user) return [];
-        return employees.filter(e => Array.isArray(e.reportsTo) ? e.reportsTo.includes(user.id) : e.reportsTo === user.id);
-    }, [employees, user]);
+        return getReportees(user.id);
+    }, [getReportees, user]);
 
     const showsTeamRoster = isHRorFounder || reportees.length > 0;
 
@@ -764,15 +764,15 @@ export default function AttendancePage() {
                         </div>
                         <div className="bg-green-500/5 border border-green-500/20 p-3 rounded-xl flex items-center justify-between">
                             <span className="text-xs font-bold text-green-400 block">Present Today</span>
-                            <span className="text-lg font-black text-white">{teamAttendanceList.filter(l => l.status === "Working" || l.status === "Clocked Out").length}</span>
+                            <span className="text-lg font-black text-white">{teamAttendanceList.filter((l: any) => l.status === "Working" || l.status === "Clocked Out").length}</span>
                         </div>
                         <div className="bg-amber-500/5 border border-amber-500/20 p-3 rounded-xl flex items-center justify-between">
                             <span className="text-xs font-bold text-amber-500 block">Holiday</span>
-                            <span className="text-lg font-black text-white">{teamAttendanceList.filter(l => l.status === "Holiday").length}</span>
+                            <span className="text-lg font-black text-white">{teamAttendanceList.filter((l: any) => l.status === "Holiday").length}</span>
                         </div>
                         <div className="bg-red-500/5 border border-red-500/20 p-3 rounded-xl flex items-center justify-between">
                             <span className="text-xs font-bold text-red-400 block">Absent Today</span>
-                            <span className="text-lg font-black text-white">{teamAttendanceList.filter(l => l.status === "Absent").length}</span>
+                            <span className="text-lg font-black text-white">{teamAttendanceList.filter((l: any) => l.status === "Absent").length}</span>
                         </div>
                     </div>
 

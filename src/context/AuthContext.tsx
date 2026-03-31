@@ -293,8 +293,8 @@ const INITIAL_EMPLOYEES: Employee[] = [
     },
     {
         id: "EMP101",
-        name: "Ayush Chauhan",
-        email: "ayush@gog.com",
+        name: "Ayush Chouhan",
+        email: "ayush.chouhan@geeksofgurukul.com",
         role: "HOI",
         designation: "Head of Institute (HOI)",
         status: "Active",
@@ -310,7 +310,7 @@ const INITIAL_EMPLOYEES: Employee[] = [
     {
         id: "EMP102",
         name: "Sachin Kumar Gupta",
-        email: "sachin@gog.com",
+        email: "sachin@geeksofgurukul.com",
         role: "HOI",
         designation: "Head of Institute (HOI)",
         status: "Active",
@@ -326,7 +326,7 @@ const INITIAL_EMPLOYEES: Employee[] = [
     {
         id: "EMP135",
         name: "Sidhartha Paikaray",
-        email: "sidhartha@gog.com",
+        email: "sidhartha.paikaray@geeksofgurukul.com",
         role: "HOI",
         designation: "Head of Institute (HOI)",
         status: "Active",
@@ -1080,16 +1080,16 @@ const INITIAL_TICKETS: Ticket[] = [
 ];
 
 const INITIAL_REIMBURSEMENTS: ReimbursementClaim[] = [
-    { id: "RMB001", employeeId: "FAC001", employeeName: "Anil Kumar", email: "anil@gog.com", phone: "9876543219", type: "Travel", amount: 2500, monthYear: "2026-03", description: "Auto fare for client meeting at Vijay Nagar campus", status: "Pending", date: "2026-03-03" },
-    { id: "RMB002", employeeId: "OM001", employeeName: "Arjun Sharma", email: "arjun@gog.com", phone: "9876543216", type: "Internet", amount: 1000, monthYear: "2026-03", description: "Monthly internet recharge for WFH days", status: "Approved - Pending Payment", hrRemarks: "Verified WFH records. Approved for this month.", date: "2026-03-01" },
-    { id: "RMB003", employeeId: "EMP101", employeeName: "Ayush Chauhan", email: "ayush@gog.com", phone: "9876543213", type: "Food", amount: 800, monthYear: "2026-02", description: "Team lunch expense for project kickoff", status: "Approved - Payment Done", hrRemarks: "Payment processed via NEFT.", date: "2026-02-25" },
-    { id: "RMB004", employeeId: "FAC002", employeeName: "Sneha Reddy", email: "sneha@gog.com", phone: "9876543220", type: "Medical", amount: 4500, monthYear: "2026-03", description: "OPD consultation and prescribed medicines", status: "Pending", date: "2026-03-04" },
-    { id: "RMB005", employeeId: "OM002", employeeName: "Kavitha Nair", email: "kavitha@gog.com", phone: "9876543217", type: "Stationery", amount: 650, monthYear: "2026-02", description: "Notebooks, pens & whiteboard markers for training sessions", status: "Approved - Payment Done", hrRemarks: "Receipts verified. Paid.", date: "2026-02-18" },
-    { id: "RMB006", employeeId: "FAC003", employeeName: "Priya Singh", email: "priya@gog.com", phone: "9876543221", type: "Books & Certification", amount: 3200, monthYear: "2026-03", description: "AWS Cloud Practitioner exam fee", status: "Pending", date: "2026-03-02" },
-    { id: "RMB007", employeeId: "OM001", employeeName: "Arjun Sharma", email: "arjun@gog.com", phone: "9876543216", type: "Equipment", amount: 1800, monthYear: "2026-02", description: "Wireless mouse and keyboard for office use", status: "Rejected", rejectionReason: "Equipment should be requisitioned through IT department, not reimbursement.", date: "2026-02-10" },
-    { id: "RMB008", employeeId: "FAC004", employeeName: "Meera Das", email: "meera@gog.com", phone: "9876543222", type: "Travel", amount: 1200, monthYear: "2026-03", description: "Cab fare for student placement drive at TCS office", status: "Pending", date: "2026-03-05" },
-    { id: "RMB009", employeeId: "FAC001", employeeName: "Anil Kumar", email: "anil@gog.com", phone: "9876543219", type: "Phone & Data", amount: 500, monthYear: "2026-02", description: "Mobile recharge for official calls", status: "Approved - Pending Payment", hrRemarks: "Approved. Will process by month end.", date: "2026-02-20" },
-    { id: "RMB010", employeeId: "EMP101", employeeName: "Ayush Chauhan", email: "ayush@gog.com", phone: "9876543213", type: "Fuel", amount: 3500, monthYear: "2026-03", description: "Petrol expense for campus visits during surprise audits", status: "Pending", date: "2026-03-04" },
+    { id: "RMB001", employeeId: "FAC001", employeeName: "Anil Kumar", email: "anil@geeksofgurukul.com", phone: "9876543219", type: "Travel", amount: 2500, monthYear: "2026-03", description: "Auto fare for client meeting at Vijay Nagar campus", status: "Pending", date: "2026-03-03" },
+    { id: "RMB002", employeeId: "OM001", employeeName: "Arjun Sharma", email: "arjun@geeksofgurukul.com", phone: "9876543216", type: "Internet", amount: 1000, monthYear: "2026-03", description: "Monthly internet recharge for WFH days", status: "Approved - Pending Payment", hrRemarks: "Verified WFH records. Approved for this month.", date: "2026-03-01" },
+    { id: "RMB003", employeeId: "EMP101", employeeName: "Ayush Chauhan", email: "ayush@geeksofgurukul.com", phone: "9876543213", type: "Food", amount: 800, monthYear: "2026-02", description: "Team lunch expense for project kickoff", status: "Approved - Payment Done", hrRemarks: "Payment processed via NEFT.", date: "2026-02-25" },
+    { id: "RMB004", employeeId: "FAC002", employeeName: "Sneha Reddy", email: "sneha@geeksofgurukul.com", phone: "9876543220", type: "Medical", amount: 4500, monthYear: "2026-03", description: "OPD consultation and prescribed medicines", status: "Pending", date: "2026-03-04" },
+    { id: "RMB005", employeeId: "OM002", employeeName: "Kavitha Nair", email: "kavitha@geeksofgurukul.com", phone: "9876543217", type: "Stationery", amount: 650, monthYear: "2026-02", description: "Notebooks, pens & whiteboard markers for training sessions", status: "Approved - Payment Done", hrRemarks: "Receipts verified. Paid.", date: "2026-02-18" },
+    { id: "RMB006", employeeId: "FAC003", employeeName: "Priya Singh", email: "priya@geeksofgurukul.com", phone: "9876543221", type: "Books & Certification", amount: 3200, monthYear: "2026-03", description: "AWS Cloud Practitioner exam fee", status: "Pending", date: "2026-03-02" },
+    { id: "RMB007", employeeId: "OM001", employeeName: "Arjun Sharma", email: "arjun@geeksofgurukul.com", phone: "9876543216", type: "Equipment", amount: 1800, monthYear: "2026-02", description: "Wireless mouse and keyboard for office use", status: "Rejected", rejectionReason: "Equipment should be requisitioned through IT department, not reimbursement.", date: "2026-02-10" },
+    { id: "RMB008", employeeId: "FAC004", employeeName: "Meera Das", email: "meera@geeksofgurukul.com", phone: "9876543222", type: "Travel", amount: 1200, monthYear: "2026-03", description: "Cab fare for student placement drive at TCS office", status: "Pending", date: "2026-03-05" },
+    { id: "RMB009", employeeId: "FAC001", employeeName: "Anil Kumar", email: "anil@geeksofgurukul.com", phone: "9876543219", type: "Phone & Data", amount: 500, monthYear: "2026-02", description: "Mobile recharge for official calls", status: "Approved - Pending Payment", hrRemarks: "Approved. Will process by month end.", date: "2026-02-20" },
+    { id: "RMB010", employeeId: "EMP101", employeeName: "Ayush Chauhan", email: "ayush@geeksofgurukul.com", phone: "9876543213", type: "Fuel", amount: 3500, monthYear: "2026-03", description: "Petrol expense for campus visits during surprise audits", status: "Pending", date: "2026-03-04" },
 ];
 
 const INITIAL_HOLIDAYS: Holiday[] = [
@@ -1726,22 +1726,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const manager = employees.find(e => e.id === managerId);
         if (!manager) return [];
 
-        if (manager.role === "FOUNDER") {
-            return employees.filter(e => e.role !== "FOUNDER");
-        }
-        if (manager.role === "HR") {
-            return employees.filter(e => ["AD", "TL", "HOI", "OM", "FACULTY", "PROFESSOR"].includes(e.role));
-        }
-        if (manager.role === "AD") {
-            return employees.filter(e => !["FOUNDER", "HR"].includes(e.role));
-        }
-        if (manager.role === "HOI") {
-            // HOI can manage ALL employees except FOUNDER and HR as requested
-            return employees.filter(e => !["FOUNDER", "HR"].includes(e.role));
-        }
+        return employees.filter(e => {
+            // Role-based visibility
+            if (manager.role === "FOUNDER") return true;
 
-        // Default reportsTo logic for others
-        return employees.filter(e => e.reportsTo && (Array.isArray(e.reportsTo) ? e.reportsTo.includes(managerId) : e.reportsTo === managerId));
+            const isReportee = e.reportsTo && (Array.isArray(e.reportsTo) ? e.reportsTo.includes(managerId) : e.reportsTo === managerId);
+
+            if (manager.role === "HR") {
+                return ["AD", "HOI", "FACULTY", "PROFESSOR", "OM"].includes(e.role);
+            }
+            if (manager.role === "AD") {
+                return ["HOI", "FACULTY", "PROFESSOR", "OM"].includes(e.role) && isReportee;
+            }
+            if (manager.role === "HOI") {
+                return ["FACULTY", "PROFESSOR", "OM"].includes(e.role) && isReportee;
+            }
+            if (manager.role === "OM") {
+                return ["FACULTY", "PROFESSOR"].includes(e.role) && isReportee;
+            }
+
+            // Default fallback: direct reportees of any other role
+            return isReportee;
+        });
     };
     const getManagerChain = (employeeId: string): Employee[] => {
         const emp = employees.find(e => e.id === employeeId);
@@ -2157,14 +2163,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // Reduce the used counter by 1 to effectively "give" a credit back, max 0
                 const updatedUsed = Math.max(0, currentUsed - 1);
 
-                // Determine founders email
-                const founders = prev.filter(e => e.role === "FOUNDER" && e.email).map(e => e.email!);
-
-                // Email employee and CC founders
+                // Email employee and CC mentors/authorities
+                const authorities = getAuthorityEmails(emp, prev);
                 if (emp.email) {
                     sendMail({
                         to: emp.email,
-                        cc: founders,
+                        cc: authorities,
                         subject: `Attendance Override Credit Granted - ${emp.name} `,
                         html: `
     < div style = "font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;" >
@@ -2219,22 +2223,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                 // --- EMAIL NOTIFICATION ---
                 const raiser = employees.find(e => e.id === user.id);
-                const ccEmails = getAuthorityEmails(raiser, employees);
-                const hr = employees.find(e => e.role === "HR");
-                const rm = raiser?.reportsTo ? employees.find(e => e.id === raiser.reportsTo) : null;
-
+                const authorities = getAuthorityEmails(raiser, employees);
                 const { subject: mailSub, html: mailHtml } = getLeaveTemplate(data, "Pending");
 
-                // Ensure HOI and AD are also emailed 
-                const chain = getManagerChain(user.id);
-                const hoi = employees.find(e => e.role === "HOI" && chain.some(c => c.id === e.id));
-                const ad = employees.find(e => e.role === "AD" && chain.some(c => c.id === e.id));
-
-                const toList = [hr?.email, rm?.email, hoi?.email, ad?.email].filter(Boolean) as string[];
-                const finalCC = [...new Set([...ccEmails, raiser?.email].filter(Boolean) as string[])];
-
-                if (toList.length > 0) {
-                    sendMail({ to: toList, cc: finalCC, subject: mailSub, html: mailHtml });
+                if (authorities.length > 0) {
+                    sendMail({ to: authorities, subject: mailSub, html: mailHtml });
                 }
             }
         } catch (err) { console.error(err); }

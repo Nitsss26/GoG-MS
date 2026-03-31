@@ -210,7 +210,7 @@ export default function LoginPage() {
                                     </div>
                                     <input
                                         type="email"
-                                        placeholder="institutional@gog.com"
+                                        placeholder="email@geeksofgurukul.com"
                                         className="w-full bg-[#1c1f26]/40 border border-white/10 rounded-xl lg:rounded-2xl py-3.5 lg:py-4 pl-11 lg:pl-12 pr-4 text-[13px] lg:text-[14px] text-white font-semibold focus:border-[#10b981]/50 outline-none transition-all"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
