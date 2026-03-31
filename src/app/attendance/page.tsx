@@ -512,9 +512,9 @@ export default function AttendancePage() {
                                             initial={{ opacity: 0 }} 
                                             animate={{ opacity: 1 }} 
                                             exit={{ opacity: 0 }} 
-                                            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 sm:p-8"
+                                            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 sm:p-8 overflow-y-auto"
                                         >
-                                            <div className="relative w-full max-w-2xl bg-zinc-900 rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden flex flex-col">
+                                            <div className="relative w-full max-w-2xl bg-zinc-900 rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden flex flex-col my-auto">
                                                 {/* Header */}
                                                 <div className="px-6 py-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
                                                     <div>
@@ -565,7 +565,15 @@ export default function AttendancePage() {
                                                 </div>
 
                                                 {/* Controls */}
-                                                <div className="p-8 bg-zinc-900 flex justify-center items-center">
+                                                <div className="p-4 sm:p-8 bg-zinc-900 flex flex-col gap-4">
+                                                    {uploadError && (
+                                                        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-2">
+                                                            <AlertTriangle size={14} className="text-red-400 shrink-0" />
+                                                            <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest">{uploadError}</p>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    <div className="flex justify-center items-center">
                                                     {!capturedDataUrl ? (
                                                         <button 
                                                             onClick={capturePhoto}
@@ -593,8 +601,9 @@ export default function AttendancePage() {
                                                     )}
                                                 </div>
                                             </div>
-                                        </motion.div>
-                                    )}
+                                        </div>
+                                    </motion.div>
+                                )}
                                 </AnimatePresence>
                             </>
                         )}
