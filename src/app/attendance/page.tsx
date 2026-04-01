@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useAuth, Employee } from "@/context/AuthContext";
+import { useSearchParams } from "next/navigation";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { FLAG_CONFIG } from "@/lib/colleges";
 import { cn } from "@/lib/utils";
@@ -17,6 +18,7 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 
 export default function AttendancePage() {
     const { user, employees, clockIn, clockOut, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests, colleges, resolveDressCodeCheck, getExpectedTiming, holidays, getReportees } = useAuth();
+    const searchParams = useSearchParams();
     const [currentTime, setCurrentTime] = useState<string | null>(null);
     const [currentDate, setCurrentDate] = useState<string | null>(null);
     const [geoStatus, setGeoStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
@@ -48,10 +50,24 @@ export default function AttendancePage() {
         const timer = setInterval(() => {
             const now = new Date();
             setCurrentTime(now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }));
-            setCurrentDate(now.toISOString().split("T")[0]);
+
+            // Only update currentDate if not driven by URL params (prevents reset during form fill)
+            if (!searchParams.get("date")) {
+                setCurrentDate(now.toISOString().split("T")[0]);
+            }
         }, 1000);
         return () => clearInterval(timer);
-    }, []);
+    }, [searchParams]);
+
+    // Handle URL parameters for Mark As Present redirect
+    useEffect(() => {
+        const action = searchParams.get("action");
+        const date = searchParams.get("date");
+        if (action === "map" && date) {
+            setShowMapForm(true);
+            setCurrentDate(date);
+        }
+    }, [searchParams]);
 
     const [selectedGlobalDate, setSelectedGlobalDate] = useState<string>("");
 
@@ -69,10 +85,10 @@ export default function AttendancePage() {
 
     const employeesToShow = useMemo(() => {
         if (!user) return [];
-        let list = isHRorFounder 
-            ? employees.filter((e: Employee) => !["CEO", "CTO", "COO"].includes(e.designation || "") && e.role !== "FOUNDER") 
+        let list = isHRorFounder
+            ? employees.filter((e: Employee) => !["CEO", "CTO", "COO"].includes(e.designation || "") && e.role !== "FOUNDER")
             : reportees;
-        
+
         // Fix: Always include self in the list
         if (!list.find((e: Employee) => e.id === user.id)) {
             const self = employees.find(e => e.id === user.id);
@@ -90,9 +106,9 @@ export default function AttendancePage() {
             const scheduledLocation = getExpectedTiming(employee.id, selectedGlobalDate).location;
 
             // Fix: Check if it's a holiday for this employee's SCHEDULED location
-            const empHoliday = holidays.find(h => 
-                h.date === selectedGlobalDate && 
-                h.status === "Approved" && 
+            const empHoliday = holidays.find(h =>
+                h.date === selectedGlobalDate &&
+                h.status === "Approved" &&
                 (h.forAll || h.collegeIds?.includes(scheduledLocation || ""))
             );
 
@@ -103,6 +119,11 @@ export default function AttendancePage() {
 
             return { employee, record, status, scheduledLocation };
         }).sort((a: any, b: any) => {
+            // First group by scheduled location
+            if (a.scheduledLocation !== b.scheduledLocation) {
+                return (a.scheduledLocation || "").localeCompare(b.scheduledLocation || "");
+            }
+            // Then sort by status within each group
             const w: Record<string, number> = { "Working": 2, "Clocked Out": 1, "Holiday": 0.5, "Absent": 0 };
             return w[b.status] - w[a.status];
         });
@@ -128,6 +149,9 @@ export default function AttendancePage() {
     const college = isWFH ? null : colleges.find(c => c.id === assignedLocationId || c.shortName === assignedLocationId || c.name === assignedLocationId);
     const displayLocation = isWFH ? "Work From Home" : college?.shortName || assignedLocationId;
 
+    const isPastCutoff = !!(currentTime && currentTime >= "11:59:00");
+    const shouldShowMAPOnly = isPastCutoff && !hasCheckedIn && currentDate === new Date().toISOString().split("T")[0];
+
     const requestLocation = () => {
         if (isWFH) {
             setGeoStatus("granted");
@@ -145,7 +169,7 @@ export default function AttendancePage() {
                 setUserLng(pos.coords.longitude);
                 let targetCollege = college;
                 let dist = 999999;
-                
+
                 if ((emp.role === "HOI" || emp.role === "OM") && colleges.length > 0) {
                     let closestCollege = colleges[0];
                     let minDistance = 999999;
@@ -157,7 +181,7 @@ export default function AttendancePage() {
                             closestCollege = c;
                         }
                     }
-                    
+
                     targetCollege = closestCollege;
                     dist = minDistance;
                 } else if (targetCollege) {
@@ -182,8 +206,8 @@ export default function AttendancePage() {
         setUploadError(null);
         setCapturedDataUrl(null);
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } 
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }
             });
             setCameraStream(stream);
             setIsCameraOpen(true);
@@ -206,7 +230,7 @@ export default function AttendancePage() {
 
     const capturePhoto = () => {
         if (!videoRef.current || !canvasRef.current || !cameraStream) return;
-        
+
         const video = videoRef.current;
         // Fix for "Empty file" error: Ensure video is ready and has dimensions
         if (video.readyState < 2 || video.videoWidth === 0) {
@@ -217,7 +241,7 @@ export default function AttendancePage() {
         const canvas = canvasRef.current;
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
-        
+
         const ctx = canvas.getContext("2d");
         if (ctx) {
             // Apply mirroring to canvas to match the preview
@@ -232,7 +256,7 @@ export default function AttendancePage() {
 
     const handleUsePhoto = async () => {
         if (!capturedDataUrl) return;
-        
+
         setUploading(true);
         setUploadError(null);
         try {
@@ -276,9 +300,9 @@ export default function AttendancePage() {
     };
 
     const scheduledLocationToday = getExpectedTiming(emp.id, currentDate).location;
-    const isHolidayToday = holidays.find((h: any) => 
-        h.date === currentDate && 
-        h.status === "Approved" && 
+    const isHolidayToday = holidays.find((h: any) =>
+        h.date === currentDate &&
+        h.status === "Approved" &&
         (h.forAll || h.collegeIds?.includes(scheduledLocationToday || ""))
     );
 
@@ -300,18 +324,18 @@ export default function AttendancePage() {
 
     const handleMarkAsPresent = () => {
         if (!mapReason || mapProofUrls.length === 0) { alert("Reason and proofs are mandatory."); return; }
-        
+
         // Determine request type
         let type = "Late";
         if (geoStatus === "denied" || !withinRadius) {
             type = "Location mismatch";
         }
         // In a real scenario, we might check timing too.
-        
+
         addMarkAsPresentRequest({
-            employeeId: user.id, 
-            date: currentDate, 
-            reason: mapReason, 
+            employeeId: user.id,
+            date: currentDate,
+            reason: mapReason,
             proofUrls: mapProofUrls,
             requestType: type // Added field
         });
@@ -444,11 +468,15 @@ export default function AttendancePage() {
                                     <div className="space-y-3">
                                         <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Step 2: Dress Code Photo</p>
                                         <p className="text-[9px] text-zinc-500">A live selfie showing I-Card, Badge, and Blazer is mandatory.</p>
-                                        
+
                                         {!dressCodeUrl && (
-                                            <button 
+                                            <button
                                                 onClick={startCamera}
-                                                className="w-full border-2 border-dashed border-primary/30 rounded-2xl p-8 text-center hover:border-primary transition-all bg-primary/5 group active:scale-95"
+                                                disabled={shouldShowMAPOnly}
+                                                className={cn(
+                                                    "w-full border-2 border-dashed rounded-2xl p-8 text-center transition-all bg-primary/5 group active:scale-95",
+                                                    shouldShowMAPOnly ? "border-zinc-700 opacity-50 cursor-not-allowed" : "border-primary/30 hover:border-primary"
+                                                )}
                                             >
                                                 {uploading ? (
                                                     <div className="flex flex-col items-center gap-2">
@@ -461,10 +489,26 @@ export default function AttendancePage() {
                                                             <Camera size={26} className="text-primary" />
                                                         </div>
                                                         <p className="text-xs text-white font-bold">Launch Camera Verification</p>
-                                                        <p className="text-[9px] text-zinc-500 mt-1 uppercase tracking-tighter">Live Session Mandatory</p>
+                                                        <p className="text-[9px] text-zinc-500 mt-1 uppercase tracking-tighter">Live Photo Mandatory</p>
                                                     </>
                                                 )}
                                             </button>
+                                        )}
+
+                                        {shouldShowMAPOnly && (
+                                            <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-3">
+                                                <div className="flex items-center gap-2">
+                                                    <Clock size={16} className="text-amber-400" />
+                                                    <p className="text-xs font-bold text-amber-400">Past 11:59 AM Deadline</p>
+                                                </div>
+                                                <p className="text-[10px] text-zinc-400">The standard clock-in window for today has closed. Please raise a "Mark As Present" request instead.</p>
+                                                <button
+                                                    onClick={() => setShowMapForm(true)}
+                                                    className="w-full py-2.5 bg-amber-500/20 border border-amber-500/30 rounded-xl text-xs font-bold text-amber-400 hover:bg-amber-500/30 transition-all"
+                                                >
+                                                    Raise MAP Request
+                                                </button>
+                                            </div>
                                         )}
 
                                         {dressCodeUrl && (
@@ -480,15 +524,15 @@ export default function AttendancePage() {
                                                     <p className="text-[10px] text-zinc-500 mt-0.5">Live capture successfully processed via Cloudinary.</p>
                                                     <a href={dressCodeUrl} target="_blank" rel="noopener" className="text-[10px] text-primary hover:underline font-bold mt-1 inline-block">Review Proof ↗</a>
                                                 </div>
-                                                <button 
-                                                    onClick={() => { setDressCodeUrl(null); startCamera(); }} 
+                                                <button
+                                                    onClick={() => { setDressCodeUrl(null); startCamera(); }}
                                                     className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                                                 >
                                                     <X size={20} />
                                                 </button>
                                             </div>
                                         )}
-                                        {uploadError && <p className="text-[10px] text-red-400 mt-1 flex items-center gap-1 bg-red-500/5 px-2 py-1 rounded border border-red-500/20"><AlertTriangle size={12}/> {uploadError}</p>}
+                                        {uploadError && <p className="text-[10px] text-red-400 mt-1 flex items-center gap-1 bg-red-500/5 px-2 py-1 rounded border border-red-500/20"><AlertTriangle size={12} /> {uploadError}</p>}
                                     </div>
                                 )}
 
@@ -508,10 +552,10 @@ export default function AttendancePage() {
                                 {/* --- PROFESSIONAL CAMERA MODAL --- */}
                                 <AnimatePresence>
                                     {isCameraOpen && (
-                                        <motion.div 
-                                            initial={{ opacity: 0 }} 
-                                            animate={{ opacity: 1 }} 
-                                            exit={{ opacity: 0 }} 
+                                        <motion.div
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            exit={{ opacity: 0 }}
                                             className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 sm:p-8 overflow-y-auto"
                                         >
                                             <div className="relative w-full max-w-2xl bg-zinc-900 rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden flex flex-col my-auto">
@@ -521,10 +565,10 @@ export default function AttendancePage() {
                                                         <h3 className="text-sm font-black text-white flex items-center gap-2">
                                                             <Camera size={18} className="text-primary" /> DRESS CODE VERIFICATION
                                                         </h3>
-                                                        <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-0.5">Secure Live Session</p>
+                                                        <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-0.5">Live Image</p>
                                                     </div>
-                                                    <button 
-                                                        onClick={stopCamera} 
+                                                    <button
+                                                        onClick={stopCamera}
                                                         className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-700 transition-all"
                                                     >
                                                         <X size={20} />
@@ -535,11 +579,11 @@ export default function AttendancePage() {
                                                 <div className="relative flex-1 bg-black aspect-video flex items-center justify-center group">
                                                     {!capturedDataUrl ? (
                                                         <>
-                                                            <video 
-                                                                ref={videoRef} 
-                                                                autoPlay 
-                                                                playsInline 
-                                                                muted 
+                                                            <video
+                                                                ref={videoRef}
+                                                                autoPlay
+                                                                playsInline
+                                                                muted
                                                                 className="w-full h-full object-cover mirror"
                                                             />
                                                             <div className="absolute top-4 right-4 flex items-center gap-2 bg-red-500/90 text-white text-[9px] font-black px-2 py-1 rounded-full animate-pulse">
@@ -555,7 +599,7 @@ export default function AttendancePage() {
                                                         </>
                                                     )}
                                                     <canvas ref={canvasRef} className="hidden" />
-                                                    
+
                                                     {uploading && (
                                                         <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-4">
                                                             <Loader2 size={40} className="text-primary animate-spin" />
@@ -572,38 +616,38 @@ export default function AttendancePage() {
                                                             <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest">{uploadError}</p>
                                                         </div>
                                                     )}
-                                                    
+
                                                     <div className="flex justify-center items-center">
-                                                    {!capturedDataUrl ? (
-                                                        <button 
-                                                            onClick={capturePhoto}
-                                                            className="group relative w-20 h-20 rounded-full border-4 border-zinc-700 p-1 hover:border-primary transition-all active:scale-95"
-                                                        >
-                                                            <div className="w-full h-full rounded-full bg-white shadow-xl flex items-center justify-center transition-all group-hover:scale-90" />
-                                                        </button>
-                                                    ) : (
-                                                        <div className="flex flex-col sm:flex-row gap-4 w-full">
-                                                            <button 
-                                                                onClick={retakePhoto} 
-                                                                disabled={uploading}
-                                                                className="flex-1 py-4 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-black rounded-2xl border border-zinc-700 transition-all flex items-center justify-center gap-2 uppercase tracking-widest disabled:opacity-50"
+                                                        {!capturedDataUrl ? (
+                                                            <button
+                                                                onClick={capturePhoto}
+                                                                className="group relative w-20 h-20 rounded-full border-4 border-zinc-700 p-1 hover:border-primary transition-all active:scale-95"
                                                             >
-                                                                <Camera size={14} /> Retake
+                                                                <div className="w-full h-full rounded-full bg-white shadow-xl flex items-center justify-center transition-all group-hover:scale-90" />
                                                             </button>
-                                                            <button 
-                                                                onClick={handleUsePhoto} 
-                                                                disabled={uploading}
-                                                                className="flex-[2] py-4 bg-primary hover:bg-primary-dark text-black text-xs font-black rounded-2xl shadow-xl shadow-primary/20 transition-all flex items-center justify-center gap-2 uppercase tracking-widest disabled:opacity-50"
-                                                            >
-                                                                {uploading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Confirm & Upload
-                                                            </button>
-                                                        </div>
-                                                    )}
+                                                        ) : (
+                                                            <div className="flex flex-col sm:flex-row gap-4 w-full">
+                                                                <button
+                                                                    onClick={retakePhoto}
+                                                                    disabled={uploading}
+                                                                    className="flex-1 py-4 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-black rounded-2xl border border-zinc-700 transition-all flex items-center justify-center gap-2 uppercase tracking-widest disabled:opacity-50"
+                                                                >
+                                                                    <Camera size={14} /> Retake
+                                                                </button>
+                                                                <button
+                                                                    onClick={handleUsePhoto}
+                                                                    disabled={uploading}
+                                                                    className="flex-[2] py-4 bg-primary hover:bg-primary-dark text-black text-xs font-black rounded-2xl shadow-xl shadow-primary/20 transition-all flex items-center justify-center gap-2 uppercase tracking-widest disabled:opacity-50"
+                                                                >
+                                                                    {uploading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Confirm & Upload
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    </motion.div>
-                                )}
+                                        </motion.div>
+                                    )}
                                 </AnimatePresence>
                             </>
                         )}

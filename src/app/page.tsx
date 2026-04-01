@@ -127,7 +127,7 @@ function AttendanceCalendar({ records, holidays }: { records: any[]; holidays: a
 function FloatingChatbot({ sops }: { sops: any[] }) {
     const [open, setOpen] = useState(false);
     const [msgs, setMsgs] = useState<{ role: string; text: string; isTicketPrompt?: boolean }[]>([
-        { role: "bot", text: "Hi! I'm the GoG SOP Assistant. Ask me about dress code, attendance, leaves, WFH, conduct, or any office policy. Type 'ticket' to raise a support ticket." }
+        { role: "bot", text: "Hi! I'm the GoG HR Assistant. Ask me about dress code, attendance, leaves, WFH, conduct, or any office policy. Type 'ticket' to raise a support ticket." }
     ]);
     const [input, setInput] = useState("");
 
@@ -178,24 +178,36 @@ function FloatingChatbot({ sops }: { sops: any[] }) {
     return (
         <>
             <button onClick={() => setOpen(!open)} className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-primary rounded-2xl flex items-center justify-center text-primary-foreground shadow-2xl shadow-primary/30 hover:scale-105 transition-transform">
-                {open ? <X size={20} /> : <Bot size={22} />}
+                {/* {open ? <X size={20} /> : <Bot size={22} />} */}
+                {open ? <X size={20} /> : <img
+                    src="https://i.ibb.co/qYQkmMDR/unnamed-1.png"
+                    style={{ width: '42px', height: '42px', objectFit: 'contain' }}
+                    alt="Bot Icon"
+                    className="text-primary"
+                />}
             </button>
             <AnimatePresence>
                 {open && (
                     <motion.div initial={{ opacity: 0, y: 20, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.95 }}
                         className="fixed bottom-24 right-6 z-50 w-80 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{ height: 420 }}>
                         <div className="p-3 border-b border-zinc-800 bg-primary/5 flex items-center gap-2">
-                            <Bot size={16} className="text-primary" />
-                            <span className="text-xs font-bold text-white">SOP Assistant</span>
-                            <span className="text-[7px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full ml-auto font-bold">TRAINED ON SOPs</span>
+                            {/* <Bot size={16} className="text-primary" /> */}
+                            <img
+                                src="https://i.ibb.co/qYQkmMDR/unnamed-1.png"
+                                style={{ width: '16px', height: '16px', objectFit: 'contain' }}
+                                alt="Bot Icon"
+                                className="text-primary"
+                            />
+                            <span className="text-xs font-bold text-white">HR Assistant</span>
+                            <span className="text-[7px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full ml-auto font-bold">TRAINED BY HR</span>
                         </div>
                         <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
                             {msgs.map((m, i) => (
                                 <div key={i}>
                                     <div className={cn("max-w-[85%] p-2.5 rounded-xl text-[11px] leading-relaxed whitespace-pre-wrap", m.role === "bot" ? "bg-zinc-800 text-zinc-300 mr-auto" : "bg-primary/20 text-primary ml-auto")}>
-                                        {m.text.split(/(\*\*.*?\*\*)/g).map((part, idx) => 
-                                            part.startsWith("**") && part.endsWith("**") 
-                                                ? <strong key={idx} className={m.role === "bot" ? "text-emerald-400 font-bold" : "font-bold"}>{part.slice(2, -2)}</strong> 
+                                        {m.text.split(/(\*\*.*?\*\*)/g).map((part, idx) =>
+                                            part.startsWith("**") && part.endsWith("**")
+                                                ? <strong key={idx} className={m.role === "bot" ? "text-emerald-400 font-bold" : "font-bold"}>{part.slice(2, -2)}</strong>
                                                 : <span key={idx}>{part}</span>
                                         )}
                                     </div>
@@ -242,7 +254,7 @@ export default function Home() {
             const emp = employees.find(e => e.id === s.employeeId);
             if (!emp) return null;
 
-            const blockedEmails = ["ayush.chouhan@geeksofgurukul.com", "sachin@geeksofgurukul.com", "ayush@geeksofgurukul.com", "skgupta272829@gmail.com"];
+            const blockedEmails = ["ayush@geeksofgurukul.com", "skgupta272829@gmail.com"];
             if (blockedEmails.includes(emp.email?.toLowerCase())) return null;
 
             const myAttendance = attendanceRecords.filter(r => r.employeeId === s.employeeId);
@@ -308,7 +320,7 @@ export default function Home() {
                 }
             };
         }).filter((item): item is NonNullable<typeof item> => item !== null)
-          .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount);
+            .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount);
     }, [employees, performanceStars, attendanceRecords, additionalResponsibilities, user?.id, user?.role, reporteeIds]);
 
 

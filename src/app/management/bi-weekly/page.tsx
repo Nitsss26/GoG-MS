@@ -3,15 +3,16 @@ import { useAuth } from "@/context/AuthContext";
 import { useState, useMemo } from "react";
 import {
     Star, Users, Save, CheckCircle2, AlertCircle, ChevronRight,
-    TrendingUp, Calendar, Info
+    TrendingUp, Calendar, Info, Plus, X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function BiWeeklyReportPage() {
     const { user, employees, getReportees, addBiWeeklyRating } = useAuth();
     const [selectedId, setSelectedId] = useState<string>("");
-    const [score, setScore] = useState<number>(5);
-    const [points, setPoints] = useState<number>(0);
+    const [score, setScore] = useState<number>(4.0);
+    const [screenshotUrl, setScreenshotUrl] = useState<string>("");
+    const [isUploading, setIsUploading] = useState(false);
     const [period, setPeriod] = useState<string>(() => {
         const now = new Date();
         const start = now.getDate() <= 15 ? 1 : 16;
@@ -28,6 +29,40 @@ export default function BiWeeklyReportPage() {
         return reports.filter(e => e.status === "Active");
     }, [user, employees, getReportees]);
 
+    const projectedPoints = useMemo(() => {
+        let p = 0;
+        if (score > 4.2) p = score * 10;
+        else if (score >= 2.0 && score <= 3.5) p = (score - 5) * 10;
+        else if (score < 2.0) p = (score - 5) * 20;
+        return Math.round(p);
+    }, [score]);
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("upload_preset", "gog_oms"); // Standard preset for GOG
+
+        try {
+            const res = await fetch(`https://api.cloudinary.com/v1_1/dwaepohvf/image/upload`, {
+                method: "POST",
+                body: formData
+            });
+            const data = await res.json();
+            if (data.secure_url) {
+                setScreenshotUrl(data.secure_url);
+            }
+        } catch (err) {
+            console.error("Upload failed:", err);
+            alert("Failed to upload screenshot. Please try again.");
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedId) {
@@ -39,12 +74,17 @@ export default function BiWeeklyReportPage() {
         setMessage(null);
 
         try {
-            await addBiWeeklyRating(selectedId, score, period, points);
-            setMessage({ type: 'success', text: "Performance data recorded and notification sent." });
-            // Reset but keep period
-            setScore(5);
-            setPoints(0);
+            if (!screenshotUrl) {
+                setMessage({ type: 'error', text: "MANDATORY: 1:1 Meeting screenshot is required for session verification." });
+                setIsSubmitting(false);
+                return;
+            }
+            await addBiWeeklyRating(selectedId, score, period, screenshotUrl);
+            setMessage({ type: 'success', text: "Performance data recorded. Projected points: " + projectedPoints });
+            // Reset
+            setScore(4.0);
             setSelectedId("");
+            setScreenshotUrl("");
         } catch (err) {
             setMessage({ type: 'error', text: "Failed to save record. Please try again." });
         } finally {
@@ -103,13 +143,18 @@ export default function BiWeeklyReportPage() {
                                 <label className="flex items-center gap-2 text-sm font-bold text-zinc-400">
                                     Productivity Score <span className="text-[10px] font-normal text-zinc-600">(0.0 - 5.0)</span>
                                 </label>
-                                <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-6">
                                     <input
-                                        type="range" min="0" max="5" step="0.5"
-                                        value={score} onChange={(e) => setScore(parseFloat(e.target.value))}
+                                        type="range" min="1.0" max="5.0" step="0.1" value={score}
+                                        onChange={(e) => setScore(parseFloat(e.target.value))}
                                         className="flex-1 h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-primary"
                                     />
-                                    <span className="w-12 text-center text-lg font-black text-primary bg-primary/10 border border-primary/20 rounded-lg py-1">
+                                    <span className={cn(
+                                        "w-12 text-center text-lg font-black border rounded-lg py-1 transition-colors",
+                                        score > 4.2 ? "text-emerald-400 bg-emerald-400/10 border-emerald-400/20" :
+                                        score <= 3.5 ? "text-red-400 bg-red-400/10 border-red-400/20" :
+                                        "text-primary bg-primary/10 border-primary/20"
+                                    )}>
                                         {score.toFixed(1)}
                                     </span>
                                 </div>
@@ -122,15 +167,64 @@ export default function BiWeeklyReportPage() {
 
                             <div className="space-y-4">
                                 <label className="flex items-center gap-2 text-sm font-bold text-zinc-400">
-                                    Bonus Points <span className="text-[10px] font-normal text-zinc-600">(0 - 50)</span>
+                                    Leaderboard Points <span className="text-[10px] font-normal text-zinc-600">(Auto-calculated)</span>
                                 </label>
-                                <input
-                                    type="number" min="0" max="50"
-                                    value={points} onChange={(e) => setPoints(parseInt(e.target.value) || 0)}
-                                    className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-primary transition-colors"
-                                    placeholder="Enter points (e.g. 10)"
-                                />
-                                <p className="text-[9px] text-zinc-600">These points directly impact the monthly leaderboard rankings.</p>
+                                <div className={cn(
+                                    "w-full bg-zinc-800/50 border rounded-xl px-4 py-2.5 text-sm font-black flex items-center justify-between",
+                                    projectedPoints > 0 ? "border-emerald-500/20 text-emerald-400" :
+                                    projectedPoints < 0 ? "border-red-500/20 text-red-400" :
+                                    "border-zinc-700/50 text-zinc-500"
+                                )}>
+                                    <span>{projectedPoints >= 0 ? "+" : ""}{projectedPoints}</span>
+                                    <span className="text-[9px] uppercase tracking-widest opacity-60">{projectedPoints >= 0 ? "Bonus" : "Penalty"}</span>
+                                </div>
+                                <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">
+                                    {score > 4.2 ? "High Performance Bonus Applied" : 
+                                     score < 3.5 ? "Low Productivity Penalty Applied" : 
+                                     "Neutral Performance Range"}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4 pt-4 border-t border-zinc-800/50">
+                            <label className="flex items-center gap-2 text-sm font-bold text-zinc-400">
+                                Proof of 1:1 Meeting <span className="text-[10px] font-normal text-red-500">(Mandatory)</span>
+                            </label>
+                            <div className={cn(
+                                "relative group overflow-hidden rounded-2xl border-2 border-dashed transition-all",
+                                screenshotUrl ? "border-emerald-500/50 bg-emerald-500/5" : "border-zinc-800 hover:border-zinc-700 bg-zinc-900/30"
+                            )}>
+                                {screenshotUrl ? (
+                                    <div className="p-4 flex items-center justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-16 h-10 rounded-lg bg-zinc-800 border border-zinc-700 overflow-hidden">
+                                                <img src={screenshotUrl} className="w-full h-full object-cover" />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Meeting Proof Uploaded</p>
+                                                <p className="text-[8px] text-zinc-500 truncate max-w-[200px]">{screenshotUrl}</p>
+                                            </div>
+                                        </div>
+                                        <button 
+                                            type="button"
+                                            onClick={() => setScreenshotUrl("")}
+                                            className="p-2 rounded-full bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <label className="flex flex-col items-center justify-center py-8 cursor-pointer group-hover:bg-zinc-800/20">
+                                        <div className="w-12 h-12 rounded-2xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-500 group-hover:scale-110 transition-transform">
+                                            {isUploading ? "..." : <Plus size={24} />}
+                                        </div>
+                                        <div className="mt-4 text-center">
+                                            <p className="text-xs font-black text-white uppercase tracking-widest">{isUploading ? "Uploading Proof..." : "Click to Upload Screenshot"}</p>
+                                            <p className="text-[9px] text-zinc-600 mt-1 uppercase font-bold tracking-widest">Mandatory for verification</p>
+                                        </div>
+                                        <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} disabled={isUploading} />
+                                    </label>
+                                )}
                             </div>
                         </div>
 
@@ -147,10 +241,10 @@ export default function BiWeeklyReportPage() {
                         </div>
 
                         <button
-                            disabled={isSubmitting || !selectedId}
+                            disabled={isSubmitting || !selectedId || !screenshotUrl || isUploading}
                             className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20"
                         >
-                            {isSubmitting ? "Processing..." : <><Save size={18} /> Submit Performance Record</>}
+                            {isSubmitting ? "Processing..." : isUploading ? "Uploading Screenshot..." : <><Save size={18} /> Submit Performance Record</>}
                         </button>
 
                         {message && (

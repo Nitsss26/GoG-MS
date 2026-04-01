@@ -10,6 +10,9 @@ import { cn } from "@/lib/utils";
 export default function LeavePage() {
     const { user, leaves, addLeaveRequest, approveLeave, rejectLeave, getReportees } = useAuth();
     const [showModal, setShowModal] = useState(false);
+    const [decisionModal, setDecisionModal] = useState<{ show: boolean, type: 'approve' | 'reject', leaveId: string, leaveName: string } | null>(null);
+    const [remarks, setRemarks] = useState("");
+    const [isSubmittingDecision, setIsSubmittingDecision] = useState(false);
     const [formData, setFormData] = useState({
         type: "Casual Leave",
         startDate: "",
@@ -87,7 +90,7 @@ export default function LeavePage() {
     const reportees = getReportees(user.id);
     const reporteeIds = reportees.map(r => r.id);
     const filteredLeaves = (user.role === "HR" || user.role === "FOUNDER") 
-        ? leaves 
+        ? leaves.filter(l => l.status !== "Pending HOI Approval") 
         : leaves.filter(l => l.employeeId === user.id || reporteeIds.includes(l.employeeId));
 
     const currentMonth = new Date().getMonth();
@@ -210,7 +213,8 @@ export default function LeavePage() {
                                         <td className="px-5 py-4">
                                             <span className={cn("badge",
                                                 req.status === "Approved" ? "badge-green" :
-                                                    req.status === "Pending" ? "badge-amber" : "badge-zinc"
+                                                req.status === "Pending" ? "badge-amber" : 
+                                                req.status === "Pending HOI Approval" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" : "badge-zinc"
                                             )}>{req.status}</span>
                                         </td>
                                         <td className="px-5 py-4 text-right">
@@ -226,18 +230,38 @@ export default function LeavePage() {
                                                     </div>
                                                 )}
 
-                                                {(user.role === "HR" || user.role === "FOUNDER" || reporteeIds.includes(req.employeeId)) && req.status === "Pending" ? (
-                                                    <div className="flex gap-2">
-                                                        <button onClick={() => { const reason = window.prompt("Reason for approval (Optional):"); approveLeave(req.id, reason || undefined); }} className="h-8 w-8 flex items-center justify-center bg-primary/10 text-primary border border-primary/20 rounded-lg hover:bg-primary transition-colors hover:text-white">
-                                                            <CheckCircle2 size={14} />
-                                                        </button>
-                                                        <button onClick={() => { const reason = window.prompt("Reason for rejection:"); rejectLeave(req.id, false, reason || undefined); }} className="h-8 w-8 flex items-center justify-center bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg hover:bg-red-500 transition-colors hover:text-white">
-                                                            <XCircle size={14} />
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <button className="p-2 text-muted hover:text-white"><AlertCircle size={14} /></button>
-                                                )}
+                                                {(() => {
+                                                    const isManager = reporteeIds.includes(req.employeeId);
+                                                    const isHR = user.role === "HR" || user.role === "FOUNDER";
+                                                    
+                                                    // HOI Stage: Manager approves while status is Pending HOI Approval
+                                                    const canHOIApprove = isManager && req.status === "Pending HOI Approval";
+                                                    
+                                                    // HR Stage: HR approves while status is Pending
+                                                    const canHRApprove = isHR && req.status === "Pending";
+
+                                                    if (canHOIApprove || canHRApprove) {
+                                                        return (
+                                                            <div className="flex gap-2">
+                                                                <button 
+                                                                    onClick={() => setDecisionModal({ show: true, type: 'approve', leaveId: req.id, leaveName: req.employeeName })}
+                                                                    className="h-8 w-8 flex items-center justify-center bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-lg hover:bg-emerald-500 transition-colors hover:text-white"
+                                                                    title="Approve"
+                                                                >
+                                                                    <CheckCircle2 size={14} />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => setDecisionModal({ show: true, type: 'reject', leaveId: req.id, leaveName: req.employeeName })}
+                                                                    className="h-8 w-8 flex items-center justify-center bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg hover:bg-red-500 transition-colors hover:text-white"
+                                                                    title="Reject"
+                                                                >
+                                                                    <XCircle size={14} />
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    }
+                                                    return <button className="p-2 text-muted hover:text-white cursor-default opacity-20"><AlertCircle size={14} /></button>;
+                                                })()}
                                             </div>
                                         </td>
                                     </tr>
@@ -377,6 +401,62 @@ export default function LeavePage() {
                                 </div>
                                 <button type="submit" className="btn-primary w-full py-3">Submit Application</button>
                             </form>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+            {/* Decision Modal */}
+            <AnimatePresence>
+                {decisionModal?.show && (
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDecisionModal(null)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="card w-full max-w-sm p-6 relative z-10 space-y-4">
+                            <div className="flex items-center gap-3">
+                                <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", 
+                                    decisionModal.type === 'approve' ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500")}>
+                                    {decisionModal.type === 'approve' ? <CheckCircle2 size={20} /> : <XCircle size={20} />}
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-white capitalize">{decisionModal.type} Leave Request</h3>
+                                    <p className="text-[10px] text-zinc-500 font-medium">Employee: {decisionModal.leaveName}</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="text-[9px] font-bold text-muted uppercase tracking-widest">Remarks / Reason {decisionModal.type === 'reject' && '(Mandatory)'}</label>
+                                <textarea 
+                                    autoFocus
+                                    className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary resize-none h-24"
+                                    placeholder={decisionModal.type === 'approve' ? "Add any remarks (Optional)..." : "Reason for rejection (Required)..."}
+                                    value={remarks}
+                                    onChange={e => setRemarks(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <button onClick={() => setDecisionModal(null)} className="flex-1 btn-outline text-[10px] py-2.5">Cancel</button>
+                                <button 
+                                    disabled={isSubmittingDecision || (decisionModal.type === 'reject' && !remarks.trim())}
+                                    onClick={async () => {
+                                        setIsSubmittingDecision(true);
+                                        try {
+                                            if (decisionModal.type === 'approve') {
+                                                await approveLeave(decisionModal.leaveId, remarks || undefined);
+                                            } else {
+                                                await rejectLeave(decisionModal.leaveId, false, remarks);
+                                            }
+                                            setDecisionModal(null);
+                                            setRemarks("");
+                                        } finally { setIsSubmittingDecision(false); }
+                                    }}
+                                    className={cn("flex-1 text-[10px] font-bold py-2.5 rounded-lg transition-all", 
+                                        decisionModal.type === 'approve' ? "bg-emerald-500 text-white hover:bg-emerald-600" : "bg-red-500 text-white hover:bg-red-600",
+                                        (isSubmittingDecision || (decisionModal.type === 'reject' && !remarks.trim())) && "opacity-50 cursor-not-allowed"
+                                    )}
+                                >
+                                    {isSubmittingDecision ? "Processing..." : `Confirm ${decisionModal.type === 'approve' ? 'Approval' : 'Rejection'}`}
+                                </button>
+                            </div>
                         </motion.div>
                     </div>
                 )}

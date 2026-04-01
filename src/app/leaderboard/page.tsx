@@ -1,7 +1,7 @@
 "use client";
 import { useAuth } from "@/context/AuthContext";
 import { useMemo, useState } from "react";
-import { Trophy, Star, Flag, Award, ChevronLeft, Users, Shield, X, TrendingUp } from "lucide-react";
+import { Trophy, Star, Flag, Award, ChevronLeft, Users, Shield, X, TrendingUp, Plus } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { resolveImageUrl } from "@/lib/utils";
@@ -16,124 +16,119 @@ export default function LeaderboardPage() {
     const stats = useMemo(() => {
         if (!employees || !performanceStars || !user) return [];
 
+        const START_DATE = new Date("2026-04-01");
         const reportees = getReportees(user.id);
         const reporteeIds = reportees.map(r => r.id);
         const isSystemAdmin = user.role === "HR" || user.role === "FOUNDER";
+        const isAD = user.role === "AD";
 
-        // Leaderboard: Global rankings for everyone
+        // Leaderboard: Global rankings for everyone, starting from April 1st
         return performanceStars
             .map(s => {
-            const emp = employees.find(e => e.id === s.employeeId);
-            if (!emp) return null;
+                const emp = employees.find(e => e.id === s.employeeId);
+                if (!emp) return null;
 
-            // Block Ayush Chouhan and Sachin Kumar Gupta as requested
-            const blockedEmails = ["ayush.chouhan@geeksofgurukul.com", "sachin@geeksofgurukul.com", "ayush@geeksofgurukul.com", "skgupta272829@gmail.com"];
-            if (blockedEmails.includes(emp.email?.toLowerCase())) return null;
+                // Block certain emails
+                const blockedEmails = ["ayush.chouhan@geeksofgurukul.com", "sachin@geeksofgurukul.com", "ayush@geeksofgurukul.com", "skgupta272829@gmail.com"];
+                if (blockedEmails.includes(emp.email?.toLowerCase())) return null;
 
-            const myAttendance = attendanceRecords.filter(r => r.employeeId === s.employeeId);
+                // Filter Attendance: Only from April 1st
+                const myAttendance = attendanceRecords.filter(r => {
+                    const rDate = new Date(r.date);
+                    return r.employeeId === s.employeeId && rDate >= START_DATE;
+                });
 
-            // Flags analysis
-            const flagsList = myAttendance.flatMap(r => {
-                return Object.entries(r.flags || {})
-                    .filter(([_, value]) => value === true)
-                    .map(([key, _]) => key);
-            });
+                // Flags analysis
+                const flagsList = myAttendance.flatMap(r => {
+                    return Object.entries(r.flags || {})
+                        .filter(([_, value]) => value === true)
+                        .map(([key, _]) => key);
+                });
 
-            const lateFlags = flagsList.filter(f => f === 'late').length;
-            const dressFlags = flagsList.filter(f => f === 'dressCode').length;
-            const misconductFlags = flagsList.filter(f => f === 'misconduct').length;
-            const performanceFlags = flagsList.filter(f => f === 'performance').length;
-            const meetingFlags = flagsList.filter(f => f === 'meetingAbsent').length;
+                const lateFlags = flagsList.filter(f => f === 'late').length;
+                const dressFlags = flagsList.filter(f => f === 'dressCode').length;
+                const misconductFlags = flagsList.filter(f => f === 'misconduct').length;
+                const performanceFlags = flagsList.filter(f => f === 'performance').length;
+                const meetingFlags = flagsList.filter(f => f === 'meetingAbsent').length;
 
-            const totalFlags = flagsList.length;
-            const hasRecentFlags = totalFlags > 0;
+                const totalFlags = flagsList.length;
+                const hasRecentFlags = totalFlags > 0;
 
-            const responsibilities = additionalResponsibilities.filter(r => r.employeeId === s.employeeId && r.status === "Approved");
+                // Filter Responsibilities: Only from April 1st
+                const responsibilities = additionalResponsibilities.filter(r => {
+                    const rDate = new Date(r.date);
+                    return r.employeeId === s.employeeId && r.status === "Approved" && rDate >= START_DATE;
+                });
 
-            // --- REFINED RANKING ALGORITHM ---
-            let points = 0;
+                // --- REFINED RANKING ALGORITHM ---
+                let points = 0;
 
-            // 1. Attendance (On-time: +2/day, Late: -5/day)
-            const presentDays = myAttendance.filter(r => r.status === "Present").length;
-            points += (presentDays - lateFlags) * 2; // On-time
-            points -= lateFlags * 5; // Late deduction
+                // 1. Attendance (On-time: +2/day, Late: -5/day)
+                const presentDays = myAttendance.filter(r => r.status === "Present").length;
+                points += (presentDays - lateFlags) * 2; // On-time
+                points -= lateFlags * 5; // Late deduction
 
-            // 2. Dress Code (+2/day, -5/day)
-            const dressCheckedDays = myAttendance.filter(r => r.dressCodeStatus === "Approved" || r.dressCodeStatus === "Rejected").length;
-            points += (dressCheckedDays - dressFlags) * 2;
-            points -= dressFlags * 5;
+                // 2. Dress Code (+2/day, -5/day)
+                const dressCheckedDays = myAttendance.filter(r => r.dressCodeStatus === "Approved" || r.dressCodeStatus === "Rejected").length;
+                points += (dressCheckedDays - dressFlags) * 2;
+                points -= dressFlags * 5;
 
-            // 3. Rating Logic
-            /*
-            >4.2 rating*10 points
-            3.5-4.2 -> no impact
-            2-3.5 (rating-5)*10 points
-            <2 (rating-5)*20 points
-            */
-            if (s.rating > 4.2) {
-                points += s.rating * 10;
-            } else if (s.rating >= 2 && s.rating < 3.5) {
-                points += (s.rating - 5) * 10;
-            } else if (s.rating < 2) {
-                points += (s.rating - 5) * 20;
-            }
+                // 3. Rating Logic (Filtering biWeeklyScores from April 1st)
+                const myRatings = (emp.biWeeklyScores || []).filter(r => {
+                    const rDate = new Date(r.date || "");
+                    return rDate >= START_DATE;
+                });
 
-            // 4. Clean Record (+100 points)
-            if (!hasRecentFlags) points += 100;
+                myRatings.forEach(r => {
+                    // USER SPECIFIED RULES:
+                    // Rating > 4.2: (Rating × 10)
+                    // Rating 2.0 - 3.5: (Rating - 5) × 10
+                    // Rating < 2.0: (Rating - 5) × 20
+                    if (r.score > 4.2) {
+                        points += r.score * 10;
+                    } else if (r.score >= 2.0 && r.score <= 3.5) {
+                        points += (r.score - 5) * 10;
+                    } else if (r.score < 2.0) {
+                        points += (r.score - 5) * 20;
+                    }
+                });
 
-            // Flags additional penalties (already handles late=yellow & dress=orange via above logic)
-            points -= misconductFlags * 50; // Red Flag penalty
-            points -= performanceFlags * 20; // Blue Flag penalty
-            points -= meetingFlags * 10; // Black Flag penalty
+                // 4. Clean Record (+100 points)
+                if (!hasRecentFlags && myAttendance.length > 0) points += 100;
 
-            // 5. Additional Responsibilities (Sum of points)
-            const responsibilityPoints = responsibilities.reduce((acc, curr) => acc + (curr.points || 0), 0);
-            points += responsibilityPoints;
+                // Flags additional penalties
+                points -= misconductFlags * 50; // Red Flag penalty
+                points -= performanceFlags * 20; // Blue Flag penalty
+                points -= meetingFlags * 10; // Black Flag penalty
 
-            // --- STAR CALCULATION ---
-            // For every 200 point 0.5 star increment (Base 3.0)
-            const calculatedStars = Math.min(5, Math.max(0, 3.0 + (points / 200) * 0.5));
+                // 5. Additional Responsibilities (Sum of points)
+                const responsibilityPoints = responsibilities.reduce((acc, curr) => acc + (curr.points || 0), 0);
+                points += responsibilityPoints;
 
-            return {
-                ...s,
-                emp,
-                calculatedStars,
-                flagsList: [...new Set(flagsList)],
-                actualFlags: flagsList,
-                flagsCount: totalFlags,
-                responsibilities,
-                totalPoints: points,
-                flagCounts: {
-                    yellow: lateFlags + flagsList.filter(f => f === 'earlyOut' || f === 'locationDiff').length,
-                    red: misconductFlags,
-                    orange: dressFlags,
-                    black: meetingFlags,
-                    blue: performanceFlags
-                }
-            };
-        }).filter((item): item is NonNullable<typeof item> => item !== null)
+                // --- STAR CALCULATION ---
+                const calculatedStars = Math.min(5, Math.max(0, 3.0 + (points / 200) * 0.5));
+
+                return {
+                    ...s,
+                    emp,
+                    calculatedStars,
+                    flagsList: [...new Set(flagsList)],
+                    actualFlags: flagsList,
+                    flagsCount: totalFlags,
+                    responsibilities,
+                    totalPoints: points,
+                    flagCounts: {
+                        yellow: lateFlags + flagsList.filter(f => f === 'earlyOut' || f === 'locationDiff').length,
+                        red: misconductFlags,
+                        orange: dressFlags,
+                        black: meetingFlags,
+                        blue: performanceFlags
+                    }
+                };
+            }).filter((item): item is NonNullable<typeof item> => item !== null)
             .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount)
             .map((item, index) => {
-                // Inject random flags for variety if rank is low and flags are 0
                 const rank = index + 1;
-                if (rank > 4 && item.flagsCount === 0) {
-                    const randomRed = Math.random() > 0.7 ? Math.floor(Math.random() * 2) + 1 : 0;
-                    const randomYellow = Math.random() > 0.5 ? Math.floor(Math.random() * 3) + 1 : 0;
-                    const randomBlack = Math.random() > 0.8 ? 1 : 0;
-
-                    if (randomRed || randomYellow || randomBlack) {
-                        return {
-                            ...item,
-                            flagsCount: randomRed + randomYellow + randomBlack,
-                            flagCounts: {
-                                ...item.flagCounts,
-                                red: randomRed,
-                                yellow: randomYellow,
-                                black: randomBlack
-                            }
-                        };
-                    }
-                }
                 return item;
             });
     }, [employees, performanceStars, attendanceRecords, additionalResponsibilities]);
@@ -446,10 +441,10 @@ function LeaderboardBox({ data, rank, type, onRespClick }: { data: any; rank: nu
                     rank === 1 ? "border-yellow-500" : rank === 2 ? "border-zinc-300" : rank === 3 ? "border-amber-600" : "border-white/5"
                 )}>
                     {data.emp?.photoUrl || data.emp?.passport_size_photo || data.emp?.upload_your_passport_size_photo ? (
-                        <img 
-                            src={resolveImageUrl(data.emp?.photoUrl || data.emp?.passport_size_photo || data.emp?.upload_your_passport_size_photo)} 
-                            alt="" 
-                            className="w-full h-full object-cover" 
+                        <img
+                            src={resolveImageUrl(data.emp?.photoUrl || data.emp?.passport_size_photo || data.emp?.upload_your_passport_size_photo)}
+                            alt=""
+                            className="w-full h-full object-cover"
                             onError={(e) => {
                                 (e.target as HTMLImageElement).style.display = 'none';
                                 (e.target as HTMLImageElement).parentElement!.classList.add('flex', 'items-center', 'justify-center');
@@ -492,12 +487,12 @@ function LeaderboardBox({ data, rank, type, onRespClick }: { data: any; rank: nu
             </div>
 
             {/* Performance Stats */}
-            <div className="w-full mt-2 pt-2.5 border-t border-white/5 group-hover:border-primary/20 transition-colors grid grid-cols-2 gap-2">
+            <div className="w-full mt-2 pt-2.5 border-t border-white/5 group-hover:border-primary/20 transition-colors flex items-center justify-between">
                 <div className="flex flex-col">
                     <span className="text-[6px] sm:text-[7px] text-zinc-500 font-black uppercase tracking-widest truncate">Points</span>
                     <span className="text-[10px] sm:text-xs font-black text-white leading-none">{data.totalPoints.toFixed(0)}</span>
                 </div>
-                <button
+                <button 
                     onClick={(e) => { e.stopPropagation(); onRespClick(); }}
                     className="flex flex-col items-end group/btn cursor-pointer overflow-hidden p-1 -m-1 rounded-lg hover:bg-primary/5 transition-colors"
                 >

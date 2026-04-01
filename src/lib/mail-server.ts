@@ -16,12 +16,13 @@ interface MailOptions {
     subject: string;
     text?: string;
     html: string;
+    attachments?: any[];
 }
 
 /**
  * SERVER-ONLY: Sends an email using nodemailer.
  */
-export const sendMailInternal = async ({ to, cc, subject, text, html }: MailOptions) => {
+export const sendMailInternal = async ({ to, cc, subject, text, html, attachments }: MailOptions) => {
     try {
         const info = await transporter.sendMail({
             from: `"GoG OMS" <${process.env.SMTP_USER}>`,
@@ -30,6 +31,7 @@ export const sendMailInternal = async ({ to, cc, subject, text, html }: MailOpti
             subject,
             text,
             html,
+            attachments,
         });
         console.log("Message sent to %s: %s", to, info.messageId);
         return { success: true, messageId: info.messageId };

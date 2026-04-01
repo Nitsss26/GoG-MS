@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { cn } from "@/lib/utils";
 import { AlertCircle, Clock, CheckCircle2, MessageSquare, Plus, FileText, ArrowRight, Upload, Loader2, X, Image as ImageIcon, Users } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function TicketsPage() {
     const { user, raiseTicket, resolveTicket, tickets, getReportees, employees, restoreAttendanceCredits, pipRecords } = useAuth();
@@ -23,7 +24,10 @@ export default function TicketsPage() {
         targetDate: new Date().toISOString().split('T')[0]
     });
     const [proofUrls, setProofUrls] = useState<string[]>([]);
-    const [uploading, setUploading] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const [resolutionModal, setResolutionModal] = useState<{ show: boolean, ticketId: string, ticketSubject: string, category: string, targetEmp?: string, targetDate?: string } | null>(null);
+    const [resolutionRemarks, setResolutionRemarks] = useState("");
+    const [isResolving, setIsResolving] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
 
     if (!user) return null;
@@ -81,14 +85,14 @@ export default function TicketsPage() {
     const handleProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files) return;
-        setUploading(true);
+        setIsUploading(true);
         try {
             for (const file of Array.from(files)) {
                 const res = await uploadToCloudinary(file);
                 setProofUrls(prev => [...prev, res.secure_url]);
             }
         } catch (err) { console.error(err); }
-        setUploading(false);
+        setIsUploading(false);
     };
 
     const StatusIcon = ({ status }: { status: string }) => {
@@ -232,14 +236,22 @@ export default function TicketsPage() {
                                         <div className="flex flex-wrap gap-2 items-center">
                                             <button
                                                 onClick={() => {
-                                                    const note = ticket.targetCategory === "Attendance Override Request"
-                                                        ? `Attendance overridden for ${targetEmp?.name} on ${ticket.targetDate}. Processed by system via HR approval.`
-                                                        : "Ticket addressed by representative.";
-                                                    resolveTicket(ticket.id, note);
+                                                    const defaultNote = ticket.targetCategory === "Attendance Override Request" 
+                                                        ? `Attendance overridden for ${targetEmp?.name} on ${ticket.targetDate}.` 
+                                                        : "";
+                                                    setResolutionRemarks(defaultNote);
+                                                    setResolutionModal({ 
+                                                        show: true, 
+                                                        ticketId: ticket.id, 
+                                                        ticketSubject: ticket.subject,
+                                                        category: ticket.targetCategory,
+                                                        targetEmp: targetEmp?.name,
+                                                        targetDate: ticket.targetDate
+                                                    });
                                                 }}
-                                                className="btn-outline py-1.5 px-3 text-[10px] h-auto border-green-500/20 text-green-500 hover:bg-green-500/10 whitespace-nowrap"
+                                                className="btn-outline py-1.5 px-3 text-[10px] h-auto border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/10 whitespace-nowrap flex items-center gap-2"
                                             >
-                                                Mark Resolved
+                                                <CheckCircle2 size={12} /> Resolve Ticket
                                             </button>
                                         </div>
                                     )}
@@ -352,7 +364,7 @@ export default function TicketsPage() {
                                         <span>Proof (Mandatory)</span>
                                         {proofUrls.length > 0 && <span className="text-green-500">✓ {proofUrls.length} file(s)</span>}
                                     </label>
-                                    {!uploading ? (
+                                    {!isUploading ? (
                                         <div
                                             onClick={() => fileRef.current?.click()}
                                             className={cn("w-full border-2 border-dashed rounded-lg p-4 text-center hover:bg-surface-light transition-colors cursor-pointer group",
@@ -397,6 +409,65 @@ export default function TicketsPage() {
                     </div>
                 </div>
             )}
+            {/* Resolution Modal */}
+            <AnimatePresence>
+                {resolutionModal?.show && (
+                    <div className="fixed inset-0 z-[120] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setResolutionModal(null)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="card w-full max-w-sm p-6 relative z-10 space-y-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                                    <CheckCircle2 size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">Resolve Ticket</h3>
+                                    <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest truncate max-w-[200px]">{resolutionModal.ticketSubject}</p>
+                                </div>
+                            </div>
+
+                            {resolutionModal.category === "Attendance Override Request" && (
+                                <div className="p-3 bg-primary/5 border border-primary/20 rounded-xl">
+                                    <p className="text-[10px] text-primary font-black uppercase tracking-widest mb-1 items-center flex gap-1">
+                                        <Clock size={10} /> Attendance Correction
+                                    </p>
+                                    <p className="text-[11px] text-zinc-300 font-medium">Validating override for <span className="text-white font-bold">{resolutionModal.targetEmp}</span> on <span className="text-white font-bold">{resolutionModal.targetDate}</span>.</p>
+                                </div>
+                            )}
+
+                            <div className="space-y-1.5">
+                                <label className="text-[9px] font-bold text-muted uppercase tracking-widest">Resolution Remarks (Mandatory)</label>
+                                <textarea 
+                                    autoFocus
+                                    className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary resize-none h-24"
+                                    placeholder="Briefly describe how this issue was resolved..."
+                                    value={resolutionRemarks}
+                                    onChange={e => setResolutionRemarks(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <button onClick={() => setResolutionModal(null)} className="flex-1 btn-outline text-[10px] py-2.5">Cancel</button>
+                                <button 
+                                    disabled={isResolving || !resolutionRemarks.trim()}
+                                    onClick={async () => {
+                                        setIsResolving(true);
+                                        try {
+                                            await resolveTicket(resolutionModal.ticketId, resolutionRemarks);
+                                            setResolutionModal(null);
+                                            setResolutionRemarks("");
+                                        } finally { setIsResolving(false); }
+                                    }}
+                                    className={cn("flex-1 text-[10px] font-bold py-2.5 rounded-lg transition-all bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-600/20", 
+                                        (isResolving || !resolutionRemarks.trim()) && "opacity-50 cursor-not-allowed"
+                                    )}
+                                >
+                                    {isResolving ? "Processing..." : "Confirm Resolution"}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

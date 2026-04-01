@@ -20,7 +20,8 @@ import {
     getRatingTemplate,
     getBirthdayTemplate,
     getAnnouncementTemplate,
-    getSOPUpdateTemplate
+    getSOPUpdateTemplate,
+    getScheduleChangeTemplate
 } from "@/lib/mail";
 import { CUSTOM_SCHEDULE_RULES, FALLBACK_TIMINGS, isThirdSaturday } from '@/lib/attendance-config';
 
@@ -137,7 +138,7 @@ export interface Employee extends User {
 export interface LeaveRequest {
     id: string; employeeId: string; employeeName: string; type: string;
     startDate: string; endDate: string; days: number;
-    status: "Pending" | "Approved" | "Rejected"; classification: "Paid" | "Unpaid";
+    status: "Pending" | "Approved" | "Rejected" | "Pending HOI Approval"; classification: "Paid" | "Unpaid";
     leaveType: "Planned" | "Emergency" | "Short"; reason?: string; proofUrls?: string[];
     lossOfPayDays?: number;
     emergencyCategory?: "Accident" | "Death" | "In Hospital";
@@ -1290,12 +1291,12 @@ interface AuthContextType {
     addCollege: (college: Omit<College, "id">) => Promise<void>;
     updateCollege: (id: string, updates: Partial<College>) => Promise<void>;
     deleteCollege: (id: string) => Promise<void>;
-    addAdditionalResponsibility: (employeeId: string, description: string, points: number) => void;
-    approveAdditionalResponsibility: (id: string, status: "Approved" | "Rejected") => void;
+    addAdditionalResponsibility: (employeeId: string, description: string, points: number) => Promise<void>;
+    approveAdditionalResponsibility: (id: string, status: "Approved" | "Rejected") => Promise<void>;
     addMarkAsPresentRequest: (req: Omit<MarkAsPresentRequest, "id" | "status" | "appliedAt" | "employeeName">) => Promise<void>;
     resolveMarkAsPresentRequest: (id: string, status: "Approved" | "Rejected") => void;
     resolveDressCodeCheck: (recordId: string, status: "Approved" | "Rejected") => Promise<void>;
-    addBiWeeklyRating: (employeeId: string, score: number, period: string, points: number) => void;
+    addBiWeeklyRating: (employeeId: string, score: number, period: string, screenshotUrl?: string) => Promise<void>;
     addMeetingRequest: (req: Omit<MeetingRequest, "id" | "status" | "employeeId" | "employeeName" | "createdAt">) => void;
     updateMeetingStatus: (id: string, status: MeetingRequest["status"], MOMData?: { screenshotUrls: string[], attendees: MeetingRequest["attendees"] }) => void;
     getReportees: (managerId: string) => Employee[];
@@ -1317,6 +1318,7 @@ interface AuthContextType {
     getMyNotifications: () => PortalNotification[];
     activityLogs: PortalNotification[];
     getExpectedTiming: (employeeId: string, date?: string | Date) => { in: string; out: string; location: string };
+    updateSingleDaySchedule: (employeeId: string, date: string, location: string, clockInTime: string, clockOutTime: string) => Promise<void>;
     authLoading: boolean;
     restoreAttendanceCredits: (employeeId: string) => void;
     changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; msg: string }>;
@@ -2095,20 +2097,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
     }, [employees]);
 
-    const addBiWeeklyRating = (employeeId: string, score: number, period: string, points: number) => {
-        const clampedPoints = Math.min(50, Math.max(-80, points));
+    const addBiWeeklyRating = async (employeeId: string, score: number, period: string, screenshotUrl?: string) => {
+        // AUTOMATED SCORING (User Rules):
+        // Rating > 4.2: (Rating × 10)
+        // Rating 2.0 - 3.5: (Rating - 5) × 10
+        // Rating < 2.0: (Rating - 5) × 20
+        // Rating 3.5 - 4.2: 0 points (Neutral)
+        let points = 0;
+        if (score > 4.2) points = score * 10;
+        else if (score >= 2.0 && score <= 3.5) points = (score - 5) * 10;
+        else if (score < 2.0) points = (score - 5) * 20;
+
+        const clampedPoints = Math.round(points);
+        const newScore = { score, period, date: new Date().toISOString().split('T')[0], points: clampedPoints, screenshotUrl };
+
         setEmployees(prev => prev.map(e => {
             if (e.id === employeeId) {
-                const newScore = { score, period, date: new Date().toISOString().split('T')[0], points: clampedPoints };
                 const scores = [...(e.biWeeklyScores || []), newScore];
-                const emp = employees.find(emp => emp.id === employeeId);
-                const authorities = getAuthorityEmails(emp, employees);
-                const template = getRatingTemplate({ ...newScore, employeeName: emp?.name, ratedByName: user?.name ?? "Manager" });
-                sendMail({ to: emp?.email || "", cc: authorities, subject: `[BI-WEEKLY] ${emp?.name} - Score: ${score}/5`, html: template.html });
                 return { ...e, biWeeklyScores: scores };
             }
             return e;
         }));
+
+        try {
+            const emp = employees.find(emp => emp.id === employeeId);
+            if (!emp) return;
+
+            // Persist to DB
+            await fetch("/api/employees", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: employeeId, biWeeklyScores: [...(emp.biWeeklyScores || []), newScore] })
+            });
+
+            // --- EMAIL NOTIFICATION ---
+            const authorities = getAuthorityEmails(emp, employees);
+            const template = getRatingTemplate({ ...newScore, employeeName: emp?.name, ratedByName: user?.name ?? "Manager" });
+            
+            // If screenshot exists, attach it to the mail
+            const attachments = screenshotUrl ? [{
+                filename: 'meeting-proof.jpg',
+                path: screenshotUrl
+            }] : [];
+
+            sendMail({ 
+                to: emp?.email || "", 
+                cc: authorities, 
+                subject: `[BI-WEEKLY] ${emp?.name} - Score: ${score}/5`, 
+                html: template.html,
+                attachments
+            });
+        } catch (err) {
+            console.error("Failed to add bi-weekly rating:", err);
+        }
     };
 
     const addCollege = async (college: Omit<College, "id">) => {
@@ -2201,10 +2242,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const now = new Date();
         const appliedAt = now.toISOString();
 
+        const isHierarchical = user.role === "OM" || user.role === "PROFESSOR";
+        const initialStatus = isHierarchical ? "Pending HOI Approval" : "Pending";
+
         const newLeave: LeaveRequest = {
             ...req,
             id: `LV${uid()} `,
-            status: "Pending",
+            status: initialStatus as any,
             employeeId: user.id,
             employeeName: user.name,
             lossOfPayDays: 0,
@@ -2234,17 +2278,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     const approveLeave = async (id: string, reason?: string) => {
         try {
+            const leave = leaves.find(l => l.id === id);
+            if (!leave) return;
+
+            // Hierarchical Approval Logic:
+            // If status is 'Pending HOI Approval', it transitions to 'Pending' (waiting for HR).
+            // If status is 'Pending', it transitions to 'Approved'.
+            const nextStatus = leave.status === "Pending HOI Approval" ? "Pending" : "Approved";
+
             const res = await fetch("/api/leaves", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, status: "Approved", reasonForAction: reason })
+                body: JSON.stringify({ id, status: nextStatus, reasonForAction: reason })
             });
             const updated = await res.json();
             if (updated.id) {
                 setLeaves(prev => prev.map(l => l.id === id ? updated : l));
                 const emp = employees.find(e => e.id === updated.employeeId);
-                const { subject, html } = getLeaveTemplate(updated, "Approved");
-                if (emp?.email) sendMail({ to: emp.email, cc: getAuthorityEmails(emp, employees), subject, html });
+                const { subject, html } = getLeaveTemplate(updated, nextStatus as any);
+                if (emp?.email) {
+                    sendMail({ 
+                        to: emp.email, 
+                        cc: getAuthorityEmails(emp, employees), 
+                        subject, 
+                        html 
+                    });
+                }
             }
         } catch (err) { console.error(err); }
     };
@@ -2262,7 +2321,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setLeaves(prev => prev.map(l => l.id === id ? updated : l));
                 const emp = employees.find(e => e.id === updated.employeeId);
                 const { subject, html } = getLeaveTemplate(updated, "Rejected");
-                if (emp?.email) sendMail({ to: emp.email, cc: getAuthorityEmails(emp, employees), subject, html });
+                if (emp?.email) {
+                    sendMail({ 
+                        to: emp.email, 
+                        cc: getAuthorityEmails(emp, employees), 
+                        subject, 
+                        html 
+                    });
+                }
             }
         } catch (err) { console.error(err); }
     };
@@ -2810,6 +2876,74 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
         }
     };
+
+    const updateSingleDaySchedule = async (employeeId: string, date: string, location: string, clockInTime: string, clockOutTime: string) => {
+        if (!user) return;
+        
+        const actor = employees.find(e => e.id === user.id);
+        const emp = employees.find(e => e.id === employeeId);
+        if (!emp) return;
+
+        const oldSchedule = getExpectedTiming(employeeId, date);
+        const newSchedule = { location, clockInTime, clockOutTime };
+
+        try {
+            const res = await fetch("/api/schedule/set", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    employeeId,
+                    date,
+                    location,
+                    clockInTime,
+                    clockOutTime,
+                    assignedBy: user.id,
+                    role: user.role
+                })
+            });
+
+            if (res.ok) {
+                // Update local state
+                setWorkSchedules(prev => {
+                    const existingIdx = prev.findIndex(s => s.employeeId === employeeId);
+                    if (existingIdx !== -1) {
+                        const next = [...prev];
+                        next[existingIdx] = {
+                            ...next[existingIdx],
+                            dayWise: {
+                                ...next[existingIdx].dayWise,
+                                [date]: newSchedule
+                            }
+                        };
+                        return next;
+                    } else {
+                        return [...prev, {
+                            employeeId,
+                            employeeName: emp.name,
+                            dayWise: { [date]: newSchedule }
+                        }];
+                    }
+                });
+
+                // Send email notifications
+                const hrEmails = employees.filter(e => e.role === "HR").map(e => e.email).filter(Boolean) as string[];
+                const adEmails = employees.filter(e => e.role === "AD").map(e => e.email).filter(Boolean) as string[];
+                const founderEmails = employees.filter(e => e.role === "FOUNDER").map(e => e.email).filter(Boolean) as string[];
+                
+                const { subject, html } = getScheduleChangeTemplate(actor, emp, date, oldSchedule, newSchedule);
+                
+                // Recipients: HR, AD, CEOs (Founders), and the Person who did this (Actor)
+                const to = [...new Set([...hrEmails, ...adEmails, ...founderEmails, user.email].filter(Boolean) as string[])];
+                const cc = emp.email ? [emp.email] : [];
+
+                sendMail({ to, cc, subject, html });
+                addNotification(emp.id, emp.name, `Your schedule for ${date} has been updated by ${user.name}`, "attendance");
+            }
+        } catch (err) {
+            console.error("Failed to update single day schedule:", err);
+        }
+    };
+
     const approveWorkSchedule = async (employeeId: string) => {
         setWorkSchedules(prev => prev.map(s => s.employeeId === employeeId ? { ...s, approvedByHR: true } : s));
         try {
@@ -2825,12 +2959,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 
     // ─── ADDITIONAL RESPONSIBILITIES ───
-    const addAdditionalResponsibility = (employeeId: string, description: string, points: number) => {
+    const addAdditionalResponsibility = async (employeeId: string, description: string, points: number) => {
         if (!user) return;
         const emp = employees.find(e => e.id === employeeId);
         if (!emp) return;
         const resp = {
-            id: `AR${uid()} `,
+            id: `AR${uid()}`,
             employeeId,
             employeeName: emp.name,
             addedBy: user.id,
@@ -2839,30 +2973,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             status: "Pending" as const,
             points
         };
-        setAdditionalResponsibilities(prev => [...prev, resp]);
 
-        // --- EMAIL NOTIFICATION ---
-        const ccEmails = getAuthorityEmails(emp, employees);
-        const { subject: mailSub, html: mailHtml } = getAdditionalResponsibilityTemplate(resp);
-
-        if (emp.email) {
-            sendMail({
-                to: emp.email,
-                cc: ccEmails,
-                subject: mailSub,
-                html: mailHtml
+        try {
+            const res = await fetch("/api/responsibilities", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(resp)
             });
-        }
+            const data = await res.json();
+            if (data.id) {
+                setAdditionalResponsibilities(prev => [...prev, data]);
+                // Notify Founders
+                const founders = employees.filter(e => e.role === "FOUNDER");
+                founders.forEach(f => addNotification(f.id, f.name, `New Responsibility Request from ${user.name} for ${emp.name}`, "general"));
+            }
+        } catch (err) { console.error(err); }
     };
 
-    const approveAdditionalResponsibility = (id: string, status: "Approved" | "Rejected") => {
-        setAdditionalResponsibilities(prev => {
-            const item = prev.find(r => r.id === id);
-            if (item && status === "Approved") {
-                setTimeout(() => recalculatePerformance(item.employeeId), 100);
+    const approveAdditionalResponsibility = async (id: string, status: "Approved" | "Rejected") => {
+        try {
+            const res = await fetch("/api/responsibilities", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, status })
+            });
+            const updated = await res.json();
+            if (updated.id) {
+                setAdditionalResponsibilities(prev => prev.map(r => r.id === id ? updated : r));
+                if (status === "Approved") {
+                    recalculatePerformance(updated.employeeId);
+                    
+                    const emp = employees.find(e => e.id === updated.employeeId);
+                    const ccEmails = getAuthorityEmails(emp, employees);
+                    const { subject: mailSub, html: mailHtml } = getAdditionalResponsibilityTemplate(updated);
+                    
+                    const adAssignerEmails = employees.filter(e => e.role === "AD" && e.email).map(e => e.email) as string[];
+                    const hrEmails = employees.filter(e => e.role === "HR" && e.email).map(e => e.email) as string[];
+                    const founderEmails = employees.filter(e => e.role === "FOUNDER" && e.email).map(e => e.email) as string[];
+                    const finalCC = [...new Set([...ccEmails, ...adAssignerEmails, ...hrEmails, ...founderEmails])];
+
+                    if (emp?.email) {
+                        sendMail({ 
+                            to: emp.email, 
+                            cc: finalCC, 
+                            subject: mailSub, 
+                            html: mailHtml 
+                        });
+                    }
+                }
             }
-            return prev.map(r => r.id === id ? { ...r, status } : r);
-        });
+        } catch (err) { console.error(err); }
     };
 
     // ─── MEETINGS ───
@@ -3034,7 +3194,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             requestAsset, assignAsset, updateAssetRequestStatus,
             addNotification, markNotificationRead, getMyNotifications,
             markAsPresentRequests, addMarkAsPresentRequest, resolveMarkAsPresentRequest, resolveDressCodeCheck, giveCredit,
-            getExpectedTiming, restoreAttendanceCredits, changePassword, authLoading
+            getExpectedTiming, restoreAttendanceCredits, changePassword, authLoading,
+            updateSingleDaySchedule
         }}>
             {children}
         </AuthContext.Provider>

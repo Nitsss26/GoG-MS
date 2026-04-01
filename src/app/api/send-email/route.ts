@@ -11,7 +11,7 @@ const filterEmails = (emails: string | string[] | undefined): string | string[] 
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { to, cc, subject, text, html } = body;
+        const { to, cc, subject, text, html, attachments } = body;
 
         if (!to || !subject || !html) {
             return NextResponse.json({ success: false, error: "Missing required fields: to, subject, or html" }, { status: 400 });
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: true, messageId: "skipped-no-valid-recipients" });
         }
 
-        const result = await sendMailInternal({ to: cleanTo, cc: cleanCc, subject, text, html });
+        const result = await sendMailInternal({ to: cleanTo, cc: cleanCc, subject, text, html, attachments });
 
         if (result.success) {
             return NextResponse.json(result);

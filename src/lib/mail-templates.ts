@@ -145,7 +145,7 @@ export const getTicketTemplate = (ticket: any, type: 'raised' | 'resolved') => {
             subject: `[TICKET RESOLVED] ${ticket.subject} - ${ticket.id}`,
             html: ProfessionalWrapper(title, content + `
                 <div style="background-color: #ecfdf5; border-radius: 8px; padding: 16px; margin-top: 20px; border-left: 4px solid #10b981;">
-                    <strong style="color: #065f46; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 4px;">Resolution Summary</strong>
+                    <strong style="color: #065f46; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 4px;">Resolution Remarks by HR/HOI</strong>
                     <p style="margin: 0; color: #047857; font-size: 14px;">${ticket.resolutionNotes || 'The issue has been resolved successfully.'}</p>
                 </div>
             `, "#10b981")
@@ -181,8 +181,15 @@ export const getLeaveTemplate = (leave: any, status: 'Pending' | 'Approved' | 'R
 
     return {
         subject: `[LEAVE ${status.toUpperCase()}] ${leave.employeeName} - ${formatDate(leave.startDate)}`,
-        html: ProfessionalWrapper(title, content + (leave.lossOfPayDays ?
-            `<p style="color: #ef4444; font-weight: bold; margin-top: 10px;">⚠️ Loss of Pay (LOP): ${leave.lossOfPayDays} days applied.</p>` : ''), statusColor)
+        html: ProfessionalWrapper(title, content + 
+            (leave.reasonForAction ? `
+                <div style="background-color: #f8fafc; border-radius: 8px; padding: 16px; margin-top: 20px; border-left: 4px solid ${statusColor};">
+                    <strong style="color: #475569; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 4px;">Decision Remarks by HR/HOI</strong>
+                    <p style="margin: 0; color: #1e293b; font-size: 14px;">${leave.reasonForAction}</p>
+                </div>
+            ` : '') +
+            (leave.lossOfPayDays ? `<p style="color: #ef4444; font-weight: bold; margin-top: 10px;">⚠️ Loss of Pay (LOP): ${leave.lossOfPayDays} days applied.</p>` : ''), 
+            statusColor)
     };
 };
 
@@ -275,18 +282,33 @@ export const getMoMTemplate = (meeting: any, mom: any) => {
 };
 
 export const getAdditionalResponsibilityTemplate = (resp: any) => {
-    const title = "Additional Responsibility Assigned";
+    const title = `Additional Responsibility ${resp.status || 'Assigned'}`;
+    const statusColor = resp.status === 'Approved' ? '#10b981' : resp.status === 'Rejected' ? '#ef4444' : '#f59e0b';
+    
     const content = DataTable([
-        { label: "Assigned To", value: resp.employeeName },
+        { label: "Employee Name", value: resp.employeeName },
         { label: "Description", value: resp.description },
         { label: "Effective Date", value: formatDate(resp.date) },
-        { label: "Perf. Points", value: `+${resp.points} Points` }
+        { label: "Perf. Points", value: `${resp.points >= 0 ? '+' : ''}${resp.points} Points`, color: statusColor },
+        { label: "Current Status", value: (resp.status || "Assigned").toUpperCase(), color: statusColor }
     ]);
+
+    let footer = "";
+    if (resp.status === 'Approved') {
+        footer = `
+            <div style="background-color: #ecfdf5; border: 1px solid #d1fae5; padding: 16px; border-radius: 8px; margin-top: 20px;">
+                <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #065f46;"><strong>Congratulations!</strong> This responsibility has been officially approved. The points have been added to your performance leaderboard.</p>
+            </div>
+        `;
+    } else if (!resp.status || resp.status === "Pending") {
+        footer = `
+            <p style="margin-top: 20px; color: #10b981; font-weight: bold;">We appreciate your dedication towards taking on more impact within the organization. This request is currently awaiting Founder approval.</p>
+        `;
+    }
+
     return {
-        subject: `[RESPONSIBILITY] New Mandate Assigned - ${resp.employeeName}`,
-        html: ProfessionalWrapper(title, content + `
-            <p style="margin-top: 20px; color: #10b981; font-weight: bold;">We appreciate your dedication towards taking on more impact within the organization.</p>
-        `, "#10b981")
+        subject: `[RESPONSIBILITY ${resp.status?.toUpperCase() || 'ASSIGNED'}] ${resp.description} - ${resp.employeeName}`,
+        html: ProfessionalWrapper(title, content + footer, statusColor)
     };
 };
 
@@ -395,6 +417,11 @@ export const getRatingTemplate = (rating: any) => {
                 <strong style="color: #334155; font-size: 12px; text-transform: uppercase;">Direct Feedback</strong>
                 <p style="margin: 5px 0 0 0; color: #475569; font-style: italic;">"${rating.comment}"</p>
             </div>` : ''}
+            ${rating.screenshotUrl ? `
+            <div style="margin-top: 20px; padding: 16px; background-color: #f0fdf4; border-radius: 8px; border: 1px dashed #22c55e;">
+                <strong style="color: #166534; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 8px;">1:1 Session Proof (Attached)</strong>
+                <a href="${rating.screenshotUrl}" style="color: #10b981; font-size: 13px; font-weight: 700; text-decoration: none;">View Screenshot Online ↗</a>
+            </div>` : ''}
         `, "#10b981")
     };
 };
@@ -446,3 +473,35 @@ export const getBirthdayTemplate = (employee: any) => {
         `, "#10b981")
     };
 };
+
+export const getScheduleChangeTemplate = (actor: any, employee: any, date: string, oldSchedule: any, newSchedule: any) => {
+    const title = "On-Demand Schedule Change";
+    const content = DataTable([
+        { label: "Employee Name", value: employee?.name || "Employee" },
+        { label: "Override Date", value: date },
+        { label: "Updated By", value: actor?.name || "Manager" },
+        { label: "Role", value: actor?.role || "Admin" }
+    ]);
+
+    const comparison = `
+        <div style="background-color: #f3f4f6; padding: 16px; border-radius: 8px; margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div>
+                <strong style="font-size: 11px; color: #6b7280; text-transform: uppercase;">Previous Schedule</strong>
+                <p style="margin: 4px 0 0 0; color: #4b5563; font-size: 13px;">Location: ${oldSchedule.location}</p>
+                <p style="margin: 2px 0 0 0; color: #4b5563; font-size: 13px;">Time: ${oldSchedule.in} - ${oldSchedule.out}</p>
+            </div>
+            <div>
+                <strong style="font-size: 11px; color: #10b981; text-transform: uppercase;">Updated Schedule</strong>
+                <p style="margin: 4px 0 0 0; color: #111827; font-size: 13px; font-weight: 700;">Location: ${newSchedule.location}</p>
+                <p style="margin: 2px 0 0 0; color: #111827; font-size: 13px; font-weight: 700;">Time: ${newSchedule.clockInTime} - ${newSchedule.clockOutTime}</p>
+            </div>
+        </div>
+        <p style="font-size: 12px; color: #9ca3af; margin-top: 16px; font-style: italic;">Note: This is a manual override for the specified date only. Standard weekly schedules remain unchanged.</p>
+    `;
+
+    return {
+        subject: `[SCHEDULE OVERRIDE] ${employee?.name} - ${date}`,
+        html: ProfessionalWrapper(title, content + comparison, "#3b82f6")
+    };
+};
+

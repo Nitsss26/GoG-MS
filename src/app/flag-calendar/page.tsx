@@ -4,7 +4,8 @@ import { useAuth } from "@/context/AuthContext";
 import { FLAG_CONFIG, INDIAN_HOLIDAYS_2026 } from "@/lib/colleges";
 import { cn } from "@/lib/utils";
 import { useState, useRef, useEffect, useMemo } from "react";
-import { ChevronLeft, ChevronRight, Flag, Search, X, Check, Clock, CalendarOff, Sun, UserCheck, CalendarDays, AlertTriangle, MapPin } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ChevronLeft, ChevronRight, Flag, Search, X, Check, Clock, CalendarOff, Sun, UserCheck, CalendarDays, AlertTriangle, MapPin, LogIn, CheckCircle2, Edit2, RefreshCw } from "lucide-react";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -108,12 +109,20 @@ function formatDDMMYYYY(dateStr: string): string {
 }
 
 export default function FlagCalendarPage() {
-    const { user, attendanceRecords, holidays, employees, leaves, getReportees } = useAuth();
+    const { user, attendanceRecords, holidays, employees, leaves, getReportees, updateSingleDaySchedule, colleges, getExpectedTiming } = useAuth();
+    const router = useRouter();
     const now = new Date();
     const [month, setMonth] = useState(now.getMonth());
     const [year, setYear] = useState(now.getFullYear());
     const [selectedDay, setSelectedDay] = useState<string | null>(null);
     const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(user?.id || "");
+    
+    // Schedule Override States
+    const [showScheduleModal, setShowScheduleModal] = useState<string | null>(null); // dateStr
+    const [newLocation, setNewLocation] = useState("");
+    const [newTime, setNewTime] = useState("09:30");
+    const [newClockOutTime, setNewClockOutTime] = useState("18:30");
+    const [isUpdating, setIsUpdating] = useState(false);
 
     if (!user) return null;
 
@@ -127,6 +136,13 @@ export default function FlagCalendarPage() {
 
     const selectedEmployee = employees.find(e => e.id === selectedEmployeeId) || user;
     const records = attendanceRecords.filter(r => r.employeeId === selectedEmployeeId);
+
+    const isManager = ["HOI", "AD", "HR", "FOUNDER"].includes(user.role);
+    const isViewingReportee = selectedEmployeeId !== user.id;
+
+    // Helper for today's time check
+    const currentTimeIST = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+    const isBeforeCutoff = currentTimeIST < "11:59";
 
     // Build calendar grid
     const firstDay = new Date(year, month, 1);
@@ -449,6 +465,61 @@ export default function FlagCalendarPage() {
                                                     <span className="text-[7px] text-zinc-600 italic truncate">Upcoming</span>
                                                 </div>
                                             )}
+
+                                            {/* ─── Actions ─── */}
+                                            <div className="mt-auto pt-2 space-y-1">
+                                                {/* Clock-In / Mark as Present for Today */}
+                                                {isToday && !rec?.clockIn && !isHoliday && !isSunday && selectedEmployeeId === user.id && (
+                                                    <button 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (isBeforeCutoff) router.push('/attendance');
+                                                            else router.push(`/attendance?action=map&date=${ds}`);
+                                                        }}
+                                                        className={cn(
+                                                            "flex items-center justify-center gap-1 w-full py-1 text-[7px] font-bold rounded transition-all active:scale-95",
+                                                            isBeforeCutoff 
+                                                                ? "bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20" 
+                                                                : "bg-teal-500/10 border border-teal-500/20 text-teal-400 hover:bg-teal-500/20"
+                                                        )}
+                                                    >
+                                                        {isBeforeCutoff ? <LogIn size={8} /> : <CheckCircle2 size={8} />}
+                                                        {isBeforeCutoff ? "Clock-In" : "Mark as Present"}
+                                                    </button>
+                                                )}
+
+                                                {/* Mark as Present for Absent Days */}
+                                                {flags.includes("absent") && !isToday && selectedEmployeeId === user.id && (
+                                                    <button 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            router.push(`/attendance?action=map&date=${ds}`);
+                                                        }}
+                                                        className="flex items-center justify-center gap-1 w-full py-1 text-[7px] font-bold rounded bg-teal-500/10 border border-teal-500/20 text-teal-400 hover:bg-teal-500/20 transition-all active:scale-95"
+                                                    >
+                                                        <CheckCircle2 size={8} />
+                                                        Mark as Present
+                                                    </button>
+                                                )}
+
+                                                {/* Schedule Override Button (Managers Only) */}
+                                                {isManager && isViewingReportee && (isFuture || (isToday && !rec?.clockIn)) && !isHoliday && !isSunday && (
+                                                    <button 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            const current = getExpectedTiming(selectedEmployeeId, ds);
+                                                            setNewLocation(current.location);
+                                                            setNewTime(current.in);
+                                                            setNewClockOutTime(current.out);
+                                                            setShowScheduleModal(ds);
+                                                        }}
+                                                        className="flex items-center justify-center gap-1 w-full py-1 text-[7px] font-bold rounded bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/20 transition-all active:scale-95"
+                                                    >
+                                                        <Clock size={8} />
+                                                        Change Schedule
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 );
@@ -457,6 +528,89 @@ export default function FlagCalendarPage() {
                     ))}
                 </div>
             </div>
+
+            {/* Schedule Override Modal */}
+            {showScheduleModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden scale-in-95 animate-in duration-200">
+                        <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-primary/5">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                                    <Clock className="text-primary" size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-black text-white">Modify Schedule</h3>
+                                    <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">{formatDDMMYYYY(showScheduleModal)}</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowScheduleModal(null)} className="p-2 hover:bg-zinc-800 rounded-xl transition-colors">
+                                <X size={18} className="text-zinc-500" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-5">
+                            <div>
+                                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2 ml-1">Work Location</label>
+                                <div className="max-h-[280px] overflow-y-auto pr-1 custom-scrollbar">
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {[...colleges, { id: "WFH", name: "Work From Home" }].map(loc => (
+                                            <button
+                                                key={loc.id}
+                                                onClick={() => setNewLocation(loc.id)}
+                                                className={cn(
+                                                    "px-3 py-2.5 rounded-xl border text-[11px] font-bold transition-all text-left flex items-center gap-2",
+                                                    newLocation === loc.id 
+                                                        ? "bg-primary/10 border-primary/40 text-primary" 
+                                                        : "bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:border-zinc-600"
+                                                )}
+                                            >
+                                                <MapPin size={12} className={newLocation === loc.id ? "text-primary" : "text-zinc-500"} />
+                                                <span>{loc.name}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2 ml-1">Arrival Time</label>
+                                            <input 
+                                                type="time" 
+                                                value={newTime}
+                                                onChange={e => setNewTime(e.target.value)}
+                                                className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl px-4 py-3 text-sm text-white font-bold outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2 ml-1">Clock Out</label>
+                                            <input 
+                                                type="time" 
+                                                value={newClockOutTime}
+                                                onChange={e => setNewClockOutTime(e.target.value)}
+                                                className="w-full bg-zinc-800/50 border border-zinc-700/50 rounded-xl px-4 py-3 text-sm text-white font-bold outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        onClick={async () => {
+                                            setIsUpdating(true);
+                                            await updateSingleDaySchedule(selectedEmployeeId, showScheduleModal, newLocation, newTime, newClockOutTime);
+                                            setIsUpdating(false);
+                                    setShowScheduleModal(null);
+                                }}
+                                disabled={isUpdating}
+                                className="w-full bg-primary text-black font-black text-xs py-4 rounded-2xl hover:bg-primary/90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-50"
+                            >
+                                {isUpdating ? <RefreshCw className="animate-spin" size={16} /> : <Check size={16} />}
+                                {isUpdating ? "UPDATING..." : "CONFIRM OVERRIDE"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
 
             {/* ─── Selected Day Details ─── */}
             {selectedDay && (
@@ -562,7 +716,7 @@ export default function FlagCalendarPage() {
                                                 <MapPin size={10} className="text-blue-400" />
                                                 <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Location</p>
                                             </div>
-                                            <p className="text-sm font-bold text-white truncate">{rec!.location}</p>
+                                            <p className="text-sm font-bold text-white">{rec!.location}</p>
                                         </div>
                                     </div>
 

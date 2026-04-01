@@ -11,7 +11,8 @@ import {
 export default function FounderConsolePage() {
     const {
         user, employees, leaves, tickets, holidays, pipRecords,
-        misbehaviourReports, activityLogs, reimbursements, attendanceRecords, notifications
+        misbehaviourReports, activityLogs, reimbursements, attendanceRecords, notifications,
+        additionalResponsibilities, approveAdditionalResponsibility
     } = useAuth();
     const router = useRouter();
 
@@ -34,6 +35,7 @@ export default function FounderConsolePage() {
     const pendingHolidays = holidays.filter(h => h.status === "Proposed").length;
     const activePIP = pipRecords.filter(p => p.status === "Active").length;
     const pendingReimb = reimbursements.filter(r => r.status === "Pending").length;
+    const pendingResp = additionalResponsibilities.filter(r => r.status === "Pending").length;
     const totalEmployees = employees.length;
     const recentLogs = activityLogs.slice(0, 15);
 
@@ -44,6 +46,7 @@ export default function FounderConsolePage() {
         { label: "Pending Holidays", value: pendingHolidays, icon: Calendar, color: "text-purple-400", bg: "bg-purple-500/10" },
         { label: "Active PIP", value: activePIP, icon: AlertTriangle, color: "text-orange-400", bg: "bg-orange-500/10" },
         { label: "Pending Reimb.", value: pendingReimb, icon: Clock, color: "text-cyan-400", bg: "bg-cyan-500/10" },
+        { label: "Pending Resp.", value: pendingResp, icon: Shield, color: "text-primary", bg: "bg-primary/10" },
     ];
 
     const roleBreakdown = [
@@ -171,6 +174,62 @@ export default function FounderConsolePage() {
                             ))}
                         </div>
                     )}
+                </div>
+
+                {/* Additional Responsibility Hub */}
+                <div className="bg-zinc-900/60 border border-zinc-800/50 rounded-2xl p-5 flex flex-col h-[400px]">
+                    <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                        <Shield size={14} className="text-primary" /> Responsibility Hub
+                        {pendingResp > 0 && <span className="bg-primary/20 text-primary text-[9px] px-1.5 py-0.5 rounded-full ml-auto animate-pulse">{pendingResp} PENDING</span>}
+                    </h3>
+                    
+                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
+                        {additionalResponsibilities.filter(r => r.status === "Pending").length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center opacity-40 text-center px-6">
+                                <CheckCircle size={32} className="mb-2 text-zinc-600" />
+                                <p className="text-[11px] text-zinc-500 font-medium">All additional responsibilities have been processed.</p>
+                            </div>
+                        ) : (
+                            additionalResponsibilities.filter(r => r.status === "Pending").map((resp) => (
+                                <div key={resp.id} className="bg-zinc-800/30 border border-white/5 rounded-xl p-4 space-y-3 hover:border-primary/20 transition-all">
+                                    <div className="flex justify-between items-start gap-3">
+                                        <div className="space-y-1">
+                                            <p className="text-[10px] font-black text-white uppercase tracking-tight line-clamp-2">{resp.description}</p>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[8px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded uppercase">{resp.points} Points</span>
+                                                <span className="text-[8px] text-zinc-500 font-bold uppercase">To: {resp.employeeName}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-1">
+                                            <button 
+                                                onClick={() => approveAdditionalResponsibility(resp.id, "Approved")}
+                                                className="w-7 h-7 rounded-lg bg-primary/20 text-primary flex items-center justify-center hover:bg-primary hover:text-white transition-all shadow-lg"
+                                            >
+                                                <CheckCircle size={14} />
+                                            </button>
+                                            <button 
+                                                onClick={() => approveAdditionalResponsibility(resp.id, "Rejected")}
+                                                className="w-7 h-7 rounded-lg bg-red-500/20 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all shadow-lg"
+                                            >
+                                                <XCircle size={14} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                                        <span className="text-[8px] text-zinc-500 font-black uppercase">Assigned By: {resp.addedBy}</span>
+                                        <span className="text-[8px] text-zinc-600 italic">{resp.date}</span>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                    
+                    <button 
+                        onClick={() => router.push("/leaderboard")}
+                        className="mt-4 w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white text-[9px] font-black uppercase tracking-widest rounded-xl transition-all border border-white/5"
+                    >
+                        View Performance Leaderboard
+                    </button>
                 </div>
             </div>
 
