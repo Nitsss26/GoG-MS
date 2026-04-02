@@ -9,9 +9,18 @@ export async function GET(req: Request) {
         const userId = searchParams.get('userId');
         const role = searchParams.get('role');
 
-        let query = {};
+        let query: any = {};
         if (role !== 'HR' && role !== 'FOUNDER' && userId) {
-            query = { employeeId: userId };
+            if (role === 'HOI') {
+                query = { 
+                    $or: [
+                        { employeeId: userId },
+                        { status: "Pending HOI Approval" }
+                    ]
+                };
+            } else {
+                query = { employeeId: userId };
+            }
         }
 
         const leaves = await LeaveRequest.find(query).sort({ appliedAt: -1 });

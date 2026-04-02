@@ -165,9 +165,10 @@ export const getTicketTemplate = (ticket: any, type: 'raised' | 'resolved') => {
     };
 };
 
-export const getLeaveTemplate = (leave: any, status: 'Pending' | 'Approved' | 'Rejected') => {
+export const getLeaveTemplate = (leave: any, status: 'Pending' | 'Approved' | 'Rejected' | 'Pending HOI Approval') => {
     const statusColor = status === 'Approved' ? '#10b981' : status === 'Rejected' ? '#ef4444' : '#f59e0b';
-    const title = `Leave Request ${status}`;
+    const displayStatus = status === 'Pending HOI Approval' ? 'Awaiting HOI' : status === 'Pending' ? 'Awaiting HR' : status;
+    const title = `Leave Request: ${displayStatus}`;
 
     const cleanReason = (leave.reason && leave.reason !== "undefined") ? leave.reason : "Professional reason not detailed";
 
@@ -176,15 +177,15 @@ export const getLeaveTemplate = (leave: any, status: 'Pending' | 'Approved' | 'R
         { label: "Leave Type", value: `${leave.type} (${leave.leaveType})` },
         { label: "Duration", value: `${formatDate(leave.startDate)} to ${formatDate(leave.endDate)} (${leave.days} days)` },
         { label: "Reason", value: cleanReason },
-        { label: "Current Status", value: status.toUpperCase(), color: statusColor }
+        { label: "Current Status", value: displayStatus.toUpperCase(), color: statusColor }
     ]);
 
     return {
-        subject: `[LEAVE ${status.toUpperCase()}] ${leave.employeeName} - ${formatDate(leave.startDate)}`,
+        subject: `[LEAVE REQUEST] ${leave.employeeName} - ${formatDate(leave.startDate)}`,
         html: ProfessionalWrapper(title, content + 
             (leave.reasonForAction ? `
                 <div style="background-color: #f8fafc; border-radius: 8px; padding: 16px; margin-top: 20px; border-left: 4px solid ${statusColor};">
-                    <strong style="color: #475569; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 4px;">Decision Remarks by HR/HOI</strong>
+                    <strong style="color: #475569; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 4px;">Decision Remarks</strong>
                     <p style="margin: 0; color: #1e293b; font-size: 14px;">${leave.reasonForAction}</p>
                 </div>
             ` : '') +

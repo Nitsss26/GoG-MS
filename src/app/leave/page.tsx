@@ -8,7 +8,7 @@ import { Calendar, Plus, CheckCircle2, XCircle, X, Clock, HelpCircle, AlertCircl
 import { cn } from "@/lib/utils";
 
 export default function LeavePage() {
-    const { user, leaves, addLeaveRequest, approveLeave, rejectLeave, getReportees } = useAuth();
+    const { user, leaves, employees, addLeaveRequest, approveLeave, rejectLeave, getReportees } = useAuth();
     const [showModal, setShowModal] = useState(false);
     const [decisionModal, setDecisionModal] = useState<{ show: boolean, type: 'approve' | 'reject', leaveId: string, leaveName: string } | null>(null);
     const [remarks, setRemarks] = useState("");
@@ -91,7 +91,7 @@ export default function LeavePage() {
     const reporteeIds = reportees.map(r => r.id);
     const filteredLeaves = (user.role === "HR" || user.role === "FOUNDER") 
         ? leaves.filter(l => l.status !== "Pending HOI Approval") 
-        : leaves.filter(l => l.employeeId === user.id || reporteeIds.includes(l.employeeId));
+        : leaves.filter(l => (l.employeeId === user.id) || (user.role === 'HOI' && (l.location || employees.find(e => e.id === l.employeeId)?.location) === user.location && l.status === "Pending HOI Approval") || reporteeIds.includes(l.employeeId));
 
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
@@ -215,7 +215,9 @@ export default function LeavePage() {
                                                 req.status === "Approved" ? "badge-green" :
                                                 req.status === "Pending" ? "badge-amber" : 
                                                 req.status === "Pending HOI Approval" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" : "badge-zinc"
-                                            )}>{req.status}</span>
+                                            )}>
+                                                {req.status === "Pending" ? "Pending (HR Approval)" : req.status === "Pending HOI Approval" ? "Pending (HOI Approval)" : req.status}
+                                            </span>
                                         </td>
                                         <td className="px-5 py-4 text-right">
                                             <div className="flex justify-end items-center gap-2">
@@ -234,8 +236,8 @@ export default function LeavePage() {
                                                     const isManager = reporteeIds.includes(req.employeeId);
                                                     const isHR = user.role === "HR" || user.role === "FOUNDER";
                                                     
-                                                    // HOI Stage: Manager approves while status is Pending HOI Approval
-                                                    const canHOIApprove = isManager && req.status === "Pending HOI Approval";
+                                                    // HOI Stage: Manager or location HOI approves while status is Pending HOI Approval
+                                                    const canHOIApprove = (isManager || (user.role === 'HOI' && (req.location || employees.find(e => e.id === req.employeeId)?.location) === user.location)) && req.status === "Pending HOI Approval";
                                                     
                                                     // HR Stage: HR approves while status is Pending
                                                     const canHRApprove = isHR && req.status === "Pending";

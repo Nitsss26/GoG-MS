@@ -207,6 +207,7 @@ const LeaveRequestSchema = new Schema({
     proofUrls: [String],
     lossOfPayDays: { type: Number, default: 0 },
     appliedAt: { type: String },
+    location: { type: String }, // For filtering at HOI level
     reasonForAction: { type: String }
 });
 

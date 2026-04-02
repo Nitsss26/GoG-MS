@@ -39,6 +39,7 @@ export interface PortalNotification {
 export interface User {
     id: string; name: string; email: string; role: Role; isOnboarded: boolean;
     photoUrl?: string;
+    location?: string;
 }
 export interface EducationRecord { degree: string; institution: string; yearOfPassing: string; percentage: string; }
 export interface ExperienceRecord { company: string; role: string; duration: string; lastSalary: number; payslipRef?: string; }
@@ -170,6 +171,7 @@ export interface LeaveRequest {
     lossOfPayDays?: number;
     emergencyCategory?: "Accident" | "Death" | "In Hospital";
     appliedAt?: string;
+    location?: string;
     reasonForAction?: string;
 }
 export interface MeetingRequest {
@@ -1602,7 +1604,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (Array.isArray(tData)) setTickets(tData);
 
                 // Fetch Leaves
-                const lRes = await fetch(`/api/leaves?userId=${user.id}&role=${user.role}`);
+                const lRes = await fetch(`/api/leaves?userId=${user.id}&role=${user.role}${user.role === 'HOI' ? `&location=${user.location}` : ''}`);
                 const lData = await lRes.json();
                 if (Array.isArray(lData)) setLeaves(lData);
 
@@ -2290,6 +2292,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             status: initialStatus as any,
             employeeId: user.id,
             employeeName: user.name,
+            location: (user as Employee).location,
             lossOfPayDays: 0,
             appliedAt
         };
@@ -2307,7 +2310,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // --- EMAIL NOTIFICATION ---
                 const raiser = employees.find(e => e.id === user.id);
                 const authorities = getAuthorityEmails(raiser, employees);
-                const { subject: mailSub, html: mailHtml } = getLeaveTemplate(data, "Pending");
+                const { subject: mailSub, html: mailHtml } = getLeaveTemplate(data, initialStatus as any);
 
                 if (authorities.length > 0) {
                     sendMail({ to: authorities, subject: mailSub, html: mailHtml });
