@@ -21,7 +21,9 @@ import {
     getBirthdayTemplate,
     getAnnouncementTemplate,
     getSOPUpdateTemplate,
-    getScheduleChangeTemplate
+    getScheduleChangeTemplate,
+    getMeetingWarningTemplate,
+    getMeetingTemplate
 } from "@/lib/mail";
 import { CUSTOM_SCHEDULE_RULES, FALLBACK_TIMINGS, isThirdSaturday } from '@/lib/attendance-config';
 
@@ -134,6 +136,31 @@ export interface Employee extends User {
     blood_group?: string;
     upload_your_bachelor_s_marksheet__all_marksheet_together_?: string;
     upload_your_masters_marksheet__all_marksheet_together_?: string;
+    t_shirt_size?: string;
+    bachelor_s_qualification?: string;
+    ten_marksheet?: string;
+    twelve_marksheet?: string;
+    bachelor_marksheet_all?: string;
+    master_marksheet_all?: string;
+    experience_letter?: string;
+    bank_passbook_cancelled_cheque?: string;
+
+    // --- ONBOARDING & HR ---
+    onboardingStatus?: "Pending Creation" | "Form Pending" | "Verification Pending" | "Approved";
+    onboardingChecklist?: {
+        aadharCheck: boolean;
+        qualificationCheck: boolean;
+        bankDetailsCheck: boolean;
+        slackOnboarded: boolean;
+        slackChannelsAdded: boolean;
+        waGroupsAdded: boolean;
+        hrMeetingCompleted: boolean;
+        hrMeetingScreenshot?: string;
+        managerMeetingCompleted: boolean;
+        adMeetingCompleted: boolean;
+    };
+    onboardingSubmittedAt?: string;
+    onboardingApprovedAt?: string;
 }
 export interface LeaveRequest {
     id: string; employeeId: string; employeeName: string; type: string;
@@ -151,9 +178,17 @@ export interface MeetingRequest {
     status: "Pending" | "Scheduled" | "Completed" | "Rescheduled";
     googleLink?: string;
     agenda?: string;
-    attendees?: { id: string; name: string; status?: 'Present' | 'Absent (Genuine)' | 'Absent (Non-Genuine)'; reason?: string }[];
+    attendees?: { 
+        id: string; 
+        name: string; 
+        status?: 'Present' | 'Absent (Genuine)' | 'Absent (Non-Genuine)'; 
+        reason?: string;
+        joinedAt?: string;
+        isGenuine?: boolean;
+    }[];
     screenshotUrls?: string[];
     createdAt?: string;
+    isFinalized?: boolean;
 }
 export interface Notice {
     id: string; title: string; content: string;
@@ -208,6 +243,7 @@ export interface ReimbursementClaim {
     driveLink?: string; proofUrls?: string[];
     status: "Pending" | "Approved - Pending Payment" | "Approved - Payment Done" | "Rejected";
     rejectionReason?: string; hrRemarks?: string; date: string;
+    approvedAmount?: number;
 }
 export interface WorkSchedule {
     employeeId: string; employeeName?: string; approvedByHR?: boolean;
@@ -1268,7 +1304,7 @@ interface AuthContextType {
     approveLeave: (id: string, reason?: string) => Promise<void>;
     rejectLeave: (id: string, applyLOP?: boolean, reason?: string) => Promise<void>;
     addReimbursement: (claim: Omit<ReimbursementClaim, "id" | "status" | "date" | "employeeId" | "employeeName">) => Promise<void>;
-    updateReimbursementStatus: (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string) => Promise<void>;
+    updateReimbursementStatus: (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string, approvedAmount?: number) => Promise<void>;
     proposeHoliday: (h: Omit<Holiday, "id" | "proposedBy" | "status" | "proposedByName">) => void;
     approveHoliday: (id: string, customMessage?: string) => void;
     updateSOP: (sop: Omit<SOP, "id" | "lastUpdated">) => void;
@@ -1298,12 +1334,15 @@ interface AuthContextType {
     resolveDressCodeCheck: (recordId: string, status: "Approved" | "Rejected") => Promise<void>;
     addBiWeeklyRating: (employeeId: string, score: number, period: string, screenshotUrl?: string) => Promise<void>;
     addMeetingRequest: (req: Omit<MeetingRequest, "id" | "status" | "employeeId" | "employeeName" | "createdAt">) => void;
-    updateMeetingStatus: (id: string, status: MeetingRequest["status"], MOMData?: { screenshotUrls: string[], attendees: MeetingRequest["attendees"] }) => void;
+    joinMeeting: (meetingId: string) => void;
+    submitAbsenceReason: (meetingId: string, reason: string) => void;
+    finalizeMeeting: (id: string, MOMData: { screenshotUrls: string[], attendees: MeetingRequest["attendees"], content: string, decision: string }) => Promise<void>;
+    updateMeetingStatus: (id: string, status: MeetingRequest["status"]) => void;
     getReportees: (managerId: string) => Employee[];
     getManagerChain: (employeeId: string) => Employee[];
     generatePayroll: (month: string, year: string) => void;
-    addEmployee: (emp: Omit<Employee, "id" | "isOnboarded">) => void;
-    updateOnboarding: (userId: string, data: any) => void;
+    addEmployee: (emp: Partial<Employee>) => Promise<void>;
+    updateOnboarding: (employeeId: string, data: Partial<Employee>) => Promise<void>;
     // Legacy methods
     addJobPosting: (job: Omit<JobPosting, "id" | "postedBy" | "postedAt" | "status">) => void;
     closeJobPosting: (id: string) => void;
@@ -1452,6 +1491,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const sno = s("gog_notifications"); if (sno) setNotifications(sno);
         const smpr = s("gog_mark_present"); if (smpr) setMarkAsPresentRequests(smpr);
     }, []);
+
+    // ─── FETCH MEETINGS ───
+    useEffect(() => {
+        const fetchMeetings = async () => {
+            try {
+                const res = await fetch("/api/meetings");
+                const data = await res.json();
+                if (Array.isArray(data)) setMeetings(data);
+            } catch (err) { console.error("Meeting fetch error:", err); }
+        };
+        if (user) fetchMeetings();
+    }, [user]);
 
     useEffect(() => {
         const fetchEmployees = async () => {
@@ -1805,14 +1856,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
     const logout = () => { setUser(null); localStorage.removeItem("gog_user"); router.push("/login"); };
-    const updateOnboarding = (userId: string, data: any) => {
-        setEmployees(prev => prev.map(e => e.id === userId ? { ...e, ...data, isOnboarded: true } : e));
-        if (user?.id === userId) {
-            const updatedUser = { ...user, ...data, isOnboarded: true } as Employee;
-            setUser(updatedUser);
-            localStorage.setItem("gog_user", JSON.stringify(updatedUser));
-        }
-    };
 
     const changePassword = async (currentPassword: string, newPassword: string) => {
         if (!user) return { success: false, msg: "Not authenticated" };
@@ -1840,10 +1883,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch (error: any) {
             return { success: false, msg: "Network error. Please try again." };
         }
-    };
-
-    const addEmployee = (emp: Omit<Employee, "id" | "isOnboarded">) => {
-        setEmployees(prev => [...prev, { ...emp, id: `EMP${uid()} `, isOnboarded: false }]);
     };
 
     // ─── NOTICES ───
@@ -2485,12 +2524,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
         } catch (err) { console.error(err); }
     };
-    const updateReimbursementStatus = async (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string) => {
+    const updateReimbursementStatus = async (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string, approvedAmount?: number) => {
         try {
             const res = await fetch("/api/reimbursements", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, status, rejectionReason: reason, hrRemarks: remarks })
+                body: JSON.stringify({ id, status, rejectionReason: reason, hrRemarks: remarks, approvedAmount })
             });
             const updated = await res.json();
             if (updated.id) {
@@ -3026,7 +3065,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     // ─── MEETINGS ───
-    const addMeetingRequest = (req: Omit<MeetingRequest, "id" | "status" | "employeeId" | "employeeName" | "createdAt">) => {
+    const addMeetingRequest = async (req: Omit<MeetingRequest, "id" | "status" | "employeeId" | "employeeName" | "createdAt">) => {
         if (!user) return;
         const newMeeting: MeetingRequest = {
             ...req,
@@ -3036,64 +3075,146 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             employeeName: user.name,
             createdAt: new Date().toISOString()
         };
-        setMeetings(prev => [newMeeting, ...prev]);
 
-        // Notify attendees
-        req.attendees?.forEach(att => {
-            addNotification(att.id, att.name, `New meeting scheduled: ${req.purpose} `, "ticket");
-        });
-
-        // Notify management chain
-        const chain = getManagerChain(user.id);
-        const mgtEmails = chain.filter(m => m.email).map(m => m.email!);
-        chain.forEach(mgr => {
-            addNotification(mgr.id, mgr.name, `${user.name} scheduled a meeting: ${req.purpose}`, "ticket");
-        });
-
-        // Email notification for meeting
-        const toEmails = req.attendees?.map(att => employees.find(e => e.id === att.id)?.email).filter(Boolean) as string[] || [];
-        if (toEmails.length > 0 || mgtEmails.length > 0) {
-            sendMail({
-                to: toEmails,
-                cc: [...new Set([...mgtEmails, user.email].filter(Boolean) as string[])],
-                subject: `[MEETING SCHEDULED] ${req.purpose}`,
-                html: `
-                    <div style="font-family: sans-serif; padding: 20px; color: #333;">
-                        <h2 style="color: #10b981;">New Meeting Scheduled</h2>
-                        <p><strong>Proposed By:</strong> ${user.name}</p>
-                        <p><strong>Purpose:</strong> ${req.purpose}</p>
-                        <p><strong>Date:</strong> ${req.date} | <strong>Time:</strong> ${req.time}</p>
-                        ${req.googleLink ? `<p><strong>Google Meet:</strong> <a href="${req.googleLink}">${req.googleLink}</a></p>` : ''}
-                        <p>This is an automated mail from GOG Meeting Portal.</p>
-                    </div>
-                `
+        try {
+            const res = await fetch("/api/meetings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(newMeeting)
             });
-        }
-    };
+            const data = await res.json();
+            if (data.id) {
+                setMeetings(prev => [data, ...prev]);
 
-    const updateMeetingStatus = (id: string, status: MeetingRequest["status"], MOMData?: { screenshotUrls: string[], attendees: MeetingRequest["attendees"] }) => {
-        setMeetings(prev => prev.map(m => {
-            if (m.id !== id) return m;
-            const updated = { ...m, status, ...MOMData };
+                // Notify attendees
+                req.attendees?.forEach(att => {
+                    addNotification(att.id, att.name, `New meeting scheduled: ${req.purpose} `, "ticket");
+                });
 
-            if (status === "Completed" && MOMData) {
-                // --- EMAIL NOTIFICATION ---
-                const reportee = employees.find(e => e.id === m.attendees?.[0]?.id || m.employeeId);
-                const ccEmails = getAuthorityEmails(reportee, employees);
-                const { subject: mailSub, html: mailHtml } = getMoMTemplate(m, { content: "Meeting successfully completed and MoM uploaded.", decision: "Please refer to the dashboard for detailed decisions." });
+                // Notify management chain
+                const chain = getManagerChain(user.id);
+                const mgtEmails = chain.filter(m => m.email).map(m => m.email!);
+                chain.forEach(mgr => {
+                    addNotification(mgr.id, mgr.name, `${user.name} scheduled a meeting: ${req.purpose}`, "ticket");
+                });
 
-                if (reportee?.email) {
+                // --- EMAIL NOTIFICATION & PROFESSIONAL TEMPLATE ---
+                const attendeeEmails = req.attendees?.map(att => employees.find(e => e.id === att.id)?.email).filter(Boolean) as string[] || [];
+                const { subject, html } = getMeetingTemplate(data, user);
+                
+                if (attendeeEmails.length > 0 || mgtEmails.length > 0) {
                     sendMail({
-                        to: reportee.email,
-                        cc: ccEmails,
-                        subject: mailSub,
-                        html: mailHtml
+                        to: attendeeEmails,
+                        cc: [...new Set([...mgtEmails, user.email].filter(Boolean) as string[])],
+                        subject: subject,
+                        html: html
                     });
                 }
             }
+        } catch (err) { console.error(err); }
+    };
 
-            return updated;
-        }));
+    const joinMeeting = async (meetingId: string) => {
+        if (!user) return;
+        const m = meetings.find(mt => mt.id === meetingId);
+        if (!m) return;
+        const updatedAttendees = m.attendees?.map(att => 
+            att.id === user.id ? { ...att, joinedAt: new Date().toISOString(), status: 'Present' as const } : att
+        );
+        try {
+            const res = await fetch("/api/meetings", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: meetingId, attendees: updatedAttendees })
+            });
+            const data = await res.json();
+            if (data.id) {
+                setMeetings(prev => prev.map(mm => mm.id === meetingId ? data : mm));
+            }
+        } catch (err) { console.error(err); }
+    };
+
+    const submitAbsenceReason = async (meetingId: string, reason: string) => {
+        if (!user) return;
+        const m = meetings.find(mt => mt.id === meetingId);
+        if (!m) return;
+        
+        // Check if within 1 hour of scheduled time
+        const meetingDateTime = new Date(`${m.date}T${m.time}`);
+        const now = new Date();
+        const diffHours = (now.getTime() - meetingDateTime.getTime()) / (1000 * 60 * 60);
+        
+        if (diffHours > 1) {
+            alert("Absence reasons can only be submitted within 1 hour of the meeting start time.");
+            return;
+        }
+
+        const updatedAttendees = m.attendees?.map(att => 
+            att.id === user.id ? { ...att, reason } : att
+        );
+        try {
+            const res = await fetch("/api/meetings", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: meetingId, attendees: updatedAttendees })
+            });
+            const data = await res.json();
+            if (data.id) {
+                setMeetings(prev => prev.map(mm => mm.id === meetingId ? data : mm));
+            }
+        } catch (err) { console.error(err); }
+    };
+
+    const finalizeMeeting = async (id: string, MOMData: { screenshotUrls: string[], attendees: MeetingRequest["attendees"], content: string, decision: string }) => {
+        const m = meetings.find(mt => mt.id === id);
+        if (!m) return;
+        const updatedMeeting = { ...m, status: "Completed" as const, isFinalized: true, ...MOMData };
+
+        try {
+            const res = await fetch("/api/meetings", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updatedMeeting)
+            });
+            const data = await res.json();
+            if (data.id) {
+                setMeetings(prev => prev.map(mm => mm.id === id ? data : mm));
+
+                // --- EMAIL NOTIFICATION & WARNINGS ---
+                const reportee = employees.find(e => e.id === data.attendees?.[0]?.id || data.employeeId);
+                const ccEmails = getAuthorityEmails(reportee, employees);
+                const { subject: mailSub, html: mailHtml } = getMoMTemplate(data, { content: MOMData.content, decision: MOMData.decision });
+
+                // Send MOM to all attendees
+                const attendeeEmails = data.attendees?.map((a: any) => employees.find(e => e.id === a.id)?.email).filter(Boolean) as string[] || [];
+                sendMail({
+                    to: attendeeEmails,
+                    cc: ccEmails,
+                    subject: mailSub,
+                    html: mailHtml
+                });
+
+                // Send Warning Emails for Non-Genuine Absences
+                MOMData.attendees?.forEach(att => {
+                    if (att.status === 'Absent (Non-Genuine)') {
+                        const emp = employees.find(e => e.id === att.id);
+                        if (emp?.email) {
+                            const { subject: warnSub, html: warnHtml } = getMeetingWarningTemplate(data, emp);
+                            sendMail({
+                                to: emp.email,
+                                cc: getAuthorityEmails(emp, employees),
+                                subject: warnSub,
+                                html: warnHtml
+                            });
+                        }
+                    }
+                });
+            }
+        } catch (err) { console.error(err); }
+    };
+
+    const updateMeetingStatus = (id: string, status: MeetingRequest["status"]) => {
+        setMeetings(prev => prev.map(m => m.id === id ? { ...m, status } : m));
     };
 
     // ─── PAYROLL ───
@@ -3146,6 +3267,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
+    const addEmployee = async (empData: Partial<Employee>) => {
+        if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return;
+        const newEmp = {
+            ...empData,
+            id: empData.id || `EMP${Math.floor(100 + Math.random() * 900)}`,
+            isOnboarded: false,
+            onboardingStatus: "Form Pending" as const,
+            status: "Active" as const,
+            chancesRemaining: 3,
+            onboardingChecklist: {
+                aadharCheck: false,
+                qualificationCheck: false,
+                bankDetailsCheck: false,
+                slackOnboarded: false,
+                slackChannelsAdded: false,
+                waGroupsAdded: false,
+                hrMeetingCompleted: false,
+                managerMeetingCompleted: false,
+                adMeetingCompleted: false
+            }
+        };
+
+        try {
+            const res = await fetch("/api/employees", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(newEmp)
+            });
+            const data = await res.json();
+            if (data.id) {
+                setEmployees(prev => [...prev, data]);
+                addNotification("ALL", "All", `New employee created: ${data.name}`, "general");
+            }
+        } catch (err) { console.error("Failed to create employee:", err); }
+    };
+
+    const updateOnboarding = async (employeeId: string, data: Partial<Employee>) => {
+        setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, ...data } : e));
+        if (user && user.id === employeeId) {
+            const updatedUser = { ...user, ...data };
+            setUser(updatedUser);
+            localStorage.setItem("gog_user", JSON.stringify(updatedUser));
+        }
+
+        try {
+            await fetch("/api/employees", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: employeeId, ...data })
+            });
+        } catch (err) { console.error("Failed to update onboarding data:", err); }
+    };
+
 
     useEffect(() => {
         const fetchHolidays = async () => {
@@ -3195,7 +3369,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             addNotification, markNotificationRead, getMyNotifications,
             markAsPresentRequests, addMarkAsPresentRequest, resolveMarkAsPresentRequest, resolveDressCodeCheck, giveCredit,
             getExpectedTiming, restoreAttendanceCredits, changePassword, authLoading,
-            updateSingleDaySchedule
+            updateSingleDaySchedule, joinMeeting, submitAbsenceReason, finalizeMeeting
         }}>
             {children}
         </AuthContext.Provider>

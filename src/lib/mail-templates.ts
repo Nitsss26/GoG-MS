@@ -231,15 +231,22 @@ export const getReimbursementTemplate = (claim: any) => {
     const title = "Reimbursement Update";
 
     // Comprehensive fields from claim
-    const content = DataTable([
+    const fields = [
         { label: "Claim ID", value: claim.id },
         { label: "Employee", value: claim.employeeName },
         { label: "Expense Type", value: claim.type },
         { label: "Exp. Period", value: claim.monthYear },
-        { label: "Total Amount", value: `₹${claim.amount || 0}`, color: "#111827" },
-        { label: "Description", value: claim.description },
-        { label: "Status", value: claim.status.toUpperCase(), color: "#ef4444" }
-    ]);
+        { label: "Claimed Amount", value: `₹${claim.amount || 0}`, color: "#111827" }
+    ];
+
+    if (claim.approvedAmount !== undefined && claim.status.includes('Approved')) {
+        fields.push({ label: "Approved Amount", value: `₹${claim.approvedAmount}`, color: "#10b981" });
+    }
+
+    fields.push({ label: "Description", value: claim.description });
+    fields.push({ label: "Status", value: claim.status.toUpperCase(), color: statusColor });
+
+    const content = DataTable(fields);
 
     let feedback = "";
     if (claim.driveLink || (claim.proofUrls && claim.proofUrls.length > 0)) {
@@ -258,6 +265,39 @@ export const getReimbursementTemplate = (claim: any) => {
     return {
         subject: `[REIMBURSEMENT] ${claim.status.toUpperCase()} - ${claim.id}`,
         html: ProfessionalWrapper(title, content + feedback, statusColor)
+    };
+};
+
+export const getMeetingTemplate = (meeting: any, user: any) => {
+    const title = "New Meeting Scheduled";
+    const statusColor = "#10b981"; // Professional Green
+
+    const fields = [
+        { label: "Meeting ID", value: meeting.id },
+        { label: "Organizer", value: meeting.employeeName },
+        { label: "Purpose", value: meeting.purpose },
+        { label: "Date", value: formatDate(meeting.date) }, // DD-MM-YYYY via helper
+        { label: "Time", value: meeting.time },
+        { label: "Target", value: meeting.targetName }
+    ];
+
+    if (meeting.googleLink) {
+        fields.push({ label: "Meeting Link", value: `<a href="${meeting.googleLink}" style="color: #10b981; font-weight: bold; text-decoration: none;">Join Meeting ↗</a>` });
+    }
+
+    const content = DataTable(fields);
+
+    return {
+        subject: `[MEETING] ${meeting.purpose} - ${formatDate(meeting.date)}`,
+        html: ProfessionalWrapper(title, content + `
+            <div style="background-color: #f8fafc; border-radius: 8px; padding: 16px; margin-top: 20px; border-left: 4px solid ${statusColor};">
+                <strong style="color: #475569; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 4px;">Meeting Agenda</strong>
+                <p style="margin: 0; color: #1e293b; font-size: 14px;">${meeting.agenda || 'Regular Institutional Sync'}</p>
+            </div>
+            <p style="margin-top: 20px; color: #64748b; font-size: 12px;">
+                Please ensure you join via the <strong>Meetings Portal</strong> to record your attendance.
+            </p>
+        `, statusColor)
     };
 };
 
@@ -505,3 +545,28 @@ export const getScheduleChangeTemplate = (actor: any, employee: any, date: strin
     };
 };
 
+
+export const getMeetingWarningTemplate = (meeting: any, employee: any) => {
+    const title = "Meeting Absence Warning";
+    const content = DataTable([
+        { label: "Employee", value: employee.name },
+        { label: "Meeting Title", value: meeting.purpose },
+        { label: "Scheduled Date", value: formatDate(meeting.date) },
+        { label: "Scheduled Time", value: meeting.time + " (IST)" },
+        { label: "Violation Status", value: "UNAUTHORISED ABSENCE", color: "#ef4444" }
+    ]);
+
+    return {
+        subject: `[WARNING] Unauthorised Absence from Scheduled Sync - ${meeting.purpose}`,
+        html: ProfessionalWrapper(title, content + `
+            <div style="background-color: #fef2f2; border: 1px solid #fee2e2; padding: 16px; border-radius: 8px; margin-top: 15px;">
+                <p style="margin: 0; color: #b91c1c; font-size: 14px; line-height: 1.6;">
+                    <strong>Mandatory Protocol:</strong> Attendance in scheduled departmental syncs is mandatory. Our records indicate you did not join the session and failed to provide a genuine reason within the stipulated 1-hour grace period.
+                </p>
+                <p style="margin: 10px 0 0 0; color: #b91c1c; font-size: 13px; font-weight: 700; text-transform: uppercase;">
+                    This incident has been logged and reported to HR and the Founders.
+                </p>
+            </div>
+        `, "#ef4444")
+    };
+};

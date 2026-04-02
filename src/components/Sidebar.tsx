@@ -6,7 +6,7 @@ import {
     Briefcase, Award, Network, Megaphone, Ticket, Receipt,
     FileText, CalendarCheck, AlertTriangle, UserCog, Star, MapPin, ClipboardList,
     Crown, Bell, Activity, Flag, ShieldAlert, Trophy, TrendingUp, Shirt,
-    BookOpen, Timer, Mic, GraduationCap
+    BookOpen, Timer, Mic, GraduationCap, Video
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -17,6 +17,7 @@ const coreMenu = [
     { label: "Dashboard", icon: LayoutDashboard, path: "/" },
     { label: "Attendance", icon: Clock, path: "/attendance" },
     { label: "Leave", icon: Calendar, path: "/leave" },
+    { label: "Meetings", icon: Video, path: "/meetings" },
     { label: "Org Chart", icon: Network, path: "/hierarchy" },
     { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
     { label: "Tickets", icon: Ticket, path: "/tickets" },
@@ -56,6 +57,7 @@ const hrMenu = [
     { label: "Locations", icon: MapPin, path: "/locations" },
     { label: "Schedule Approval", icon: MapPin, path: "/hr/schedule-approval" },
     { label: "Engagement", icon: Award, path: "/engagement" },
+    { label: "Onboarding", icon: UserCog, path: "/hr/onboarding" },
 ];
 
 const founderMenu = [

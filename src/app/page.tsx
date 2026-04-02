@@ -3,6 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect, useMemo } from "react";
 import { cn, resolveImageUrl } from "@/lib/utils";
 import { INDIAN_HOLIDAYS_2026, FLAG_CONFIG } from "@/lib/colleges";
+import { calculatePerformance, LEADERBOARD_START_DATE } from "@/lib/performance-utils";
 import {
     Calendar, Star, Megaphone, FileText, MessageSquare, Send, X, Clock, AlertTriangle, Users,
     ChevronRight, Gift, Trophy, Receipt, Ticket, Shield, Bot, Cake, Flag, Bell, Eye, ExternalLink, Activity,
@@ -247,77 +248,27 @@ export default function Home() {
     const stats = useMemo(() => {
         if (!user || !employees || !performanceStars) return [];
 
-        // Leaderboard: Global rankings for everyone
-        let filteredStars = performanceStars;
-
-        return filteredStars.map(s => {
+        return performanceStars.map(s => {
             const emp = employees.find(e => e.id === s.employeeId);
             if (!emp) return null;
 
             const blockedEmails = ["ayush@geeksofgurukul.com", "skgupta272829@gmail.com"];
             if (blockedEmails.includes(emp.email?.toLowerCase())) return null;
 
-            const myAttendance = attendanceRecords.filter(r => r.employeeId === s.employeeId);
-
-            const flagsList = myAttendance.flatMap(r => {
-                return Object.entries(r.flags || {})
-                    .filter(([_, value]) => value === true)
-                    .map(([key, _]) => key);
-            });
-
-            const lateFlags = flagsList.filter(f => f === 'late').length;
-            const dressFlags = flagsList.filter(f => f === 'dressCode').length;
-            const misconductFlags = flagsList.filter(f => f === 'misconduct').length;
-            const performanceFlags = flagsList.filter(f => f === 'performance').length;
-            const meetingFlags = flagsList.filter(f => f === 'meetingAbsent').length;
-
-            const totalFlags = flagsList.length;
-            const hasRecentFlags = totalFlags > 0;
-
-            const responsibilities = additionalResponsibilities.filter(r => r.employeeId === s.employeeId && r.status === "Approved");
-
-            let points = 0;
-
-            const presentDays = myAttendance.filter(r => r.status === "Present").length;
-            points += (presentDays - lateFlags) * 2;
-            points -= lateFlags * 5;
-
-            const dressCheckedDays = myAttendance.filter(r => r.dressCodeStatus === "Approved" || r.dressCodeStatus === "Rejected").length;
-            points += (dressCheckedDays - dressFlags) * 2;
-            points -= dressFlags * 5;
-
-            if (s.rating > 4.2) {
-                points += s.rating * 10;
-            } else if (s.rating >= 2 && s.rating < 3.5) {
-                points += (s.rating - 5) * 10;
-            } else if (s.rating < 2) {
-                points += (s.rating - 5) * 20;
-            }
-
-            if (!hasRecentFlags) points += 100;
-
-            points -= misconductFlags * 50;
-            points -= performanceFlags * 20;
-            points -= meetingFlags * 10;
-
-            const responsibilityPoints = responsibilities.reduce((acc, curr) => acc + (curr.points || 0), 0);
-            points += responsibilityPoints;
-
-            const calculatedStars = Math.min(5, Math.max(0, 3.0 + (points / 200) * 0.5));
+            const perf = calculatePerformance(
+                attendanceRecords,
+                additionalResponsibilities,
+                emp.biWeeklyScores || [],
+                s.employeeId
+            );
 
             return {
                 ...s,
                 emp,
-                calculatedStars,
-                totalPoints: points,
-                flagsCount: totalFlags,
-                flagCounts: {
-                    yellow: lateFlags + flagsList.filter(f => f === 'earlyOut' || f === 'locationDiff').length,
-                    red: misconductFlags,
-                    orange: dressFlags,
-                    black: meetingFlags,
-                    blue: performanceFlags
-                }
+                calculatedStars: perf.calculatedStars,
+                totalPoints: perf.totalPoints,
+                flagsCount: Object.values(perf.detailedFlags).reduce((a, b) => a + b, 0),
+                flagCounts: perf.flagCounts
             };
         }).filter((item): item is NonNullable<typeof item> => item !== null)
             .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount);

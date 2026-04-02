@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { Menu, X } from "lucide-react";
 import Sidebar from "./Sidebar";
+import OnboardingModal from "./OnboardingModal";
 
 export default function SidebarWrapper({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
@@ -13,7 +14,6 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
     const [isMobileOpen, setIsMobileOpen] = useState(false);
 
     const isAuthPage = pathname === "/login";
-    const isOnboardingPage = pathname === "/onboarding";
 
     useEffect(() => {
         if (authLoading) return; // Wait for auth to initialize
@@ -23,19 +23,15 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
             router.push("/login");
             return;
         }
-        if (user && user.role === "FACULTY" && !user.isOnboarded && !isOnboardingPage && !isAuthPage) {
-            router.push("/onboarding");
-            return;
-        }
         if (user && isAuthPage) {
             router.push("/");
             return;
         }
-    }, [user, authLoading, pathname, router, isAuthPage, isOnboardingPage]);
+    }, [user, authLoading, pathname, router, isAuthPage]);
 
     if (authLoading) return null;
 
-    const showSidebar = user && !isAuthPage && !isOnboardingPage;
+    const showSidebar = user && !isAuthPage;
 
     return (
         <div className="flex h-screen w-full overflow-hidden bg-background">
@@ -68,12 +64,14 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
                 )}
 
                 <main className="flex-1 overflow-y-auto overflow-x-hidden relative">
-                    {/* Wrapped the children in the same layout style as the original web view, restoring the zoom for desktop only via a wrapper class */}
                     <div className="flex flex-col min-h-full desktop-zoom">
                         {children}
                     </div>
                 </main>
             </div>
+            
+            {/* Global Mandatoy Onboarding for New Joinees */}
+            <OnboardingModal />
         </div>
     );
 }

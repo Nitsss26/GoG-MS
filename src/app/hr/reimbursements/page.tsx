@@ -22,6 +22,7 @@ export default function HRReimbursementsPage() {
     const [actionModal, setActionModal] = useState<{ id: string; action: "reject" | "approve-pending" | "approve-done" } | null>(null);
     const [reason, setReason] = useState("");
     const [remarks, setRemarks] = useState("");
+    const [inputAmount, setInputAmount] = useState<string>("");
     const [statusFilter, setStatusFilter] = useState("All");
 
     const now = new Date();
@@ -62,11 +63,12 @@ export default function HRReimbursementsPage() {
     const rejectedAmount = monthAll.filter(r => r.status === "Rejected").reduce((a, r) => a + r.amount, 0);
     const rejectedCount = monthAll.filter(r => r.status === "Rejected").length;
 
-    const handleAction = (id: string, status: ReimbursementClaim["status"], reasonVal?: string, remarksVal?: string) => {
-        updateReimbursementStatus(id, status, reasonVal, remarksVal);
+    const handleAction = (id: string, status: ReimbursementClaim["status"], reasonVal?: string, remarksVal?: string, amountVal?: number) => {
+        updateReimbursementStatus(id, status, reasonVal, remarksVal, amountVal);
         setActionModal(null);
         setReason("");
         setRemarks("");
+        setInputAmount("");
         setReviewClaim(null);
     };
 
@@ -210,7 +212,11 @@ export default function HRReimbursementsPage() {
                                             <button onClick={() => setReviewClaim(r)} className="flex-1 py-2 text-[10px] font-bold bg-zinc-800/50 text-zinc-300 border border-zinc-700/50 rounded-xl hover:bg-zinc-700/50 flex items-center justify-center gap-1 transition-colors"><Eye size={10} /> Review</button>
                                             {r.status === "Pending" && (
                                                 <>
-                                                    <button onClick={() => { setActionModal({ id: r.id, action: "approve-pending" }); setRemarks(""); }} className="flex-1 py-2 text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 rounded-xl hover:bg-green-500/20 transition-colors">Approve</button>
+                                                    <button onClick={() => { 
+                                                        setActionModal({ id: r.id, action: "approve-pending" }); 
+                                                        setRemarks(""); 
+                                                        setInputAmount(r.amount.toString()); 
+                                                    }} className="flex-1 py-2 text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 rounded-xl hover:bg-green-500/20 transition-colors">Approve</button>
                                                     <button onClick={() => { setActionModal({ id: r.id, action: "reject" }); setReason(""); setRemarks(""); }} className="flex-1 py-2 text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl hover:bg-red-500/20 transition-colors">Reject</button>
                                                 </>
                                             )}
@@ -314,10 +320,22 @@ export default function HRReimbursementsPage() {
                             <h2 className="text-base font-bold text-white">
                                 {actionModal.action === "reject" ? "Reject with Reason" : "Approve — Pending Payment"}
                             </h2>
-                            {actionModal.action === "reject" && (
+                            {actionModal.action === "reject" ? (
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Rejection Reason *</label>
                                     <textarea required rows={3} value={reason} onChange={e => setReason(e.target.value)} placeholder="Provide reason for rejection..." className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-xs text-white resize-none" />
+                                </div>
+                            ) : (
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Approved Amount (â‚¹)</label>
+                                    <input 
+                                        type="number" 
+                                        value={inputAmount} 
+                                        onChange={e => setInputAmount(e.target.value)} 
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-xs text-white" 
+                                        placeholder="Enter amount..."
+                                    />
+                                    <p className="text-[8px] text-zinc-500 italic">Enter full amount or a partial approved amount.</p>
                                 </div>
                             )}
                             <div className="space-y-1.5">
@@ -331,7 +349,7 @@ export default function HRReimbursementsPage() {
                                         disabled={!reason.trim()}
                                         className="bg-red-500/20 text-red-400 text-xs font-bold px-4 py-2 rounded-lg border border-red-500/20 hover:bg-red-500/30 disabled:opacity-50">Reject</button>
                                 ) : (
-                                    <button onClick={() => handleAction(actionModal.id, "Approved - Pending Payment", undefined, remarks || undefined)}
+                                    <button onClick={() => handleAction(actionModal.id, "Approved - Pending Payment", undefined, remarks || undefined, parseFloat(inputAmount))}
                                         className="bg-green-500/20 text-green-400 text-xs font-bold px-4 py-2 rounded-lg border border-green-500/20 hover:bg-green-500/30">Approve</button>
                                 )}
                             </div>

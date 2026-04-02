@@ -4,13 +4,15 @@ import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { motion, AnimatePresence } from "framer-motion";
-import { Video, Plus, X, CheckCircle2, Clock, User, Calendar, MessageSquare, ChevronRight, Link as LinkIcon, Users, Image as ImageIcon, Loader2, Search, Filter } from "lucide-react";
+import { Video, Plus, X, CheckCircle2, Clock, User, Calendar, MessageSquare, ChevronRight, Link as LinkIcon, Users, Image as ImageIcon, Loader2, Search, Filter, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function MeetingsPage() {
-    const { user, meetings, addMeetingRequest, updateMeetingStatus, employees } = useAuth();
+    const { user, meetings, addMeetingRequest, joinMeeting, submitAbsenceReason, finalizeMeeting, updateMeetingStatus, employees, getReportees } = useAuth();
     const [showModal, setShowModal] = useState(false);
     const [showCompleteModal, setShowCompleteModal] = useState<string | null>(null);
+    const [showReasonModal, setShowReasonModal] = useState<string | null>(null);
+    const [absenceReason, setAbsenceReason] = useState("");
     const [isUploading, setIsUploading] = useState(false);
 
     // Scheduling Form State
@@ -68,14 +70,19 @@ export default function MeetingsPage() {
         }
     };
 
-    const handleCompleteSubmit = (e: React.FormEvent) => {
+    const handleCompleteSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (momData.screenshotUrls.length === 0) {
-            alert("A screenshot of the meeting is mandatory.");
+            alert("A screenshot of the meeting is mandatory (Cameras On requirement).");
             return;
         }
         if (showCompleteModal) {
-            updateMeetingStatus(showCompleteModal, "Completed", momData);
+            const meeting = meetings.find(m => m.id === showCompleteModal);
+            await finalizeMeeting(showCompleteModal, {
+                ...momData,
+                content: `Institutional Sync: ${meeting?.purpose}`,
+                decision: "MoM Finalized by Originator"
+            });
             setShowCompleteModal(null);
             setMomData({ screenshotUrls: [], attendees: [] });
         }
@@ -86,10 +93,12 @@ export default function MeetingsPage() {
         : meetings.filter(m =>
             m.employeeId === user?.id ||
             m.attendees?.some(a => a.id === user?.id) ||
-            user?.role && ["AD", "HOI", "OM"].includes(user.role) // Managers can see meetings in their chain usually
+            (user?.id && getReportees(user.id).some(r => r.id === m.employeeId || m.attendees?.some(a => a.id === r.id)))
         );
 
-    const selectableEmployees = employees.filter(e => e.id !== user?.id);
+    const selectableEmployees = (user?.role === "HOI" || user?.role === "OM")
+        ? getReportees(user.id)
+        : employees.filter(e => e.id !== user?.id);
     const searchedEmployees = selectableEmployees.filter(e =>
         e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         e.dept.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -105,7 +114,7 @@ export default function MeetingsPage() {
                 </div>
                 {canSchedule && (
                     <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-1.5 h-9 px-4">
-                        <Plus size={14} /> Initiate Sync
+                        <Plus size={14} /> Add Meeting
                     </button>
                 )}
             </header>
@@ -175,9 +184,44 @@ export default function MeetingsPage() {
                                                     <span className="text-[10px] text-muted">{m.time} IST</span>
                                                 </div>
                                                 {m.googleLink && (
-                                                    <a href={m.googleLink} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[10px] text-primary hover:underline font-bold">
-                                                        <Video size={12} /> Join Session
-                                                    </a>
+                                                    <div className="space-y-2">
+                                                        <button
+                                                            onClick={() => {
+                                                                joinMeeting(m.id);
+                                                                window.open(m.googleLink, '_blank');
+                                                            }}
+                                                            className={cn("flex items-center gap-1.5 text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all border",
+                                                                m.attendees?.find(a => a.id === user?.id)?.joinedAt
+                                                                    ? "bg-green-500/10 border-green-500/20 text-green-500"
+                                                                    : "bg-primary/10 border-primary/20 text-primary hover:bg-primary hover:text-white"
+                                                            )}
+                                                        >
+                                                            <Video size={12} /> {m.attendees?.find(a => a.id === user?.id)?.joinedAt ? "Session Joined" : "Join & Record Attendance"}
+                                                        </button>
+
+                                                        {/* Absence Reason Logic */}
+                                                        {(() => {
+                                                            const isAttendee = m.attendees?.some(a => a.id === user?.id);
+                                                            const hasJoined = m.attendees?.find(a => a.id === user?.id)?.joinedAt;
+                                                            const meetingDateTime = new Date(`${m.date}T${m.time}`);
+                                                            const now = new Date();
+                                                            const diffHours = (now.getTime() - meetingDateTime.getTime()) / (1000 * 60 * 60);
+                                                            const isWithinGrace = diffHours >= 0 && diffHours <= 1;
+                                                            const existingReason = m.attendees?.find(a => a.id === user?.id)?.reason;
+
+                                                            if (isAttendee && !hasJoined && isWithinGrace) {
+                                                                return (
+                                                                    <button
+                                                                        onClick={() => setShowReasonModal(m.id)}
+                                                                        className="flex items-center gap-1.5 text-[9px] font-bold text-amber-500 hover:underline"
+                                                                    >
+                                                                        <AlertTriangle size={10} /> {existingReason ? "Reason Submitted" : "Submit Absence Reason"}
+                                                                    </button>
+                                                                );
+                                                            }
+                                                            return null;
+                                                        })()}
+                                                    </div>
                                                 )}
                                             </div>
                                         </td>
@@ -218,7 +262,12 @@ export default function MeetingsPage() {
                                                         onClick={() => {
                                                             setMomData({
                                                                 screenshotUrls: [],
-                                                                attendees: m.attendees?.map(a => ({ id: a.id, name: a.name, status: 'Present' })) || []
+                                                                attendees: m.attendees?.map(a => ({
+                                                                    id: a.id,
+                                                                    name: a.name,
+                                                                    status: a.joinedAt ? 'Present' : 'Absent (Non-Genuine)',
+                                                                    reason: a.reason
+                                                                })) || []
                                                             });
                                                             setShowCompleteModal(m.id);
                                                         }}
@@ -257,14 +306,14 @@ export default function MeetingsPage() {
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowModal(false)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
                         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="card w-full max-w-2xl p-6 relative z-10 space-y-6 max-h-[90vh] overflow-y-auto custom-scrollbar">
                             <div className="flex justify-between items-center text-white">
-                                <h2 className="text-base font-bold">Initiate Institutional Sync</h2>
+                                <h2 className="text-base font-bold">Initiate Meeting </h2>
                                 <button onClick={() => setShowModal(false)} className="text-muted hover:text-white"><X size={18} /></button>
                             </div>
                             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-4">
                                     <div className="space-y-1">
                                         <label className="text-[9px] font-bold text-muted uppercase tracking-widest">Meeting Target</label>
-                                        <input className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white" placeholder="e.g. All Faculty, Engineering Node..." value={formData.targetName} onChange={e => setFormData({ ...formData, targetName: e.target.value })} required />
+                                        <input className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white" placeholder="e.g. All Faculty, OMs..." value={formData.targetName} onChange={e => setFormData({ ...formData, targetName: e.target.value })} required />
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[9px] font-bold text-muted uppercase tracking-widest">Sync Purpose</label>
@@ -329,7 +378,7 @@ export default function MeetingsPage() {
                                             ))}
                                         </div>
                                     </div>
-                                    <button type="submit" className="btn-primary w-full py-3 h-12">Execute Institutional Sync</button>
+                                    <button type="submit" className="btn-primary w-full py-3 h-12">Schedule Meeting</button>
                                 </div>
                             </form>
                         </motion.div>
@@ -432,6 +481,43 @@ export default function MeetingsPage() {
                                     </button>
                                 </div>
                             </form>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Absence Reason Modal */}
+            <AnimatePresence>
+                {showReasonModal && (
+                    <div className="fixed inset-0 z-[120] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowReasonModal(null)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="card w-full max-w-md p-6 relative z-10 space-y-4">
+                            <div className="flex justify-between items-center text-white">
+                                <h2 className="text-sm font-bold flex items-center gap-2 text-amber-500"><AlertTriangle size={16} /> Submit Absence Reason</h2>
+                                <button onClick={() => setShowReasonModal(null)} className="text-muted hover:text-white"><X size={18} /></button>
+                            </div>
+                            <p className="text-[10px] text-muted">Please provide a genuine reason for missing this scheduled sync. This must be submitted within 1 hour of the meeting start time.</p>
+                            <textarea
+                                rows={4}
+                                className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white resize-none"
+                                placeholder="State your reason clearly..."
+                                value={absenceReason}
+                                onChange={e => setAbsenceReason(e.target.value)}
+                            />
+                            <div className="flex gap-3">
+                                <button onClick={() => setShowReasonModal(null)} className="flex-1 h-10 rounded-lg border border-border text-[10px] font-bold text-white hover:bg-zinc-800 transition-colors">Cancel</button>
+                                <button
+                                    onClick={() => {
+                                        if (!absenceReason.trim()) return alert("Reason is mandatory");
+                                        submitAbsenceReason(showReasonModal, absenceReason);
+                                        setShowReasonModal(null);
+                                        setAbsenceReason("");
+                                    }}
+                                    className="flex-[2] h-10 bg-amber-500 text-white rounded-lg text-[10px] font-bold hover:bg-amber-600 transition-colors"
+                                >
+                                    Submit Reason
+                                </button>
+                            </div>
                         </motion.div>
                     </div>
                 )}

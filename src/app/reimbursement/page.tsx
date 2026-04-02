@@ -251,6 +251,20 @@ export default function ReimbursementPage() {
                                     <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Description</label>
                                     <textarea required rows={2} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-xs text-white resize-none" />
                                 </div>
+                                <div className="space-y-1.5 p-3 rounded-xl bg-zinc-800/30 border border-zinc-700/50">
+                                    <label className="text-[10px] font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2">
+                                        <AlertCircle size={12} /> Important: Invoice Guidelines
+                                    </label>
+                                    <p className="text-[9px] text-zinc-400 leading-relaxed mb-2">
+                                        Please add all original bill images AND generate a formal invoice similar to the sample below using <a href="https://invoice-generator.com/#/new" target="_blank" rel="noopener" className="text-primary hover:underline font-bold">Invoice-Generator.com</a>.
+                                    </p>
+                                    <div className="rounded-lg overflow-hidden border border-zinc-700 bg-zinc-900/50">
+                                        <img src="/invoice-sample.png" alt="Sample Invoice" className="w-full h-auto object-contain opacity-80 hover:opacity-100 transition-opacity" />
+                                    </div>
+                                    <p className="text-[8px] text-zinc-500 font-bold mt-2 uppercase tracking-tight text-center">
+                                        Add bills images + generate this type of sample invoice
+                                    </p>
+                                </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Google Drive Folder Link (Bills/Invoices)</label>
                                     <input type="url" value={form.driveLink} onChange={e => setForm({ ...form, driveLink: e.target.value })} placeholder="https://drive.google.com/..." className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-xs text-white" />

@@ -37,3 +37,15 @@ export async function PUT(request: Request) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
+
+export async function POST(request: Request) {
+    try {
+        await dbConnect();
+        const data = await request.json();
+        
+        const newEmployee = await Employee.create(data);
+        return NextResponse.json(newEmployee);
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}

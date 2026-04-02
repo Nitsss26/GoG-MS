@@ -6,131 +6,51 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { resolveImageUrl } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { calculatePerformance, LEADERBOARD_START_DATE } from "@/lib/performance-utils";
 
 export default function LeaderboardPage() {
     const { user, employees, performanceStars, attendanceRecords, additionalResponsibilities, getReportees } = useAuth();
 
     const [showRules, setShowRules] = useState(false);
     const [selectedEmpForResp, setSelectedEmpForResp] = useState<any>(null);
+    const [respDescription, setRespDescription] = useState("");
+    const [respPoints, setRespPoints] = useState<number>(10);
+    const [isSubmittingResp, setIsSubmittingResp] = useState(false);
+    const { addAdditionalResponsibility } = useAuth();
+
+    const isADorFounder = user?.role === "AD" || user?.role === "FOUNDER";
 
     const stats = useMemo(() => {
         if (!employees || !performanceStars || !user) return [];
 
-        const START_DATE = new Date("2026-04-01");
-        const reportees = getReportees(user.id);
-        const reporteeIds = reportees.map(r => r.id);
-        const isSystemAdmin = user.role === "HR" || user.role === "FOUNDER";
-        const isAD = user.role === "AD";
+        const START_DATE = LEADERBOARD_START_DATE;
 
-        // Leaderboard: Global rankings for everyone, starting from April 1st
         return performanceStars
             .map(s => {
                 const emp = employees.find(e => e.id === s.employeeId);
                 if (!emp) return null;
 
-                // Block certain emails
                 const blockedEmails = ["ayush.chouhan@geeksofgurukul.com", "sachin@geeksofgurukul.com", "ayush@geeksofgurukul.com", "skgupta272829@gmail.com"];
                 if (blockedEmails.includes(emp.email?.toLowerCase())) return null;
 
-                // Filter Attendance: Only from April 1st
-                const myAttendance = attendanceRecords.filter(r => {
-                    const rDate = new Date(r.date);
-                    return r.employeeId === s.employeeId && rDate >= START_DATE;
-                });
-
-                // Flags analysis
-                const flagsList = myAttendance.flatMap(r => {
-                    return Object.entries(r.flags || {})
-                        .filter(([_, value]) => value === true)
-                        .map(([key, _]) => key);
-                });
-
-                const lateFlags = flagsList.filter(f => f === 'late').length;
-                const dressFlags = flagsList.filter(f => f === 'dressCode').length;
-                const misconductFlags = flagsList.filter(f => f === 'misconduct').length;
-                const performanceFlags = flagsList.filter(f => f === 'performance').length;
-                const meetingFlags = flagsList.filter(f => f === 'meetingAbsent').length;
-
-                const totalFlags = flagsList.length;
-                const hasRecentFlags = totalFlags > 0;
-
-                // Filter Responsibilities: Only from April 1st
-                const responsibilities = additionalResponsibilities.filter(r => {
-                    const rDate = new Date(r.date);
-                    return r.employeeId === s.employeeId && r.status === "Approved" && rDate >= START_DATE;
-                });
-
-                // --- REFINED RANKING ALGORITHM ---
-                let points = 0;
-
-                // 1. Attendance (On-time: +2/day, Late: -5/day)
-                const presentDays = myAttendance.filter(r => r.status === "Present").length;
-                points += (presentDays - lateFlags) * 2; // On-time
-                points -= lateFlags * 5; // Late deduction
-
-                // 2. Dress Code (+2/day, -5/day)
-                const dressCheckedDays = myAttendance.filter(r => r.dressCodeStatus === "Approved" || r.dressCodeStatus === "Rejected").length;
-                points += (dressCheckedDays - dressFlags) * 2;
-                points -= dressFlags * 5;
-
-                // 3. Rating Logic (Filtering biWeeklyScores from April 1st)
-                const myRatings = (emp.biWeeklyScores || []).filter(r => {
-                    const rDate = new Date(r.date || "");
-                    return rDate >= START_DATE;
-                });
-
-                myRatings.forEach(r => {
-                    // USER SPECIFIED RULES:
-                    // Rating > 4.2: (Rating × 10)
-                    // Rating 2.0 - 3.5: (Rating - 5) × 10
-                    // Rating < 2.0: (Rating - 5) × 20
-                    if (r.score > 4.2) {
-                        points += r.score * 10;
-                    } else if (r.score >= 2.0 && r.score <= 3.5) {
-                        points += (r.score - 5) * 10;
-                    } else if (r.score < 2.0) {
-                        points += (r.score - 5) * 20;
-                    }
-                });
-
-                // 4. Clean Record (+100 points)
-                if (!hasRecentFlags && myAttendance.length > 0) points += 100;
-
-                // Flags additional penalties
-                points -= misconductFlags * 50; // Red Flag penalty
-                points -= performanceFlags * 20; // Blue Flag penalty
-                points -= meetingFlags * 10; // Black Flag penalty
-
-                // 5. Additional Responsibilities (Sum of points)
-                const responsibilityPoints = responsibilities.reduce((acc, curr) => acc + (curr.points || 0), 0);
-                points += responsibilityPoints;
-
-                // --- STAR CALCULATION ---
-                const calculatedStars = Math.min(5, Math.max(0, 3.0 + (points / 200) * 0.5));
+                const perf = calculatePerformance(
+                    attendanceRecords,
+                    additionalResponsibilities,
+                    emp.biWeeklyScores || [],
+                    s.employeeId
+                );
 
                 return {
                     ...s,
                     emp,
-                    calculatedStars,
-                    flagsList: [...new Set(flagsList)],
-                    actualFlags: flagsList,
-                    flagsCount: totalFlags,
-                    responsibilities,
-                    totalPoints: points,
-                    flagCounts: {
-                        yellow: lateFlags + flagsList.filter(f => f === 'earlyOut' || f === 'locationDiff').length,
-                        red: misconductFlags,
-                        orange: dressFlags,
-                        black: meetingFlags,
-                        blue: performanceFlags
-                    }
+                    calculatedStars: perf.calculatedStars,
+                    flagsCount: Object.values(perf.detailedFlags).reduce((a, b) => a + b, 0),
+                    responsibilities: perf.approvedResponsibilities,
+                    totalPoints: perf.totalPoints,
+                    flagCounts: perf.flagCounts
                 };
             }).filter((item): item is NonNullable<typeof item> => item !== null)
-            .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount)
-            .map((item, index) => {
-                const rank = index + 1;
-                return item;
-            });
+            .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount);
     }, [employees, performanceStars, attendanceRecords, additionalResponsibilities]);
 
     const foundersRankings = useMemo(() => {
@@ -207,7 +127,7 @@ export default function LeaderboardPage() {
 
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
                             {foundersRankings.map((s, i) => (
-                                <LeaderboardBox key={s.employeeId || `founder-${i}`} data={s} rank={i + 1} type="FOUNDER" onRespClick={() => setSelectedEmpForResp(s)} />
+                                <LeaderboardBox key={s.employeeId || `founder-${i}`} data={s} rank={i + 1} type="FOUNDER" onRespClick={() => setSelectedEmpForResp(s)} canAdd={isADorFounder} />
                             ))}
                         </div>
                     </section>
@@ -227,7 +147,7 @@ export default function LeaderboardPage() {
 
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
                         {omRankings.map((s, i) => (
-                            <LeaderboardBox key={s.employeeId || `om-${i}`} data={s} rank={i + 1} type="OM" onRespClick={() => setSelectedEmpForResp(s)} />
+                            <LeaderboardBox key={s.employeeId || `om-${i}`} data={s} rank={i + 1} type="OM" onRespClick={() => setSelectedEmpForResp(s)} canAdd={isADorFounder} />
                         ))}
                     </div>
                 </section>
@@ -246,7 +166,7 @@ export default function LeaderboardPage() {
 
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
                         {facultyRankings.map((s, i) => (
-                            <LeaderboardBox key={s.employeeId || `faculty-${i}`} data={s} rank={i + 1} type="FACULTY" onRespClick={() => setSelectedEmpForResp(s)} />
+                            <LeaderboardBox key={s.employeeId || `faculty-${i}`} data={s} rank={i + 1} type="FACULTY" onRespClick={() => setSelectedEmpForResp(s)} canAdd={isADorFounder} />
                         ))}
                     </div>
                 </section>
@@ -283,10 +203,9 @@ export default function LeaderboardPage() {
                                     <div className="space-y-4">
                                         <h3 className="text-primary font-black uppercase tracking-widest px-2 py-1 bg-primary/10 rounded-lg w-fit">Point Gains</h3>
                                         <ul className="space-y-3 font-bold text-zinc-400">
-                                            <li className="flex items-start gap-2"><span className="text-emerald-400">✔</span> On-Time Attendance: +2 points/day</li>
+                                            <li className="flex items-start gap-2"><span className="text-emerald-400">✔</span> Perfect On-Time Attendance: +2 points/day</li>
                                             <li className="flex items-start gap-2"><span className="text-emerald-400">✔</span> Correct Dress Code: +2 points/day</li>
                                             <li className="flex items-start gap-2"><span className="text-emerald-400">✔</span> Rating {'>'} 4.2: (Rating × 10) points</li>
-                                            <li className="flex items-start gap-2"><span className="text-emerald-400">✔</span> Clean Record (No flags): +100 points</li>
                                             <li className="flex items-start gap-2"><span className="text-emerald-400">✔</span> Add. Responsibilities: Up to 100 points</li>
                                         </ul>
                                     </div>
@@ -294,6 +213,7 @@ export default function LeaderboardPage() {
                                         <h3 className="text-red-400 font-black uppercase tracking-widest px-2 py-1 bg-red-400/10 rounded-lg w-fit">Penalties</h3>
                                         <ul className="space-y-3 font-bold text-zinc-400">
                                             <li className="flex items-start gap-2"><span className="text-red-400">✘</span> Late Arrival (Yellow Flag): -5 points</li>
+                                            <li className="flex items-start gap-2"><span className="text-red-400">✘</span> Early Clock-out: -5 points</li>
                                             <li className="flex items-start gap-2"><span className="text-red-400">✘</span> Dress Code Error (Orange Flag): -5 points</li>
                                             <li className="flex items-start gap-2"><span className="text-red-400">✘</span> Rating 2.0-3.5: (Rating-5) × 10 points</li>
                                             <li className="flex items-start gap-2"><span className="text-red-400">✘</span> Rating {'<'} 2.0: (Rating-5) × 20 points</li>
@@ -358,16 +278,71 @@ export default function LeaderboardPage() {
                                     ))
                                 ) : (
                                     <div className="text-center py-8">
-                                        <p className="text-xs text-zinc-500 italic">No additional responsibilities recorded.</p>
+                                        <p className="text-[10px] text-zinc-500 italic font-bold uppercase tracking-widest">No responsibility history</p>
                                     </div>
                                 )}
                             </div>
 
+                            {isADorFounder && (
+                                <div className="mt-8 pt-6 border-t border-white/5 space-y-4">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                                            <Plus size={14} className="text-primary" />
+                                        </div>
+                                        <h4 className="text-xs font-black text-white uppercase tracking-widest">Assign New Responsibility</h4>
+                                    </div>
+                                    
+                                    <div className="space-y-3">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest ml-1">Task Description</label>
+                                            <textarea 
+                                                value={respDescription}
+                                                onChange={(e) => setRespDescription(e.target.value)}
+                                                placeholder="e.g., Conducted extra workshop for students..."
+                                                className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary/40 transition-all resize-none h-20"
+                                            />
+                                        </div>
+                                        
+                                        <div className="space-y-1.5">
+                                            <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest ml-1">Points (Max 100)</label>
+                                            <input 
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                value={respPoints}
+                                                onChange={(e) => setRespPoints(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                                                className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-primary/40 transition-all"
+                                            />
+                                        </div>
+
+                                        <button
+                                            disabled={isSubmittingResp || !respDescription.trim()}
+                                            onClick={async () => {
+                                                setIsSubmittingResp(true);
+                                                try {
+                                                    await addAdditionalResponsibility(selectedEmpForResp.emp.id, respDescription, respPoints);
+                                                    setRespDescription("");
+                                                    setRespPoints(10);
+                                                    // Note: Ideally refresh or update local state, but AuthContext handles notification
+                                                    alert("Responsibility assigned successfully and sent for approval.");
+                                                    setSelectedEmpForResp(null);
+                                                } finally {
+                                                    setIsSubmittingResp(false);
+                                                }
+                                            }}
+                                            className="w-full py-3.5 rounded-xl bg-primary text-primary-foreground text-[10px] font-black uppercase tracking-[0.2em] hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
+                                        >
+                                            {isSubmittingResp ? "Assigning..." : "Assign & Submit Request"}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
                             <button
                                 onClick={() => setSelectedEmpForResp(null)}
-                                className="w-full mt-6 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-black uppercase tracking-widest transition-colors"
+                                className="w-full mt-4 py-3 rounded-xl bg-zinc-800/50 hover:bg-zinc-800 text-xs font-black uppercase tracking-widest transition-colors text-zinc-400"
                             >
-                                Close Details
+                                Close View
                             </button>
                         </motion.div>
                     </div>
@@ -398,7 +373,7 @@ function StarRating({ stars }: { stars: number }) {
     );
 }
 
-function LeaderboardBox({ data, rank, type, onRespClick }: { data: any; rank: number; type: "OM" | "FACULTY" | "FOUNDER" | "HOI"; onRespClick: () => void }) {
+function LeaderboardBox({ data, rank, type, onRespClick, canAdd }: { data: any; rank: number; type: "OM" | "FACULTY" | "FOUNDER" | "HOI"; onRespClick: () => void; canAdd: boolean }) {
     const medal = rank === 1 && type !== "FOUNDER" ? "🥇" : rank === 2 && type !== "FOUNDER" ? "🥈" : rank === 3 && type !== "FOUNDER" ? "🥉" : null;
     const isTop3 = (rank <= 3) && type !== "FOUNDER";
 
@@ -496,7 +471,9 @@ function LeaderboardBox({ data, rank, type, onRespClick }: { data: any; rank: nu
                     onClick={(e) => { e.stopPropagation(); onRespClick(); }}
                     className="flex flex-col items-end group/btn cursor-pointer overflow-hidden p-1 -m-1 rounded-lg hover:bg-primary/5 transition-colors"
                 >
-                    <span className="text-[6px] sm:text-[7px] text-primary font-black uppercase tracking-widest group-hover/btn:underline truncate mb-0.5">Add. Resp</span>
+                    <span className="text-[6px] sm:text-[7px] text-primary font-black uppercase tracking-widest group-hover/btn:underline truncate mb-0.5">
+                        {canAdd ? "Assign/View" : "View History"}
+                    </span>
                     <div className={cn(
                         "px-2 py-0.5 rounded-md shadow-lg transition-all",
                         data.responsibilities.length > 0 

@@ -66,7 +66,51 @@ const EmployeeSchema = new Schema({
     bankName: String,
     accountNumber: String,
     ifscCode: String,
-    password: { type: String, default: "26082001" }
+    password: { type: String, default: "26082001" },
+    
+    // --- ONBOARDING FIELDS ---
+    full_name: String,
+    phone_no_: String,
+    father_name_or_mother_name: String,
+    parents_phone_no_: String,
+    permanent_address: String,
+    bachelor_s_qualification: String,
+    master_s_qualification: String,
+    you_are_from_: { type: String, enum: ["IIT", "NIT", "Other College"] },
+    current_designation_at_gog: String,
+    upload_your_resume: String,
+    upload_your_bachelor_s_passing_certificate: String,
+    upload_your_master_s_passing_certificate: String,
+    linkedin_id: String,
+    upi_id: String,
+    ten_marksheet: String, // 10th
+    twelve_marksheet: String, // 12th
+    aadhar_card: String,
+    pan_card: String,
+    passport_size_photo: String,
+    bank_passbook_cancelled_cheque: String,
+    experience_letter: String,
+    which_college_are_you_from_: String,
+    t_shirt_size: String,
+    bachelor_marksheet_all: String,
+    master_marksheet_all: String,
+    
+    // --- HR VERIFICATION ---
+    onboardingStatus: { type: String, default: "Pending Creation", enum: ["Pending Creation", "Form Pending", "Verification Pending", "Approved"] },
+    onboardingChecklist: {
+        aadharCheck: { type: Boolean, default: false },
+        qualificationCheck: { type: Boolean, default: false },
+        bankDetailsCheck: { type: Boolean, default: false },
+        slackOnboarded: { type: Boolean, default: false },
+        slackChannelsAdded: { type: Boolean, default: false },
+        waGroupsAdded: { type: Boolean, default: false },
+        hrMeetingCompleted: { type: Boolean, default: false },
+        hrMeetingScreenshot: String,
+        managerMeetingCompleted: { type: Boolean, default: false },
+        adMeetingCompleted: { type: Boolean, default: false }
+    },
+    onboardingSubmittedAt: Date,
+    onboardingApprovedAt: Date
 });
 
 // Attendance Schema
@@ -219,6 +263,32 @@ const HolidaySchema = new Schema({
 const PIPRecordSchema = new Schema({ id: { type: String, unique: true }, employeeId: String, employeeName: String, reason: String, startDate: String, status: String, warnings: Number, disclaimer: String });
 const AdditionalResponsibilitySchema = new Schema({ id: { type: String, unique: true }, employeeId: String, employeeName: String, addedBy: String, description: String, date: String, status: String, points: Number });
 
+// Meeting Request Schema
+const MeetingRequestSchema = new Schema({
+    id: { type: String, unique: true },
+    employeeId: { type: String, required: true },
+    employeeName: { type: String, required: true },
+    targetName: { type: String, required: true },
+    purpose: { type: String, required: true },
+    date: { type: String, required: true },
+    time: { type: String, required: true },
+    googleLink: { type: String },
+    agenda: { type: String },
+    status: { type: String, default: "Pending" },
+    createdAt: { type: String, required: true },
+    isFinalized: { type: Boolean, default: false },
+    screenshotUrls: [String],
+    content: { type: String },
+    decision: { type: String },
+    attendees: [{
+        id: { type: String, required: true },
+        name: { type: String, required: true },
+        joinedAt: { type: String },
+        status: { type: String, enum: ['Present', 'Absent', 'Absent (Genuine)', 'Absent (Non-Genuine)'], default: 'Absent' },
+        reason: { type: String }
+    }]
+});
+
 
 // Sprint Plan Schema — Weekly teaching schedule uploaded by faculty
 const SprintPlanSchema = new Schema({
@@ -316,3 +386,4 @@ export const Holiday = mongoose.models.Holiday || mongoose.model('Holiday', Holi
 export const Location = mongoose.models.Location || mongoose.model('Location', LocationSchema);
 export const SprintPlan = mongoose.models.SprintPlan || mongoose.model('SprintPlan', SprintPlanSchema);
 export const LectureReport = mongoose.models.LectureReport || mongoose.model('LectureReport', LectureReportSchema);
+export const MeetingRequest = mongoose.models.MeetingRequest || mongoose.model('MeetingRequest', MeetingRequestSchema);
