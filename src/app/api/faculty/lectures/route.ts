@@ -186,11 +186,12 @@ export async function POST(req: Request) {
                         $set: {
                             transcription: result.transcription,
                             summary: result.summary,
-                            keywords: (result as any).keywords,
+                            keywords: result.keywords,
+                            analysis: result.analysis,
                             aiAnalysisAt: result.aiAnalysisAt
                         }
                     });
-                    console.log(`[AI] Successfully updated report ${report._id} with transcription/summary`);
+                    console.log(`[AI] Successfully updated report ${report._id} with exhaustive audit data`);
                 }
             }).catch(err => {
                 console.error(`[AI] Failed analysis for report ${report._id}:`, err);

@@ -18,7 +18,7 @@ export async function processLectureWithAI(recordingUrl: string) {
         // 1. Download to local temp for File API processing
         const response = await axios.get(recordingUrl, { 
             responseType: 'arraybuffer',
-            timeout: 60000 // 60s for download
+            timeout: 300000 // 5 minutes for large lecture recordings
         });
         
         const buffer = Buffer.from(response.data);
@@ -56,25 +56,39 @@ export async function processLectureWithAI(recordingUrl: string) {
         });
 
         const prompt = `
-            You are a Master Academic Analyst and Session Intelligence Engine.
+            You are an expert Academic Auditor for a premier educational institute. I am providing a lecture recording.
             
             TASK: 
-            Analyze the provided lecture recording (audio/video) with extreme precision.
-            1. FULL TRANSCRIPTION: Provide a verbatim, chronological transcription of the entire session. Use speaker cues like [Lecturer], [Student], or [Question] where possible. Ensure no technical content is skipped.
-            2. EXECUTIVE SUMMARY: Provide a deep, professional summary in bullet points. Include:
-               - Core technical concepts covered.
-               - Key takeaways and learning objectives achieved.
-               - Any specific assignments or follow-up instructions mentioned.
-            3. KEYWORD INDEX: List the top 10 technical keywords/terms discussed.
-
-            DIALECTS & LANGUAGES:
-            The session may be in English, Hindi, or Hinglish (Code-switching). Capture all nuances accurately.
+            Perform a high-fidelity, industry-standard audit of this session.
+            
+            1. FULL TRANSCRIPTION: Provide a verbatim, chronological transcription with TIMESTAMPS every 5 minutes.
+            2. SEGMENTED REPORT: Break the 1-hour session into 15-minute segments. For each segment, identify the Topic Covered, a Quality Score (1-10), and detailed Observations.
+            3. SENTIMENT ANALYSIS: Analyze the faculty's tone. Do they sound enthusiastic, aggressive, or bored? 
+            4. DEAD AIR DETECTION: Identify any periods of silence longer than 10 seconds.
+            5. COMPLIANCE CHECK:
+               - Opening: Did they state learning objectives within the first 5 minutes?
+               - Concept Check: Did they ask engagement questions every 15-20 minutes?
+               - Accuracy: Does the content sound factually consistent with standard academic principles?
+            6. FINAL SCORECARD: Provide a score (1-10) for:
+               - Clarity
+               - Engagement
+               - Accuracy
             
             OUTPUT FORMAT (JSON):
             {
-                "transcription": "A complete, long-form transcription of the session...",
-                "summary": "### CORE TOPICS\n- ...\n\n### KEY TAKEAWAYS\n- ...",
-                "keywords": ["React", "State Management", ...]
+                "transcription": "...",
+                "summary": "### CORE TOPICS\n- ...",
+                "keywords": [...],
+                "analysis": {
+                    "segmentedReport": [
+                        { "timeSegment": "00:00 - 15:00", "topic": "...", "score": 9, "observations": "..." },
+                        ...
+                    ],
+                    "sentimentAnalysis": "...",
+                    "deadAirAlerts": ["Silence at 24:10 for 15s", ...],
+                    "complianceCheck": { "opening": true, "engagement": true, "accuracy": true },
+                    "finalScorecard": { "clarity": 9, "engagement": 8, "accuracy": 10, "totalAuditScore": 27 }
+                }
             }
         `;
 
@@ -91,11 +105,10 @@ export async function processLectureWithAI(recordingUrl: string) {
         const responseText = result.response.text();
         const parsed = JSON.parse(responseText);
 
-        console.log(`[AI] Success: Intelligence report generated for ${recordingUrl}`);
+        console.log(`[AI] Success: Exhaustive Audit report generated for ${recordingUrl}`);
 
         return {
-            transcription: parsed.transcription,
-            summary: parsed.summary,
+            ...parsed,
             aiAnalysisAt: new Date().toISOString()
         };
     } catch (error: any) {

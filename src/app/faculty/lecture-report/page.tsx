@@ -30,6 +30,28 @@ interface ReportEntry {
     summary?: string;
     transcription?: string;
     aiAnalysisAt?: string;
+    analysis?: {
+        segmentedReport: {
+            timeSegment: string;
+            topic: string;
+            score: number;
+            observations: string;
+        }[];
+        sentimentAnalysis: string;
+        deadAirAlerts: string[];
+        complianceCheck: {
+            opening: boolean;
+            engagement: boolean;
+            accuracy: boolean;
+        };
+        finalScorecard: {
+            clarity: number;
+            engagement: number;
+            accuracy: number;
+            totalAuditScore: number;
+        };
+    };
+    keywords?: string[];
     timeStart?: string;
     timeStop?: string;
 }
@@ -262,6 +284,110 @@ export default function LectureReportPage() {
 
                         {/* Modal Content */}
                         <div className="flex-1 overflow-y-auto p-10 space-y-12 custom-scrollbar">
+                            
+                            {/* NEW: Audit Scorecards & Compliance */}
+                            {aiInsightReport.analysis && (
+                                <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                    <div className="lg:col-span-2 bg-zinc-900 border border-zinc-800 rounded-[2rem] p-8 shadow-xl">
+                                        <h3 className="text-amber-500 font-black text-[10px] uppercase tracking-[0.4em] mb-8 flex items-center gap-2">
+                                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
+                                            Audit Scorecard
+                                        </h3>
+                                        <div className="grid grid-cols-3 gap-8">
+                                            {[
+                                                { label: "Clarity", val: aiInsightReport.analysis.finalScorecard.clarity, color: "text-blue-400" },
+                                                { label: "Engagement", val: aiInsightReport.analysis.finalScorecard.engagement, color: "text-emerald-400" },
+                                                { label: "Accuracy", val: aiInsightReport.analysis.finalScorecard.accuracy, color: "text-indigo-400" }
+                                            ].map((s, idx) => (
+                                                <div key={idx} className="text-center space-y-2">
+                                                    <div className="text-3xl font-black text-white tabular-nums">{s.val}<span className="text-zinc-700 text-sm">/10</span></div>
+                                                    <div className={`text-[9px] font-black uppercase tracking-widest ${s.color}`}>{s.label}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="mt-8 pt-8 border-t border-zinc-800/50 flex items-center justify-between">
+                                            <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Total Audit Score</div>
+                                            <div className="text-2xl font-black text-amber-500 tabular-nums">
+                                                {aiInsightReport.analysis.finalScorecard.totalAuditScore}<span className="text-zinc-800 text-xs">/30</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-zinc-900 border border-zinc-800 rounded-[2rem] p-8 shadow-xl space-y-6">
+                                        <h3 className="text-zinc-500 font-black text-[10px] uppercase tracking-[0.4em] mb-2">Compliance Markers</h3>
+                                        <div className="space-y-4">
+                                            {[
+                                                { label: "Learning Objectives Stated", ok: aiInsightReport.analysis.complianceCheck.opening },
+                                                { label: "Periodic Engagement Check", ok: aiInsightReport.analysis.complianceCheck.engagement },
+                                                { label: "Curriculum Alignment", ok: aiInsightReport.analysis.complianceCheck.accuracy }
+                                            ].map((c, idx) => (
+                                                <div key={idx} className="flex items-center justify-between">
+                                                    <span className="text-[11px] font-bold text-zinc-400">{c.label}</span>
+                                                    {c.ok ? <CheckCircle2 size={16} className="text-emerald-500" /> : <X size={16} className="text-red-500" />}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="pt-4 border-t border-zinc-800/50">
+                                            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2">Faculty Tone</span>
+                                            <p className="text-xs font-bold text-white italic capitalize">{aiInsightReport.analysis.sentimentAnalysis}</p>
+                                        </div>
+                                    </div>
+                                </section>
+                            )}
+
+                            {/* NEW: Segmented Timeline Report */}
+                            {aiInsightReport.analysis?.segmentedReport && (
+                                <section>
+                                    <h3 className="text-indigo-400 font-black text-[10px] uppercase tracking-[0.4em] mb-6 flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full" />
+                                        Chronological Audit Breakdown
+                                    </h3>
+                                    <div className="rounded-[2rem] border border-zinc-800 overflow-hidden">
+                                        <table className="w-full text-left text-xs">
+                                            <thead>
+                                                <tr className="bg-zinc-900 border-b border-zinc-800">
+                                                    <th className="p-5 font-black text-zinc-500 uppercase tracking-widest w-40">Time Segment</th>
+                                                    <th className="p-5 font-black text-zinc-500 uppercase tracking-widest">Topic Covered</th>
+                                                    <th className="p-5 font-black text-zinc-500 uppercase tracking-widest text-center">Score</th>
+                                                    <th className="p-5 font-black text-zinc-500 uppercase tracking-widest">Auditor Observations</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-zinc-800/50">
+                                                {aiInsightReport.analysis.segmentedReport.map((seg, idx) => (
+                                                    <tr key={idx} className="bg-zinc-950/20">
+                                                        <td className="p-5 font-bold text-zinc-400 tabular-nums">{seg.timeSegment}</td>
+                                                        <td className="p-5 font-black text-white">{seg.topic}</td>
+                                                        <td className="p-5 text-center">
+                                                            <span className={`px-2 py-1 rounded font-black ${seg.score >= 8 ? 'text-emerald-400 bg-emerald-500/10' : seg.score >= 5 ? 'text-amber-400 bg-amber-500/10' : 'text-red-400 bg-red-500/10'}`}>
+                                                                {seg.score}/10
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-5 text-zinc-500 font-medium italic">{seg.observations}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </section>
+                            )}
+
+                            {/* Dead Air Alerts */}
+                            {aiInsightReport.analysis?.deadAirAlerts && aiInsightReport.analysis.deadAirAlerts.length > 0 && (
+                                <section className="p-6 bg-red-500/5 border border-red-500/10 rounded-[2rem]">
+                                    <h3 className="text-red-400 font-black text-[10px] uppercase tracking-[0.4em] mb-4 flex items-center gap-2">
+                                        <AlertTriangle size={14} />
+                                        Engagement Alerts (Dead Air Detected)
+                                    </h3>
+                                    <div className="flex flex-wrap gap-3">
+                                        {aiInsightReport.analysis.deadAirAlerts.map((alert, idx) => (
+                                            <span key={idx} className="px-3 py-1 bg-red-500/10 border border-red-500/20 rounded-full text-[10px] font-bold text-red-400">
+                                                {alert}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </section>
+                            )}
+
                             {/* Summary Section */}
                             <section>
                                 <h3 className="text-amber-500 font-black text-[10px] uppercase tracking-[0.4em] mb-6 flex items-center gap-2">
@@ -277,14 +403,14 @@ export default function LectureReportPage() {
                             </section>
 
                             {/* Keywords / Vocabulary */}
-                            {(aiInsightReport as any).keywords?.length > 0 && (
+                            {aiInsightReport.keywords && aiInsightReport.keywords.length > 0 && (
                                 <section className="animate-in slide-in-from-bottom-4 duration-500">
                                     <h3 className="text-emerald-400 font-black text-[10px] uppercase tracking-[0.4em] mb-6 flex items-center gap-2">
                                         <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
                                         Technical Vocabulary
                                     </h3>
                                     <div className="flex flex-wrap gap-2">
-                                        {(aiInsightReport as any).keywords.map((kw: string, idx: number) => (
+                                        {aiInsightReport.keywords.map((kw: string, idx: number) => (
                                             <span key={idx} className="px-4 py-2 bg-emerald-500/5 border border-emerald-500/10 rounded-full text-[10px] font-black text-emerald-400 uppercase tracking-widest hover:border-emerald-500/30 transition-all cursor-default">
                                                 {kw}
                                             </span>

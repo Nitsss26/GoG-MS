@@ -353,6 +353,27 @@ const LectureReportSchema = new Schema({
     transcription: { type: String },
     summary: { type: String },
     aiAnalysisAt: { type: String },
+    analysis: {
+        segmentedReport: [{
+            timeSegment: String,
+            topic: String,
+            score: Number,
+            observations: String
+        }],
+        sentimentAnalysis: String,
+        deadAirAlerts: [String],
+        complianceCheck: {
+            opening: { type: Boolean, default: false },
+            engagement: { type: Boolean, default: false },
+            accuracy: { type: Boolean, default: false }
+        },
+        finalScorecard: {
+            clarity: { type: Number, default: 0 },
+            engagement: { type: Number, default: 0 },
+            accuracy: { type: Number, default: 0 },
+            totalAuditScore: { type: Number, default: 0 }
+        }
+    },
     keywords: [{ type: String }],
     status: { type: String, default: "Scheduled", enum: ["Scheduled", "In Progress", "Completed"] },
     warnings: [{ type: String }]
