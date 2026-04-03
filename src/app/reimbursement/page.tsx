@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useAuth, ReimbursementClaim } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
-import { Receipt, Plus, Clock, CheckCircle2, XCircle, ExternalLink, Upload, Loader2, X, Eye, Calendar, IndianRupee, AlertCircle, Filter } from "lucide-react";
+import { Receipt, Plus, Clock, CheckCircle2, XCircle, ExternalLink, Upload, Loader2, X, Eye, Calendar, IndianRupee, AlertCircle, Filter, Briefcase } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -14,12 +14,8 @@ export default function ReimbursementPage() {
     const { user, reimbursements, addReimbursement } = useAuth();
     const router = useRouter();
 
-    // Administrative roles should see the management page
-    useEffect(() => {
-        if (user && ["HR", "FOUNDER", "AD", "HOI", "OM"].includes(user.role)) {
-            router.replace("/hr/reimbursements");
-        }
-    }, [user, router]);
+    // Only HR should see a link to the management page
+    const isHR = user?.role === "HR" || user?.role === "FOUNDER";
 
     const [showForm, setShowForm] = useState(false);
     const [form, setForm] = useState({ type: "Travel", amount: "", monthYear: "", description: "", driveLink: "", email: "", phone: "" });
@@ -89,6 +85,11 @@ export default function ReimbursementPage() {
                     <button onClick={() => setShowForm(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-primary/20 shrink-0">
                         <Plus size={14} /> <span className="hidden sm:inline">New Claim</span><span className="sm:hidden">New Claim</span>
                     </button>
+                    {isHR && (
+                        <button onClick={() => router.push("/hr/reimbursements")} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-2 transition-all shrink-0 border border-zinc-700/50">
+                            <Briefcase size={14} /> <span className="hidden sm:inline">Manage Team Claims</span><span className="sm:hidden">Manage</span>
+                        </button>
+                    )}
                     <select
                         value={filterMonth}
                         onChange={e => setFilterMonth(e.target.value)}

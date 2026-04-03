@@ -178,13 +178,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
             </nav>
 
             <div className="mt-auto space-y-2 px-1">
-                {/* Notification badge */}
-                {unreadCount > 0 && (
-                    <div className="bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 flex items-center gap-2">
-                        <Bell size={12} className="text-primary" />
-                        <span className="text-[10px] font-semibold text-primary">{unreadCount} new notification{unreadCount > 1 ? "s" : ""}</span>
-                    </div>
-                )}
+
 
                 <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-2.5 flex items-center gap-2.5">
                     <div className={cn("w-7 h-7 rounded-md overflow-hidden flex items-center justify-center bg-zinc-900 border border-zinc-800", !user?.photoUrl && roleStyle.bg, !user?.photoUrl && roleStyle.text)}>

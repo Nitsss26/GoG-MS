@@ -62,6 +62,7 @@ export default function LectureReportPage() {
     const [loading, setLoading] = useState(true);
     const [selectedDate, setSelectedDate] = useState("");
     const [aiInsightReport, setAiInsightReport] = useState<ReportEntry | null>(null);
+    const [pollingCount, setPollingCount] = useState(0);
 
     useEffect(() => {
         if (user?.id) {
@@ -78,7 +79,16 @@ export default function LectureReportPage() {
         if (user?.id && selectedDate) {
             fetchReports();
         }
-    }, [user, selectedDate]);
+    }, [user, selectedDate, pollingCount]);
+
+    // Polling for AI analysis
+    useEffect(() => {
+        const needsPolling = reports.some(r => r.recordingUrl && !r.aiAnalysisAt);
+        if (needsPolling) {
+            const timer = setTimeout(() => setPollingCount(prev => prev + 1), 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [reports]);
 
     const fetchReports = async () => {
         setLoading(true);
@@ -221,7 +231,7 @@ export default function LectureReportPage() {
                                                                 className={`p-2.5 rounded-xl transition-all border border-zinc-700/50 ${
                                                                     r.aiAnalysisAt ? "bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 hover:scale-110 cursor-pointer" : "bg-zinc-800 text-zinc-700 opacity-40 cursor-wait"
                                                                 }`}>
-                                                                <CheckCircle2 size={16} />
+                                                                {r.aiAnalysisAt ? <CheckCircle2 size={16} /> : <div className="w-4 h-4 border-2 border-zinc-600 border-t-amber-500 rounded-full animate-spin" />}
                                                             </button>
                                                         </div>
                                                     ) : <div className="w-10 h-10 rounded-xl border border-dashed border-zinc-800 flex items-center justify-center text-zinc-800"><Mic size={16} /></div>}

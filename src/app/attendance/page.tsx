@@ -17,7 +17,7 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 export default function AttendancePage() {
-    const { user, employees, clockIn, clockOut, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests, colleges, resolveDressCodeCheck, getExpectedTiming, holidays, getReportees } = useAuth();
+    const { user, employees, clockIn, clockOut, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests, colleges, resolveDressCodeCheck, getExpectedTiming, holidays, getReportees, leaves } = useAuth();
     const searchParams = useSearchParams();
     const [currentTime, setCurrentTime] = useState<string | null>(null);
     const [currentDate, setCurrentDate] = useState<string | null>(null);
@@ -70,6 +70,7 @@ export default function AttendancePage() {
     }, [searchParams]);
 
     const [selectedGlobalDate, setSelectedGlobalDate] = useState<string>("");
+    const [filterStatus, setFilterStatus] = useState<string>("All");
 
     useEffect(() => {
         if (currentDate && !selectedGlobalDate) setSelectedGlobalDate(currentDate);
@@ -102,19 +103,31 @@ export default function AttendancePage() {
         if (!showsTeamRoster || !user || !selectedGlobalDate) return [];
         return employeesToShow.map((employee: Employee) => {
             const record = attendanceRecords.find((r: any) => r.employeeId === employee.id && r.date === selectedGlobalDate);
-            // Fix: Fetch daily location from work schedules instead of static employee field
             const scheduledLocation = getExpectedTiming(employee.id, selectedGlobalDate).location;
 
-            // Fix: Check if it's a holiday for this employee's SCHEDULED location
             const empHoliday = holidays.find(h =>
                 h.date === selectedGlobalDate &&
                 h.status === "Approved" &&
                 (h.forAll || h.collegeIds?.includes(scheduledLocation || ""))
             );
 
-            let status = record ? (record.clockOut ? "Clocked Out" : "Working") : "Absent";
-            if (!record && empHoliday) {
+            // Check for approved leaves
+            const isOnLeave = leaves.some(l =>
+                l.employeeId === employee.id &&
+                l.status === "Approved" &&
+                selectedGlobalDate >= l.startDate &&
+                selectedGlobalDate <= l.endDate
+            );
+
+            let status = "Absent";
+            if (record) {
+                if (record.status === "On Leave") status = "On Leave";
+                else if (record.clockOut) status = "Clocked Out";
+                else status = "Working";
+            } else if (empHoliday) {
                 status = "Holiday";
+            } else if (isOnLeave) {
+                status = "On Leave";
             }
 
             return { employee, record, status, scheduledLocation };
@@ -124,10 +137,16 @@ export default function AttendancePage() {
                 return (a.scheduledLocation || "").localeCompare(b.scheduledLocation || "");
             }
             // Then sort by status within each group
-            const w: Record<string, number> = { "Working": 2, "Clocked Out": 1, "Holiday": 0.5, "Absent": 0 };
+            const w: Record<string, number> = { "Working": 2.5, "Clocked Out": 2, "Holiday": 1.5, "On Leave": 1, "Absent": 0 };
             return w[b.status] - w[a.status];
         });
-    }, [employeesToShow, attendanceRecords, selectedGlobalDate, showsTeamRoster, user, holidays]);
+    }, [employeesToShow, attendanceRecords, selectedGlobalDate, showsTeamRoster, user, holidays, leaves]);
+
+    const filteredTeamAttendanceList = useMemo(() => {
+        if (filterStatus === "All") return teamAttendanceList;
+        if (filterStatus === "Present") return teamAttendanceList.filter((l: any) => l.status === "Working" || l.status === "Clocked Out");
+        return teamAttendanceList.filter((l: any) => l.status === filterStatus);
+    }, [teamAttendanceList, filterStatus]);
 
     if (!user || !currentTime || !currentDate) return null;
     const emp = user as Employee;
@@ -802,19 +821,43 @@ export default function AttendancePage() {
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                        <div className="bg-zinc-800/30 border border-zinc-700/50 p-3 rounded-xl flex items-center justify-between">
-                            <span className="text-xs font-bold text-zinc-400 block">{isHRorFounder ? "Total Staff" : "Team Size"}</span>
-                            <span className="text-lg font-black text-white">{employeesToShow.length}</span>
+                        <div 
+                            onClick={() => setFilterStatus(prev => prev === "On Leave" ? "All" : "On Leave")}
+                            className={cn(
+                                "cursor-pointer transition-all border p-3 rounded-xl flex items-center justify-between",
+                                filterStatus === "On Leave" ? "bg-purple-500/20 border-purple-500/50 shadow-lg shadow-purple-500/10 scale-[1.02]" : "bg-purple-500/5 border-purple-500/20 hover:bg-purple-500/10"
+                            )}
+                        >
+                            <span className="text-xs font-bold text-purple-400 block">On Leave</span>
+                            <span className="text-lg font-black text-white">{teamAttendanceList.filter((l: any) => l.status === "On Leave").length}</span>
                         </div>
-                        <div className="bg-green-500/5 border border-green-500/20 p-3 rounded-xl flex items-center justify-between">
+                        <div 
+                            onClick={() => setFilterStatus(prev => prev === "Present" ? "All" : "Present")}
+                            className={cn(
+                                "cursor-pointer transition-all border p-3 rounded-xl flex items-center justify-between",
+                                filterStatus === "Present" ? "bg-green-500/20 border-green-500/50 shadow-lg shadow-green-500/10 scale-[1.02]" : "bg-green-500/5 border-green-500/20 hover:bg-green-500/10"
+                            )}
+                        >
                             <span className="text-xs font-bold text-green-400 block">Present Today</span>
                             <span className="text-lg font-black text-white">{teamAttendanceList.filter((l: any) => l.status === "Working" || l.status === "Clocked Out").length}</span>
                         </div>
-                        <div className="bg-amber-500/5 border border-amber-500/20 p-3 rounded-xl flex items-center justify-between">
+                        <div 
+                            onClick={() => setFilterStatus(prev => prev === "Holiday" ? "All" : "Holiday")}
+                            className={cn(
+                                "cursor-pointer transition-all border p-3 rounded-xl flex items-center justify-between",
+                                filterStatus === "Holiday" ? "bg-amber-500/20 border-amber-500/50 shadow-lg shadow-amber-500/10 scale-[1.02]" : "bg-amber-500/5 border-amber-500/20 hover:bg-amber-500/10"
+                            )}
+                        >
                             <span className="text-xs font-bold text-amber-500 block">Holiday</span>
                             <span className="text-lg font-black text-white">{teamAttendanceList.filter((l: any) => l.status === "Holiday").length}</span>
                         </div>
-                        <div className="bg-red-500/5 border border-red-500/20 p-3 rounded-xl flex items-center justify-between">
+                        <div 
+                            onClick={() => setFilterStatus(prev => prev === "Absent" ? "All" : "Absent")}
+                            className={cn(
+                                "cursor-pointer transition-all border p-3 rounded-xl flex items-center justify-between",
+                                filterStatus === "Absent" ? "bg-red-500/20 border-red-500/50 shadow-lg shadow-red-500/10 scale-[1.02]" : "bg-red-500/5 border-red-500/20 hover:bg-red-500/10"
+                            )}
+                        >
                             <span className="text-xs font-bold text-red-400 block">Absent Today</span>
                             <span className="text-lg font-black text-white">{teamAttendanceList.filter((l: any) => l.status === "Absent").length}</span>
                         </div>
@@ -833,7 +876,7 @@ export default function AttendancePage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-zinc-800/50">
-                                    {teamAttendanceList.map(({ employee, record, status, scheduledLocation }: any, idx: number) => (
+                                    {filteredTeamAttendanceList.map(({ employee, record, status, scheduledLocation }: any, idx: number) => (
                                         <tr key={employee.id || `team-att-${idx}`} className="hover:bg-zinc-800/30 transition-colors text-xs">
                                             <td className="px-4 py-3">
                                                 <p className="font-bold text-white">{employee.name}</p>
@@ -844,7 +887,8 @@ export default function AttendancePage() {
                                                     status === "Working" ? "bg-green-500/10 text-green-400 border-green-500/20" :
                                                         status === "Clocked Out" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
                                                             status === "Holiday" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
-                                                                "bg-zinc-800 text-zinc-500 border-zinc-700"
+                                                                status === "On Leave" ? "bg-purple-500/10 text-purple-400 border-purple-500/20" :
+                                                                    "bg-zinc-800 text-zinc-500 border-zinc-700"
                                                 )}>
                                                     {status}
                                                 </span>

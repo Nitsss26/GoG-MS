@@ -28,8 +28,8 @@ export default function HRReimbursementsPage() {
     const now = new Date();
     const [filterMonth, setFilterMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
 
-    const isManagementView = user?.role && ["HR", "FOUNDER", "AD", "HOI", "OM"].includes(user.role);
-    if (!user || !isManagementView) return null;
+    const isHR = user?.role === "HR" || user?.role === "FOUNDER";
+    if (!user || !isHR) return null;
 
     const reportees = getReportees(user.id);
     const reporteeIds = reportees.map(r => r.id);
