@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import { SprintPlan, Employee } from '@/models/Schemas';
+import dbConnect from '@/lib/dbConnect';
+import { SprintPlan, Employee, WorkSchedule } from '@/models/Schemas';
 
 // GET — Fetch sprint plans for a faculty
 export async function GET(req: Request) {
@@ -16,7 +16,19 @@ export async function GET(req: Request) {
         if (weekStartDate) query.weekStartDate = weekStartDate;
 
         const plans = await SprintPlan.find(query).sort({ weekStartDate: -1 });
-        return NextResponse.json(plans);
+
+        // Fetch WorkSchedule for the given faculty
+        let schedules = [];
+        if (facultyId) {
+            // Find all schedules for the faculty to account for both specific dates and weekdays (Mon, Tue, etc.)
+            const weekEntries = await WorkSchedule.find({
+                employeeId: facultyId
+            }).sort({ date: 1 }).limit(20);
+            
+            schedules = weekEntries;
+        }
+
+        return NextResponse.json({ plans, schedules });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -46,12 +58,6 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Sprint plan is locked. Submit a change request for HOI approval." }, { status: 403 });
         }
 
-        // Check Saturday window — sprint plans can only be submitted/updated on Saturday before 5PM
-        const now = new Date();
-        const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-        const istTime = new Date(istString);
-        const dayOfWeek = istTime.getDay(); // 0=Sun, 6=Sat
-
         // Upsert the sprint plan
         const plan = await SprintPlan.findOneAndUpdate(
             { facultyId, weekStartDate },
@@ -66,7 +72,6 @@ export async function POST(req: Request) {
                     isLocked: false
                 }
             },
-            { upsert: true, new: true }
         );
 
         return NextResponse.json({ message: "Sprint plan saved successfully", plan });

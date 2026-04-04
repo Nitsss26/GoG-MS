@@ -1,6 +1,6 @@
 "use client";
 import { useAuth } from "@/context/AuthContext";
-import { Users, AlertTriangle, Clock, Star, Calendar, ChevronRight, Briefcase } from "lucide-react";
+import { Users, AlertTriangle, Clock, Star, Calendar, ChevronRight, Briefcase, BookOpen } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +17,7 @@ export default function ManagerHub() {
     const quickLinks = [
         { label: "Leave Approval", desc: `${pendingLeaves.length} pending`, icon: Calendar, path: "/manager/leave-approval", color: "text-amber-400" },
         { label: "Report Misbehaviour", desc: `${recentReports.length} reports`, icon: AlertTriangle, path: "/manager/misbehaviour", color: "text-red-400" },
-        { label: "Rate Reportees", desc: "15-day cycle", icon: Star, path: "/manager/ratings", color: "text-yellow-400" },
+        { label: "Academic Audits", desc: "Team Sprint & Lectures", icon: BookOpen, path: "/manager/reportees/academic-data", color: "text-emerald-400" },
         { label: "Holidays", desc: "Propose dates", icon: Calendar, path: "/manager/holidays", color: "text-blue-400" },
     ];
 

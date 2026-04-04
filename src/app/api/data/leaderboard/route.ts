@@ -3,8 +3,7 @@ import dbConnect from "@/lib/mongodb";
 import mongoose from "mongoose";
 
 // We can just use raw mongoose query if models aren't perfectly aligned, but we have schemas.
-import Employee from "@/models/Employee";
-import { Attendance, PerformanceStar, AdditionalResponsibility } from "@/models/Schemas";
+import { Employee, Attendance, PerformanceStar, AdditionalResponsibility } from "@/models/Schemas";
 
 export const dynamic = 'force-dynamic';
 

@@ -34,6 +34,7 @@ const personalMenu = [
 
 const managerMenu = [
     { label: "Manager Hub", icon: Briefcase, path: "/manager" },
+    { label: "Academic Monitoring", icon: BookOpen, path: "/manager/reportees/academic-data" },
     { label: "Leave Approval", icon: CalendarCheck, path: "/manager/leave-approval" },
     { label: "Report Misbehaviour", icon: AlertTriangle, path: "/manager/misbehaviour" },
     { label: "Ratings", icon: Star, path: "/manager/ratings" },
@@ -78,7 +79,7 @@ const MANAGER_ROLES: Role[] = ["FOUNDER", "AD", "HOI"];
 // Roles that can see HR Administration
 const HR_ROLES: Role[] = ["FOUNDER", "HR"];
 // Roles that can see Faculty Suite
-const FACULTY_ROLES: Role[] = ["FACULTY", "PROFESSOR"];
+const FACULTY_ROLES: Role[] = ["FACULTY", "PROFESSOR", "HOI"];
 
 function NavSection({ title, items, pathname }: { title: string; items: typeof coreMenu; pathname: string }) {
     return (

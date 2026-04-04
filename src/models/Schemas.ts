@@ -312,7 +312,8 @@ const SprintPlanSchema = new Schema({
         semester: { type: String },
         subjectCode: { type: String },
         subjectName: { type: String, required: true },
-        topics: { type: String, required: true }
+        topics: { type: String, required: true },
+        section: { type: String }
     }],
     changeRequests: [{
         requestedAt: { type: String },
@@ -322,6 +323,16 @@ const SprintPlanSchema = new Schema({
         approvedAt: { type: String },
         changes: { type: String }
     }]
+}, { timestamps: true });
+ 
+// Faculty Preference Schema — Professor-specific subjects and courses for dropdowns
+const FacultyPreferenceSchema = new Schema({
+    facultyId: { type: String, required: true, unique: true },
+    subjects: [{
+        code: { type: String, required: true },
+        name: { type: String, required: true }
+    }],
+    streams: [{ type: String, required: true }]
 }, { timestamps: true });
 
 // Lecture Report Schema — Daily lecture record per session
@@ -409,3 +420,4 @@ export const Location = mongoose.models.Location || mongoose.model('Location', L
 export const SprintPlan = mongoose.models.SprintPlan || mongoose.model('SprintPlan', SprintPlanSchema);
 export const LectureReport = mongoose.models.LectureReport || mongoose.model('LectureReport', LectureReportSchema);
 export const MeetingRequest = mongoose.models.MeetingRequest || mongoose.model('MeetingRequest', MeetingRequestSchema);
+export const FacultyPreference = mongoose.models.FacultyPreference || mongoose.model('FacultyPreference', FacultyPreferenceSchema);
