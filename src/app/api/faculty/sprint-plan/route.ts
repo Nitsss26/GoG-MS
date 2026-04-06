@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import { SprintPlan, Employee, WorkSchedule } from '@/models/Schemas';
+import { validateSprintEntries } from '@/lib/time-utils';
 
 // GET — Fetch sprint plans for a faculty
 export async function GET(req: Request) {
@@ -50,6 +51,15 @@ export async function POST(req: Request) {
         if (!faculty) return NextResponse.json({ error: "Faculty not found" }, { status: 404 });
         if (!["FACULTY", "PROFESSOR"].includes(faculty.role)) {
             return NextResponse.json({ error: "Only FACULTY/PROFESSOR can create sprint plans" }, { status: 403 });
+        }
+        
+        // Server-side validation
+        const validation = validateSprintEntries(entries || []);
+        if (!validation.valid) {
+            return NextResponse.json({ 
+                error: validation.error, 
+                invalidIndices: validation.invalidIndices 
+            }, { status: 400 });
         }
 
         // Check if plan exists and is locked

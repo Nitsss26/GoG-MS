@@ -7,6 +7,7 @@ import {
     Clock, BookOpen, ArrowLeft, ArrowRight, Check, X, Send, Settings, Edit2
 } from "lucide-react";
 import Link from "next/link";
+import { validateSprintEntries, isValidTimeFormat } from "@/lib/time-utils";
 
 interface SprintEntry {
     day: string;
@@ -114,6 +115,7 @@ export default function SprintPlanPage() {
     const [showChangeRequest, setShowChangeRequest] = useState(false);
     const [changeReason, setChangeReason] = useState("");
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    const [invalidIndices, setInvalidIndices] = useState<number[]>([]);
 
     // Dynamic Dropdowns
     const [facultySubjects, setFacultySubjects] = useState<Record<string, string>>(SUBJECTS);
@@ -226,6 +228,17 @@ export default function SprintPlanPage() {
     const savePlan = async () => {
         setSaving(true);
         setMessage(null);
+        setInvalidIndices([]);
+
+        // Validation
+        const validation = validateSprintEntries(entries);
+        if (!validation.valid) {
+            setMessage({ type: "error", text: validation.error || "Validation failed" });
+            setInvalidIndices(validation.invalidIndices || []);
+            setSaving(false);
+            return;
+        }
+
         try {
             const res = await fetch("/api/faculty/sprint-plan", {
                 method: "POST",
@@ -243,6 +256,7 @@ export default function SprintPlanPage() {
                 setPlan(data.plan);
             } else {
                 setMessage({ type: "error", text: data.error || "Failed to save" });
+                if (data.invalidIndices) setInvalidIndices(data.invalidIndices);
             }
         } catch (e: any) {
             setMessage({ type: "error", text: e.message });
@@ -421,12 +435,18 @@ export default function SprintPlanPage() {
                                             return (
                                                 <div key={idx} className="px-4 py-3 grid grid-cols-12 gap-2 items-start">
                                                     <div className="col-span-2 flex gap-1">
-                                                        <input value={entry.timeStart} onChange={e => updateEntry(idx, "timeStart", e.target.value)}
+                                                        <input value={entry.timeStart} onChange={e => {
+                                                            updateEntry(idx, "timeStart", e.target.value);
+                                                            if (invalidIndices.includes(idx)) setInvalidIndices(prev => prev.filter(i => i !== idx));
+                                                        }}
                                                             disabled={plan?.isLocked} placeholder="09:20"
-                                                            className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[11px] text-white text-center focus:border-violet-500 focus:outline-none disabled:opacity-50" />
-                                                        <input value={entry.timeStop} onChange={e => updateEntry(idx, "timeStop", e.target.value)}
+                                                            className={`w-full px-2 py-1.5 bg-zinc-800 border ${invalidIndices.includes(idx) ? 'border-red-500 animate-pulse' : 'border-zinc-700'} rounded text-[11px] text-white text-center focus:border-violet-500 focus:outline-none disabled:opacity-50 transition-colors`} />
+                                                        <input value={entry.timeStop} onChange={e => {
+                                                            updateEntry(idx, "timeStop", e.target.value);
+                                                            if (invalidIndices.includes(idx)) setInvalidIndices(prev => prev.filter(i => i !== idx));
+                                                        }}
                                                             disabled={plan?.isLocked} placeholder="10:10"
-                                                            className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[11px] text-white text-center focus:border-violet-500 focus:outline-none disabled:opacity-50" />
+                                                            className={`w-full px-2 py-1.5 bg-zinc-800 border ${invalidIndices.includes(idx) ? 'border-red-500 animate-pulse' : 'border-zinc-700'} rounded text-[11px] text-white text-center focus:border-violet-500 focus:outline-none disabled:opacity-50 transition-colors`} />
                                                     </div>
                                                     <div className="col-span-2 flex flex-col gap-1 relative">
                                                         <select value={entry.subjectCode} onChange={e => {
