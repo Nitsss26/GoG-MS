@@ -72,6 +72,7 @@ export async function POST(req: Request) {
                     isLocked: false
                 }
             },
+            { upsert: true, new: true }
         );
 
         return NextResponse.json({ message: "Sprint plan saved successfully", plan });

@@ -251,25 +251,6 @@ export default function SprintPlanPage() {
         }
     };
 
-    const lockPlan = async () => {
-        try {
-            const res = await fetch("/api/faculty/sprint-plan/lock", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ facultyId: user?.id, weekStartDate: weekInfo.start })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                setMessage({ type: "success", text: "Sprint plan locked!" });
-                fetchPlan();
-            } else {
-                setMessage({ type: "error", text: data.error });
-            }
-        } catch (e: any) {
-            setMessage({ type: "error", text: e.message });
-        }
-    };
-
     const submitChangeRequest = async () => {
         if (!changeReason.trim()) return;
         try {
@@ -528,12 +509,6 @@ export default function SprintPlanPage() {
                             className="flex-1 sm:flex-none flex items-center justify-center gap-3 px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase tracking-[0.2em] rounded-2xl transition-all shadow-xl shadow-indigo-500/10 active:scale-95 disabled:opacity-50">
                             <Save size={16} /> {saving ? "Synchronizing..." : "Save Sprint Archive"}
                         </button>
-                        {plan && (
-                            <button onClick={lockPlan}
-                                className="flex-1 sm:flex-none flex items-center justify-center gap-3 px-8 py-4 bg-amber-600/10 hover:bg-amber-600/20 text-amber-500 text-xs font-black uppercase tracking-[0.2em] rounded-2xl border border-amber-500/20 transition-all active:scale-95">
-                                <Lock size={16} /> Finalize & Lock
-                            </button>
-                        )}
                     </>
                 ) : (
                     <button onClick={() => setShowChangeRequest(true)}

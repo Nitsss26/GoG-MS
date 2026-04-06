@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import {
     CalendarDays, Lock, Clock, BookOpen, ArrowLeft, ArrowRight,
-    Check, AlertTriangle, ShieldCheck
+    Check, AlertTriangle, ShieldCheck, CheckCircle2
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface FacultySprintPlanViewProps {
     facultyId: string;
@@ -23,6 +24,8 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
     const [weekOffset, setWeekOffset] = useState(0);
     const [plan, setPlan] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [locking, setLocking] = useState(false);
+    const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
     const getWeekDates = (offset = 0) => {
         const now = new Date();
@@ -55,6 +58,7 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
 
     const fetchPlan = async () => {
         setLoading(true);
+        setMessage(null);
         try {
             const res = await fetch(`/api/faculty/sprint-plan?facultyId=${facultyId}&weekStartDate=${weekInfo.start}`);
             const data = await res.json();
@@ -67,6 +71,29 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
             console.error(e);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const lockPlan = async () => {
+        if (!plan) return;
+        setLocking(true);
+        try {
+            const res = await fetch("/api/faculty/sprint-plan/lock", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ facultyId, weekStartDate: weekInfo.start })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setMessage({ type: "success", text: "Institute Record Locked Successfully!" });
+                fetchPlan(); // Reload to show locked state
+            } else {
+                setMessage({ type: "error", text: data.error || "Failed to engage lock" });
+            }
+        } catch (e: any) {
+            setMessage({ type: "error", text: e.message });
+        } finally {
+            setLocking(false);
         }
     };
 
@@ -100,14 +127,27 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
                 </div>
             </div>
 
+            {message && (
+                <div className={cn(
+                    "flex items-center gap-4 px-6 py-4 rounded-2xl text-xs font-bold animate-in slide-in-from-top-4 duration-300",
+                    message.type === "success" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"
+                )}>
+                    {message.type === "success" ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                    {message.text}
+                </div>
+            )}
+
             {plan?.isLocked && (
-                <div className="flex items-center gap-4 bg-emerald-500/5 border border-emerald-500/10 rounded-2xl px-6 py-4">
+                <div className="flex items-center gap-4 bg-emerald-500/5 border border-emerald-500/10 rounded-2xl px-6 py-4 shadow-inner">
                     <div className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
                         <ShieldCheck size={14} className="text-emerald-500" />
                     </div>
-                    <span className="text-xs text-zinc-400 font-medium italic">
-                        State: <span className="text-emerald-500 font-black uppercase tracking-widest">Locked & Synchronized</span>. This plan is finalized for the current week.
-                    </span>
+                    <div>
+                        <span className="text-xs text-zinc-400 font-medium italic block">
+                            State: <span className="text-emerald-500 font-black uppercase tracking-widest">Locked & Synchronized</span>.
+                        </span>
+                        <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter mt-0.5">Institute-level approval confirmed • Locked at: {plan.lockedAt}</p>
+                    </div>
                 </div>
             )}
 
@@ -116,15 +156,41 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
                     <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
                 </div>
             ) : !plan ? (
-                <div className="bg-zinc-900/40 border border-zinc-800 border-dashed rounded-3xl p-16 text-center">
-                    <div className="w-16 h-16 bg-zinc-800/50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <BookOpen size={32} className="text-zinc-600" />
+                <div className="bg-zinc-900/40 border border-zinc-800 border-dashed rounded-3xl p-16 text-center shadow-inner relative overflow-hidden group">
+                    <div className="absolute inset-0 bg-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+                    <div className="relative z-10 space-y-4">
+                        <div className="w-16 h-16 bg-zinc-800/50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-zinc-700/50 shadow-2xl transition-transform group-hover:scale-110">
+                            <BookOpen size={32} className="text-zinc-600" />
+                        </div>
+                        <h3 className="text-lg font-black text-white italic uppercase tracking-widest">Grid Not Initialized</h3>
+                        <p className="text-xs text-zinc-500 font-bold max-w-xs mx-auto mb-6">The faculty has not yet established an academic archive for this temporal range.</p>
                     </div>
-                    <h3 className="text-lg font-black text-white italic uppercase tracking-widest">No Plan Found</h3>
-                    <p className="text-xs text-zinc-500 font-bold mt-2 mx-auto max-w-xs">The faculty has not yet initialized a teaching sprint for this temporal range.</p>
                 </div>
             ) : (
                 <div className="space-y-4">
+                    {/* Action Bar for HOI */}
+                    {!plan.isLocked && (
+                        <div className="bg-amber-500/5 border border-amber-500/10 rounded-3xl p-6 flex items-center justify-between gap-6 shadow-xl relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 blur-3xl -mr-16 -mt-16 rounded-full" />
+                            <div className="flex items-center gap-4 relative z-10">
+                                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20">
+                                    <Lock size={18} className="text-amber-500" />
+                                </div>
+                                <div className="space-y-0.5">
+                                    <h4 className="text-sm font-black text-white uppercase tracking-widest italic">Review Pending</h4>
+                                    <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">Plan is active but not yet finalized at the institute level.</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={lockPlan}
+                                disabled={locking}
+                                className="relative z-10 px-8 py-3 bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50"
+                            >
+                                {locking ? "Engaging lock..." : "Finalize & Lock Schedule"}
+                            </button>
+                        </div>
+                    )}
+
                     {weekInfo.dates.map(({ day, date }) => {
                         const dayEntries = (plan.entries || []).filter((e: any) => e.date === date || e.day === day);
                         return (
