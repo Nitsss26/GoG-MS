@@ -17,12 +17,14 @@ interface MailOptions {
     text?: string;
     html: string;
     attachments?: any[];
+    inReplyTo?: string;
+    references?: string | string[];
 }
 
 /**
  * SERVER-ONLY: Sends an email using nodemailer.
  */
-export const sendMailInternal = async ({ to, cc, subject, text, html, attachments }: MailOptions) => {
+export const sendMailInternal = async ({ to, cc, subject, text, html, attachments, inReplyTo, references }: MailOptions) => {
     try {
         const info = await transporter.sendMail({
             from: `"GoG OMS" <${process.env.SMTP_USER}>`,
@@ -32,6 +34,8 @@ export const sendMailInternal = async ({ to, cc, subject, text, html, attachment
             text,
             html,
             attachments,
+            inReplyTo,
+            references,
         });
         console.log("Message sent to %s: %s", to, info.messageId);
         return { success: true, messageId: info.messageId };

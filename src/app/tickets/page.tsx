@@ -8,7 +8,7 @@ import { AlertCircle, Clock, CheckCircle2, MessageSquare, Plus, FileText, ArrowR
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function TicketsPage() {
-    const { user, raiseTicket, resolveTicket, tickets, getReportees, employees, restoreAttendanceCredits, pipRecords } = useAuth();
+    const { user, raiseTicket, resolveTicket, addADRemarks, forwardTicket, tickets, getReportees, employees, restoreAttendanceCredits, pipRecords } = useAuth();
     const [showNewTicketModal, setShowNewTicketModal] = useState(false);
     const [ticketForm, setTicketForm] = useState<{
         targetCategory: string;
@@ -28,6 +28,13 @@ export default function TicketsPage() {
     const [resolutionModal, setResolutionModal] = useState<{ show: boolean, ticketId: string, ticketSubject: string, category: string, targetEmp?: string, targetDate?: string } | null>(null);
     const [resolutionRemarks, setResolutionRemarks] = useState("");
     const [isResolving, setIsResolving] = useState(false);
+    const [forwardModal, setForwardModal] = useState<{ show: boolean, ticketId: string, ticketSubject: string } | null>(null);
+    const [forwardTarget, setForwardTarget] = useState("");
+    const [forwardRemarks, setForwardRemarks] = useState("");
+    const [isForwarding, setIsForwarding] = useState(false);
+    const [adRemarksModal, setAdRemarksModal] = useState<{ show: boolean, ticketId: string, ticketSubject: string } | null>(null);
+    const [adRemarksText, setAdRemarksText] = useState("");
+    const [isSavingRemarks, setIsSavingRemarks] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
 
     if (!user) return null;
@@ -37,13 +44,16 @@ export default function TicketsPage() {
     const isUserInPIP = pipRecords.some(p => p.employeeId === user.id && p.status === "Active");
     const isHR = user.role === "HR";
     const isFounder = user.role === "FOUNDER";
-    const isSystemAdmin = isHR || isFounder;
+    const isAD = user.role === "AD";
+    const isSystemAdmin = isHR || isFounder || isAD;
     const isHOI = user.role === "HOI";
 
     const myTickets = tickets.filter(t => t.raisedBy === user.id || reporteeIds.includes(t.raisedBy)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    const hrTickets = tickets.filter(t => isFounder || t.targetCategory === "HR Desk" || t.targetCategory === "Attendance Override Request").sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    const displayTickets = isSystemAdmin ? (isFounder ? tickets : hrTickets) : myTickets;
+    
+    // Show all tickets to HR, Founder, and AD
+    const displayTickets = (isHR || isFounder || isAD) 
+        ? tickets.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) 
+        : myTickets;
 
     const handleSubmitTicket = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -231,9 +241,30 @@ export default function TicketsPage() {
                                                 <p className="text-[11px] text-zinc-300 font-medium">{ticket.resolutionNotes}</p>
                                             </div>
                                         )}
+                                        {ticket.adRemarks && (
+                                            <div className="bg-indigo-500/5 p-3 rounded-lg border border-indigo-500/10">
+                                                <p className="text-[10px] font-bold text-indigo-400 mb-1 uppercase tracking-widest">AD Remarks</p>
+                                                <p className="text-[11px] text-zinc-300 font-medium italic">"{ticket.adRemarks}"</p>
+                                            </div>
+                                        )}
+                                        {ticket.forwardHistory && ticket.forwardHistory.length > 0 && (
+                                            <div className="space-y-2 mt-2">
+                                                <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Forward History</p>
+                                                {ticket.forwardHistory.map((h, i) => {
+                                                    const toEmp = employees.find(e => e.id === h.forwardedTo);
+                                                    const byEmp = employees.find(e => e.id === h.forwardedBy);
+                                                    return (
+                                                        <div key={i} className="text-[9px] text-zinc-500 bg-zinc-800/30 p-2 rounded border border-zinc-700/30">
+                                                            <span className="font-bold text-zinc-400">{byEmp?.name}</span> forwarded to <span className="font-bold text-indigo-400">{toEmp?.name}</span>
+                                                            <div className="mt-1 text-zinc-500 italic">"{h.remarks}"</div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                     </div>
-                                    {(isHR || (ticket.routeTo === user.id && ticket.status !== "Resolved")) && (
-                                        <div className="flex flex-wrap gap-2 items-center">
+                                    <div className="flex flex-wrap gap-2 items-center">
+                                        {(isHR || (ticket.routeTo === user.id && ticket.status !== "Resolved")) && (
                                             <button
                                                 onClick={() => {
                                                     const defaultNote = ticket.targetCategory === "Attendance Override Request" 
@@ -253,8 +284,31 @@ export default function TicketsPage() {
                                             >
                                                 <CheckCircle2 size={12} /> Resolve Ticket
                                             </button>
-                                        </div>
-                                    )}
+                                        )}
+                                        {isHR && ticket.status !== "Resolved" && (
+                                            <button
+                                                onClick={() => {
+                                                    setForwardModal({ show: true, ticketId: ticket.id, ticketSubject: ticket.subject });
+                                                    setForwardTarget("");
+                                                    setForwardRemarks("");
+                                                }}
+                                                className="btn-outline py-1.5 px-3 text-[10px] h-auto border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/10 whitespace-nowrap flex items-center gap-2"
+                                            >
+                                                <ArrowRight size={12} /> Forward
+                                            </button>
+                                        )}
+                                        {isAD && (
+                                            <button
+                                                onClick={() => {
+                                                    setAdRemarksModal({ show: true, ticketId: ticket.id, ticketSubject: ticket.subject });
+                                                    setAdRemarksText(ticket.adRemarks || "");
+                                                }}
+                                                className="btn-outline py-1.5 px-3 text-[10px] h-auto border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/10 whitespace-nowrap flex items-center gap-2"
+                                            >
+                                                <MessageSquare size={12} /> Add Remarks
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             );
                         })
@@ -462,6 +516,131 @@ export default function TicketsPage() {
                                     )}
                                 >
                                     {isResolving ? "Processing..." : "Confirm Resolution"}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Forward Ticket Modal */}
+            <AnimatePresence>
+                {forwardModal?.show && (
+                    <div className="fixed inset-0 z-[120] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setForwardModal(null)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="card w-full max-w-sm p-6 relative z-10 space-y-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
+                                    <ArrowRight size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">Forward Ticket</h3>
+                                    <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest truncate max-w-[200px]">{forwardModal.ticketSubject}</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="text-[9px] font-bold text-muted uppercase tracking-widest">Select Recipient</label>
+                                <select 
+                                    className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary"
+                                    value={forwardTarget}
+                                    onChange={e => setForwardTarget(e.target.value)}
+                                >
+                                    <option value="">Select Official...</option>
+                                    <optgroup label="Associate Directors">
+                                        {employees.filter(e => e.role === "AD").map(e => (
+                                            <option key={e.id} value={e.id}>{e.name} (AD)</option>
+                                        ))}
+                                    </optgroup>
+                                    <optgroup label="Heads of Institute">
+                                        {employees.filter(e => e.role === "HOI").map(e => (
+                                            <option key={e.id} value={e.id}>{e.name} (HOI) - {e.location}</option>
+                                        ))}
+                                    </optgroup>
+                                    <optgroup label="Tech Leads">
+                                        {employees.filter(e => e.role === "TL").map(e => (
+                                            <option key={e.id} value={e.id}>{e.name} (TL)</option>
+                                        ))}
+                                    </optgroup>
+                                </select>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="text-[9px] font-bold text-muted uppercase tracking-widest">Forwarding Remarks</label>
+                                <textarea 
+                                    className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary resize-none h-24"
+                                    placeholder="Why are you forwarding this?..."
+                                    value={forwardRemarks}
+                                    onChange={e => setForwardRemarks(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <button onClick={() => setForwardModal(null)} className="flex-1 btn-outline text-[10px] py-2.5">Cancel</button>
+                                <button 
+                                    disabled={isForwarding || !forwardTarget || !forwardRemarks.trim()}
+                                    onClick={async () => {
+                                        setIsForwarding(true);
+                                        try {
+                                            await forwardTicket(forwardModal.ticketId, forwardTarget, forwardRemarks);
+                                            setForwardModal(null);
+                                        } finally { setIsForwarding(false); }
+                                    }}
+                                    className={cn("flex-1 text-[10px] font-bold py-2.5 rounded-lg transition-all bg-indigo-600 text-white hover:bg-indigo-700", 
+                                        (isForwarding || !forwardTarget || !forwardRemarks.trim()) && "opacity-50 cursor-not-allowed"
+                                    )}
+                                >
+                                    {isForwarding ? "Forwarding..." : "Forward Ticket"}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* AD Remarks Modal */}
+            <AnimatePresence>
+                {adRemarksModal?.show && (
+                    <div className="fixed inset-0 z-[120] flex items-center justify-center p-6">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setAdRemarksModal(null)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="card w-full max-w-sm p-6 relative z-10 space-y-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
+                                    <MessageSquare size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">AD Remarks</h3>
+                                    <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest truncate max-w-[200px]">{adRemarksModal.ticketSubject}</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="text-[9px] font-bold text-muted uppercase tracking-widest">Official Comments</label>
+                                <textarea 
+                                    autoFocus
+                                    className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary resize-none h-24"
+                                    placeholder="Add your remarks here..."
+                                    value={adRemarksText}
+                                    onChange={e => setAdRemarksText(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <button onClick={() => setAdRemarksModal(null)} className="flex-1 btn-outline text-[10px] py-2.5">Cancel</button>
+                                <button 
+                                    disabled={isSavingRemarks || !adRemarksText.trim()}
+                                    onClick={async () => {
+                                        setIsSavingRemarks(true);
+                                        try {
+                                            await addADRemarks(adRemarksModal.ticketId, adRemarksText);
+                                            setAdRemarksModal(null);
+                                        } finally { setIsSavingRemarks(false); }
+                                    }}
+                                    className={cn("flex-1 text-[10px] font-bold py-2.5 rounded-lg transition-all bg-indigo-600 text-white hover:bg-indigo-700", 
+                                        (isSavingRemarks || !adRemarksText.trim()) && "opacity-50 cursor-not-allowed"
+                                    )}
+                                >
+                                    {isSavingRemarks ? "Saving..." : "Save Remarks"}
                                 </button>
                             </div>
                         </motion.div>

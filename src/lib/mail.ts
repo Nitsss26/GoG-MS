@@ -11,6 +11,8 @@ interface MailOptions {
     text?: string;
     html: string;
     attachments?: any[];
+    inReplyTo?: string;
+    references?: string | string[];
 }
 
 /**

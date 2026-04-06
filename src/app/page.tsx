@@ -259,7 +259,9 @@ export default function Home() {
                 attendanceRecords,
                 additionalResponsibilities,
                 emp.biWeeklyScores || [],
-                s.employeeId
+                s.employeeId,
+                holidays,
+                emp.location
             );
 
             return {

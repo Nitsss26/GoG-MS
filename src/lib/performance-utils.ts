@@ -28,6 +28,8 @@ export function calculatePerformance(
     additionalResponsibilities: any[],
     biWeeklyScores: any[],
     employeeId: string,
+    holidays: any[] = [],
+    employeeLocation: string = "",
     baseStars: number = 3.0
 ): PerformanceStats {
     const START_DATE = LEADERBOARD_START_DATE;
@@ -81,22 +83,33 @@ export function calculatePerformance(
         // 1. Attendance Points
         if (record.status === "Present") {
             presentDays++;
-            if (!isLate && !isEarlyOut) {
+            if (!isLate && !isEarlyOut && !isLocationDiff) {
                 points += 2; // Perfect attendance
             }
             if (isLate) points -= 5;
             if (isEarlyOut) points -= 5;
+            if (isLocationDiff) points -= 5; // Yellow Flag Misbehaviour
         }
 
         // 2. Dress Code Points
         if (record.dressCodeStatus === "Approved") {
             points += 2;
         } else if (record.dressCodeStatus === "Rejected" || isDressCodeFlag) {
-            points -= 5;
+            points -= 5; // Orange Flag
         }
     });
 
-    // 3. Rating Points
+    // 3. Holiday Points (+4 for holidays at their location)
+    const approvedHolidays = (holidays || []).filter(h => {
+        const hDate = new Date(h.date);
+        const isAfterStart = hDate >= START_DATE;
+        const isApproved = h.status === "Approved";
+        const isForMe = h.forAll || (employeeLocation && h.collegeIds?.includes(employeeLocation));
+        return isAfterStart && isApproved && isForMe;
+    });
+    points += approvedHolidays.length * 4;
+
+    // 4. Rating Points
     myRatings.forEach(r => {
         const rating = r.score || r.rating || 0;
         if (rating > 4.2) {
@@ -108,16 +121,16 @@ export function calculatePerformance(
         }
     });
 
-    // 4. Misconduct/PIP/Meeting Penalties (already partially covered by loops, but these are per flag instance)
-    points -= misconductCount * 50;
-    points -= performanceCount * 20;
-    points -= meetingAbsentCount * 10;
+    // 5. Misconduct/PIP/Meeting Penalties
+    points -= misconductCount * 50; // Red Flag
+    points -= performanceCount * 20; // Blue Flag
+    points -= meetingAbsentCount * 10; // Black Flag
 
-    // 5. Additional Responsibilities (Capped at 100/period)
+    // 6. Additional Responsibilities (Capped at 100/period)
     const responsibilityPoints = Math.min(100, approvedResponsibilities.reduce((acc, curr) => acc + (curr.points || 0), 0));
     points += responsibilityPoints;
 
-    // 6. Star Conversion
+    // 7. Star Conversion
     const calculatedStars = Math.min(5.0, Math.max(0.0, baseStars + (points / 200) * 0.5));
 
     return {

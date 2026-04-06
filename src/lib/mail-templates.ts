@@ -165,6 +165,34 @@ export const getTicketTemplate = (ticket: any, type: 'raised' | 'resolved') => {
     };
 };
 
+export const getTicketForwardTemplate = (ticket: any, forwardedToName: string, forwardedByName: string, remarks: string) => {
+    const title = "Ticket Forwarded";
+    const color = "#6366f1"; // Indigo for forwarding
+
+    const fields = [
+        { label: "Ticket ID", value: ticket.id },
+        { label: "Subject", value: ticket.subject },
+        { label: "Forwarded To", value: forwardedToName },
+        { label: "Forwarded By", value: forwardedByName },
+        { label: "Date", value: new Date().toLocaleDateString() }
+    ];
+
+    const content = DataTable(fields);
+
+    return {
+        subject: `[FORWARDED] Ticket ${ticket.id} forwarded to ${forwardedToName}`,
+        html: ProfessionalWrapper(title, content + `
+            <div style="background-color: #f5f3ff; border-radius: 8px; padding: 16px; margin-top: 20px; border-left: 4px solid ${color};">
+                <strong style="color: #5b21b6; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 4px;">Forwarding Remarks</strong>
+                <p style="margin: 0; color: #4c1d95; font-size: 14px;">${remarks || 'No specific remarks provided.'}</p>
+            </div>
+            <p style="margin-top: 20px; color: #6b7280; font-size: 12px;">
+                You have been assigned this ticket for review/resolution. Please check the portal for details.
+            </p>
+        `, color)
+    };
+};
+
 export const getLeaveTemplate = (leave: any, status: 'Pending' | 'Approved' | 'Rejected' | 'Pending HOI Approval') => {
     const statusColor = status === 'Approved' ? '#10b981' : status === 'Rejected' ? '#ef4444' : '#f59e0b';
     const displayStatus = status === 'Pending HOI Approval' ? 'Awaiting HOI' : status === 'Pending' ? 'Awaiting HR' : status;

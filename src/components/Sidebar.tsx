@@ -79,7 +79,7 @@ const MANAGER_ROLES: Role[] = ["FOUNDER", "AD", "HOI"];
 // Roles that can see HR Administration
 const HR_ROLES: Role[] = ["FOUNDER", "HR"];
 // Roles that can see Faculty Suite
-const FACULTY_ROLES: Role[] = ["FACULTY", "PROFESSOR", "HOI"];
+const FACULTY_ROLES: Role[] = ["FACULTY", "PROFESSOR"];
 
 function NavSection({ title, items, pathname }: { title: string; items: typeof coreMenu; pathname: string }) {
     return (

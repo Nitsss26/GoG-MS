@@ -36,8 +36,6 @@ export default function LecturesPage() {
     const { user } = useAuth();
     const [lectures, setLectures] = useState<Lecture[]>([]);
     const [loading, setLoading] = useState(true);
-    const [activeTimers, setActiveTimers] = useState<Record<number, number>>({});
-    const timerRefs = useRef<Record<number, NodeJS.Timeout>>({});
     const [actionLoading, setActionLoading] = useState<number | null>(null);
     const [message, setMessage] = useState<{ type: string; text: string } | null>(null);
 
@@ -60,9 +58,6 @@ export default function LecturesPage() {
 
     useEffect(() => {
         if (user?.id) fetchLectures();
-        return () => {
-            Object.values(timerRefs.current).forEach(clearInterval);
-        };
     }, [user]);
 
     const fetchLectures = async () => {
@@ -71,11 +66,6 @@ export default function LecturesPage() {
             const data = await res.json();
             if (data.lectures) {
                 setLectures(data.lectures);
-                data.lectures.forEach((lec: Lecture) => {
-                    if (lec.status === "In Progress" && lec.classStartTime) {
-                        startTimer(lec.lectureNumber, lec.classStartTime);
-                    }
-                });
             }
         } catch (e) {
             console.error(e);
@@ -84,87 +74,6 @@ export default function LecturesPage() {
         }
     };
 
-    const startTimer = (lectureNumber: number, startTime: string) => {
-        if (timerRefs.current[lectureNumber]) clearInterval(timerRefs.current[lectureNumber]);
-        const parts = startTime.split(":").map(Number);
-        const startMinutes = parts[0] * 3600 + parts[1] * 60 + (parts[2] || 0);
-        const update = () => {
-            const now = new Date();
-            const istStr = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-            const ist = new Date(istStr);
-            const nowSeconds = ist.getHours() * 3600 + ist.getMinutes() * 60 + ist.getSeconds();
-            setActiveTimers(prev => ({ ...prev, [lectureNumber]: Math.max(0, nowSeconds - startMinutes) }));
-        };
-        update();
-        timerRefs.current[lectureNumber] = setInterval(update, 1000);
-    };
-
-    const handleStartClass = async (lec: Lecture) => {
-        setActionLoading(lec.lectureNumber);
-        try {
-            const res = await fetch("/api/faculty/lectures/start", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    facultyId: user?.id,
-                    lectureNumber: lec.lectureNumber,
-                    courseName: lec.courseName,
-                    topicsCovered: lec.topicsCovered,
-                    sprintPlanId: lec.sprintPlanId,
-                    scheduledDuration: lec.scheduledDuration,
-                    stream: lec.stream,
-                })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                setMessage({ type: "success", text: `Class started: ${lec.courseName}` });
-                startTimer(lec.lectureNumber, data.startTime);
-                fetchLectures();
-            } else {
-                setMessage({ type: "error", text: data.error });
-            }
-        } catch (e: any) {
-            setMessage({ type: "error", text: e.message });
-        } finally {
-            setActionLoading(null);
-        }
-    };
-
-    const handleEndClass = async (lec: Lecture) => {
-        setActionLoading(lec.lectureNumber);
-        try {
-            const res = await fetch("/api/faculty/lectures/end", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ facultyId: user?.id, lectureNumber: lec.lectureNumber })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                if (timerRefs.current[lec.lectureNumber]) {
-                    clearInterval(timerRefs.current[lec.lectureNumber]);
-                    delete timerRefs.current[lec.lectureNumber];
-                    setActiveTimers(prev => ({ ...prev, [lec.lectureNumber]: -1 }));
-                }
-                setShowReport(lec.lectureNumber);
-                setReportData({
-                    numberOfAttendees: "",
-                    totalStudents: "",
-                    semester: lec.semester || "",
-                    issuesFaced: "",
-                    reasonForLessAttendance: "",
-                    courseName: lec.courseName,
-                    topicsCovered: lec.topicsCovered
-                });
-                fetchLectures();
-            } else {
-                setMessage({ type: "error", text: data.error });
-            }
-        } catch (e: any) {
-            setMessage({ type: "error", text: e.message });
-        } finally {
-            setActionLoading(null);
-        }
-    };
 
     const handleRecordingSelect = (file: File) => {
         setRecordingFile(file);
@@ -240,12 +149,6 @@ export default function LecturesPage() {
         setPhotoCoords(null);
     };
 
-    const formatTimer = (seconds: number) => {
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = seconds % 60;
-        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    };
 
     if (!user || !["FACULTY", "PROFESSOR"].includes(user.role)) {
         return <div className="flex items-center justify-center h-[80vh] text-zinc-400 font-bold uppercase tracking-widest bg-zinc-950">Access Restricted</div>;
@@ -389,41 +292,33 @@ export default function LecturesPage() {
                                                 )}
                                             </td>
                                             <td className="py-6 px-6 text-center uppercase tracking-widest text-[10px] font-black">
-                                                {lec.status === "In Progress" && activeTimers[lec.lectureNumber] !== undefined ? (
-                                                        <div className="flex flex-col items-center gap-1">
-                                                            <div className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-                                                                <span className="text-lg font-black font-mono text-emerald-400 tabular-nums">
-                                                                    {formatTimer(activeTimers[lec.lectureNumber])}
-                                                                </span>
-                                                            </div>
-                                                            <span className="text-[8px] text-emerald-500/80 font-bold tracking-widest">LIVE</span>
-                                                        </div>
-                                                ) : (
-                                                    <div className={`mx-auto w-fit px-3 py-1.5 rounded-lg border transition-all ${
-                                                        lec.status === "Completed" ? "bg-zinc-800/40 border-zinc-800 text-zinc-600" :
-                                                        "bg-zinc-900 border-zinc-800/50 text-zinc-500"
-                                                    }`}>
-                                                        {lec.status}
-                                                    </div>
-                                                )}
+                                                <div className={`mx-auto w-fit px-3 py-1.5 rounded-lg border transition-all ${
+                                                    lec.status === "Completed" ? "bg-zinc-800/40 border-zinc-800 text-zinc-600" :
+                                                    "bg-zinc-900 border-zinc-800/50 text-zinc-500"
+                                                }`}>
+                                                    {lec.status}
+                                                </div>
                                             </td>
-                                            <td className="py-6 px-6 text-right">
+                                             <td className="py-6 px-6 text-right">
                                                 <div className="flex items-center justify-end gap-2">
-                                                    {lec.status === "Scheduled" && (
-                                                        <button onClick={() => handleStartClass(lec)}
-                                                            disabled={actionLoading === lec.lectureNumber}
-                                                            className="p-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50">
-                                                            <Play size={16} fill="currentColor" />
+                                                    {lec.status !== "Completed" ? (
+                                                        <button onClick={() => {
+                                                            setShowReport(lec.lectureNumber);
+                                                            setReportData({
+                                                                courseName: lec.courseName,
+                                                                topicsCovered: lec.topicsCovered,
+                                                                semester: lec.semester || "",
+                                                                numberOfAttendees: lec.numberOfAttendees?.toString() || "",
+                                                                totalStudents: lec.totalStudents?.toString() || "40",
+                                                                issuesFaced: "",
+                                                                reasonForLessAttendance: ""
+                                                            });
+                                                        }}
+                                                            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all shadow-lg active:scale-95 text-[10px] font-black uppercase tracking-widest">
+                                                            <Upload size={14} />
+                                                            Submit Report
                                                         </button>
-                                                    )}
-                                                    {lec.status === "In Progress" && (
-                                                        <button onClick={() => handleEndClass(lec)}
-                                                            disabled={actionLoading === lec.lectureNumber}
-                                                            className="p-3 bg-red-600 hover:bg-red-500 text-white rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50">
-                                                            <Square size={16} fill="currentColor" />
-                                                        </button>
-                                                    )}
-                                                    {(lec.status === "Completed" || lec.classEndTime) && (
+                                                    ) : (
                                                         <button onClick={() => {
                                                             setShowReport(lec.lectureNumber);
                                                             setReportData({
@@ -442,6 +337,7 @@ export default function LecturesPage() {
                                                     )}
                                                 </div>
                                             </td>
+
                                         </tr>
                                     ))}
                                 </tbody>

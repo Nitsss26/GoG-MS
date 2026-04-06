@@ -23,7 +23,8 @@ import {
     getSOPUpdateTemplate,
     getScheduleChangeTemplate,
     getMeetingWarningTemplate,
-    getMeetingTemplate
+    getMeetingTemplate,
+    getTicketForwardTemplate
 } from "@/lib/mail";
 import { CUSTOM_SCHEDULE_RULES, FALLBACK_TIMINGS, isThirdSaturday } from '@/lib/attendance-config';
 
@@ -226,6 +227,10 @@ export interface Ticket {
     routeTo?: string;
     targetEmployeeId?: string;
     targetDate?: string;
+    adRemarks?: string;
+    forwardedTo?: string;
+    forwardHistory?: { forwardedTo: string, forwardedBy: string, date: string, remarks: string }[];
+    originalMessageId?: string;
 }
 export interface Holiday {
     id: string; name: string; date: string; collegeIds?: string[];
@@ -1302,6 +1307,8 @@ interface AuthContextType {
     clockOut: (time: string) => Promise<void>;
     raiseTicket: (targetCategory: string, subject: string, content: string, routeTo?: string, cc?: string[], proofUrls?: string[], targetEmployeeId?: string, targetDate?: string) => Promise<void>;
     resolveTicket: (id: string, notes: string) => Promise<void>;
+    addADRemarks: (id: string, remarks: string) => Promise<void>;
+    forwardTicket: (id: string, targetId: string, remarks: string) => Promise<void>;
     addLeaveRequest: (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName">) => Promise<void>;
     approveLeave: (id: string, reason?: string) => Promise<void>;
     rejectLeave: (id: string, applyLOP?: boolean, reason?: string) => Promise<void>;
@@ -2431,8 +2438,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             finalRouteTo = employees.find(e => e.role === "AD")?.id || hrId;
         }
 
-        const newTicket: Ticket = {
-            id: `TKT${uid()} `,
+        const newTicket: any = {
+            id: `TK-GOG-TEMP-${uid()}`,
             raisedBy: user.id,
             employeeName: user.name,
             targetCategory,
@@ -2464,12 +2471,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 
                 const { subject: mailSub, html: mailHtml } = getTicketTemplate(data, 'raised');
                 if (targetEmp?.email) {
-                    sendMail({ 
+                    const mailRes = await sendMail({ 
                         to: targetEmp.email, 
-                        cc: [...getAuthorityEmails(raiser, employees), raiser?.email].filter(Boolean) as string[], 
+                        cc: [...new Set([...getAuthorityEmails(raiser, employees), raiser?.email, ...(data.cc || [])])].filter(Boolean) as string[], 
                         subject: mailSub, 
                         html: mailHtml 
                     });
+                    if (mailRes?.messageId) {
+                        await fetch("/api/tickets", {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ id: data.id, originalMessageId: mailRes.messageId })
+                        });
+                        setTickets(prev => prev.map(t => t.id === data.id ? { ...t, originalMessageId: mailRes.messageId } : t));
+                    }
                 }
             }
         } catch (err) { console.error(err); }
@@ -2499,7 +2514,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                 const raiser = employees.find(e => e.id === updated.raisedBy);
                 const { subject, html } = getTicketTemplate(updated, 'resolved');
-                if (raiser?.email) sendMail({ to: raiser.email, cc: getAuthorityEmails(raiser, employees), subject, html });
+                if (raiser?.email) sendMail({ 
+                    to: raiser.email, 
+                    cc: Array.from(new Set([...getAuthorityEmails(raiser, employees), ...(updated.cc || [])])), 
+                    subject: `Re: ${subject}`, 
+                    html,
+                    inReplyTo: updated.originalMessageId,
+                    references: updated.originalMessageId
+                });
+            }
+        } catch (err) { console.error(err); }
+    };
+    const addADRemarks = async (id: string, notes: string) => {
+        try {
+            const res = await fetch("/api/tickets", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, adRemarks: notes })
+            });
+            const updated = await res.json();
+            if (updated.id) {
+                setTickets(prev => prev.map(t => t.id === id ? updated : t));
+            }
+        } catch (err) { console.error(err); }
+    };
+    const forwardTicket = async (id: string, targetId: string, remarks: string) => {
+        try {
+            if (!user) return;
+            const targetEmp = employees.find(e => e.id === targetId);
+            const res = await fetch("/api/tickets", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    id, 
+                    forwardedTo: targetId,
+                    routeTo: targetId,
+                    $push: { 
+                        forwardHistory: { 
+                            forwardedTo: targetId, 
+                            forwardBy: user.id, 
+                            date: new Date().toISOString(), 
+                            remarks 
+                        } 
+                    }
+                })
+            });
+            const updated = await res.json();
+            if (updated.id) {
+                setTickets(prev => prev.map(t => t.id === id ? updated : t));
+                const { subject, html } = getTicketForwardTemplate(updated, targetEmp?.name || "Team", user.name, remarks);
+                if (targetEmp?.email) sendMail({ 
+                    to: targetEmp.email, 
+                    cc: Array.from(new Set([...(updated.cc || []), user.email])).filter(Boolean) as string[], 
+                    subject: `Re: ${subject}`, 
+                    html,
+                    inReplyTo: updated.originalMessageId,
+                    references: updated.originalMessageId
+                });
             }
         } catch (err) { console.error(err); }
     };
@@ -3355,7 +3426,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             tickets, holidays, pipRecords, workSchedules, performanceStars, moms, reimbursements,
             orgHierarchy, ratings, misbehaviourReports, additionalResponsibilities, notifications, activityLogs, colleges,
             jobPostings, certificates, resignationRequests, assets, assetRequests,
-            login, logout, addNotice, addAnnouncement, editNotice, markAnnouncementRead, updateProfile, clockIn, clockOut, raiseTicket, resolveTicket,
+            login, logout, addNotice, addAnnouncement, editNotice, markAnnouncementRead, updateProfile, clockIn, clockOut, raiseTicket, resolveTicket, addADRemarks, forwardTicket,
             addLeaveRequest, approveLeave, rejectLeave, addReimbursement, updateReimbursementStatus,
             proposeHoliday, approveHoliday, updateSOP, deleteSOP, addToPIP, markAttendanceOverride,
             sopNotifications, masterSopContent, updateMasterSop, markSOPNotificationRead, markAllSOPNotificationsRead,

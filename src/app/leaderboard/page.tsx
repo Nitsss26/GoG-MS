@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { calculatePerformance, LEADERBOARD_START_DATE } from "@/lib/performance-utils";
 
 export default function LeaderboardPage() {
-    const { user, employees, performanceStars, attendanceRecords, additionalResponsibilities, getReportees } = useAuth();
+    const { user, employees, performanceStars, attendanceRecords, additionalResponsibilities, holidays, getReportees } = useAuth();
 
     const [showRules, setShowRules] = useState(false);
     const [selectedEmpForResp, setSelectedEmpForResp] = useState<any>(null);
@@ -37,7 +37,9 @@ export default function LeaderboardPage() {
                     attendanceRecords,
                     additionalResponsibilities,
                     emp.biWeeklyScores || [],
-                    s.employeeId
+                    s.employeeId,
+                    holidays,
+                    emp.location
                 );
 
                 return {

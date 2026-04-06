@@ -50,7 +50,7 @@ export async function GET(req: Request) {
         return NextResponse.json({ 
             plans, 
             reports, 
-            reportees: reportees.map(r => ({ id: r.id, name: r.name, dept: r.dept, designation: r.designation }))
+            reportees: reportees.map(r => ({ id: r.id, name: r.name, dept: r.dept, designation: r.designation, role: r.role }))
         });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });

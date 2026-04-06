@@ -226,9 +226,18 @@ const TicketSchema = new Schema({
     assignedTo: { type: String },
     cc: [String],
     resolutionNotes: { type: String },
+    adRemarks: { type: String },
+    forwardedTo: { type: String },
+    forwardHistory: [{
+        forwardedTo: { type: String },
+        forwardedBy: { type: String },
+        date: { type: String },
+        remarks: { type: String }
+    }],
     routeTo: { type: String },
     targetEmployeeId: { type: String },
-    targetDate: { type: String }
+    targetDate: { type: String },
+    originalMessageId: { type: String }
 });
 
 // Reimbursement Schema

@@ -10,7 +10,7 @@ export async function GET(req: Request) {
         const role = searchParams.get('role');
 
         let query = {};
-        if (role !== 'HR' && role !== 'FOUNDER' && userId) {
+        if (role !== 'HR' && role !== 'FOUNDER' && role !== 'AD' && userId) {
             query = { $or: [{ raisedBy: userId }, { routeTo: userId }, { cc: userId }] };
         }
 
@@ -25,7 +25,27 @@ export async function POST(req: Request) {
     try {
         await dbConnect();
         const body = await req.json();
-        const ticket = await Ticket.create(body);
+
+        // Ticket ID Generation Logic
+        const getCategoryCode = (cat: string) => {
+            if (cat.includes("Attendance Override")) return "AO";
+            if (cat.includes("HR Desk")) return "HR";
+            if (cat.includes("Misconduct")) return "MI";
+            if (cat.includes("Academic")) return "AC";
+            if (cat.includes("Technical")) return "TE";
+            return "OT";
+        };
+
+        const code = getCategoryCode(body.targetCategory);
+        const count = await Ticket.countDocuments({ id: { $regex: `^TK-GOG-${code}-` } });
+        const ticketId = `TK-GOG-${code}-${String(count + 1).padStart(3, '0')}`;
+        
+        const ticketData = {
+            ...body,
+            id: ticketId
+        };
+
+        const ticket = await Ticket.create(ticketData);
         return NextResponse.json(ticket);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
