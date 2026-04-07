@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect } from "react";
 import {
     CalendarDays, Plus, Trash2, Lock, Unlock, Save, AlertTriangle,
-    Clock, BookOpen, ArrowLeft, ArrowRight, Check, X, Send, Settings, Edit2
+    Clock, BookOpen, ArrowLeft, ArrowRight, Check, X, Send, Settings, Edit2, Copy
 } from "lucide-react";
 import Link from "next/link";
 import { validateSprintEntries, isValidTimeFormat } from "@/lib/time-utils";
@@ -116,6 +116,7 @@ export default function SprintPlanPage() {
     const [changeReason, setChangeReason] = useState("");
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
     const [invalidIndices, setInvalidIndices] = useState<number[]>([]);
+    const [copying, setCopying] = useState(false);
 
     // Dynamic Dropdowns
     const [facultySubjects, setFacultySubjects] = useState<Record<string, string>>(SUBJECTS);
@@ -190,6 +191,46 @@ export default function SprintPlanPage() {
             console.error(e);
         } finally {
             setLoading(false);
+        }
+    };
+    
+    const copyFromPreviousWeek = async () => {
+        setCopying(true);
+        setMessage(null);
+        try {
+            const prevStart = new Date(weekInfo.start);
+            prevStart.setDate(prevStart.getDate() - 7);
+            const prevStartStr = prevStart.getFullYear() + "-" + 
+                (prevStart.getMonth() + 1).toString().padStart(2, '0') + "-" + 
+                prevStart.getDate().toString().padStart(2, '0');
+
+            const res = await fetch(`/api/faculty/sprint-plan?facultyId=${user?.id}&weekStartDate=${prevStartStr}`);
+            const data = await res.json();
+            
+            // Note: Updated to handle results correctly based on the API response structure { plans, schedules }
+            if (data.plans && data.plans.length > 0) {
+                const prevPlan = data.plans[0];
+                if (!prevPlan.entries || prevPlan.entries.length === 0) {
+                    setMessage({ type: "error", text: "Previous week's plan has no entries." });
+                    return;
+                }
+
+                // Map entries to current week corresponding dates
+                const mappedEntries = prevPlan.entries.map((e: SprintEntry) => {
+                    const currentDateForDay = weekInfo.dates.find(d => d.day === e.day)?.date;
+                    return { ...e, date: currentDateForDay || e.date };
+                });
+
+                // Append to current entries (user can save later)
+                setEntries([...entries, ...mappedEntries]);
+                setMessage({ type: "success", text: `Successfully copied ${mappedEntries.length} entries from previous week.` });
+            } else {
+                setMessage({ type: "error", text: "No sprint plan found for the previous week." });
+            }
+        } catch (e: any) {
+            setMessage({ type: "error", text: "Failed to copy plan: " + e.message });
+        } finally {
+            setCopying(false);
         }
     };
 
@@ -327,6 +368,15 @@ export default function SprintPlanPage() {
                         >
                             <Plus size={14} /> Add Streams
                         </button>
+                        {!plan?.isLocked && (
+                            <button
+                                onClick={copyFromPreviousWeek}
+                                disabled={copying}
+                                className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[10px] font-black uppercase tracking-widest rounded-xl border border-amber-500/10 transition-all active:scale-95 disabled:opacity-50"
+                            >
+                                <Copy size={14} /> {copying ? "Copying..." : "Copy Previous Week"}
+                            </button>
+                        )}
                     </div>
 
                     <div className="flex items-center gap-3">
@@ -334,8 +384,8 @@ export default function SprintPlanPage() {
                             className="p-3 rounded-xl bg-zinc-800/50 hover:bg-zinc-700 text-zinc-400 border border-zinc-700/50 transition-all hover:scale-110 active:scale-95">
                             <ArrowLeft size={16} />
                         </button>
-                        <div className="px-5 py-3 bg-zinc-800/80 border border-zinc-700/50 rounded-xl">
-                            <span className="text-xs font-black text-white tabular-nums tracking-widest uppercase">
+                        <div className="px-5 py-3 bg-zinc-800/80 border border-zinc-700/50 rounded-xl shrink-0">
+                            <span className="text-xs font-black text-white tabular-nums tracking-widest uppercase whitespace-nowrap">
                                 {formatDateDMY(weekInfo.start)} <span className="text-zinc-600 font-bold mx-2">/</span> {formatDateDMY(weekInfo.end)}
                             </span>
                         </div>

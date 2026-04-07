@@ -64,36 +64,5 @@ export function validateSprintEntries<T extends TimeRange>(entries: T[]): {
         };
     }
 
-    // Second pass: check for overlaps within each date
-    for (const date in dateGroups) {
-        const indices = dateGroups[date];
-        
-        // Sort indices by start time to simplify overlap check
-        indices.sort((a, b) => timeToMinutes(entries[a].timeStart) - timeToMinutes(entries[b].timeStart));
-
-        for (let i = 0; i < indices.length - 1; i++) {
-            const currentIdx = indices[i];
-            const nextIdx = indices[i+1];
-            const current = entries[currentIdx];
-            const next = entries[nextIdx];
-
-            const currentEnd = timeToMinutes(current.timeStop);
-            const nextStart = timeToMinutes(next.timeStart);
-
-            if (currentEnd > nextStart) {
-                invalidIndices.add(currentIdx);
-                invalidIndices.add(nextIdx);
-            }
-        }
-    }
-
-    if (invalidIndices.size > 0) {
-        return { 
-            valid: false, 
-            error: "Overlapping lecture timings detected on the same day.", 
-            invalidIndices: Array.from(invalidIndices) 
-        };
-    }
-
     return { valid: true };
 }
