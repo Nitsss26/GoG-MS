@@ -174,6 +174,12 @@ export interface LeaveRequest {
     appliedAt?: string;
     location?: string;
     reasonForAction?: string;
+    hoiApproval: "Pending" | "Approved" | "Rejected";
+    hrApproval: "Pending" | "Approved" | "Rejected";
+    hoiApproverId?: string;
+    hrApproverId?: string;
+    hoiApprovedAt?: string;
+    hrApprovedAt?: string;
 }
 export interface MeetingRequest {
     id: string; employeeId: string; employeeName: string; targetName: string;
@@ -1112,10 +1118,10 @@ const INITIAL_MEETINGS: MeetingRequest[] = [
 ];
 
 const INITIAL_LEAVES: LeaveRequest[] = [
-    { id: "lv1", employeeId: "FAC001", employeeName: "Anil Kumar", type: "Casual", startDate: "2024-03-05", endDate: "2024-03-05", days: 1, status: "Approved", classification: "Paid", leaveType: "Planned", reason: "Personal work" },
-    { id: "lv2", employeeId: "FAC003", employeeName: "Priya Singh", type: "Sick", startDate: "2024-03-10", endDate: "2024-03-11", days: 2, status: "Pending", classification: "Paid", leaveType: "Emergency", reason: "Fever and cold" },
-    { id: "lv3", employeeId: "OM001", employeeName: "Arjun Sharma", type: "Casual", startDate: "2024-03-15", endDate: "2024-03-15", days: 1, status: "Pending", classification: "Paid", leaveType: "Planned", reason: "Family function" },
-    { id: "lv4", employeeId: "FAC005", employeeName: "Sneha Reddy", type: "Privilege", startDate: "2024-04-01", endDate: "2024-04-05", days: 5, status: "Pending", classification: "Paid", leaveType: "Planned", reason: "Vacation" },
+    { id: "lv1", employeeId: "FAC001", employeeName: "Anil Kumar", type: "Casual", startDate: "2024-03-05", endDate: "2024-03-05", days: 1, status: "Approved", classification: "Paid", leaveType: "Planned", reason: "Personal work", hoiApproval: "Approved", hrApproval: "Approved" },
+    { id: "lv2", employeeId: "FAC003", employeeName: "Priya Singh", type: "Sick", startDate: "2024-03-10", endDate: "2024-03-11", days: 2, status: "Pending", classification: "Paid", leaveType: "Emergency", reason: "Fever and cold", hoiApproval: "Pending", hrApproval: "Pending" },
+    { id: "lv3", employeeId: "OM001", employeeName: "Arjun Sharma", type: "Casual", startDate: "2024-03-15", endDate: "2024-03-15", days: 1, status: "Pending", classification: "Paid", leaveType: "Planned", reason: "Family function", hoiApproval: "Pending", hrApproval: "Pending" },
+    { id: "lv4", employeeId: "FAC005", employeeName: "Sneha Reddy", type: "Privilege", startDate: "2024-04-01", endDate: "2024-04-05", days: 5, status: "Pending", classification: "Paid", leaveType: "Planned", reason: "Vacation", hoiApproval: "Pending", hrApproval: "Pending" },
 ];
 
 const INITIAL_TICKETS: Ticket[] = [
@@ -1309,8 +1315,8 @@ interface AuthContextType {
     resolveTicket: (id: string, notes: string) => Promise<void>;
     addADRemarks: (id: string, remarks: string) => Promise<void>;
     forwardTicket: (id: string, targetId: string, remarks: string) => Promise<void>;
-    addLeaveRequest: (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName">) => Promise<void>;
-    approveLeave: (id: string, reason?: string) => Promise<void>;
+    addLeaveRequest: (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName" | "hoiApproval" | "hrApproval">) => Promise<void>;
+    approveLeave: (id: string, reason?: string, forceHOI?: boolean) => Promise<void>;
     rejectLeave: (id: string, applyLOP?: boolean, reason?: string) => Promise<void>;
     addReimbursement: (claim: Omit<ReimbursementClaim, "id" | "status" | "date" | "employeeId" | "employeeName">) => Promise<void>;
     updateReimbursementStatus: (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string, approvedAmount?: number) => Promise<void>;
@@ -2279,7 +2285,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     // ─── LEAVES ───
-    const addLeaveRequest = async (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName">) => {
+    const addLeaveRequest = async (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName" | "hoiApproval" | "hrApproval">) => {
         if (!user) return;
         
         if (req.leaveType === "Short" && !req.reason) {
@@ -2301,7 +2307,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             employeeName: user.name,
             location: (user as Employee).location,
             lossOfPayDays: 0,
-            appliedAt
+            appliedAt,
+            hoiApproval: (isHierarchical ? "Pending" : "Approved") as any,
+            hrApproval: "Pending" as any
         };
 
         try {
@@ -2325,26 +2333,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
         } catch (err) { console.error(err); }
     };
-    const approveLeave = async (id: string, reason?: string) => {
+    const approveLeave = async (id: string, reason?: string, forceHOI: boolean = false) => {
         try {
             const leave = leaves.find(l => l.id === id);
-            if (!leave) return;
+            if (!leave || !user) return;
 
-            // Hierarchical Approval Logic:
-            // If status is 'Pending HOI Approval', it transitions to 'Pending' (waiting for HR).
-            // If status is 'Pending', it transitions to 'Approved'.
-            const nextStatus = leave.status === "Pending HOI Approval" ? "Pending" : "Approved";
+            const isHR = user.role === "HR" || user.role === "FOUNDER";
+            const isManager = (user.role === "HOI" || user.role === "AD" || user.role === "TL") && 
+                             (leave.location === (user as Employee).location || getReportees(user.id).some(r => r.id === leave.employeeId));
+
+            let nextStatus = leave.status;
+            let updates: any = { reasonForAction: reason };
+
+            if (isHR && !forceHOI) {
+                // Final HR Approval logic (Ultimate approval)
+                nextStatus = "Approved";
+                updates.hrApproval = "Approved";
+                updates.hrApproverId = user.id;
+                updates.hrApprovedAt = new Date().toISOString();
+                updates.status = nextStatus;
+            } else if (isManager || (isHR && forceHOI)) {
+                // HOI-level Approval (moves to Pending HR)
+                updates.hoiApproval = "Approved";
+                updates.hoiApproverId = user.id;
+                updates.hoiApprovedAt = new Date().toISOString();
+                
+                if (leave.status === "Pending HOI Approval") {
+                    nextStatus = "Pending"; // Now waiting for HR
+                    updates.status = nextStatus;
+                }
+
+                // If HR is forcing HOI approval, we might want to track that HR did it
+                if (isHR && forceHOI) {
+                    updates.reasonForAction = reason ? `${reason} (HOI approval forced by HR)` : "HOI approval forced by HR";
+                }
+            }
 
             const res = await fetch("/api/leaves", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, status: nextStatus, reasonForAction: reason })
+                body: JSON.stringify({ id, ...updates })
             });
             const updated = await res.json();
             if (updated.id) {
                 setLeaves(prev => prev.map(l => l.id === id ? updated : l));
                 const emp = employees.find(e => e.id === updated.employeeId);
-                const { subject, html } = getLeaveTemplate(updated, nextStatus as any);
+                const { subject, html } = getLeaveTemplate(updated, updated.status);
                 if (emp?.email) {
                     sendMail({ 
                         to: emp.email, 
@@ -2359,11 +2393,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const rejectLeave = async (id: string, applyLOP: boolean = false, reason?: string) => {
         try {
             const leave = leaves.find(l => l.id === id);
+            if (!leave || !user) return;
+
+            const isHR = user.role === "HR" || user.role === "FOUNDER";
             const finalApplyLOP = applyLOP || (leave?.leaveType === "Emergency");
+            
+            let updates: any = { 
+                status: "Rejected", 
+                lossOfPayDays: finalApplyLOP ? 2 : (leave?.lossOfPayDays || 0), 
+                reasonForAction: reason 
+            };
+
+            if (isHR) {
+                updates.hrApproval = "Rejected";
+                updates.hrApproverId = user.id;
+                updates.hrApprovedAt = new Date().toISOString();
+            } else {
+                updates.hoiApproval = "Rejected";
+                updates.hoiApproverId = user.id;
+                updates.hoiApprovedAt = new Date().toISOString();
+            }
+
             const res = await fetch("/api/leaves", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, status: "Rejected", lossOfPayDays: finalApplyLOP ? 2 : (leave?.lossOfPayDays || 0), reasonForAction: reason })
+                body: JSON.stringify({ id, ...updates })
             });
             const updated = await res.json();
             if (updated.id) {

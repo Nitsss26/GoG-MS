@@ -112,11 +112,11 @@ export default function AttendancePage() {
             );
 
             // Check for approved leaves
-            const isOnLeave = leaves.some(l =>
+            const leaveToday = leaves.find(l =>
                 l.employeeId === employee.id &&
-                l.status === "Approved" &&
                 selectedGlobalDate >= l.startDate &&
-                selectedGlobalDate <= l.endDate
+                selectedGlobalDate <= l.endDate &&
+                l.status !== "Rejected"
             );
 
             let status = "Absent";
@@ -126,8 +126,9 @@ export default function AttendancePage() {
                 else status = "Working";
             } else if (empHoliday) {
                 status = "Holiday";
-            } else if (isOnLeave) {
-                status = "On Leave";
+            } else if (leaveToday) {
+                if (leaveToday.status === "Approved") status = "On Leave";
+                else status = "Leave Requested";
             }
 
             return { employee, record, status, scheduledLocation };
@@ -137,7 +138,7 @@ export default function AttendancePage() {
                 return (a.scheduledLocation || "").localeCompare(b.scheduledLocation || "");
             }
             // Then sort by status within each group
-            const w: Record<string, number> = { "Working": 2.5, "Clocked Out": 2, "Holiday": 1.5, "On Leave": 1, "Absent": 0 };
+            const w: Record<string, number> = { "Working": 4, "Clocked Out": 3, "Holiday": 2, "On Leave": 1.5, "Leave Requested": 1, "Absent": 0 };
             return w[b.status] - w[a.status];
         });
     }, [employeesToShow, attendanceRecords, selectedGlobalDate, showsTeamRoster, user, holidays, leaves]);
@@ -145,6 +146,7 @@ export default function AttendancePage() {
     const filteredTeamAttendanceList = useMemo(() => {
         if (filterStatus === "All") return teamAttendanceList;
         if (filterStatus === "Present") return teamAttendanceList.filter((l: any) => l.status === "Working" || l.status === "Clocked Out");
+        if (filterStatus === "Absent") return teamAttendanceList.filter((l: any) => l.status === "Absent" || l.status === "Leave Requested");
         return teamAttendanceList.filter((l: any) => l.status === filterStatus);
     }, [teamAttendanceList, filterStatus]);
 
@@ -859,7 +861,7 @@ export default function AttendancePage() {
                             )}
                         >
                             <span className="text-xs font-bold text-red-400 block">Absent Today</span>
-                            <span className="text-lg font-black text-white">{teamAttendanceList.filter((l: any) => l.status === "Absent").length}</span>
+                            <span className="text-lg font-black text-white">{teamAttendanceList.filter((l: any) => l.status === "Absent" || l.status === "Leave Requested").length}</span>
                         </div>
                     </div>
 
@@ -888,7 +890,8 @@ export default function AttendancePage() {
                                                         status === "Clocked Out" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
                                                             status === "Holiday" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
                                                                 status === "On Leave" ? "bg-purple-500/10 text-purple-400 border-purple-500/20" :
-                                                                    "bg-zinc-800 text-zinc-500 border-zinc-700"
+                                                                    status === "Leave Requested" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" :
+                                                                        "bg-zinc-800 text-zinc-500 border-zinc-700"
                                                 )}>
                                                     {status}
                                                 </span>

@@ -59,7 +59,7 @@ export default function LeavePage() {
             }
         }
 
-        addLeaveRequest({ ...formData, proofUrls: proofUrls.length > 0 ? proofUrls : undefined });
+        addLeaveRequest({ ...formData, proofUrls: proofUrls.length > 0 ? proofUrls : undefined } as any);
         setShowModal(false);
         setFormData({
             type: "Casual Leave",
@@ -90,7 +90,7 @@ export default function LeavePage() {
     const reportees = getReportees(user.id);
     const reporteeIds = reportees.map(r => r.id);
     const filteredLeaves = (user.role === "HR" || user.role === "FOUNDER") 
-        ? leaves.filter(l => l.status !== "Pending HOI Approval") 
+        ? leaves 
         : leaves.filter(l => (l.employeeId === user.id) || (user.role === 'HOI' && (l.location || employees.find(e => e.id === l.employeeId)?.location) === user.location && l.status === "Pending HOI Approval") || reporteeIds.includes(l.employeeId));
 
     const currentMonth = new Date().getMonth();
@@ -211,13 +211,24 @@ export default function LeavePage() {
                                             </div>
                                         </td>
                                         <td className="px-5 py-4">
-                                            <span className={cn("badge",
-                                                req.status === "Approved" ? "badge-green" :
-                                                req.status === "Pending" ? "badge-amber" : 
-                                                req.status === "Pending HOI Approval" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" : "badge-zinc"
-                                            )}>
-                                                {req.status === "Pending" ? "Pending (HR Approval)" : req.status === "Pending HOI Approval" ? "Pending (HOI Approval)" : req.status}
-                                            </span>
+                                            <div className="flex items-center gap-2">
+                                                <span className={cn("badge",
+                                                    req.status === "Approved" ? "badge-green" :
+                                                    req.status === "Pending" ? "badge-amber" : 
+                                                    req.status === "Pending HOI Approval" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" : "badge-zinc"
+                                                )}>
+                                                    {req.status === "Pending" ? "Pending (HR Approval)" : req.status === "Pending HOI Approval" ? "Pending (HOI Approval)" : req.status}
+                                                </span>
+                                                {(user.role === "HR" || user.role === "FOUNDER") && req.status === "Pending HOI Approval" && (
+                                                    <button 
+                                                        onClick={() => approveLeave(req.id, undefined, true)}
+                                                        className="p-1 rounded bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500 hover:text-white transition-all border border-indigo-500/20 group/btn"
+                                                        title="Approve as HOI"
+                                                    >
+                                                        <CheckCircle2 size={10} className="group-hover/btn:scale-110" />
+                                                    </button>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="px-5 py-4 text-right">
                                             <div className="flex justify-end items-center gap-2">
@@ -231,7 +242,6 @@ export default function LeavePage() {
                                                         ))}
                                                     </div>
                                                 )}
-
                                                 {(() => {
                                                     const isManager = reporteeIds.includes(req.employeeId);
                                                     const isHR = user.role === "HR" || user.role === "FOUNDER";
@@ -239,8 +249,8 @@ export default function LeavePage() {
                                                     // HOI Stage: Manager or location HOI approves while status is Pending HOI Approval
                                                     const canHOIApprove = (isManager || (user.role === 'HOI' && (req.location || employees.find(e => e.id === req.employeeId)?.location) === user.location)) && req.status === "Pending HOI Approval";
                                                     
-                                                    // HR Stage: HR approves while status is Pending
-                                                    const canHRApprove = isHR && req.status === "Pending";
+                                                    // HR Stage: HR can approve anytime if status is Pending OR Pending HOI Approval (Requested)
+                                                    const canHRApprove = isHR && (req.status === "Pending" || req.status === "Pending HOI Approval");
 
                                                     if (canHOIApprove || canHRApprove) {
                                                         return (
@@ -248,7 +258,7 @@ export default function LeavePage() {
                                                                 <button 
                                                                     onClick={() => setDecisionModal({ show: true, type: 'approve', leaveId: req.id, leaveName: req.employeeName })}
                                                                     className="h-8 w-8 flex items-center justify-center bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-lg hover:bg-emerald-500 transition-colors hover:text-white"
-                                                                    title="Approve"
+                                                                    title={isHR && req.status === "Pending HOI Approval" ? "Approve (Override HOI)" : "Approve"}
                                                                 >
                                                                     <CheckCircle2 size={14} />
                                                                 </button>

@@ -208,7 +208,13 @@ const LeaveRequestSchema = new Schema({
     lossOfPayDays: { type: Number, default: 0 },
     appliedAt: { type: String },
     location: { type: String }, // For filtering at HOI level
-    reasonForAction: { type: String }
+    reasonForAction: { type: String },
+    hoiApproval: { type: String, default: "Pending" },
+    hrApproval: { type: String, default: "Pending" },
+    hoiApproverId: { type: String },
+    hrApproverId: { type: String },
+    hoiApprovedAt: { type: String },
+    hrApprovedAt: { type: String }
 });
 
 // Ticket Schema
