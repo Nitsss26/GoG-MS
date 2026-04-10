@@ -4,9 +4,12 @@ import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect, useRef } from "react";
 import {
     Play, Square, Clock, Timer, AlertTriangle, CheckCircle2,
-    BookOpen, Upload, Camera, FileText, Mic, Users, X, Loader2
+    BookOpen, Upload, Camera, FileText, Mic, Users, X, Loader2,
+    Calendar, Download
 } from "lucide-react";
 import { uploadToCloudinary } from "@/lib/cloudinary";
+import * as XLSX from "xlsx";
+import { format } from "date-fns";
 
 interface Lecture {
     _id?: string;
@@ -55,6 +58,11 @@ export default function LecturesPage() {
     const [recordingDuration, setRecordingDuration] = useState(0);
     const [uploading, setUploading] = useState(false);
     const [photoCoords, setPhotoCoords] = useState<{ lat: number; lng: number } | null>(null);
+
+    // Date range for export
+    const [startDate, setStartDate] = useState(format(new Date(new Date().setDate(new Date().getDate() - 30)), "yyyy-MM-dd"));
+    const [endDate, setEndDate] = useState(format(new Date(), "yyyy-MM-dd"));
+    const [exportLoading, setExportLoading] = useState(false);
 
     useEffect(() => {
         if (user?.id) fetchLectures();
@@ -149,6 +157,56 @@ export default function LecturesPage() {
         setPhotoCoords(null);
     };
 
+    const downloadExcelReport = async () => {
+        if (!user?.id) return;
+        setExportLoading(true);
+        try {
+            const res = await fetch(`/api/faculty/lectures?facultyId=${user.id}&startDate=${startDate}&endDate=${endDate}`);
+            const data = await res.json();
+
+            if (!data.lectures || data.lectures.length === 0) {
+                setMessage({ type: "warning", text: "No lectures found in this date range." });
+                return;
+            }
+
+            const worksheetData = data.lectures.map((l: any) => ({
+                "Lecture #": l.lectureNumber,
+                "Date": format(new Date(l.date || Date.now()), "dd-MM-yyyy"),
+                "Subject": l.courseName,
+                "Topics": l.topicsCovered,
+                "Stream": l.stream,
+                "Year": l.year,
+                "Sem": l.semester,
+                "Time": `${l.timeStart} - ${l.timeStop}`,
+                "Duration (min)": l.scheduledDuration,
+                "Status": l.status,
+                "Attendees": l.numberOfAttendees,
+                "Total Students": l.totalStudents,
+                "Attendance %": l.totalStudents ? ((l.numberOfAttendees / l.totalStudents) * 100).toFixed(1) + "%" : "0%",
+                "Recording Link": l.recordingUrl || "Not Uploaded",
+                "Photo Link": l.classPhotoUrl || "Not Uploaded",
+                "Faculty ID": l.facultyId
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(worksheetData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Lecture Reports");
+
+            // Auto-size columns
+            const colWidths = Object.keys(worksheetData[0] || {}).map(key => ({
+                wch: Math.max(key.length, ...worksheetData.map((row: any) => row[key]?.toString().length || 0)) + 2
+            }));
+            ws['!cols'] = colWidths;
+
+            XLSX.writeFile(wb, `Lecture_Reports_${user.name}_${startDate}_to_${endDate}.xlsx`);
+            setMessage({ type: "success", text: "Reports exported successfully!" });
+        } catch (e: any) {
+            setMessage({ type: "error", text: "Export failed: " + e.message });
+        } finally {
+            setExportLoading(false);
+        }
+    };
+
 
     if (!user || !["FACULTY", "PROFESSOR"].includes(user.role)) {
         return <div className="flex items-center justify-center h-[80vh] text-zinc-400 font-bold uppercase tracking-widest bg-zinc-950">Access Restricted</div>;
@@ -186,12 +244,61 @@ export default function LecturesPage() {
                 </div>
             </div>
 
+            {/* Export Controls */}
+            <div className="bg-zinc-900/60 backdrop-blur-xl border border-zinc-800/80 rounded-[2rem] p-8 flex flex-col lg:flex-row items-center justify-between gap-8 shadow-xl">
+                <div className="flex flex-col md:flex-row items-center gap-6 w-full lg:w-auto">
+                    <div className="space-y-2 w-full md:w-auto">
+                        <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest ml-1 flex items-center gap-2">
+                            <Calendar size={12} className="text-emerald-500" /> Date From
+                        </label>
+                        <input
+                            type="date"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            className="w-full md:w-48 px-4 py-3 bg-zinc-800/50 border border-zinc-700/50 rounded-xl text-xs font-bold text-white focus:outline-none focus:border-emerald-500/50 transition-all cursor-pointer"
+                        />
+                    </div>
+                    <div className="space-y-2 w-full md:w-auto">
+                        <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest ml-1 flex items-center gap-2">
+                            <Calendar size={12} className="text-emerald-500" /> Date To
+                        </label>
+                        <input
+                            type="date"
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            className="w-full md:w-48 px-4 py-3 bg-zinc-800/50 border border-zinc-700/50 rounded-xl text-xs font-bold text-white focus:outline-none focus:border-emerald-500/50 transition-all cursor-pointer"
+                        />
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-4 w-full lg:w-auto">
+                    <button
+                        onClick={downloadExcelReport}
+                        disabled={exportLoading}
+                        className="w-full lg:w-auto px-8 py-4 bg-zinc-100 hover:bg-white text-zinc-950 rounded-2xl transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
+                    >
+                        {exportLoading ? (
+                            <Loader2 size={18} className="animate-spin" />
+                        ) : (
+                            <Download size={18} />
+                        )}
+                        <span className="text-[10px] font-black uppercase tracking-widest">
+                            {exportLoading ? "Generating Record..." : "Download Report"}
+                        </span>
+                    </button>
+                    <div className="hidden lg:block h-12 w-px bg-zinc-800/80" />
+                    {/* <div className="hidden lg:block text-right">
+                        <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest">Format</p>
+                        <p className="text-xs font-black text-emerald-400 italic">MS-EXCEL .XLSX</p>
+                    </div> */}
+                </div>
+            </div>
+
             {message && (
-                <div className={`flex items-center gap-4 rounded-3xl px-8 py-5 text-sm font-bold backdrop-blur-xl shadow-2xl animate-in fade-in slide-in-from-top-6 duration-500 border-l-4 ${
-                    message.type === "success" ? "bg-emerald-500/5 border-emerald-500/50 text-emerald-400" :
+                <div className={`flex items-center gap-4 rounded-3xl px-8 py-5 text-sm font-bold backdrop-blur-xl shadow-2xl animate-in fade-in slide-in-from-top-6 duration-500 border-l-4 ${message.type === "success" ? "bg-emerald-500/5 border-emerald-500/50 text-emerald-400" :
                     message.type === "warning" ? "bg-amber-500/5 border-amber-500/50 text-amber-400" :
-                    "bg-red-500/5 border-red-500/50 text-red-400"
-                }`}>
+                        "bg-red-500/5 border-red-500/50 text-red-400"
+                    }`}>
                     {message.type === "success" ? <CheckCircle2 size={24} /> : <AlertTriangle size={24} />}
                     <span className="flex-1 tracking-tight">{message.text}</span>
                     <button onClick={() => setMessage(null)} className="p-2 hover:bg-white/10 rounded-full transition-all">✕</button>
@@ -235,19 +342,17 @@ export default function LecturesPage() {
                                     {lectures.map((lec) => (
                                         <tr key={lec.lectureNumber} className={`group transition-all duration-300 ${lec.status === "In Progress" ? "bg-emerald-500/[0.03]" : "hover:bg-white/[0.02]"}`}>
                                             <td className="py-6 px-6 border-r border-zinc-800/50 text-center relative">
-                                                <span className={`text-xl font-black tabular-nums transition-colors ${
-                                                    lec.status === "In Progress" ? "text-emerald-400" :
+                                                <span className={`text-xl font-black tabular-nums transition-colors ${lec.status === "In Progress" ? "text-emerald-400" :
                                                     lec.status === "Completed" ? "text-zinc-700" : "text-zinc-500"
-                                                }`}>{lec.lectureNumber}</span>
+                                                    }`}>{lec.lectureNumber}</span>
                                                 {lec.status === "In Progress" && (
                                                     <span className="absolute top-1/2 -translate-y-1/2 left-3 w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping opacity-75" />
                                                 )}
                                             </td>
                                             <td className="py-6 px-6">
                                                 <div className="flex flex-col gap-1">
-                                                    <span className={`text-sm font-black tracking-tight transition-colors ${
-                                                        lec.status === "In Progress" ? "text-emerald-400" : "text-white"
-                                                    }`}>{lec.courseName}</span>
+                                                    <span className={`text-sm font-black tracking-tight transition-colors ${lec.status === "In Progress" ? "text-emerald-400" : "text-white"
+                                                        }`}>{lec.courseName}</span>
                                                     <span className="text-[11px] text-zinc-500 font-medium opacity-80 italic line-clamp-1">{lec.topicsCovered}</span>
                                                 </div>
                                             </td>
@@ -277,11 +382,10 @@ export default function LecturesPage() {
                                                             <span className="text-sm font-black text-white tabular-nums">{lec.numberOfAttendees} <span className="text-zinc-700 font-bold">/</span> {lec.totalStudents || "40"}</span>
                                                         </div>
                                                         <div className="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
-                                                            <div className={`h-full rounded-full transition-all duration-1000 ${
-                                                                (lec.numberOfAttendees! / (lec.totalStudents || 40)) < 0.5 
-                                                                ? "bg-amber-500" 
+                                                            <div className={`h-full rounded-full transition-all duration-1000 ${(lec.numberOfAttendees! / (lec.totalStudents || 40)) < 0.5
+                                                                ? "bg-amber-500"
                                                                 : "bg-emerald-500"
-                                                            }`} style={{ width: `${Math.min(100, (lec.numberOfAttendees! / (lec.totalStudents || 40)) * 100)}%` }} />
+                                                                }`} style={{ width: `${Math.min(100, (lec.numberOfAttendees! / (lec.totalStudents || 40)) * 100)}%` }} />
                                                         </div>
                                                     </div>
                                                 ) : (
@@ -292,14 +396,13 @@ export default function LecturesPage() {
                                                 )}
                                             </td>
                                             <td className="py-6 px-6 text-center uppercase tracking-widest text-[10px] font-black">
-                                                <div className={`mx-auto w-fit px-3 py-1.5 rounded-lg border transition-all ${
-                                                    lec.status === "Completed" ? "bg-zinc-800/40 border-zinc-800 text-zinc-600" :
+                                                <div className={`mx-auto w-fit px-3 py-1.5 rounded-lg border transition-all ${lec.status === "Completed" ? "bg-zinc-800/40 border-zinc-800 text-zinc-600" :
                                                     "bg-zinc-900 border-zinc-800/50 text-zinc-500"
-                                                }`}>
+                                                    }`}>
                                                     {lec.status}
                                                 </div>
                                             </td>
-                                             <td className="py-6 px-6 text-right">
+                                            <td className="py-6 px-6 text-right">
                                                 <div className="flex items-center justify-end gap-2">
                                                     {lec.status !== "Completed" ? (
                                                         <button onClick={() => {
@@ -352,7 +455,7 @@ export default function LecturesPage() {
                 <div className="fixed inset-0 bg-zinc-950/80 backdrop-blur-xl z-[100] flex items-center justify-center py-10 px-4 sm:px-6 overflow-y-auto animate-in fade-in duration-300">
                     <div className="bg-zinc-900 border border-zinc-800 w-full max-w-lg rounded-[2rem] shadow-[0_64px_128px_-32px_rgba(0,0,0,1)] overflow-hidden animate-in zoom-in-95 duration-500 my-auto"
                         onClick={e => e.stopPropagation()}>
-                        
+
                         <div className="p-8 border-b border-zinc-800/50 bg-gradient-to-br from-zinc-800/10 to-transparent">
                             <div className="flex items-start justify-between">
                                 <div className="space-y-1">
@@ -363,7 +466,7 @@ export default function LecturesPage() {
                                         <h2 className="text-xl font-black text-white tracking-widest uppercase italic">Lecture Report</h2>
                                     </div>
                                     <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest flex items-center gap-1.5 pl-1">
-                                        Lec: <span className="text-zinc-300">#{showReport}</span> <span className="text-zinc-800">/</span> <span className="text-indigo-400 italic line-clamp-1">{lectures.find(l=>l.lectureNumber===showReport)?.courseName}</span>
+                                        Lec: <span className="text-zinc-300">#{showReport}</span> <span className="text-zinc-800">/</span> <span className="text-indigo-400 italic line-clamp-1">{lectures.find(l => l.lectureNumber === showReport)?.courseName}</span>
                                     </p>
                                 </div>
                                 <button onClick={() => { setShowReport(null); resetReportForm(); }}
@@ -395,7 +498,7 @@ export default function LecturesPage() {
                                     </div>
                                 </div>
                             </div>
- 
+
                             <div className="space-y-5">
                                 <div className="space-y-1">
                                     <label className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-0.5">Topics Covered</label>
@@ -412,39 +515,39 @@ export default function LecturesPage() {
                                         </h4>
                                         {parseInt(reportData.numberOfAttendees) > 0 && parseInt(reportData.totalStudents) > 0 && (
                                             <span className="text-[9px] font-black text-amber-500/80 uppercase italic">
-                                                {Math.round((parseInt(reportData.numberOfAttendees)/parseInt(reportData.totalStudents)) * 100)}% Engagement
+                                                {Math.round((parseInt(reportData.numberOfAttendees) / parseInt(reportData.totalStudents)) * 100)}% Engagement
                                             </span>
                                         )}
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="space-y-1.5">
                                             <label className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-0.5">Present</label>
-                                            <input type="number" 
+                                            <input type="number"
                                                 value={reportData.numberOfAttendees}
                                                 onChange={e => setReportData(p => ({ ...p, numberOfAttendees: e.target.value }))}
-                                                className="w-full h-10 px-4 bg-zinc-900 border border-zinc-800 rounded-lg text-sm font-black font-mono text-white focus:border-amber-500/50 outline-none transition-all" 
+                                                className="w-full h-10 px-4 bg-zinc-900 border border-zinc-800 rounded-lg text-sm font-black font-mono text-white focus:border-amber-500/50 outline-none transition-all"
                                                 placeholder="0" />
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-0.5">Total</label>
-                                            <input type="number" 
+                                            <input type="number"
                                                 value={reportData.totalStudents}
                                                 onChange={e => setReportData(p => ({ ...p, totalStudents: e.target.value }))}
-                                                className="w-full h-10 px-4 bg-zinc-900 border border-zinc-800 rounded-lg text-sm font-black font-mono text-white focus:border-amber-500/50 outline-none transition-all" 
+                                                className="w-full h-10 px-4 bg-zinc-900 border border-zinc-800 rounded-lg text-sm font-black font-mono text-white focus:border-amber-500/50 outline-none transition-all"
                                                 placeholder="40" />
                                         </div>
                                     </div>
 
-                                    {parseInt(reportData.numberOfAttendees) > 0 && parseInt(reportData.totalStudents) > 0 && 
-                                     (parseInt(reportData.numberOfAttendees)/parseInt(reportData.totalStudents)) < 0.5 && (
-                                        <div className="pt-2 animate-in slide-in-from-top-2 duration-300">
-                                            <textarea 
-                                                value={reportData.reasonForLessAttendance}
-                                                onChange={e => setReportData(p => ({ ...p, reasonForLessAttendance: e.target.value }))}
-                                                className="w-full px-4 py-3 bg-amber-500/[0.03] border border-amber-500/20 rounded-xl text-xs font-bold text-zinc-300 placeholder:text-zinc-700 outline-none h-20 resize-none" 
-                                                placeholder="Reason for low attendance..." />
-                                        </div>
-                                    )}
+                                    {parseInt(reportData.numberOfAttendees) > 0 && parseInt(reportData.totalStudents) > 0 &&
+                                        (parseInt(reportData.numberOfAttendees) / parseInt(reportData.totalStudents)) < 0.5 && (
+                                            <div className="pt-2 animate-in slide-in-from-top-2 duration-300">
+                                                <textarea
+                                                    value={reportData.reasonForLessAttendance}
+                                                    onChange={e => setReportData(p => ({ ...p, reasonForLessAttendance: e.target.value }))}
+                                                    className="w-full px-4 py-3 bg-amber-500/[0.03] border border-amber-500/20 rounded-xl text-xs font-bold text-zinc-300 placeholder:text-zinc-700 outline-none h-20 resize-none"
+                                                    placeholder="Reason for low attendance..." />
+                                            </div>
+                                        )}
                                 </div>
 
                                 {/* Media Validation Grid */}
@@ -514,7 +617,7 @@ export default function LecturesPage() {
                     </div>
                 </div>
             )}
-            
+
             <style jsx global>{`
                 .custom-scrollbar::-webkit-scrollbar { width: 6px; }
                 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }

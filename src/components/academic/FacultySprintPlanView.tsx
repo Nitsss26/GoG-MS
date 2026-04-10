@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import {
     CalendarDays, Lock, Clock, BookOpen, ArrowLeft, ArrowRight,
-    Check, AlertTriangle, ShieldCheck, CheckCircle2
+    Check, AlertTriangle, ShieldCheck, CheckCircle2, Download
 } from "lucide-react";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { cn } from "@/lib/utils";
 
 interface FacultySprintPlanViewProps {
@@ -23,6 +25,7 @@ function formatDateDMY(dateStr: string) {
 export default function FacultySprintPlanView({ facultyId, facultyName }: FacultySprintPlanViewProps) {
     const [weekOffset, setWeekOffset] = useState(0);
     const [plan, setPlan] = useState<any>(null);
+    const [workSchedules, setWorkSchedules] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [locking, setLocking] = useState(false);
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -62,6 +65,9 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
         try {
             const res = await fetch(`/api/faculty/sprint-plan?facultyId=${facultyId}&weekStartDate=${weekInfo.start}`);
             const data = await res.json();
+            
+            setWorkSchedules(data.schedules || []);
+            
             if (data.plans?.length > 0) {
                 setPlan(data.plans[0]);
             } else {
@@ -97,6 +103,131 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
         }
     };
 
+    const exportToPDF = () => {
+        if (!plan || !plan.entries || plan.entries.length === 0) return;
+        const doc = new jsPDF();
+        const fullWeekRange = `${formatDateDMY(weekInfo.start)} to ${formatDateDMY(weekInfo.end)}`;
+        
+        // Header with brand alignment
+        doc.setFillColor(15, 15, 20); 
+        doc.rect(0, 0, 210, 45, 'F');
+        
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(24);
+        doc.text("GEEKS OF GURUKUL", 15, 22);
+        
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(161, 161, 170);
+        doc.text("OFFICIAL ACADEMIC SPRINT & TEACHING SCHEDULE", 15, 30);
+        
+        doc.setDrawColor(63, 63, 70); 
+        doc.setLineWidth(0.5);
+        doc.line(15, 35, 195, 35);
+
+        // Branding Accents
+        doc.setFillColor(79, 70, 229); 
+        doc.rect(15, 12, 2, 12, 'F');
+
+        // Monitoring Metadata
+        doc.setTextColor(24, 24, 27); 
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.text("MONITORING ARCHIVE", 15, 55);
+        
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(82, 82, 91);
+        doc.text(`Faculty Name:`, 15, 62);
+        doc.text(`Week Range:`, 15, 68);
+        doc.text(`Campus/College:`, 15, 74);
+        doc.text(`Doc Status:`, 115, 62);
+        doc.text(`Exported By:`, 115, 68);
+
+        doc.setTextColor(24, 24, 27);
+        doc.setFont("helvetica", "bold");
+        doc.text(`${facultyName.toUpperCase()}`, 45, 62);
+        doc.text(`${fullWeekRange}`, 45, 68);
+        doc.text(`${plan.college || "Global HQ"}`, 45, 74);
+        doc.text(`${plan.isLocked ? "FINALIZED & LOCKED" : "ACTIVE DRAFT"}`, 145, 62);
+        doc.text(`HOI / Academic Manager`, 145, 68);
+
+        const tableData: any[] = [];
+        weekInfo.dates.forEach(({ day, date }) => {
+            const dayEntries = (plan.entries || []).filter((e: any) => e.date === date || e.day === day)
+                .sort((a: any, b: any) => a.timeStart.localeCompare(b.timeStart));
+            
+            if (dayEntries.length === 0) return;
+
+            // Matching Logic for Location
+            const sch = workSchedules.find(s => 
+                s.date === date || 
+                s.date?.toUpperCase() === day?.toUpperCase() ||
+                s.date?.toLowerCase() === day?.toLowerCase() ||
+                (s.date && date && s.date.replace(/[-\/]/g, '') === date.replace(/[-\/]/g, ''))
+            );
+            const locationStr = sch?.location || "Not Assigned";
+
+            dayEntries.forEach((entry: any, idx: number) => {
+                tableData.push([
+                    idx === 0 ? `${day}\n(${formatDateDMY(date)})` : "",
+                    idx === 0 ? locationStr : "",
+                    `${entry.timeStart} - ${entry.timeStop}`,
+                    entry.subjectName,
+                    entry.topics || "Discussion & Practice",
+                    `${entry.stream} / ${entry.year}`,
+                    entry.section || "—"
+                ]);
+            });
+        });
+
+        autoTable(doc, {
+            startY: 85,
+            head: [['Day / Date', 'Campus Loc', 'Time Slot', 'Subject', 'Topic / Module', 'Stream/Year', 'Sec']],
+            body: tableData,
+            theme: 'grid',
+            headStyles: { 
+                fillColor: [39, 39, 42], 
+                textColor: [255, 255, 255], 
+                fontSize: 8, 
+                fontStyle: 'bold',
+                halign: 'center',
+                valign: 'middle'
+            },
+            columnStyles: {
+                0: { fontStyle: 'bold', cellWidth: 25 },
+                1: { cellWidth: 25, textColor: [16, 185, 129], fontStyle: 'bold' },
+                2: { cellWidth: 28, halign: 'center' },
+                3: { fontStyle: 'bold', cellWidth: 32 },
+                4: { fontStyle: 'italic', cellWidth: 50 },
+                5: { cellWidth: 30, halign: 'center' },
+                6: { cellWidth: 10, halign: 'center' }
+            },
+            styles: { 
+                fontSize: 8, 
+                cellPadding: 4,
+                lineColor: [228, 228, 231],
+                lineWidth: 0.1,
+                valign: 'middle'
+            },
+            alternateRowStyles: {
+                fillColor: [250, 250, 250]
+            },
+            margin: { top: 85 },
+            didDrawPage: (data) => {
+                const str = `Page ${data.pageNumber}`;
+                doc.setFontSize(8);
+                doc.setTextColor(150, 150, 150);
+                const pageSize = doc.internal.pageSize;
+                const pageHeight = pageSize.height ? pageSize.height : pageSize.getHeight();
+                doc.text(str, 15, pageHeight - 10);
+                doc.text("GoG IMS • Academic Performance Monitoring", 135, pageHeight - 10);
+            }
+        });
+
+        doc.save(`SprintPlan_${facultyName}_${weekInfo.start}.pdf`);
+    };
+
     return (
         <div className="space-y-6">
             <div className="bg-zinc-900/60 backdrop-blur-xl border border-zinc-800/80 rounded-3xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -123,6 +254,17 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
                     <button onClick={() => setWeekOffset(prev => prev + 1)}
                         className="p-3 rounded-xl bg-zinc-800/50 hover:bg-zinc-700 text-zinc-400 border border-zinc-700/50 transition-all active:scale-95">
                         <ArrowRight size={16} />
+                    </button>
+                </div>
+
+                <div className="flex items-center gap-3">
+                    <button 
+                        onClick={() => exportToPDF()}
+                        disabled={!plan || loading}
+                        className="px-6 py-3 bg-zinc-100 hover:bg-white text-zinc-950 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-30 inline-flex items-center gap-2"
+                    >
+                        <Download size={14} />
+                        Download Schedule
                     </button>
                 </div>
             </div>

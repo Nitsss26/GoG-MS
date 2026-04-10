@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect, useMemo } from "react";
 import { cn, resolveImageUrl } from "@/lib/utils";
 import { INDIAN_HOLIDAYS_2026, FLAG_CONFIG } from "@/lib/colleges";
-import { calculatePerformance, LEADERBOARD_START_DATE } from "@/lib/performance-utils";
+import { calculatePerformance, LEADERBOARD_START_DATE, getLeaderboardStats } from "@/lib/performance-utils";
 import {
     Calendar, Star, Megaphone, FileText, MessageSquare, Send, X, Clock, AlertTriangle, Users,
     ChevronRight, Gift, Trophy, Receipt, Ticket, Shield, Bot, Cake, Flag, Bell, Eye, ExternalLink, Activity,
@@ -247,34 +247,8 @@ export default function Home() {
 
     const stats = useMemo(() => {
         if (!user || !employees || !performanceStars) return [];
-
-        return performanceStars.map(s => {
-            const emp = employees.find(e => e.id === s.employeeId);
-            if (!emp) return null;
-
-            const blockedEmails = ["ayush@geeksofgurukul.com", "skgupta272829@gmail.com"];
-            if (blockedEmails.includes(emp.email?.toLowerCase())) return null;
-
-            const perf = calculatePerformance(
-                attendanceRecords,
-                additionalResponsibilities,
-                emp.biWeeklyScores || [],
-                s.employeeId,
-                holidays,
-                emp.location
-            );
-
-            return {
-                ...s,
-                emp,
-                calculatedStars: perf.calculatedStars,
-                totalPoints: perf.totalPoints,
-                flagsCount: Object.values(perf.detailedFlags).reduce((a, b) => a + b, 0),
-                flagCounts: perf.flagCounts
-            };
-        }).filter((item): item is NonNullable<typeof item> => item !== null)
-            .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount);
-    }, [employees, performanceStars, attendanceRecords, additionalResponsibilities, user?.id, user?.role, reporteeIds]);
+        return getLeaderboardStats(employees, attendanceRecords, additionalResponsibilities, holidays, performanceStars);
+    }, [employees, performanceStars, attendanceRecords, additionalResponsibilities, user?.id]);
 
 
     if (!user || !mounted) return null;

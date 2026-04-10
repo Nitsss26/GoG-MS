@@ -4,9 +4,12 @@ import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect } from "react";
 import {
     CalendarDays, Plus, Trash2, Lock, Unlock, Save, AlertTriangle,
-    Clock, BookOpen, ArrowLeft, ArrowRight, Check, X, Send, Settings, Edit2, Copy
+    Clock, BookOpen, ArrowLeft, ArrowRight, Check, X, Send, Settings, Edit2, Copy,
+    Download
 } from "lucide-react";
 import Link from "next/link";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { validateSprintEntries, isValidTimeFormat } from "@/lib/time-utils";
 
 interface SprintEntry {
@@ -193,20 +196,20 @@ export default function SprintPlanPage() {
             setLoading(false);
         }
     };
-    
+
     const copyFromPreviousWeek = async () => {
         setCopying(true);
         setMessage(null);
         try {
             const prevStart = new Date(weekInfo.start);
             prevStart.setDate(prevStart.getDate() - 7);
-            const prevStartStr = prevStart.getFullYear() + "-" + 
-                (prevStart.getMonth() + 1).toString().padStart(2, '0') + "-" + 
+            const prevStartStr = prevStart.getFullYear() + "-" +
+                (prevStart.getMonth() + 1).toString().padStart(2, '0') + "-" +
                 prevStart.getDate().toString().padStart(2, '0');
 
             const res = await fetch(`/api/faculty/sprint-plan?facultyId=${user?.id}&weekStartDate=${prevStartStr}`);
             const data = await res.json();
-            
+
             // Note: Updated to handle results correctly based on the API response structure { plans, schedules }
             if (data.plans && data.plans.length > 0) {
                 const prevPlan = data.plans[0];
@@ -333,6 +336,135 @@ export default function SprintPlanPage() {
         }
     };
 
+    const exportToPDF = () => {
+        if (entries.length === 0) {
+            setMessage({ type: "error", text: "No entries to export. Please add slots to your plan." });
+            return;
+        }
+
+        const doc = new jsPDF();
+        const fullWeekRange = `${formatDateDMY(weekInfo.start)} to ${formatDateDMY(weekInfo.end)}`;
+
+        // Header with premium aesthetics
+        doc.setFillColor(15, 15, 20); // Deep dark background
+        doc.rect(0, 0, 210, 45, 'F');
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(24);
+        doc.text("GEEKS OF GURUKUL", 15, 22);
+
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(161, 161, 170); // zinc-400
+        doc.text("OFFICIAL ACADEMIC SPRINT & TEACHING SCHEDULE", 15, 30);
+
+        doc.setDrawColor(63, 63, 70); // zinc-700
+        doc.setLineWidth(0.5);
+        doc.line(15, 35, 195, 35);
+
+        // Branding Accents
+        doc.setFillColor(79, 70, 229); // Indigo-600
+        doc.rect(15, 12, 2, 12, 'F');
+
+        // Faculty Info Section
+        doc.setTextColor(24, 24, 27); // zinc-950
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.text("PLAN METADATA", 15, 55);
+
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(82, 82, 91); // zinc-500
+        doc.text(`Faculty Name:`, 15, 62);
+        doc.text(`Week Range:`, 15, 68);
+        doc.text(`Primary College:`, 15, 74);
+        doc.text(`Doc Status:`, 110, 62);
+        doc.text(`Generated At:`, 110, 68);
+
+        doc.setTextColor(24, 24, 27);
+        doc.setFont("helvetica", "bold");
+        doc.text(`${user?.name?.toUpperCase() || "N/A"}`, 45, 62);
+        doc.text(`${fullWeekRange}`, 45, 68);
+        doc.text(`${plan?.college || "Global HQ"}`, 45, 74);
+        doc.text(`${plan?.isLocked ? "FINALIZED & LOCKED" : "ACTIVE DRAFT"}`, 140, 62);
+        doc.text(`${new Date().toLocaleString()}`, 140, 68);
+
+        const tableData: any[] = [];
+        weekInfo.dates.forEach(({ day, date }) => {
+            const dayEntries = entries.filter(e => e.date === date || e.day === day)
+                .sort((a, b) => a.timeStart.localeCompare(b.timeStart));
+
+            // Find location for this day
+            const sch = workSchedules.find(s =>
+                s.date === date ||
+                s.date?.toUpperCase() === day?.toUpperCase() ||
+                s.date?.toLowerCase() === day?.toLowerCase() ||
+                (s.date && date && s.date.replace(/[-\/]/g, '') === date.replace(/[-\/]/g, ''))
+            );
+            const locationStr = sch?.location || "Not Assigned";
+
+            if (dayEntries.length === 0) return;
+
+            dayEntries.forEach((entry, idx) => {
+                tableData.push([
+                    idx === 0 ? `${day}\n(${formatDateDMY(date)})` : "",
+                    idx === 0 ? locationStr : "",
+                    `${entry.timeStart} - ${entry.timeStop}`,
+                    entry.subjectName,
+                    entry.topics || "Module Discussion",
+                    `${entry.stream}\n(${entry.year})`,
+                    entry.section || "—"
+                ]);
+            });
+        });
+
+        autoTable(doc, {
+            startY: 85,
+            head: [['Day / Date', 'Campus Loc', 'Time Slot', 'Subject', 'Topic / Module', 'Stream / Year', 'Sec']],
+            body: tableData,
+            theme: 'grid',
+            headStyles: {
+                fillColor: [39, 39, 42], // zinc-800
+                textColor: [255, 255, 255],
+                fontSize: 8,
+                fontStyle: 'bold',
+                halign: 'center',
+                valign: 'middle'
+            },
+            columnStyles: {
+                0: { fontStyle: 'bold', cellWidth: 25 },
+                1: { cellWidth: 25, textColor: [16, 185, 129], fontStyle: 'bold' }, // Emerald color for location
+                2: { cellWidth: 28, halign: 'center' },
+                3: { fontStyle: 'bold', cellWidth: 32 },
+                4: { fontStyle: 'italic', cellWidth: 50 },
+                5: { cellWidth: 30, halign: 'center' },
+                6: { cellWidth: 10, halign: 'center' }
+            },
+            styles: {
+                fontSize: 8,
+                cellPadding: 4,
+                lineColor: [228, 228, 231], // zinc-200
+                lineWidth: 0.1,
+                valign: 'middle'
+            },
+            alternateRowStyles: {
+                fillColor: [250, 250, 250]
+            },
+            margin: { top: 85 },
+            didDrawPage: (data) => {
+                const str = `Page ${data.pageNumber}`;
+                doc.setFontSize(8);
+                doc.setTextColor(161, 161, 170);
+                const pageSize = doc.internal.pageSize;
+                const pageHeight = pageSize.height ? pageSize.height : pageSize.getHeight();
+                doc.text(str, 15, pageHeight - 10);
+                doc.text("GoG IMS • Automated Sprint Verification Report", 135, pageHeight - 10);
+            }
+        });
+
+        doc.save(`SprintPlan_${user?.name || 'Faculty'}_${weekInfo.start}.pdf`);
+    };
+
     if (!user || !["FACULTY", "PROFESSOR"].includes(user.role)) {
         return <div className="flex items-center justify-center h-[80vh] text-zinc-400">Access restricted to Faculty/Professors</div>;
     }
@@ -368,6 +500,13 @@ export default function SprintPlanPage() {
                         >
                             <Plus size={14} /> Add Streams
                         </button>
+                        {/* <button
+                            onClick={exportToPDF}
+                            disabled={entries.length === 0}
+                            className="flex items-center gap-2 px-4 py-2 bg-zinc-100 hover:bg-white text-zinc-950 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50"
+                        >
+                            <Download size={14} /> Download Plan
+                        </button> */}
                         {!plan?.isLocked && (
                             <button
                                 onClick={copyFromPreviousWeek}
@@ -443,13 +582,13 @@ export default function SprintPlanPage() {
                                         {/* Daily Location Tag — Positioned to the left of Add Slot button */}
                                         {(() => {
                                             // Robust matching: Check date, then uppercase/lowercase weekday strings
-                                            const sch = workSchedules.find(s => 
-                                                s.date === date || 
+                                            const sch = workSchedules.find(s =>
+                                                s.date === date ||
                                                 s.date?.toUpperCase() === day?.toUpperCase() ||
                                                 s.date?.toLowerCase() === day?.toLowerCase() ||
                                                 (s.date && date && s.date.replace(/[-\/]/g, '') === date.replace(/[-\/]/g, ''))
                                             );
-                                            
+
                                             if (!sch) return (
                                                 <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800/20 border border-zinc-800/50 rounded-lg opacity-40">
                                                     <span className="w-1.5 h-1.5 rounded-full bg-zinc-600" />

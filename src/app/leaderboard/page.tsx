@@ -1,59 +1,29 @@
 "use client";
 import { useAuth } from "@/context/AuthContext";
 import { useMemo, useState } from "react";
-import { Trophy, Star, Flag, Award, ChevronLeft, Users, Shield, X, TrendingUp, Plus } from "lucide-react";
+import { Trophy, Star, Flag, Award, ChevronLeft, Users, Shield, X, TrendingUp, Plus, History, Calendar, CheckCircle2, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { resolveImageUrl } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { calculatePerformance, LEADERBOARD_START_DATE } from "@/lib/performance-utils";
+import { calculatePerformance, LEADERBOARD_START_DATE, getLeaderboardStats } from "@/lib/performance-utils";
 
 export default function LeaderboardPage() {
     const { user, employees, performanceStars, attendanceRecords, additionalResponsibilities, holidays, getReportees } = useAuth();
 
     const [showRules, setShowRules] = useState(false);
+    const [selectedEmpForAudit, setSelectedEmpForAudit] = useState<any>(null);
     const [selectedEmpForResp, setSelectedEmpForResp] = useState<any>(null);
     const [respDescription, setRespDescription] = useState("");
     const [respPoints, setRespPoints] = useState<number>(10);
     const [isSubmittingResp, setIsSubmittingResp] = useState(false);
     const { addAdditionalResponsibility } = useAuth();
-
     const isADorFounder = user?.role === "AD" || user?.role === "FOUNDER";
 
     const stats = useMemo(() => {
         if (!employees || !performanceStars || !user) return [];
-
-        const START_DATE = LEADERBOARD_START_DATE;
-
-        return performanceStars
-            .map(s => {
-                const emp = employees.find(e => e.id === s.employeeId);
-                if (!emp) return null;
-
-                const blockedEmails = ["ayush.chouhan@geeksofgurukul.com", "sachin@geeksofgurukul.com", "ayush@geeksofgurukul.com", "skgupta272829@gmail.com"];
-                if (blockedEmails.includes(emp.email?.toLowerCase())) return null;
-
-                const perf = calculatePerformance(
-                    attendanceRecords,
-                    additionalResponsibilities,
-                    emp.biWeeklyScores || [],
-                    s.employeeId,
-                    holidays,
-                    emp.location
-                );
-
-                return {
-                    ...s,
-                    emp,
-                    calculatedStars: perf.calculatedStars,
-                    flagsCount: Object.values(perf.detailedFlags).reduce((a, b) => a + b, 0),
-                    responsibilities: perf.approvedResponsibilities,
-                    totalPoints: perf.totalPoints,
-                    flagCounts: perf.flagCounts
-                };
-            }).filter((item): item is NonNullable<typeof item> => item !== null)
-            .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount);
-    }, [employees, performanceStars, attendanceRecords, additionalResponsibilities]);
+        return getLeaderboardStats(employees, attendanceRecords, additionalResponsibilities, holidays, performanceStars);
+    }, [employees, performanceStars, attendanceRecords, additionalResponsibilities, user]);
 
     const foundersRankings = useMemo(() => {
         return stats
@@ -63,7 +33,7 @@ export default function LeaderboardPage() {
 
     const omRankings = useMemo(() => {
         return stats
-            .filter(s => s.emp?.role === "OM")
+            .filter(s => s.emp?.role?.toUpperCase() === "OM")
             .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount)
             .slice(0, 16);
     }, [stats]);
@@ -129,7 +99,7 @@ export default function LeaderboardPage() {
 
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
                             {foundersRankings.map((s, i) => (
-                                <LeaderboardBox key={s.employeeId || `founder-${i}`} data={s} rank={i + 1} type="FOUNDER" onRespClick={() => setSelectedEmpForResp(s)} canAdd={isADorFounder} />
+                                <LeaderboardBox key={s.employeeId || `founder-${i}`} data={s} rank={i + 1} type="FOUNDER" onRespClick={() => setSelectedEmpForResp(s)} onAuditClick={() => setSelectedEmpForAudit(s)} canAdd={isADorFounder} />
                             ))}
                         </div>
                     </section>
@@ -149,7 +119,7 @@ export default function LeaderboardPage() {
 
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
                         {omRankings.map((s, i) => (
-                            <LeaderboardBox key={s.employeeId || `om-${i}`} data={s} rank={i + 1} type="OM" onRespClick={() => setSelectedEmpForResp(s)} canAdd={isADorFounder} />
+                            <LeaderboardBox key={s.employeeId || `om-${i}`} data={s} rank={i + 1} type="OM" onRespClick={() => setSelectedEmpForResp(s)} onAuditClick={() => setSelectedEmpForAudit(s)} canAdd={isADorFounder} />
                         ))}
                     </div>
                 </section>
@@ -168,7 +138,7 @@ export default function LeaderboardPage() {
 
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
                         {facultyRankings.map((s, i) => (
-                            <LeaderboardBox key={s.employeeId || `faculty-${i}`} data={s} rank={i + 1} type="FACULTY" onRespClick={() => setSelectedEmpForResp(s)} canAdd={isADorFounder} />
+                            <LeaderboardBox key={s.employeeId || `faculty-${i}`} data={s} rank={i + 1} type="FACULTY" onRespClick={() => setSelectedEmpForResp(s)} onAuditClick={() => setSelectedEmpForAudit(s)} canAdd={isADorFounder} />
                         ))}
                     </div>
                 </section>
@@ -350,6 +320,126 @@ export default function LeaderboardPage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            {/* Point History Audit Modal */}
+            <AnimatePresence>
+                {selectedEmpForAudit && (
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setSelectedEmpForAudit(null)}
+                            className="absolute inset-0 bg-black/90 backdrop-blur-md"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 30 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 30 }}
+                            className="relative w-full max-w-2xl bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+                        >
+                            {/* Decorative Header */}
+                            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-primary via-blue-500 to-primary" />
+                            
+                            {/* User Profile Header */}
+                            <div className="p-8 pb-4 border-b border-white/5 flex items-center justify-between">
+                                <div className="flex items-center gap-5">
+                                    <div className="w-16 h-16 rounded-2xl border border-white/10 overflow-hidden bg-white/5">
+                                        <img src={resolveImageUrl(selectedEmpForAudit.emp.photoUrl || selectedEmpForAudit.emp.passport_size_photo)} alt="" className="w-full h-full object-cover" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-2xl font-black text-white tracking-tight">{selectedEmpForAudit.emp.name}</h3>
+                                        <p className="text-[10px] text-zinc-500 font-black uppercase tracking-[0.2em]">{selectedEmpForAudit.emp.role} &middot; {selectedEmpForAudit.emp.location}</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setSelectedEmpForAudit(null)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            {/* Summary Stats */}
+                            <div className="px-8 py-6 bg-white/[0.02] grid grid-cols-2 gap-4">
+                                <div className="p-4 rounded-2xl bg-primary/5 border border-primary/10">
+                                    <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1">Current Points</p>
+                                    <p className="text-3xl font-black text-primary italic leading-none">{selectedEmpForAudit.totalPoints.toFixed(0)}</p>
+                                </div>
+                                <div className="p-4 rounded-2xl bg-zinc-800/20 border border-white/5">
+                                    <p className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1">Current Stars</p>
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-xl font-black text-white italic leading-none">{selectedEmpForAudit.calculatedStars.toFixed(1)}</p>
+                                        <StarRating stars={selectedEmpForAudit.calculatedStars} />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Audit Timeline */}
+                            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-6">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <History size={16} className="text-primary" />
+                                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Point History Ledger</h4>
+                                </div>
+
+                                {selectedEmpForAudit.auditTrail.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {selectedEmpForAudit.auditTrail.map((entry: any, idx: number) => (
+                                            <motion.div 
+                                                initial={{ opacity: 0, x: -10 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                transition={{ delay: idx * 0.05 }}
+                                                key={idx} 
+                                                className="group relative pl-6 border-l border-white/5 hover:border-primary/20 transition-all py-1"
+                                            >
+                                                {/* Timeline Dot */}
+                                                <div className={cn(
+                                                    "absolute left-[-4.5px] top-3 w-2 h-2 rounded-full border border-black",
+                                                    entry.points > 0 ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+                                                )} />
+                                                
+                                                <div className="flex items-center justify-between gap-4 bg-white/[0.03] border border-white/5 p-4 rounded-2xl group-hover:bg-white/[0.05] transition-colors">
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <Calendar size={10} className="text-zinc-600" />
+                                                            <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">
+                                                                {new Date(entry.date).toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs font-bold text-white leading-tight">{entry.reason}</p>
+                                                        <span className={cn(
+                                                            "text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md",
+                                                            entry.type === 'Penalty' ? "text-red-400 bg-red-400/10" : 
+                                                            entry.type === 'Holiday' ? "text-blue-400 bg-blue-400/10" :
+                                                            "text-emerald-400 bg-emerald-400/10"
+                                                        )}>
+                                                            {entry.type}
+                                                        </span>
+                                                    </div>
+                                                    <div className={cn(
+                                                        "text-lg font-black italic",
+                                                        entry.points > 0 ? "text-emerald-400" : "text-red-400"
+                                                    )}>
+                                                        {entry.points > 0 ? `+${entry.points}` : entry.points}
+                                                    </div>
+                                                </div>
+                                            </motion.div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center py-10 opacity-30">
+                                        <AlertCircle size={40} className="mb-4" />
+                                        <p className="text-[10px] font-black uppercase tracking-widest">No history recorded yet</p>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div className="p-6 border-t border-white/5 bg-[#050505]">
+                                <button onClick={() => setSelectedEmpForAudit(null)} className="w-full py-4 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-[10px] font-black uppercase tracking-widest transition-all text-white">
+                                    Close Performance Ledger
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }
@@ -375,7 +465,7 @@ function StarRating({ stars }: { stars: number }) {
     );
 }
 
-function LeaderboardBox({ data, rank, type, onRespClick, canAdd }: { data: any; rank: number; type: "OM" | "FACULTY" | "FOUNDER" | "HOI"; onRespClick: () => void; canAdd: boolean }) {
+function LeaderboardBox({ data, rank, type, onRespClick, onAuditClick, canAdd }: { data: any; rank: number; type: "OM" | "FACULTY" | "FOUNDER" | "HOI"; onRespClick: () => void; onAuditClick: () => void; canAdd: boolean }) {
     const medal = rank === 1 && type !== "FOUNDER" ? "🥇" : rank === 2 && type !== "FOUNDER" ? "🥈" : rank === 3 && type !== "FOUNDER" ? "🥉" : null;
     const isTop3 = (rank <= 3) && type !== "FOUNDER";
 
@@ -384,9 +474,9 @@ function LeaderboardBox({ data, rank, type, onRespClick, canAdd }: { data: any; 
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: rank * 0.05 }}
-            whileHover={{ y: -8, transition: { duration: 0.2 } }}
+            onClick={onAuditClick}
             className={cn(
-                "group relative w-full h-auto min-h-[14rem] rounded-[1.8rem] md:rounded-[2.2rem] border transition-all duration-500 flex flex-col items-center p-4 sm:p-5 overflow-visible",
+                "group relative w-full h-auto min-h-[14rem] rounded-[1.8rem] md:rounded-[2.2rem] border transition-all duration-500 flex flex-col items-center p-4 sm:p-5 overflow-visible cursor-pointer",
                 isTop3 || type === "FOUNDER"
                     ? "bg-gradient-to-b from-primary/10 to-transparent border-primary/30 shadow-[0_0_40px_-15px_rgba(16,185,129,0.2)]"
                     : "bg-[#111] border-white/[0.05] hover:border-primary/30"

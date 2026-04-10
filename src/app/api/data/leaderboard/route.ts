@@ -3,7 +3,7 @@ import dbConnect from "@/lib/mongodb";
 import mongoose from "mongoose";
 
 // We can just use raw mongoose query if models aren't perfectly aligned, but we have schemas.
-import { Employee, Attendance, PerformanceStar, AdditionalResponsibility } from "@/models/Schemas";
+import { Employee, Attendance, PerformanceStar, AdditionalResponsibility, Holiday } from "@/models/Schemas";
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +19,8 @@ export async function GET() {
         const attendanceRecords = await Attendance.find({}).lean();
 
         const additionalResponsibilities = await AdditionalResponsibility.find({ status: "Approved" }).lean();
+        
+        const holidays = await Holiday.find({}).lean();
 
         // Return the required mapping
         return NextResponse.json({
@@ -27,7 +29,8 @@ export async function GET() {
                 employees,
                 performanceStars,
                 attendanceRecords,
-                additionalResponsibilities
+                additionalResponsibilities,
+                holidays
             }
         });
     } catch (error: any) {

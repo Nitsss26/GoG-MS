@@ -13,8 +13,8 @@ export default function OnboardingModal() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitted, setSubmitted] = useState(false);
 
-    // If user is already onboarded or not logged in, don't show
-    if (!user || user.isOnboarded) return null;
+    // If user is already onboarded or not logged in, or form is already submitted/pending verification, don't show
+    if (!user || user.isOnboarded || user.onboardingStatus === "Verification Pending" || user.onboardingStatus === "Approved") return null;
 
     const [form, setForm] = useState({
         full_name: user.name || "",

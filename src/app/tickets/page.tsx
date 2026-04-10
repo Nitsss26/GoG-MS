@@ -35,6 +35,7 @@ export default function TicketsPage() {
     const [adRemarksModal, setAdRemarksModal] = useState<{ show: boolean, ticketId: string, ticketSubject: string } | null>(null);
     const [adRemarksText, setAdRemarksText] = useState("");
     const [isSavingRemarks, setIsSavingRemarks] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
 
     if (!user) return null;
@@ -60,9 +61,23 @@ export default function TicketsPage() {
         // Proof is mandatory for ALL tickets now
         if (proofUrls.length === 0) return;
 
-        if (ticketForm.targetCategory === "Attendance Override Request") {
-            const targets = ticketForm.targetEmployeeIds.length > 0 ? ticketForm.targetEmployeeIds : [user.id];
-            for (const targetId of targets) {
+        setIsSubmitting(true);
+        try {
+            if (ticketForm.targetCategory === "Attendance Override Request") {
+                const targets = ticketForm.targetEmployeeIds.length > 0 ? ticketForm.targetEmployeeIds : [user.id];
+                for (const targetId of targets) {
+                    await raiseTicket(
+                        ticketForm.targetCategory as any,
+                        ticketForm.subject,
+                        ticketForm.content,
+                        undefined,
+                        undefined,
+                        proofUrls,
+                        targetId,
+                        ticketForm.targetDate
+                    );
+                }
+            } else {
                 await raiseTicket(
                     ticketForm.targetCategory as any,
                     ticketForm.subject,
@@ -70,26 +85,19 @@ export default function TicketsPage() {
                     undefined,
                     undefined,
                     proofUrls,
-                    targetId,
-                    ticketForm.targetDate
+                    undefined,
+                    undefined
                 );
             }
-        } else {
-            await raiseTicket(
-                ticketForm.targetCategory as any,
-                ticketForm.subject,
-                ticketForm.content,
-                undefined,
-                undefined,
-                proofUrls,
-                undefined,
-                undefined
-            );
-        }
 
-        setShowNewTicketModal(false);
-        setTicketForm({ targetCategory: "HR Desk", subject: "", content: "", targetEmployeeIds: [], targetDate: new Date().toISOString().split('T')[0] });
-        setProofUrls([]);
+            setShowNewTicketModal(false);
+            setTicketForm({ targetCategory: "HR Desk", subject: "", content: "", targetEmployeeIds: [], targetDate: new Date().toISOString().split('T')[0] });
+            setProofUrls([]);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const handleProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -453,10 +461,15 @@ export default function TicketsPage() {
                                 <button type="button" onClick={() => setShowNewTicketModal(false)} className="btn-outline text-xs py-2 px-6">Cancel</button>
                                 <button
                                     type="submit"
-                                    disabled={proofUrls.length === 0}
-                                    className="btn-primary text-xs py-2 px-6 disabled:opacity-50 disabled:cursor-not-allowed group"
+                                    disabled={proofUrls.length === 0 || isSubmitting}
+                                    className="btn-primary text-xs py-2 px-6 disabled:opacity-50 disabled:cursor-not-allowed group min-w-[140px]"
                                 >
-                                    Submit Ticket <ArrowRight size={14} className="inline ml-1 group-hover:translate-x-1 transition-transform" />
+                                    {isSubmitting ? (
+                                        <Loader2 size={14} className="animate-spin inline mr-2" />
+                                    ) : (
+                                        "Submit Ticket"
+                                    )}
+                                    {!isSubmitting && <ArrowRight size={14} className="inline ml-1 group-hover:translate-x-1 transition-transform" />}
                                 </button>
                             </div>
                         </form>

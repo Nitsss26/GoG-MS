@@ -148,7 +148,7 @@ export async function POST(req: Request) {
         }
 
         const report = await LectureReport.findOneAndUpdate(
-            { facultyId, date: today, lectureNumber: lecNum },
+            { facultyId, date: today, lectureNumber: lecNum, sprintPlanId: sprintPlanId || "" },
             {
                 $set: {
                     facultyName: faculty.name,

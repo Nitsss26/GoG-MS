@@ -39,6 +39,7 @@ export interface PortalNotification {
 
 export interface User {
     id: string; name: string; email: string; role: Role; isOnboarded: boolean;
+    onboardingStatus?: string;
     photoUrl?: string;
     location?: string;
 }
@@ -1608,6 +1609,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
         };
 
+        const syncLeaderboardData = async () => {
+            try {
+                const res = await fetch("/api/data/leaderboard");
+                const result = await res.json();
+                if (result.success && result.data) {
+                    const { attendanceRecords: globalAttendance, additionalResponsibilities: globalResp, holidays: globalHolidays, performanceStars: globalStars, employees: latestEmployees } = result.data;
+                    
+                    if (Array.isArray(globalAttendance)) setAttendanceRecords(globalAttendance);
+                    if (Array.isArray(globalResp)) setAdditionalResponsibilities(globalResp);
+                    if (Array.isArray(globalHolidays)) setHolidays(globalHolidays);
+                    if (Array.isArray(globalStars)) setPerformanceStars(globalStars);
+                    
+                    // Also merge biWeeklyScores from latestEmployees into current employees state
+                    if (Array.isArray(latestEmployees)) {
+                        setEmployees(prev => {
+                            const updated = [...prev];
+                            latestEmployees.forEach(le => {
+                                const idx = updated.findIndex(e => e.id === le.id);
+                                if (idx !== -1) {
+                                    updated[idx] = { ...updated[idx], biWeeklyScores: le.biWeeklyScores || [] };
+                                }
+                            });
+                            return updated;
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error("Global leaderboard sync failed:", err);
+            }
+        };
+
         const fetchData = async () => {
             if (!user) return;
             try {
@@ -1630,6 +1662,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const nRes = await fetch("/api/notices");
                 const nData = await nRes.json();
                 if (Array.isArray(nData)) setNotices(nData);
+
+                // Sync global leaderboard data for everyone
+                syncLeaderboardData();
             } catch (err) {
                 console.error("Failed to fetch dashboard data:", err);
             }

@@ -87,8 +87,8 @@ export default function AttendancePage() {
     const employeesToShow = useMemo(() => {
         if (!user) return [];
         let list = isHRorFounder
-            ? employees.filter((e: Employee) => !["CEO", "CTO", "COO"].includes(e.designation || "") && e.role !== "FOUNDER")
-            : reportees;
+            ? employees.filter((e: Employee) => !["CEO", "CTO", "COO"].includes(e.designation || "") && e.role !== "FOUNDER" && e.status !== "Resigned")
+            : reportees.filter((e: Employee) => e.status !== "Resigned");
 
         // Fix: Always include self in the list
         if (!list.find((e: Employee) => e.id === user.id)) {
