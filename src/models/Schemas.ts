@@ -402,6 +402,7 @@ const LectureReportSchema = new Schema({
     },
     keywords: [{ type: String }],
     status: { type: String, default: "Scheduled", enum: ["Scheduled", "In Progress", "Completed"] },
+    auditStatus: { type: String, default: "Pending", enum: ["Pending", "Approved", "Flagged"] },
     warnings: [{ type: String }]
 }, { timestamps: true });
 

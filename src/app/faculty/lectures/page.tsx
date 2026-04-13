@@ -25,14 +25,20 @@ interface Lecture {
     timeStop: string;
     scheduledDuration: number;
     status: string;
-    classStartTime?: string;
-    classEndTime?: string;
-    actualDurationMinutes?: number;
-    numberOfAttendees?: number;
-    totalStudents?: number;
-    recordingUrl?: string;
-    classPhotoUrl?: string;
-    warnings?: string[];
+    date: string;
+    report?: {
+        _id?: string;
+        numberOfAttendees?: number;
+        totalStudents?: number;
+        recordingUrl?: string;
+        classPhotoUrl?: string;
+        warnings?: string[];
+        summary?: string;
+        transcription?: string;
+        keywords?: string;
+        aiAnalysisAt?: string;
+        status?: string;
+    } | null;
 }
 
 export default function LecturesPage() {
@@ -59,18 +65,20 @@ export default function LecturesPage() {
     const [uploading, setUploading] = useState(false);
     const [photoCoords, setPhotoCoords] = useState<{ lat: number; lng: number } | null>(null);
 
-    // Date range for export
+    // Date state for schedule and export
+    const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
     const [startDate, setStartDate] = useState(format(new Date(new Date().setDate(new Date().getDate() - 30)), "yyyy-MM-dd"));
     const [endDate, setEndDate] = useState(format(new Date(), "yyyy-MM-dd"));
     const [exportLoading, setExportLoading] = useState(false);
 
     useEffect(() => {
         if (user?.id) fetchLectures();
-    }, [user]);
+    }, [user, selectedDate]);
 
     const fetchLectures = async () => {
         try {
-            const res = await fetch(`/api/faculty/lectures?facultyId=${user?.id}`);
+            setLoading(true);
+            const res = await fetch(`/api/faculty/lectures?facultyId=${user?.id}&date=${selectedDate}`);
             const data = await res.json();
             if (data.lectures) {
                 setLectures(data.lectures);
@@ -117,6 +125,7 @@ export default function LecturesPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     facultyId: user?.id,
+                    date: selectedDate,
                     lectureNumber: lec.lectureNumber,
                     courseName: reportData.courseName,
                     topicsCovered: reportData.topicsCovered,
@@ -233,7 +242,18 @@ export default function LecturesPage() {
                             </div>
                             <div>
                                 <h1 className="text-4xl font-black text-white tracking-tighter">My Lectures</h1>
-                                <p className="text-zinc-500 text-sm font-bold uppercase tracking-[0.2em] italic">{weekday} | {todayLabel}</p>
+                                <div className="flex items-center gap-4 mt-2">
+                                    <p className="text-zinc-500 text-sm font-bold uppercase tracking-[0.2em] italic">{weekday}</p>
+                                    <div className="flex items-center gap-2 bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20">
+                                        <Calendar size={12} className="text-emerald-400" />
+                                        <input 
+                                            type="date" 
+                                            value={selectedDate}
+                                            onChange={(e) => setSelectedDate(e.target.value)}
+                                            className="bg-transparent text-[10px] font-black text-emerald-400 uppercase tracking-widest outline-none cursor-pointer"
+                                        />
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -379,13 +399,13 @@ export default function LecturesPage() {
                                                     <div className="flex flex-col gap-2 w-32">
                                                         <div className="flex items-center justify-between">
                                                             <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-tighter">Attendees</span>
-                                                            <span className="text-sm font-black text-white tabular-nums">{lec.numberOfAttendees} <span className="text-zinc-700 font-bold">/</span> {lec.totalStudents || "40"}</span>
+                                                            <span className="text-sm font-black text-white tabular-nums">{lec.report?.numberOfAttendees} <span className="text-zinc-700 font-bold">/</span> {lec.report?.totalStudents || "40"}</span>
                                                         </div>
                                                         <div className="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
-                                                            <div className={`h-full rounded-full transition-all duration-1000 ${(lec.numberOfAttendees! / (lec.totalStudents || 40)) < 0.5
+                                                            <div className={`h-full rounded-full transition-all duration-1000 ${(lec.report?.numberOfAttendees! / (lec.report?.totalStudents || 40)) < 0.5
                                                                 ? "bg-amber-500"
                                                                 : "bg-emerald-500"
-                                                                }`} style={{ width: `${Math.min(100, (lec.numberOfAttendees! / (lec.totalStudents || 40)) * 100)}%` }} />
+                                                                }`} style={{ width: `${Math.min(100, (lec.report?.numberOfAttendees! / (lec.report?.totalStudents || 40)) * 100)}%` }} />
                                                         </div>
                                                     </div>
                                                 ) : (
@@ -411,8 +431,8 @@ export default function LecturesPage() {
                                                                 courseName: lec.courseName,
                                                                 topicsCovered: lec.topicsCovered,
                                                                 semester: lec.semester || "",
-                                                                numberOfAttendees: lec.numberOfAttendees?.toString() || "",
-                                                                totalStudents: lec.totalStudents?.toString() || "40",
+                                                                numberOfAttendees: lec.report?.numberOfAttendees?.toString() || "",
+                                                                totalStudents: lec.report?.totalStudents?.toString() || "40",
                                                                 issuesFaced: "",
                                                                 reasonForLessAttendance: ""
                                                             });
@@ -428,8 +448,8 @@ export default function LecturesPage() {
                                                                 courseName: lec.courseName,
                                                                 topicsCovered: lec.topicsCovered,
                                                                 semester: lec.semester || "",
-                                                                numberOfAttendees: lec.numberOfAttendees?.toString() || "",
-                                                                totalStudents: lec.totalStudents?.toString() || "",
+                                                                numberOfAttendees: lec.report?.numberOfAttendees?.toString() || "",
+                                                                totalStudents: lec.report?.totalStudents?.toString() || "",
                                                                 issuesFaced: "",
                                                                 reasonForLessAttendance: ""
                                                             });

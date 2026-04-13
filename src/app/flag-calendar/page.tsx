@@ -170,7 +170,7 @@ export default function FlagCalendarPage() {
 
     const getFlags = (d: string) => {
         const rec = records.find(r => r.date === d);
-        let activeFlags = rec ? Object.entries(rec.flags).filter(([_, v]) => v).map(([k]) => k) : [];
+        let activeFlags = rec ? Object.entries(rec.flags || {}).filter(([_, v]) => v).map(([k]) => k) : [];
 
         const dateObj = new Date(d);
         const isSunday = dateObj.getDay() === 0;
@@ -692,7 +692,7 @@ export default function FlagCalendarPage() {
                             }
 
                             // Full attendance record
-                            const recFlags = Object.entries(rec!.flags).filter(([_, v]) => v).map(([k]) => k);
+                            const recFlags = Object.entries(rec!.flags || {}).filter(([_, v]) => v).map(([k]) => k);
                             return (
                                 <div className="space-y-4">
                                     {/* Clock Data Cards */}

@@ -35,20 +35,34 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
         const istStr = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
         const ist = new Date(istStr);
         const dayOfWeek = ist.getDay();
-        const daysUntilMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 6 ? 2 : (8 - dayOfWeek));
-        const nextMonday = new Date(ist);
-        nextMonday.setDate(ist.getDate() + daysUntilMonday + (offset * 7));
+
+        // Find current week's Monday (Associated Monday for Sun-Sat week)
+        const diffToCurrentMon = dayOfWeek === 0 ? 1 : (1 - dayOfWeek);
+        const mon = new Date(ist);
+        mon.setDate(ist.getDate() + diffToCurrentMon + (offset * 7));
+
+        const formatDate = (d: Date) => d.getFullYear() + "-" +
+            (d.getMonth() + 1).toString().padStart(2, '0') + "-" +
+            d.getDate().toString().padStart(2, '0');
 
         const dates: { day: string; date: string }[] = [];
         for (let i = 0; i < 6; i++) {
-            const d = new Date(nextMonday);
-            d.setDate(nextMonday.getDate() + i);
-            const dateStr = d.getFullYear() + "-" +
-                (d.getMonth() + 1).toString().padStart(2, '0') + "-" +
-                d.getDate().toString().padStart(2, '0');
-            dates.push({ day: DAYS[i], date: dateStr });
+            const d = new Date(mon);
+            d.setDate(mon.getDate() + i);
+            dates.push({ day: DAYS[i], date: formatDate(d) });
         }
-        return { start: dates[0].date, end: dates[5].date, dates };
+
+        const sun = new Date(mon);
+        sun.setDate(mon.getDate() - 1);
+        const sat = new Date(mon);
+        sat.setDate(mon.getDate() + 5);
+
+        return {
+            start: dates[0].date,
+            end: dates[5].date,
+            dates,
+            displayRange: `${formatDateDMY(formatDate(sun))} to ${formatDateDMY(formatDate(sat))}`
+        };
     };
 
     const weekInfo = getWeekDates(weekOffset);
@@ -65,9 +79,9 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
         try {
             const res = await fetch(`/api/faculty/sprint-plan?facultyId=${facultyId}&weekStartDate=${weekInfo.start}`);
             const data = await res.json();
-            
+
             setWorkSchedules(data.schedules || []);
-            
+
             if (data.plans?.length > 0) {
                 setPlan(data.plans[0]);
             } else {
@@ -106,36 +120,36 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
     const exportToPDF = () => {
         if (!plan || !plan.entries || plan.entries.length === 0) return;
         const doc = new jsPDF();
-        const fullWeekRange = `${formatDateDMY(weekInfo.start)} to ${formatDateDMY(weekInfo.end)}`;
-        
+        const fullWeekRange = weekInfo.displayRange;
+
         // Header with brand alignment
-        doc.setFillColor(15, 15, 20); 
+        doc.setFillColor(15, 15, 20);
         doc.rect(0, 0, 210, 45, 'F');
-        
+
         doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(24);
         doc.text("GEEKS OF GURUKUL", 15, 22);
-        
+
         doc.setFontSize(9);
         doc.setFont("helvetica", "normal");
         doc.setTextColor(161, 161, 170);
         doc.text("OFFICIAL ACADEMIC SPRINT & TEACHING SCHEDULE", 15, 30);
-        
-        doc.setDrawColor(63, 63, 70); 
+
+        doc.setDrawColor(63, 63, 70);
         doc.setLineWidth(0.5);
         doc.line(15, 35, 195, 35);
 
         // Branding Accents
-        doc.setFillColor(79, 70, 229); 
+        doc.setFillColor(79, 70, 229);
         doc.rect(15, 12, 2, 12, 'F');
 
         // Monitoring Metadata
-        doc.setTextColor(24, 24, 27); 
+        doc.setTextColor(24, 24, 27);
         doc.setFontSize(10);
         doc.setFont("helvetica", "bold");
         doc.text("MONITORING ARCHIVE", 15, 55);
-        
+
         doc.setFont("helvetica", "normal");
         doc.setTextColor(82, 82, 91);
         doc.text(`Faculty Name:`, 15, 62);
@@ -156,12 +170,12 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
         weekInfo.dates.forEach(({ day, date }) => {
             const dayEntries = (plan.entries || []).filter((e: any) => e.date === date || e.day === day)
                 .sort((a: any, b: any) => a.timeStart.localeCompare(b.timeStart));
-            
+
             if (dayEntries.length === 0) return;
 
             // Matching Logic for Location
-            const sch = workSchedules.find(s => 
-                s.date === date || 
+            const sch = workSchedules.find(s =>
+                s.date === date ||
                 s.date?.toUpperCase() === day?.toUpperCase() ||
                 s.date?.toLowerCase() === day?.toLowerCase() ||
                 (s.date && date && s.date.replace(/[-\/]/g, '') === date.replace(/[-\/]/g, ''))
@@ -186,10 +200,10 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
             head: [['Day / Date', 'Campus Loc', 'Time Slot', 'Subject', 'Topic / Module', 'Stream/Year', 'Sec']],
             body: tableData,
             theme: 'grid',
-            headStyles: { 
-                fillColor: [39, 39, 42], 
-                textColor: [255, 255, 255], 
-                fontSize: 8, 
+            headStyles: {
+                fillColor: [39, 39, 42],
+                textColor: [255, 255, 255],
+                fontSize: 8,
                 fontStyle: 'bold',
                 halign: 'center',
                 valign: 'middle'
@@ -203,8 +217,8 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
                 5: { cellWidth: 30, halign: 'center' },
                 6: { cellWidth: 10, halign: 'center' }
             },
-            styles: { 
-                fontSize: 8, 
+            styles: {
+                fontSize: 8,
                 cellPadding: 4,
                 lineColor: [228, 228, 231],
                 lineWidth: 0.1,
@@ -248,7 +262,7 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
                     </button>
                     <div className="px-5 py-3 bg-zinc-800/80 border border-zinc-700/50 rounded-xl">
                         <span className="text-xs font-black text-white tabular-nums tracking-widest uppercase">
-                            {formatDateDMY(weekInfo.start)} <span className="text-zinc-600 font-bold mx-2">/</span> {formatDateDMY(weekInfo.end)}
+                            {weekInfo.displayRange}
                         </span>
                     </div>
                     <button onClick={() => setWeekOffset(prev => prev + 1)}
@@ -257,7 +271,7 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
                     </button>
                 </div>
 
-                <div className="flex items-center gap-3">
+                {/* <div className="flex items-center gap-3">
                     <button 
                         onClick={() => exportToPDF()}
                         disabled={!plan || loading}
@@ -266,7 +280,7 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
                         <Download size={14} />
                         Download Schedule
                     </button>
-                </div>
+                </div> */}
             </div>
 
             {message && (
@@ -323,7 +337,7 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
                                     <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">Plan is active but not yet finalized at the institute level.</p>
                                 </div>
                             </div>
-                            <button 
+                            <button
                                 onClick={lockPlan}
                                 disabled={locking}
                                 className="relative z-10 px-8 py-3 bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50"
@@ -348,19 +362,19 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
                                 ) : (
                                     <div className="divide-y divide-zinc-800/50">
                                         {dayEntries.map((entry: any, idx: number) => (
-                                            <div key={idx} className="px-5 py-4 grid grid-cols-12 gap-4 items-center">
-                                                <div className="col-span-2 flex items-center gap-2">
+                                            <div key={idx} className="px-5 py-4 flex flex-col md:grid md:grid-cols-12 gap-4 items-start md:items-center">
+                                                <div className="md:col-span-2 flex items-center gap-2">
                                                     <Clock size={12} className="text-indigo-400" />
                                                     <span className="text-[10px] font-black text-white tabular-nums">{entry.timeStart} – {entry.timeStop}</span>
                                                 </div>
-                                                <div className="col-span-3">
-                                                    <div className="text-[10px] font-black text-white uppercase tracking-tight">{entry.subjectName}</div>
+                                                <div className="md:col-span-3">
+                                                    <div className="text-[10px] font-black text-white uppercase tracking-tight line-clamp-1">{entry.subjectName}</div>
                                                     <div className="text-[8px] font-black text-zinc-500 uppercase tracking-widest mt-0.5">{entry.subjectCode}</div>
                                                 </div>
-                                                <div className="col-span-3">
-                                                    <div className="text-[10px] text-zinc-400 font-medium italic truncate">{entry.topics || "No topics listed"}</div>
+                                                <div className="md:col-span-4">
+                                                    <div className="text-[10px] text-zinc-400 font-medium italic line-clamp-1">{entry.topics || "No topics listed"}</div>
                                                 </div>
-                                                <div className="col-span-4 flex justify-end">
+                                                <div className="md:col-span-3 flex justify-start md:justify-end">
                                                     <div className="px-3 py-1 bg-zinc-800/50 rounded-lg border border-zinc-700/50 text-[9px] font-black text-zinc-300 uppercase tracking-widest">
                                                         {entry.stream} · {entry.year}
                                                     </div>

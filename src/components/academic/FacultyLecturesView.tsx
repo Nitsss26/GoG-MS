@@ -36,24 +36,38 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
 
     const getWeekRange = (offset: number) => {
         const now = new Date();
-        const day = now.getDay();
-        const diff = now.getDate() - day + (day === 0 ? -6 : 1) + (offset * 7);
-        const start = new Date(now.setDate(diff));
-        const end = new Date(start);
-        end.setDate(start.getDate() + 5);
+        const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+        const istTime = new Date(istString);
+        const dayOfWeek = istTime.getDay();
+        
+        const diffToCurrentMon = dayOfWeek === 0 ? 1 : (1 - dayOfWeek);
+        const mon = new Date(istTime);
+        mon.setDate(istTime.getDate() + diffToCurrentMon + (offset * 7));
+
+        const sun = new Date(mon);
+        sun.setDate(mon.getDate() - 1);
+        const sat = new Date(mon);
+        sat.setDate(mon.getDate() + 5);
 
         const format = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-        return `${format(start)} – ${format(end)}`;
+        return `${format(sun)} – ${format(sat)}`;
     };
 
     const fetchLectures = async () => {
         setLoading(true);
         try {
             const now = new Date();
-            const day = now.getDay();
-            const diff = now.getDate() - day + (day === 0 ? -6 : 1) + (weekOffset * 7);
-            const monday = new Date(now.setDate(diff));
-            const weekStart = monday.toISOString().split('T')[0];
+            const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+            const istTime = new Date(istString);
+            const dayOfWeek = istTime.getDay();
+            
+            const diffToCurrentMon = dayOfWeek === 0 ? 1 : (1 - dayOfWeek);
+            const monday = new Date(istTime);
+            monday.setDate(istTime.getDate() + diffToCurrentMon + (weekOffset * 7));
+            
+            const weekStart = monday.getFullYear() + "-" +
+                (monday.getMonth() + 1).toString().padStart(2, '0') + "-" +
+                monday.getDate().toString().padStart(2, '0');
 
             const res = await fetch(`/api/faculty/lectures?facultyId=${facultyId}&weekStartDate=${weekStart}`);
             const data = await res.json();
@@ -145,37 +159,56 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                             <div className="flex flex-col">
                                                 <span className="text-[11px] font-black text-white uppercase tracking-tight">{lec.courseName}</span>
                                                 <span className="text-[8px] font-black text-zinc-500 uppercase tracking-[0.2em] mt-0.5">{lec.stream} · {lec.year} ({lec.semester})</span>
+                                                <span className="text-[9px] font-bold text-amber-500/80 uppercase tracking-widest mt-1 italic">Topic: {lec.topicsCovered}</span>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-5">
+                                        <td className="px-6 py-5 border-l border-zinc-800/10">
                                             <div className="flex items-center justify-center">
                                                 {lec.report ? (
                                                     <div className={cn(
-                                                        "px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-2 border",
-                                                        (lec.report.warnings?.length || 0) > 0 ? "bg-red-500/10 text-red-400 border-red-500/20" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                                        "px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-2 border shadow-sm",
+                                                        lec.report.auditStatus === "Approved" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                                                            lec.report.auditStatus === "Flagged" ? "bg-red-500/10 text-red-400 border-red-500/20" :
+                                                                "bg-amber-500/10 text-amber-400 border-amber-500/20"
                                                     )}>
-                                                        {(lec.report.warnings?.length || 0) > 0 ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
-                                                        {(lec.report.warnings?.length || 0) > 0 ? "Flagged" : "Audited"}
+                                                        {lec.report.auditStatus === "Approved" ? <CheckCircle2 size={12} /> :
+                                                            lec.report.auditStatus === "Flagged" ? <AlertTriangle size={12} /> :
+                                                                <Clock size={12} />}
+                                                        {lec.report.auditStatus || "Pending"}
                                                     </div>
                                                 ) : (
                                                     <div className="px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-2 border bg-zinc-800/50 text-zinc-500 border-zinc-700/30">
-                                                        <Clock size={12} /> Pending Submission
+                                                        <Clock size={12} /> No Report
                                                     </div>
                                                 )}
                                             </div>
                                         </td>
                                         <td className="px-6 py-5 border-l border-zinc-800/10">
-                                            <div className="flex items-center justify-end gap-2">
+                                            <div className="flex items-center justify-end gap-3">
                                                 {lec.report ? (
-                                                    <button onClick={() => {
-                                                        setReportData(lec.report);
-                                                        setShowReport(lec.lectureNumber);
-                                                    }} className="p-3 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/10 transition-all flex items-center gap-2 group-hover:scale-105 active:scale-95">
-                                                        <FileText size={16} />
-                                                        <span className="text-[8px] font-black uppercase tracking-widest">Read Audit</span>
-                                                    </button>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex items-center gap-2">
+                                                            {lec.report.recordingUrl && (
+                                                                <div title="Recording Captured" className="w-8 h-8 rounded-full bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20 text-indigo-400 shadow-sm">
+                                                                    <Play size={10} fill="currentColor" />
+                                                                </div>
+                                                            )}
+                                                            {lec.report.classPhotoUrl && (
+                                                                <div title="Photo Proof Uploaded" className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center border border-amber-500/20 text-amber-400 shadow-sm">
+                                                                    <Users size={10} />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <button onClick={() => {
+                                                            setReportData(lec.report);
+                                                            setShowReport(lec.lectureNumber);
+                                                        }} className="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/10 transition-all flex items-center gap-2 group-hover:scale-105 active:scale-95 shadow-sm">
+                                                            <FileText size={14} />
+                                                            <span className="text-[9px] font-black uppercase tracking-widest whitespace-nowrap">Open Audit</span>
+                                                        </button>
+                                                    </div>
                                                 ) : (
-                                                    <div className="px-4 py-2 text-[8px] text-zinc-600 font-black uppercase tracking-widest italic opacity-50">Unavailable</div>
+                                                    <div className="px-4 py-2 text-[10px] text-zinc-600 font-bold uppercase tracking-widest italic opacity-50">Unavailable</div>
                                                 )}
                                             </div>
                                         </td>
@@ -307,11 +340,53 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                             </div>
                         </div>
 
-                        <div className="p-8 border-t border-zinc-800/50 flex justify-end">
-                            <button onClick={() => setShowReport(null)}
-                                className="px-8 py-3 bg-zinc-800 hover:bg-zinc-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all active:scale-95">
-                                Close Audit
-                            </button>
+                        <div className="p-8 border-t border-zinc-800/50 bg-zinc-950/20">
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+                                <div className="flex flex-col gap-2 w-full sm:w-auto">
+                                    <p className="text-[8px] text-zinc-500 font-black uppercase tracking-widest pl-1">HOI Audit Decision</p>
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={async () => {
+                                            const res = await fetch('/api/manager/lectures/audit', {
+                                                method: 'PATCH',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ reportId: (reportData as any)._id, status: 'Approved' })
+                                            });
+                                            if (res.ok) fetchLectures();
+                                        }} className={cn(
+                                            "flex-1 sm:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shadow-sm",
+                                            (reportData as any).auditStatus === "Approved" ? "bg-emerald-500 text-white border-emerald-500 shadow-emerald-500/20" : "text-emerald-500 bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20"
+                                        )}>Approve</button>
+
+                                        <button onClick={async () => {
+                                            const res = await fetch('/api/manager/lectures/audit', {
+                                                method: 'PATCH',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ reportId: (reportData as any)._id, status: 'Flagged' })
+                                            });
+                                            if (res.ok) fetchLectures();
+                                        }} className={cn(
+                                            "flex-1 sm:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shadow-sm",
+                                            (reportData as any).auditStatus === "Flagged" ? "bg-red-500 text-white border-red-500 shadow-red-500/20" : "text-red-500 bg-red-500/10 border-red-500/20 hover:bg-red-500/20"
+                                        )}>Flag</button>
+
+                                        <button onClick={async () => {
+                                            const res = await fetch('/api/manager/lectures/audit', {
+                                                method: 'PATCH',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ reportId: (reportData as any)._id, status: 'Pending' })
+                                            });
+                                            if (res.ok) fetchLectures();
+                                        }} className={cn(
+                                            "flex-1 sm:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shadow-sm",
+                                            (reportData as any).auditStatus === "Pending" ? "bg-amber-500 text-white border-amber-500 shadow-amber-500/20" : "text-amber-500 bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20"
+                                        )}>Reset</button>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowReport(null)}
+                                    className="w-full sm:w-auto px-10 py-3 bg-zinc-800 hover:bg-zinc-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 shadow-lg">
+                                    Close Audit
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -289,12 +289,17 @@ export default function LeavePage() {
                 {showModal && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowModal(false)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
-                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="card w-full max-w-md p-6 relative z-10 space-y-6">
-                            <div className="flex justify-between items-center">
-                                <h2 className="text-base font-bold text-white">Log Leave Request</h2>
-                                <button onClick={() => setShowModal(false)}><X size={18} className="text-muted hover:text-white" /></button>
+                        <motion.div 
+                            initial={{ opacity: 0, y: 10 }} 
+                            animate={{ opacity: 1, y: 0 }} 
+                            exit={{ opacity: 0, y: 10 }} 
+                            className="card w-full max-w-md p-6 relative z-10 space-y-6 max-h-[90vh] overflow-y-auto custom-scrollbar"
+                        >
+                            <div className="flex justify-between items-center bg-zinc-900/50 -m-6 p-6 mb-2 border-b border-border sticky top-0 z-20 backdrop-blur-md">
+                                <h2 className="text-base font-bold text-white uppercase italic tracking-widest">Log Leave Request</h2>
+                                <button onClick={() => setShowModal(false)} className="p-2 hover:bg-white/5 rounded-lg transition-colors"><X size={18} className="text-muted hover:text-white" /></button>
                             </div>
-                            <form onSubmit={handleApply} className="space-y-4">
+                            <form onSubmit={handleApply} className="space-y-4 pt-2">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1">
                                         <label className="text-[9px] font-bold text-muted uppercase tracking-widest">Type</label>

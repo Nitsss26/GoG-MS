@@ -3,90 +3,114 @@ import dbConnect from '@/lib/mongodb';
 import { LectureReport, SprintPlan, Employee } from '@/models/Schemas';
 import { processLectureWithAI } from '@/lib/gemini';
 
-// GET — Fetch today's lectures for a faculty (auto-fetched from sprint plan)
+// GET — Fetch lectures for a faculty
 export async function GET(req: Request) {
     try {
         await dbConnect();
         const { searchParams } = new URL(req.url);
         const facultyId = searchParams.get('facultyId');
         const date = searchParams.get('date');
+        const weekStartDate = searchParams.get('weekStartDate');
+        const startDate = searchParams.get('startDate');
+        const endDate = searchParams.get('endDate');
 
         if (!facultyId) return NextResponse.json({ error: "facultyId required" }, { status: 400 });
 
-        // Get today's date in IST
         const now = new Date();
         const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
         const istTime = new Date(istString);
-        const today = date || (istTime.getFullYear() + "-" +
-            (istTime.getMonth() + 1).toString().padStart(2, '0') + "-" +
-            istTime.getDate().toString().padStart(2, '0'));
+        
+        const formatDate = (d: Date) => d.getFullYear() + "-" +
+            (d.getMonth() + 1).toString().padStart(2, '0') + "-" +
+            d.getDate().toString().padStart(2, '0');
 
-        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-        const dayIdx = date ? new Date(date).getDay() : istTime.getDay();
-        const todayDayName = dayNames[dayIdx]?.toUpperCase()?.substring(0, 3) || "MON";
-
-        // Find active sprint plan containing today
-        const plans = await SprintPlan.find({ facultyId }).sort({ weekStartDate: -1 });
-        let activePlan = plans.find(p => today >= p.weekStartDate && today <= p.weekEndDate);
-
-        // Get entries for today
-        let todayEntries: any[] = [];
-        if (activePlan) {
-            todayEntries = activePlan.entries.filter((e: any) =>
-                e.date === today || e.day?.toUpperCase()?.substring(0, 3) === todayDayName
-            );
+        let targetDates: string[] = [];
+        if (startDate && endDate) {
+            // Custom Range
+            const s = new Date(startDate);
+            const e = new Date(endDate);
+            let curr = new Date(s);
+            while (curr <= e) {
+                targetDates.push(formatDate(curr));
+                curr.setDate(curr.getDate() + 1);
+            }
+        } else if (weekStartDate) {
+            // Generate full week Mon-Sat
+            const start = new Date(weekStartDate);
+            for (let i = 0; i < 6; i++) {
+                const d = new Date(start);
+                d.setDate(start.getDate() + i);
+                targetDates.push(formatDate(d));
+            }
+        } else {
+            // Default to today
+            targetDates = [date || formatDate(istTime)];
         }
 
-        // Check if lecture reports already exist for today
-        const existingReports = await LectureReport.find({ facultyId, date: today });
+        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        const plans = await SprintPlan.find({ facultyId }).sort({ weekStartDate: -1 });
 
-        // Merge sprint plan entries with existing reports
-        const lectures = todayEntries.map((entry: any, idx: number) => {
-            const existing = existingReports.find((r: any) =>
-                r.lectureNumber === (idx + 1) ||
-                (r.courseName === entry.subjectName && r.topicsCovered === entry.topics)
-            );
+        let allLectures: any[] = [];
 
-            const timeStartParts = entry.timeStart?.split(':').map(Number) || [0, 0];
-            const timeStopParts = entry.timeStop?.split(':').map(Number) || [0, 0];
-            const scheduledDuration = (timeStopParts[0] * 60 + timeStopParts[1]) - (timeStartParts[0] * 60 + timeStartParts[1]);
+        for (const targetDate of targetDates) {
+            const dayIdx = new Date(targetDate).getDay();
+            const targetDayName = dayNames[dayIdx]?.toUpperCase()?.substring(0, 3) || "MON";
 
-            return {
-                lectureNumber: idx + 1,
-                sprintPlanId: activePlan?._id?.toString(),
-                courseName: entry.subjectName,
-                topicsCovered: entry.topics,
-                subjectCode: entry.subjectCode,
-                stream: entry.stream || activePlan?.stream || "",
-                year: entry.year || activePlan?.year || "",
-                semester: entry.semester || "",
-                timeStart: entry.timeStart,
-                timeStop: entry.timeStop,
-                scheduledDuration,
-                // Existing report data
-                ...(existing ? {
-                    _id: existing._id,
-                    status: existing.status,
-                    classStartTime: existing.classStartTime,
-                    classEndTime: existing.classEndTime,
-                    actualDurationMinutes: existing.actualDurationMinutes,
-                    numberOfAttendees: existing.numberOfAttendees,
-                    totalStudents: existing.totalStudents || entry.totalStudents || 40, // Default to sprint plan or 40
-                    recordingUrl: existing.recordingUrl,
-                    classPhotoUrl: existing.classPhotoUrl,
-                    warnings: existing.warnings,
-                    summary: existing.summary,
-                    transcription: existing.transcription,
-                    keywords: existing.keywords,
-                    aiAnalysisAt: existing.aiAnalysisAt
-                } : {
-                    status: "Scheduled",
-                    totalStudents: entry.totalStudents || 40 // Default for scheduled
-                })
-            };
+            // Find active sprint plan containing targetDate
+            let activePlan = plans.find(p => targetDate >= p.weekStartDate && targetDate <= p.weekEndDate);
+
+            // Get entries for target day
+            let dayEntries: any[] = [];
+            if (activePlan) {
+                dayEntries = activePlan.entries.filter((e: any) =>
+                    e.date === targetDate || e.day?.toUpperCase()?.substring(0, 3) === targetDayName
+                );
+            }
+
+            // Check if lecture reports already exist for this date
+            const existingReports = await LectureReport.find({ facultyId, date: targetDate });
+
+            // Merge sprint plan entries with existing reports
+            const dayLectures = dayEntries.map((entry: any, idx: number) => {
+                const lecNum = idx + 1;
+                const existing = existingReports.find((r: any) => 
+                    (r.sprintPlanId === activePlan?._id?.toString() && r.lectureNumber === lecNum) ||
+                    (r.date === targetDate && r.lectureNumber === lecNum) ||
+                    (r.courseName === entry.subjectName && r.topicsCovered === entry.topics)
+                );
+
+                const timeStartParts = entry.timeStart?.split(':').map(Number) || [0, 0];
+                const timeStopParts = entry.timeStop?.split(':').map(Number) || [0, 0];
+                const scheduledDuration = (timeStopParts[0] * 60 + timeStopParts[1]) - (timeStartParts[0] * 60 + timeStartParts[1]);
+
+                return {
+                    _id: existing?._id || `${targetDate}-${idx}`,
+                    lectureNumber: lecNum,
+                    sprintPlanId: activePlan?._id?.toString(),
+                    isLocked: activePlan?.isLocked || false,
+                    courseName: entry.subjectName,
+                    topicsCovered: entry.topics,
+                    subjectCode: entry.subjectCode,
+                    stream: entry.stream || activePlan?.stream || "",
+                    year: entry.year || activePlan?.year || "",
+                    semester: entry.semester || "",
+                    timeStart: entry.timeStart,
+                    timeStop: entry.timeStop,
+                    scheduledDuration,
+                    date: targetDate,
+                    day: targetDayName,
+                    report: existing ? existing.toObject() : null,
+                    status: existing ? existing.status : "Scheduled"
+                };
+            });
+            allLectures.push(...dayLectures);
+        }
+
+        return NextResponse.json({ 
+            lectures: allLectures, 
+            date: targetDates[0], 
+            sprintPlanId: plans[0]?._id?.toString() 
         });
-
-        return NextResponse.json({ lectures, date: today, sprintPlanId: activePlan?._id?.toString() });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -109,17 +133,18 @@ export async function POST(req: Request) {
         const faculty = await Employee.findOne({ id: facultyId });
         if (!faculty) return NextResponse.json({ error: "Faculty not found" }, { status: 404 });
 
+        // Use provided date or default to today IST
         const now = new Date();
         const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
         const istTime = new Date(istString);
-        const today = date || (istTime.getFullYear() + "-" +
+        const reportDate = date || (istTime.getFullYear() + "-" +
             (istTime.getMonth() + 1).toString().padStart(2, '0') + "-" +
             istTime.getDate().toString().padStart(2, '0'));
 
-        // Calculate lecture number if not provided
+        // Strictly use provided lectureNumber or calculate if absolutely missing
         let lecNum = lectureNumber;
         if (!lecNum) {
-            const count = await LectureReport.countDocuments({ facultyId, date: today });
+            const count = await LectureReport.countDocuments({ facultyId, date: reportDate });
             lecNum = count + 1;
         }
 
@@ -142,13 +167,12 @@ export async function POST(req: Request) {
             if (percentage < 50 && !reasonForLessAttendance) {
                 warnings.push(`Attendance: ${Math.round(percentage)}% (below 50%) — reason required`);
             }
-        } else if (!totalCount && attendeeCount < 50 && !reasonForLessAttendance) {
-             // Fallback for missing totalStudents
+        } else if (!totalCount && attendeeCount < 50 && !reasonForLessAttendance && attendeeCount > 0) {
              warnings.push("Attendance below 50 students — reason required");
         }
 
         const report = await LectureReport.findOneAndUpdate(
-            { facultyId, date: today, lectureNumber: lecNum, sprintPlanId: sprintPlanId || "" },
+            { facultyId, date: reportDate, lectureNumber: lecNum },
             {
                 $set: {
                     facultyName: faculty.name,
@@ -170,6 +194,7 @@ export async function POST(req: Request) {
                     recordingDurationSeconds,
                     sprintPlanId: sprintPlanId || "",
                     status: "Completed",
+                    auditStatus: "Pending",
                     warnings
                 }
             },
@@ -177,9 +202,7 @@ export async function POST(req: Request) {
         );
 
         // TRIGGER AI ANALYSIS ASYNCHRONOUSLY
-        // If recording exists and not yet analyzed
         if (recordingUrl && !report.aiAnalysisAt) {
-            console.log(`[AI] Triggering analysis for report ${report._id}`);
             processLectureWithAI(recordingUrl).then(async (result) => {
                 if (result) {
                     await LectureReport.findByIdAndUpdate(report._id, {
@@ -191,11 +214,8 @@ export async function POST(req: Request) {
                             aiAnalysisAt: result.aiAnalysisAt
                         }
                     });
-                    console.log(`[AI] Successfully updated report ${report._id} with exhaustive audit data`);
                 }
-            }).catch(err => {
-                console.error(`[AI] Failed analysis for report ${report._id}:`, err);
-            });
+            }).catch(err => console.error(`[AI] Failed analysis for report ${report._id}:`, err));
         }
 
         return NextResponse.json({ message: "Lecture report submitted", report, warnings });

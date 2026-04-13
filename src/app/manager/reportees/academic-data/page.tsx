@@ -16,6 +16,7 @@ export default function AcademicMonitoring() {
     const { user } = useAuth();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<any>({ plans: [], reports: [], reportees: [] });
+    const [sprintSummary, setSprintSummary] = useState<any[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
     
     // Selection state
@@ -41,6 +42,11 @@ export default function AcademicMonitoring() {
             );
             
             setData({ ...json, reportees: facultiesOnly });
+
+            // Fetch Sprint Summary for next week
+            const summaryRes = await fetch(`/api/manager/reportees/sprint-summary?managerId=${user?.id}`);
+            const summaryJson = await summaryRes.json();
+            setSprintSummary(summaryJson.summary || []);
         } catch (e) {
             console.error(e);
         } finally {
@@ -78,6 +84,15 @@ export default function AcademicMonitoring() {
                         </div>
 
                         <div className="flex items-center gap-3 bg-zinc-900/50 p-2 rounded-2xl border border-zinc-800/50">
+                            {/* Summary Badge for Manager */}
+                            <div className="hidden lg:flex items-center gap-4 px-4 border-r border-zinc-800">
+                                <div className="flex flex-col">
+                                    <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Team Readiness</span>
+                                    <span className="text-[10px] font-black text-emerald-400 italic">
+                                        {sprintSummary.filter(s => s.nextWeek.hasPlan).length}/{data.reportees.length} Prepared for Next Week
+                                    </span>
+                                </div>
+                             </div>
                             <div className="flex items-center gap-2 px-3">
                                 <Search size={14} className="text-zinc-500" />
                                 <input 
@@ -119,7 +134,58 @@ export default function AcademicMonitoring() {
                                         <div className="flex-1 min-w-0">
                                             <h3 className="text-sm font-black text-white group-hover:text-indigo-300 transition-colors truncate uppercase italic">{faculty.name}</h3>
                                             <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-1 truncate">{faculty.designation || "Faculty"} · {faculty.dept}</p>
-                                            <div className="mt-4 flex items-center justify-between">
+                                            
+                                            {/* Week Status Grid */}
+                                            <div className="mt-4 flex flex-col gap-2">
+                                                {(() => {
+                                                    const s = sprintSummary.find(item => item.facultyId === faculty.id);
+                                                    
+                                                    const formatSunToSat = (mondayStr: string) => {
+                                                        if (!mondayStr) return "N/A";
+                                                        const [y, m, d] = mondayStr.split("-").map(Number);
+                                                        const monDate = new Date(y, m - 1, d);
+                                                        
+                                                        const sun = new Date(monDate);
+                                                        sun.setDate(monDate.getDate() - 1);
+                                                        
+                                                        const sat = new Date(monDate);
+                                                        sat.setDate(monDate.getDate() + 5);
+                                                        
+                                                        const fmt = (dt: Date) => `${dt.getDate().toString().padStart(2, '0')}/${(dt.getMonth() + 1).toString().padStart(2, '0')}`;
+                                                        return `(${fmt(sun)}-${fmt(sat)})`;
+                                                    };
+
+                                                    return (
+                                                        <>
+                                                            {/* Current Week Badge */}
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <span className="text-[7px] font-black text-zinc-500 uppercase tracking-[0.2em]">Current {s?.currentWeek.startDate && formatSunToSat(s.currentWeek.startDate)}</span>
+                                                                <div className={cn(
+                                                                    "px-2 py-0.5 rounded border text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5",
+                                                                    s?.currentWeek.hasPlan ? (s.currentWeek.isLocked ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-amber-500/10 text-amber-400 border-amber-500/20") : "bg-red-500/10 text-red-400 border-red-500/20"
+                                                                )}>
+                                                                    <Calendar size={10} />
+                                                                    {s?.currentWeek.hasPlan ? (s.currentWeek.isLocked ? "Finalized" : "Draft") : "Pending"}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Next Week Badge */}
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <span className="text-[7px] font-black text-zinc-500 uppercase tracking-[0.2em]">Next {s?.nextWeek.startDate && formatSunToSat(s.nextWeek.startDate)}</span>
+                                                                <div className={cn(
+                                                                    "px-2 py-0.5 rounded border text-[8px] font-black uppercase tracking-widest flex items-center gap-1.5",
+                                                                    s?.nextWeek.hasPlan ? (s.nextWeek.isLocked ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-amber-500/10 text-amber-400 border-amber-500/20") : "bg-red-500/10 text-red-400 border-red-500/20"
+                                                                )}>
+                                                                    <Calendar size={10} />
+                                                                    {s?.nextWeek.hasPlan ? (s.nextWeek.isLocked ? "Finalized" : "Draft") : "Pending"}
+                                                                </div>
+                                                            </div>
+                                                        </>
+                                                    );
+                                                })()}
+                                            </div>
+
+                                            <div className="mt-4 flex items-center justify-between border-t border-zinc-800/50 pt-4">
                                                 <div className="flex items-center gap-1.5 px-2 py-0.5 bg-zinc-950 rounded text-[8px] font-black text-zinc-500 uppercase tracking-widest">
                                                     <Clock size={10} /> ID: {faculty.id}
                                                 </div>

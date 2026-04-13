@@ -10,7 +10,7 @@ export default function ManagerHub() {
     const reportees = getReportees(user.id);
     const reporteeIds = reportees.map(r => r.id);
     const pendingLeaves = leaves.filter(l => reporteeIds.includes(l.employeeId) && l.status === "Pending");
-    const flaggedAttendance = attendanceRecords.filter(r => reporteeIds.includes(r.employeeId) && Object.values(r.flags).some(Boolean));
+    const flaggedAttendance = attendanceRecords.filter(r => reporteeIds.includes(r.employeeId) && Object.values(r.flags || {}).some(Boolean));
     const activePIPs = pipRecords.filter(p => reporteeIds.includes(p.employeeId) && p.status === "Active");
     const recentReports = misbehaviourReports.filter(m => m.reportedBy === user.id);
 

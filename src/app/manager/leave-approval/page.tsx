@@ -74,17 +74,17 @@ export default function LeaveApprovalPage() {
                                     l.status === "Approved" ? <CheckCircle2 size={16} className="text-green-500" /> :
                                         <XCircle size={16} className="text-red-500" />}
                             </div>
-                            <div className="flex-1 space-y-2">
-                                <div className="flex justify-between items-start">
-                                    <div>
+                            <div className="flex-1 min-w-0 space-y-2">
+                                <div className="flex justify-between items-start gap-4">
+                                    <div className="min-w-0 flex-1">
                                         <h4 className="text-xs font-bold text-white">{l.employeeName}</h4>
                                         <p className="text-[10px] text-zinc-500">{l.type} · {l.leaveType} · {l.days} day(s)</p>
                                         <p className="text-[10px] text-zinc-400">{l.startDate} → {l.endDate}</p>
-                                        {l.reason && <p className="text-[10px] text-zinc-500 italic mt-1">Reason: {l.reason}</p>}
-                                        {l.reasonForAction && <p className="text-[10px] text-amber-500/80 italic mt-1">Action Note: {l.reasonForAction}</p>}
+                                        {l.reason && <p className="text-[10px] text-zinc-500 italic mt-1 line-clamp-3">Reason: {l.reason}</p>}
+                                        {l.reasonForAction && <p className="text-[10px] text-amber-500/80 italic mt-1 line-clamp-2">Action Note: {l.reasonForAction}</p>}
                                     </div>
-                                    <span className={cn("text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border",
-                                        l.status === "Pending" ? "text-amber-400 bg-amber-500/10 border-amber-500/20" :
+                                    <span className={cn("text-[9px] font-black uppercase tracking-wider px-3 py-1 rounded-full border whitespace-nowrap shrink-0",
+                                        l.status === "Pending" || l.status.includes("Pending") ? "text-amber-400 bg-amber-500/10 border-amber-500/20" :
                                             l.status === "Approved" ? "text-green-400 bg-green-500/10 border-green-500/20" :
                                                 "text-red-400 bg-red-500/10 border-red-500/20"
                                     )}>{l.status}</span>
