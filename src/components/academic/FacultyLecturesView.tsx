@@ -123,9 +123,9 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
             } else {
                 alert(data.error || "Analysis failed");
             }
-        } catch (e) {
-            console.error(e);
-            alert("An error occurred during AI analysis");
+        } catch (e: any) {
+            console.error("[UI] Analysis Click Error:", e);
+            alert(`Analysis failed: ${e.message || "Unknown error"}`);
         } finally {
             setIsAnalyzing(false);
         }
