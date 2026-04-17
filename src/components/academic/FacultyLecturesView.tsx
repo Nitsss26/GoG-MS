@@ -4,9 +4,12 @@ import { useState, useEffect } from "react";
 import {
     Calendar, Clock, CheckCircle2, AlertTriangle,
     Zap, ShieldAlert, FileText, X, Play, Users,
-    ArrowLeft, ArrowRight, BookOpen
+    ArrowLeft, ArrowRight, BookOpen, Sparkles, Brain,
+    Cpu, SearchCode, MessageSquareQuote, Quote, TrendingUp,
+    Info, MessageSquare
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import ReactMarkdown from 'react-markdown';
 
 interface FacultyLecturesViewProps {
     facultyId: string;
@@ -25,8 +28,14 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
         totalStudents: "40",
         topicsCovered: "",
         issuesFaced: "",
-        reasonForLessAttendance: ""
+        reasonForLessAttendance: "",
+        pedagogicalAnalysis: null,
+        isAIProcessed: false,
+        transcription: ""
     });
+
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [activeModalTab, setActiveModalTab] = useState<"AUDIT" | "AI">("AUDIT");
 
     useEffect(() => {
         if (facultyId) {
@@ -78,15 +87,48 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
             setLoading(false);
         }
     };
-
     const resetReportForm = () => {
         setReportData({
             numberOfAttendees: "",
             totalStudents: "40",
             topicsCovered: "",
             issuesFaced: "",
-            reasonForLessAttendance: ""
+            reasonForLessAttendance: "",
+            pedagogicalAnalysis: null,
+            isAIProcessed: false,
+            transcription: ""
         });
+        setActiveModalTab("AUDIT");
+    };
+
+    const handleGenerateAIAnalysis = async (reportId: string) => {
+        if (isAnalyzing) return;
+        setIsAnalyzing(true);
+        try {
+            const res = await fetch('/api/manager/lectures/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reportId })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setReportData(prev => ({ 
+                    ...prev, 
+                    pedagogicalAnalysis: data.analysis,
+                    isAIProcessed: true,
+                    transcription: data.analysis.transcription || data.transcription || ""
+                }));
+                // Refresh list to keep synced
+                fetchLectures();
+            } else {
+                alert(data.error || "Analysis failed");
+            }
+        } catch (e) {
+            console.error(e);
+            alert("An error occurred during AI analysis");
+        } finally {
+            setIsAnalyzing(false);
+        }
     };
 
     return (
@@ -200,7 +242,10 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                             )}
                                                         </div>
                                                         <button onClick={() => {
-                                                            setReportData(lec.report);
+                                                            setReportData({
+                                                                ...lec.report,
+                                                                transcription: lec.report.transcription || ""
+                                                            });
                                                             setShowReport(lec.lectureNumber);
                                                         }} className="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/10 transition-all flex items-center gap-2 group-hover:scale-105 active:scale-95 shadow-sm">
                                                             <FileText size={14} />
@@ -239,105 +284,352 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                         Lec: <span className="text-zinc-300">#{showReport}</span> <span className="text-zinc-800">/</span> <span className="text-indigo-400 italic line-clamp-1">{lectures.find(l => l.lectureNumber === showReport)?.courseName}</span>
                                     </p>
                                 </div>
-                                <button onClick={() => { setShowReport(null); resetReportForm(); }}
-                                    className="p-2 hover:bg-white/5 rounded-lg transition-colors text-zinc-600 hover:text-white">
-                                    <X size={18} />
-                                </button>
+                                <div className="flex items-center gap-4">
+                                    <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-800">
+                                        <button 
+                                            onClick={() => setActiveModalTab("AUDIT")}
+                                            className={cn(
+                                                "px-4 py-1.5 text-[8px] font-black uppercase tracking-widest rounded-lg transition-all",
+                                                activeModalTab === "AUDIT" ? "bg-zinc-800 text-white shadow-lg" : "text-zinc-500 hover:text-white"
+                                            )}
+                                        >Audit</button>
+                                        <button 
+                                            onClick={() => setActiveModalTab("AI")}
+                                            className={cn(
+                                                "px-4 py-1.5 text-[8px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center gap-1.5",
+                                                activeModalTab === "AI" ? "bg-indigo-600 text-white shadow-lg" : "text-zinc-500 hover:text-white"
+                                            )}
+                                        >
+                                            <Sparkles size={10} />
+                                            AI Report
+                                        </button>
+                                    </div>
+                                    <div className="w-px h-6 bg-zinc-800" />
+                                    <button onClick={() => { setShowReport(null); resetReportForm(); }}
+                                        className="p-2 hover:bg-white/5 rounded-lg transition-colors text-zinc-600 hover:text-white">
+                                        <X size={18} />
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
                         <div className="p-8 space-y-7 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                            <div className="grid grid-cols-3 gap-3">
-                                <div className="space-y-1">
-                                    <label className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-0.5">Stream</label>
-                                    <div className="px-3 py-2 bg-zinc-800/30 border border-zinc-800 rounded-xl text-[10px] font-black text-indigo-400 capitalize truncate">
-                                        {lectures.find(l => l.lectureNumber === showReport)?.stream || "—"}
+                            {activeModalTab === "AUDIT" ? (
+                                <>
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <div className="space-y-1">
+                                            <label className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-0.5">Stream</label>
+                                            <div className="px-3 py-2 bg-zinc-800/30 border border-zinc-800 rounded-xl text-[10px] font-black text-indigo-400 capitalize truncate">
+                                                {lectures.find(l => l.lectureNumber === showReport)?.stream || "—"}
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-0.5">Year</label>
+                                            <div className="px-3 py-2 bg-zinc-800/30 border border-zinc-800 rounded-xl text-[10px] font-black text-emerald-400 capitalize truncate">
+                                                {lectures.find(l => l.lectureNumber === showReport)?.year || "—"}
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-0.5">Sem</label>
+                                            <div className="px-3 py-2 bg-zinc-800/30 border border-zinc-800 rounded-xl text-[10px] font-black text-violet-400 capitalize truncate">
+                                                {lectures.find(l => l.lectureNumber === showReport)?.semester || "—"}
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-0.5">Year</label>
-                                    <div className="px-3 py-2 bg-zinc-800/30 border border-zinc-800 rounded-xl text-[10px] font-black text-emerald-400 capitalize truncate">
-                                        {lectures.find(l => l.lectureNumber === showReport)?.year || "—"}
-                                    </div>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-0.5">Sem</label>
-                                    <div className="px-3 py-2 bg-zinc-800/30 border border-zinc-800 rounded-xl text-[10px] font-black text-violet-400 capitalize truncate">
-                                        {lectures.find(l => l.lectureNumber === showReport)?.semester || "—"}
-                                    </div>
-                                </div>
-                            </div>
 
-                            <div className="space-y-1">
-                                <label className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-0.5">Topics Covered</label>
-                                <div className="px-4 py-3 bg-zinc-800/20 border border-zinc-800 rounded-xl text-xs font-bold text-zinc-400 italic line-clamp-3">
-                                    {reportData.topicsCovered || "No topics specified."}
-                                </div>
-                            </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-0.5">Topics Covered</label>
+                                        <div className="px-4 py-3 bg-zinc-800/20 border border-zinc-800 rounded-xl text-xs font-bold text-zinc-400 italic line-clamp-3">
+                                            {reportData.topicsCovered || "No topics specified."}
+                                        </div>
+                                    </div>
 
-                            <div className="bg-zinc-950/40 rounded-2xl p-5 border border-zinc-800/80 space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <h4 className="text-[9px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5">
-                                        <Users size={12} className="text-amber-500/80" /> Attendance Audit
-                                    </h4>
-                                    {(reportData as any).numberOfAttendees && (reportData as any).totalStudents && (
-                                        <span className="text-[9px] font-black text-amber-500/80 uppercase italic">
-                                            {Math.round((parseInt((reportData as any).numberOfAttendees) / parseInt((reportData as any).totalStudents)) * 100)}% Engagement
-                                        </span>
+                                    <div className="bg-zinc-950/40 rounded-2xl p-5 border border-zinc-800/80 space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="text-[9px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5">
+                                                <Users size={12} className="text-amber-500/80" /> Attendance Audit
+                                            </h4>
+                                            {(reportData as any).numberOfAttendees && (reportData as any).totalStudents && (
+                                                <span className="text-[9px] font-black text-amber-500/80 uppercase italic">
+                                                    {Math.round((parseInt((reportData as any).numberOfAttendees) / parseInt((reportData as any).totalStudents)) * 100)}% Engagement
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-lg">
+                                                <p className="text-[8px] text-zinc-600 font-black uppercase mb-1">Present</p>
+                                                <p className="text-sm font-black font-mono text-white">{(reportData as any).numberOfAttendees || 0}</p>
+                                            </div>
+                                            <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-lg">
+                                                <p className="text-[8px] text-zinc-600 font-black uppercase mb-1">Total Strength</p>
+                                                <p className="text-sm font-black font-mono text-white">{(reportData as any).totalStudents || 0}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <p className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-1">Class Evidence</p>
+                                            <div className="aspect-video bg-zinc-950 rounded-2xl border border-zinc-800/50 overflow-hidden relative group/img">
+                                                {(reportData as any).classPhotoUrl ? (
+                                                    <>
+                                                        <img src={(reportData as any).classPhotoUrl} alt="Class Photo" className="w-full h-full object-cover transition-transform duration-500 group-hover/img:scale-110" />
+                                                        <a href={(reportData as any).classPhotoUrl} target="_blank" rel="noopener noreferrer"
+                                                            className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition-opacity">
+                                                            <Zap size={24} className="text-white drop-shadow-lg" />
+                                                        </a>
+                                                    </>
+                                                ) : (
+                                                    <div className="w-full h-full flex flex-col items-center justify-center gap-2 opacity-20">
+                                                        <Zap size={24} />
+                                                        <span className="text-[7px] font-black uppercase">No Image</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <p className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-1">Session Recording</p>
+                                            <div className="aspect-video bg-zinc-950 rounded-2xl border border-zinc-800/50 overflow-hidden relative group/rec">
+                                                {(reportData as any).recordingUrl ? (
+                                                    <>
+                                                        <div className="w-full h-full bg-indigo-500/5 flex flex-col items-center justify-center gap-1 group-hover/rec:bg-indigo-500/10 transition-colors">
+                                                            <Play size={24} className="text-indigo-500/40 group-hover/rec:text-indigo-400 group-hover/rec:scale-110 transition-all" fill="currentColor" />
+                                                            <span className="text-[7px] font-black text-indigo-400 uppercase tracking-widest mt-1">Ready for Sync</span>
+                                                        </div>
+                                                        <a href={(reportData as any).recordingUrl} target="_blank" rel="noopener noreferrer" className="absolute inset-0 z-10" />
+                                                    </>
+                                                ) : (
+                                                    <div className="w-full h-full flex flex-col items-center justify-center gap-2 opacity-20">
+                                                        <Play size={24} />
+                                                        <span className="text-[7px] font-black uppercase">No Recording</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="space-y-8">
+                                    {isAnalyzing ? (
+                                        <div className="py-20 flex flex-col items-center justify-center space-y-6 text-center">
+                                            <div className="relative">
+                                                <div className="w-24 h-24 border-4 border-indigo-500/10 border-t-indigo-500 rounded-full animate-spin" />
+                                                <div className="absolute inset-0 flex items-center justify-center">
+                                                    <Brain className="text-indigo-400 animate-pulse" size={32} />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <h3 className="text-lg font-black text-white italic uppercase tracking-[0.2em]">Analyzing Lecture</h3>
+                                                <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest max-w-[240px]">Gemini is processing audio vectors for pedagogical insights...</p>
+                                            </div>
+                                            
+                                            <div className="grid grid-cols-3 gap-4 w-full max-w-sm pt-8">
+                                                <div className="flex flex-col items-center gap-2 opacity-40">
+                                                    <Cpu size={16} className="text-zinc-400" />
+                                                    <div className="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
+                                                        <div className="h-full bg-indigo-500 w-full animate-[shimmer_2s_infinite]" />
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col items-center gap-2 opacity-40">
+                                                    <SearchCode size={16} className="text-zinc-400" />
+                                                    <div className="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
+                                                        <div className="h-full bg-emerald-500 w-2/3" />
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col items-center gap-2 opacity-40">
+                                                    <MessageSquareQuote size={16} className="text-zinc-400" />
+                                                    <div className="h-1 w-full bg-zinc-800 rounded-full overflow-hidden" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : reportData.pedagogicalAnalysis ? (
+                                        <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                            {/* AI Header Stats */}
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                                <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 text-center space-y-1">
+                                                    <p className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Master Score</p>
+                                                    <p className="text-2xl font-black text-white italic tracking-tighter">{(reportData.pedagogicalAnalysis as any).score}%</p>
+                                                </div>
+                                                <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 text-center space-y-1">
+                                                    <p className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Enagement</p>
+                                                    <p className="text-2xl font-black text-emerald-400 italic tracking-tighter">{(reportData.pedagogicalAnalysis as any).engagement}%</p>
+                                                </div>
+                                                <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 text-center space-y-1">
+                                                    <p className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Clarity</p>
+                                                    <p className="text-2xl font-black text-amber-400 italic tracking-tighter">{(reportData.pedagogicalAnalysis as any).clarity}%</p>
+                                                </div>
+                                                <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 text-center space-y-1">
+                                                    <p className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Quality</p>
+                                                    <p className="text-2xl font-black text-indigo-400 italic tracking-tighter">{(reportData.pedagogicalAnalysis as any).pedagogy}%</p>
+                                                </div>
+                                            </div>
+
+                                            {/* Summary */}
+                                            <div className="bg-white/[0.02] p-6 rounded-3xl border border-white/5 space-y-4">
+                                                <h3 className="text-xs font-black text-white uppercase tracking-[0.2em] flex items-center gap-2">
+                                                    <TrendingUp size={16} className="text-indigo-400" /> Executive summary
+                                                </h3>
+                                                <div className="text-sm font-bold text-zinc-400 leading-relaxed italic prose prose-invert max-w-none">
+                                                    <ReactMarkdown>{(reportData.pedagogicalAnalysis as any).summary}</ReactMarkdown>
+                                                </div>
+                                                <div className="mt-4 pt-4 border-t border-zinc-800 flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+                                                        <Sparkles size={14} />
+                                                    </div>
+                                                    <p className="text-[10px] text-zinc-500 font-bold italic tracking-tight">"{(reportData.pedagogicalAnalysis as any).industryBenchmarking}"</p>
+                                                </div>
+                                            </div>
+
+                                            {/* Flags */}
+                                            {((reportData.pedagogicalAnalysis as any).flags?.length > 0) && (
+                                                <div className="space-y-3">
+                                                    <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                                                        <ShieldAlert size={14} className="text-red-500" /> Pedagogical Observations
+                                                    </h3>
+                                                    <div className="grid grid-cols-1 gap-2">
+                                                        {(reportData.pedagogicalAnalysis as any).flags.map((flag: any, i: number) => (
+                                                            <div key={i} className={cn(
+                                                                "p-4 rounded-2xl border flex items-center gap-4 transition-all hover:scale-[1.01]",
+                                                                flag.type === "critical" ? "bg-red-500/5 border-red-500/20" : 
+                                                                flag.type === "warning" ? "bg-amber-500/5 border-amber-500/20" : "bg-emerald-500/5 border-emerald-500/20"
+                                                            )}>
+                                                                <div className={cn(
+                                                                    "w-8 h-8 rounded-xl flex items-center justify-center shrink-0",
+                                                                    flag.type === "critical" ? "bg-red-500/10 text-red-500" : 
+                                                                    flag.type === "warning" ? "bg-amber-500/10 text-amber-500" : "bg-emerald-500/10 text-emerald-500"
+                                                                )}>
+                                                                    {flag.type === "critical" ? <AlertTriangle size={16} /> : <Info size={16} />}
+                                                                </div>
+                                                                <div className="flex-1">
+                                                                    <p className="text-xs font-bold text-zinc-100 italic">{flag.message}</p>
+                                                                    <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">{flag.timestamp || "00:00"}</span>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Sections Timeline */}
+                                            <div className="space-y-4">
+                                                <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                                                    <Clock size={14} className="text-indigo-400" /> Session Roadmap
+                                                </h3>
+                                                <div className="space-y-4 relative pl-4 border-l border-zinc-800 ml-2">
+                                                    {(reportData.pedagogicalAnalysis as any).sections.map((section: any, i: number) => (
+                                                        <div key={i} className="relative space-y-2">
+                                                            <div className="absolute -left-[21px] top-1.5 w-3 h-3 rounded-full bg-zinc-900 border-2 border-indigo-500" />
+                                                            <div className="flex items-center justify-between">
+                                                                <h4 className="text-xs font-black text-white italic uppercase">{section.title}</h4>
+                                                                <span className="text-[9px] font-mono text-indigo-400 bg-indigo-500/5 px-2 py-0.5 rounded border border-indigo-500/10">{section.startTime} - {section.endTime}</span>
+                                                            </div>
+                                                            <p className="text-[11px] font-bold text-zinc-500 leading-relaxed">{section.summary}</p>
+                                                            <div className="flex flex-wrap gap-2 pt-1">
+                                                                {section.keyTakeaways.map((tk: string, j: number) => (
+                                                                    <span key={j} className="text-[8px] font-black text-zinc-400 bg-zinc-800/50 px-2 py-1 rounded-lg border border-zinc-700/50 uppercase tracking-tighter">
+                                                                        {tk}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Sentence Improvements */}
+                                            {((reportData.pedagogicalAnalysis as any).sentenceImprovements?.length > 0) && (
+                                                <div className="space-y-4">
+                                                    <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                                                        <MessageSquareQuote size={14} className="text-emerald-400" /> Diction Refinements
+                                                    </h3>
+                                                    <div className="grid grid-cols-1 gap-4">
+                                                        {(reportData.pedagogicalAnalysis as any).sentenceImprovements.map((imp: any, i: number) => (
+                                                            <div key={i} className="bg-zinc-950/50 rounded-2xl border border-zinc-800/80 p-5 space-y-4 group/imp hover:bg-zinc-950 transition-all">
+                                                                <div className="space-y-2">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <Quote size={10} className="text-zinc-600" />
+                                                                        <p className="text-xs font-bold text-zinc-500 italic line-through opacity-50">{imp.original}</p>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <Sparkles size={12} className="text-emerald-400" />
+                                                                        <p className="text-xs font-black text-white italic tracking-tight">{imp.improved}</p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="pt-3 border-t border-zinc-900 flex items-center justify-between">
+                                                                    <p className="text-[9px] font-bold text-emerald-500/60 uppercase tracking-widest">{imp.reason}</p>
+                                                                    <span className="text-[8px] font-black text-zinc-600">{imp.timestamp}</span>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Gap Analysis */}
+                                            <div className="bg-gradient-to-br from-indigo-500/10 to-transparent p-6 rounded-3xl border border-indigo-500/10 space-y-6">
+                                                <h3 className="text-xs font-black text-indigo-100 uppercase tracking-[0.2em] flex items-center gap-2">
+                                                    <Sparkles size={16} className="text-indigo-400" /> Gap Analysis
+                                                </h3>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                    <div className="space-y-3">
+                                                        <h4 className="text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em]">Missing Concepts</h4>
+                                                        <div className="flex flex-col gap-2">
+                                                            {(reportData.pedagogicalAnalysis as any).gapAnalysis.missingConcepts.map((c: string, i: number) => (
+                                                                <div key={i} className="flex items-center gap-3">
+                                                                    <div className="w-1.5 h-1.5 rounded-full bg-red-400/40" />
+                                                                    <p className="text-xs font-bold text-zinc-300">{c}</p>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-3">
+                                                        <h4 className="text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em]">Improvement Path</h4>
+                                                        <div className="flex flex-col gap-2">
+                                                            {(reportData.pedagogicalAnalysis as any).suggestions.slice(0, 3).map((s: string, i: number) => (
+                                                                <div key={i} className="flex items-center gap-3">
+                                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400/40" />
+                                                                    <p className="text-xs font-bold text-zinc-300">{s}</p>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Full Transcript */}
+                                                {reportData.transcription && (
+                                                    <div className="space-y-4">
+                                                        <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                                                            <MessageSquare size={14} className="text-zinc-400" /> Session Transcript
+                                                        </h3>
+                                                        <div className="bg-zinc-950/30 border border-zinc-800/80 rounded-2xl p-6 max-h-60 overflow-y-auto custom-scrollbar">
+                                                            <pre className="text-[11px] font-medium text-zinc-400 whitespace-pre-wrap leading-relaxed font-mono">
+                                                                {reportData.transcription}
+                                                            </pre>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="py-20 flex flex-col items-center justify-center space-y-6 text-center">
+                                            <div className="w-20 h-20 bg-zinc-800/50 rounded-[2rem] flex items-center justify-center border border-zinc-700/50 shadow-inner">
+                                                <Sparkles size={32} className="text-zinc-600" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <h3 className="text-lg font-black text-white italic uppercase tracking-[0.2em]">No Report Generated</h3>
+                                                <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest max-w-xs">Run the neural analysis to extract pedagogical insights from this lecture's recording.</p>
+                                            </div>
+                                            <button 
+                                                onClick={() => handleGenerateAIAnalysis((reportData as any)._id)}
+                                                className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all active:scale-95 shadow-lg shadow-indigo-600/20 flex items-center gap-2 group"
+                                            >
+                                                <Brain size={16} className="group-hover:rotate-12 transition-transform" />
+                                                Generate AI Report
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-lg">
-                                        <p className="text-[8px] text-zinc-600 font-black uppercase mb-1">Present</p>
-                                        <p className="text-sm font-black font-mono text-white">{(reportData as any).numberOfAttendees || 0}</p>
-                                    </div>
-                                    <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-lg">
-                                        <p className="text-[8px] text-zinc-600 font-black uppercase mb-1">Total Strength</p>
-                                        <p className="text-sm font-black font-mono text-white">{(reportData as any).totalStudents || 0}</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <p className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-1">Class Evidence</p>
-                                    <div className="aspect-video bg-zinc-950 rounded-2xl border border-zinc-800/50 overflow-hidden relative group/img">
-                                        {(reportData as any).classPhotoUrl ? (
-                                            <>
-                                                <img src={(reportData as any).classPhotoUrl} alt="Class Photo" className="w-full h-full object-cover transition-transform duration-500 group-hover/img:scale-110" />
-                                                <a href={(reportData as any).classPhotoUrl} target="_blank" rel="noopener noreferrer"
-                                                    className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition-opacity">
-                                                    <Zap size={24} className="text-white drop-shadow-lg" />
-                                                </a>
-                                            </>
-                                        ) : (
-                                            <div className="w-full h-full flex flex-col items-center justify-center gap-2 opacity-20">
-                                                <Zap size={24} />
-                                                <span className="text-[7px] font-black uppercase">No Image</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                                <div className="space-y-2">
-                                    <p className="text-[8px] text-zinc-600 font-black uppercase tracking-widest pl-1">Session Recording</p>
-                                    <div className="aspect-video bg-zinc-950 rounded-2xl border border-zinc-800/50 overflow-hidden relative group/rec">
-                                        {(reportData as any).recordingUrl ? (
-                                            <>
-                                                <div className="w-full h-full bg-indigo-500/5 flex flex-col items-center justify-center gap-1 group-hover/rec:bg-indigo-500/10 transition-colors">
-                                                    <Play size={24} className="text-indigo-500/40 group-hover/rec:text-indigo-400 group-hover/rec:scale-110 transition-all" fill="currentColor" />
-                                                    <span className="text-[7px] font-black text-indigo-400 uppercase tracking-widest mt-1">Ready for Sync</span>
-                                                </div>
-                                                <a href={(reportData as any).recordingUrl} target="_blank" rel="noopener noreferrer" className="absolute inset-0 z-10" />
-                                            </>
-                                        ) : (
-                                            <div className="w-full h-full flex flex-col items-center justify-center gap-2 opacity-20">
-                                                <Play size={24} />
-                                                <span className="text-[7px] font-black uppercase">No Recording</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
+                            )}
                         </div>
 
                         <div className="p-8 border-t border-zinc-800/50 bg-zinc-950/20">

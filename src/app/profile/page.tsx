@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import {
     User, Camera, Mail, Phone, MapPin, Building, Briefcase,
     Calendar as CalendarIcon, Shield, Loader2, CheckCircle2,
-    AlertCircle, CreditCard, FileText, Linkedin, Link, GraduationCap,
+    AlertCircle, CreditCard, FileText, ExternalLink, Link, GraduationCap,
     Landmark, Fingerprint, Wallet
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -215,7 +215,7 @@ export default function ProfilePage() {
                         <InfoRow icon={<FileText size={14} />} label="Bachelor Degree" value={getVal(emp.bachelorQual, emp.bachelor_s_qualification____ex___b_tech__cse____iit_guwahati_)} />
                         <InfoRow icon={<FileText size={14} />} label="Master Degree" value={getVal(emp.masterQual, emp.master_s_qualification____ex___m_tech__cse____iit_guwahati_)} />
                         <InfoRow icon={<FileText size={14} />} label="Institution" value={getVal(emp.collegeName, emp.which_college_are_you_from_)} />
-                        <InfoRow icon={<Linkedin size={14} />} label="LinkedIn Identity" value={emp.linkedinId ? <a href={emp.linkedinId} target="_blank" className="text-emerald-500 hover:underline">View Profile</a> : "—"} />
+                        <InfoRow icon={<ExternalLink size={14} />} label="LinkedIn Identity" value={emp.linkedinId ? <a href={emp.linkedinId} target="_blank" className="text-emerald-500 hover:underline">View Profile</a> : "—"} />
                     </Section>
 
                     {/* Section: Persona/Family */}

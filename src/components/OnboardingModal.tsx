@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { 
     X, Upload, CheckCircle, AlertCircle, FileText, CreditCard, User, 
-    Briefcase, Linkedin, Phone, MapPin, Building, Calendar, Info
+    Briefcase, Phone, MapPin, Building, Calendar, Info
 } from "lucide-react";
 
 export default function OnboardingModal() {

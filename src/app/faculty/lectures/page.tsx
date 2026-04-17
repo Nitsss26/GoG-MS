@@ -577,12 +577,12 @@ export default function LecturesPage() {
                                             <Camera size={12} className="text-zinc-500" /> Photo
                                         </label>
                                         <div className="relative group/photo">
-                                            <input type="file" accept="image/*" capture="environment"
+                                            <input type="file" accept="image/*"
                                                 onChange={e => e.target.files?.[0] && handlePhotoSelect(e.target.files[0])}
                                                 className="hidden" id="photo-upload" />
                                             <label htmlFor="photo-upload" className="flex items-center gap-3 px-4 py-3 bg-zinc-800/20 border-2 border-dashed border-zinc-800 rounded-xl cursor-pointer hover:border-emerald-500/30 transition-all">
                                                 {photoFile ? <CheckCircle2 className="text-emerald-500" size={18} /> : <Upload className="text-zinc-700" size={18} />}
-                                                <span className="text-[9px] font-bold text-zinc-500 uppercase">{photoFile ? "Attached" : "Take Photo"}</span>
+                                                <span className="text-[9px] font-bold text-zinc-500 uppercase">{photoFile ? "Attached" : "Attach Photo"}</span>
                                             </label>
                                             {photoCoords && (
                                                 <div className="absolute top-1/2 -translate-y-1/2 right-2 flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-full">
