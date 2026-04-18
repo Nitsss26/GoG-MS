@@ -23,7 +23,16 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
 
     // Modal state
     const [showReport, setShowReport] = useState<number | null>(null);
-    const [reportData, setReportData] = useState({
+    const [reportData, setReportData] = useState<{
+        numberOfAttendees: string;
+        totalStudents: string;
+        topicsCovered: string;
+        issuesFaced: string;
+        reasonForLessAttendance: string;
+        pedagogicalAnalysis: any;
+        isAIProcessed: boolean;
+        transcription: string;
+    }>({
         numberOfAttendees: "",
         totalStudents: "40",
         topicsCovered: "",
