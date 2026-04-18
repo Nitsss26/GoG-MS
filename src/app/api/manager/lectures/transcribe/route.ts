@@ -84,7 +84,7 @@ export async function POST(req: Request) {
         const audioData = fs.readFileSync(tempAudioPath);
         const base64Audio = audioData.toString('base64');
 
-        const modelPro = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+        const modelPro = genAI.getGenerativeModel({ model: "gemini-3.1-pro-preview" });
         
         const transcriptionPrompt = `Transcribe this lecture audio accurately and COMPLETELY. 
         It is CRITICAL that the transcription covers the ENTIRE duration of the audio file.

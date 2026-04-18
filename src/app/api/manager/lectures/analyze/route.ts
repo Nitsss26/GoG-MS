@@ -61,7 +61,7 @@ export async function POST(req: Request) {
         }`;
 
         const analysisModel = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-pro",
+            model: "gemini-3.1-pro-preview",
             generationConfig: { responseMimeType: "application/json" }
         });
 
