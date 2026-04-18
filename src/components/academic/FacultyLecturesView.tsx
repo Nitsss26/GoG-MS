@@ -105,26 +105,68 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
         if (isAnalyzing) return;
         setIsAnalyzing(true);
         try {
-            const res = await fetch('/api/manager/lectures/analyze', {
+            // STEP 1: TRANSCRIBE
+            setReportData(prev => ({ ...prev, transcription: "Step 1/2: transcribing session audio..." }));
+            
+            const transRes = await fetch('/api/manager/lectures/transcribe', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ reportId })
             });
-            const data = await res.json();
-            if (data.success) {
+            
+            const transText = await transRes.text();
+            let transData;
+            try {
+                transData = JSON.parse(transText);
+            } catch (err) {
+                console.error("[UI] Transcribe Parse Error:", transText);
+                throw new Error("Transcription phase failed (Server timeout). Please check connection.");
+            }
+
+            if (!transData.success) {
+                throw new Error(transData.error || "Transcription failed");
+            }
+
+            // Immediately show transcription
+            setReportData(prev => ({ 
+                ...prev, 
+                transcription: transData.transcription
+            }));
+
+            // STEP 2: ANALYZE
+            setReportData(prev => ({ 
+                ...prev, 
+                pedagogicalAnalysis: { summary: "Step 2/2: analyzing pedagogical metrics..." } 
+            }));
+
+            const analRes = await fetch('/api/manager/lectures/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reportId })
+            });
+
+            const analText = await analRes.text();
+            let analData;
+            try {
+                analData = JSON.parse(analText);
+            } catch (err) {
+                console.error("[UI] Analyze Parse Error:", analText);
+                throw new Error("Analysis phase failed. Please try again.");
+            }
+
+            if (analData.success) {
                 setReportData(prev => ({ 
                     ...prev, 
-                    pedagogicalAnalysis: data.analysis,
-                    isAIProcessed: true,
-                    transcription: data.analysis.transcription || data.transcription || ""
+                    pedagogicalAnalysis: analData.analysis,
+                    isAIProcessed: true
                 }));
-                // Refresh list to keep synced
+                // Refresh list
                 fetchLectures();
             } else {
-                alert(data.error || "Analysis failed");
+                alert(analData.error || "Analysis failed");
             }
         } catch (e: any) {
-            console.error("[UI] Analysis Click Error:", e);
+            console.error("[UI] Analysis Flow Error:", e);
             alert(`Analysis failed: ${e.message || "Unknown error"}`);
         } finally {
             setIsAnalyzing(false);
