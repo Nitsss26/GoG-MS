@@ -192,6 +192,7 @@ export async function POST(req: Request) {
                     reasonForLessAttendance: reasonForLessAttendance || "",
                     recordingUrl,
                     recordingDurationSeconds,
+                    actualDurationMinutes: Math.round((recordingDurationSeconds || 0) / 60),
                     sprintPlanId: sprintPlanId || "",
                     status: "Completed",
                     auditStatus: "Pending",

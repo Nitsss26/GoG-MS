@@ -33,16 +33,16 @@ export async function processLectureWithAI(recordingUrl: string) {
 
     let tempVideoPath = "";
     let tempAudioPath = "";
-    
+
     try {
         console.log(`[AI] Initializing Gemini-only Analysis for: ${recordingUrl}`);
-        
+
         // 1. Download Video
-        const response = await axios.get(recordingUrl, { 
+        const response = await axios.get(recordingUrl, {
             responseType: 'arraybuffer',
             timeout: 600000 // 10 mins for download
         });
-        
+
         const videoBuffer = Buffer.from(response.data);
         const fileName = `lec_${Date.now()}.mp4`;
         tempVideoPath = path.join(os.tmpdir(), fileName);
@@ -101,7 +101,7 @@ export async function processLectureWithAI(recordingUrl: string) {
 
         const apiKey = process.env.GEMINI_API_KEY;
         // Use v1 for stability and the -latest model name
-        const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-3-pro-preview-latest:generateContent?key=${apiKey}`;
 
         const payload = {
             contents: [{
@@ -150,7 +150,7 @@ export async function processLectureWithAI(recordingUrl: string) {
         // Cleanup
         [tempVideoPath, tempAudioPath].forEach(p => {
             if (p && fs.existsSync(p)) {
-                try { fs.unlinkSync(p); } catch (e) {}
+                try { fs.unlinkSync(p); } catch (e) { }
             }
         });
     }

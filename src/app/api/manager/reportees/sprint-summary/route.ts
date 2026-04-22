@@ -36,7 +36,19 @@ export async function GET(req: Request) {
         const manager = await Employee.findOne({ id: managerId });
         if (!manager) return NextResponse.json({ error: "Manager not found" }, { status: 404 });
 
-        const reportees = await Employee.find({ reportsTo: managerId });
+        let reportees;
+        if (["AD", "FOUNDER"].includes(manager.role)) {
+            reportees = await Employee.find({ role: { $in: ["FACULTY", "PROFESSOR"] } });
+        } else {
+            const matchingConditions: any[] = [
+                { reportsTo: managerId },
+                { reportsTo: { $in: [managerId] } }
+            ];
+            if (manager.role === "HOI" && manager.location) {
+                matchingConditions.push({ location: manager.location });
+            }
+            reportees = await Employee.find({ $or: matchingConditions });
+        }
         const reporteeIds = reportees.map(r => r.id);
 
         // Find plans for current and next week

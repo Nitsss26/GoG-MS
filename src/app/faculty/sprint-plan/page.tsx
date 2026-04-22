@@ -2,11 +2,13 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
     CalendarDays, Plus, Trash2, Lock, Unlock, Save, AlertTriangle,
     Clock, BookOpen, ArrowLeft, ArrowRight, Check, X, Send, Settings, Edit2, Copy,
     Download
 } from "lucide-react";
+import TimePicker from "@/components/ui/TimePicker";
 import Link from "next/link";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -120,6 +122,7 @@ export default function SprintPlanPage() {
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
     const [invalidIndices, setInvalidIndices] = useState<number[]>([]);
     const [copying, setCopying] = useState(false);
+    const [activeTimePicker, setActiveTimePicker] = useState<{ idx: number; field: "timeStart" | "timeStop" } | null>(null);
 
     // Dynamic Dropdowns
     const [facultySubjects, setFacultySubjects] = useState<Record<string, string>>(SUBJECTS);
@@ -623,19 +626,22 @@ export default function SprintPlanPage() {
                                             if (entry.date !== date && entry.day !== day) return null;
                                             return (
                                                 <div key={idx} className="px-4 py-3 grid grid-cols-12 gap-2 items-start">
-                                                    <div className="col-span-2 flex gap-1">
-                                                        <input value={entry.timeStart} onChange={e => {
-                                                            updateEntry(idx, "timeStart", e.target.value);
-                                                            if (invalidIndices.includes(idx)) setInvalidIndices(prev => prev.filter(i => i !== idx));
-                                                        }}
-                                                            disabled={plan?.isLocked} placeholder="09:20"
-                                                            className={`w-full px-2 py-1.5 bg-zinc-800 border ${invalidIndices.includes(idx) ? 'border-red-500 animate-pulse' : 'border-zinc-700'} rounded text-[11px] text-white text-center focus:border-violet-500 focus:outline-none disabled:opacity-50 transition-colors`} />
-                                                        <input value={entry.timeStop} onChange={e => {
-                                                            updateEntry(idx, "timeStop", e.target.value);
-                                                            if (invalidIndices.includes(idx)) setInvalidIndices(prev => prev.filter(i => i !== idx));
-                                                        }}
-                                                            disabled={plan?.isLocked} placeholder="10:10"
-                                                            className={`w-full px-2 py-1.5 bg-zinc-800 border ${invalidIndices.includes(idx) ? 'border-red-500 animate-pulse' : 'border-zinc-700'} rounded text-[11px] text-white text-center focus:border-violet-500 focus:outline-none disabled:opacity-50 transition-colors`} />
+                                                    <div className="col-span-2 flex gap-1 items-center">
+                                                        <button 
+                                                            onClick={() => setActiveTimePicker({ idx, field: "timeStart" })}
+                                                            disabled={plan?.isLocked}
+                                                            className={`flex-1 px-2 py-1.5 bg-zinc-800 border ${invalidIndices.includes(idx) ? 'border-red-500 animate-pulse' : 'border-zinc-700'} rounded text-[11px] text-white text-center focus:border-violet-500 hover:border-zinc-600 transition-colors disabled:opacity-50`}
+                                                        >
+                                                            {entry.timeStart || "09:20"}
+                                                        </button>
+                                                        <span className="text-zinc-600 font-bold">-</span>
+                                                        <button 
+                                                            onClick={() => setActiveTimePicker({ idx, field: "timeStop" })}
+                                                            disabled={plan?.isLocked}
+                                                            className={`flex-1 px-2 py-1.5 bg-zinc-800 border ${invalidIndices.includes(idx) ? 'border-red-500 animate-pulse' : 'border-zinc-700'} rounded text-[11px] text-white text-center focus:border-violet-500 hover:border-zinc-600 transition-colors disabled:opacity-50`}
+                                                        >
+                                                            {entry.timeStop || "10:10"}
+                                                        </button>
                                                     </div>
                                                     <div className="col-span-2 flex flex-col gap-1 relative">
                                                         <select value={entry.subjectCode} onChange={e => {

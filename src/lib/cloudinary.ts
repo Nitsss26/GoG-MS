@@ -13,23 +13,32 @@ export interface CloudinaryUploadResult {
     original_filename: string;
 }
 
+import axios from "axios";
+
 /**
  * Upload a file to Cloudinary using unsigned preset.
  * Supports images (JPG, PNG, WEBP) and PDFs.
+ * Added onProgress support for real-time tracking.
  */
-export async function uploadToCloudinary(file: File): Promise<CloudinaryUploadResult> {
+export async function uploadToCloudinary(
+    file: File, 
+    onProgress?: (progress: number) => void
+): Promise<CloudinaryUploadResult> {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("upload_preset", UPLOAD_PRESET);
 
-    const res = await fetch(UPLOAD_URL, { method: "POST", body: formData });
+    const res = await axios.post(UPLOAD_URL, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (progressEvent) => {
+            if (onProgress && progressEvent.total) {
+                const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                onProgress(percentCompleted);
+            }
+        },
+    });
 
-    if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`Upload failed: ${err}`);
-    }
-
-    return res.json();
+    return res.data;
 }
 
 /**
@@ -37,5 +46,5 @@ export async function uploadToCloudinary(file: File): Promise<CloudinaryUploadRe
  * Returns an array of upload results.
  */
 export async function uploadMultipleToCloudinary(files: File[]): Promise<CloudinaryUploadResult[]> {
-    return Promise.all(files.map(uploadToCloudinary));
+    return Promise.all(files.map(file => uploadToCloudinary(file)));
 }

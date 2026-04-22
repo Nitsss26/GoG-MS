@@ -17,81 +17,167 @@ export const maxDuration = 300; // 5 minutes timeout
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export async function POST(req: Request) {
-    const startTime = Date.now();
-    
-    try {
-        await dbConnect();
-        const { reportId } = await req.json();
+  const startTime = Date.now();
 
-        console.log(`[ANALYSIS] Starting Phase 2 for Report: ${reportId}`);
+  try {
+    await dbConnect();
+    const { reportId } = await req.json();
 
-        if (!reportId) {
-            return NextResponse.json({ error: "Report ID is required" }, { status: 400 });
-        }
+    console.log(`[ANALYSIS] Starting Phase 2 for Report: ${reportId}`);
 
-        const report = await LectureReport.findById(reportId);
-        if (!report) {
-            return NextResponse.json({ error: "Report not found" }, { status: 404 });
-        }
+    if (!reportId) {
+      return NextResponse.json({ error: "Report ID is required" }, { status: 400 });
+    }
 
-        // Must have transcription from Phase 1
-        const translationText = report.transcription;
-        if (!translationText) {
-            return NextResponse.json({ 
-                error: "No transcription found. Please run Step 1 (Transcription) first." 
-            }, { status: 400 });
-        }
+    const report = await LectureReport.findById(reportId);
+    if (!report) {
+      return NextResponse.json({ error: "Report not found" }, { status: 404 });
+    }
 
-        console.log(`[ANALYSIS] Dispatching Pedagogical Analysis...`);
-        const analysisPrompt = `Analyze the following lecture transcript and provide a comprehensive pedagogical report in JSON format.
-        Use easy English vocabulary so the report is simple to understand for everyone.
+    // Must have transcription from Phase 1
+    const translationText = report.transcription;
+    if (!translationText) {
+      return NextResponse.json({
+        error: "No transcription found. Please run Step 1 (Transcription) first."
+      }, { status: 400 });
+    }
+
+    console.log(`[ANALYSIS] Dispatching Comprehensive LQR Analysis...`);
+    const analysisPrompt = `Analyze the following lecture transcript and provide a HIGHLY PROFESSIONAL pedagogical report in JSON format.
+        This is for a "Lecture Quality Report" (LQR).
         
         Transcript:
         ${translationText}
         
+        JUDGING FRAMEWORK (Five Pillars):
+        1. Pillar 1: Content & Curriculum (weight: 30%)
+           - Concept Accuracy & Terminology
+           - Depth & Coverage
+           - Curriculum Alignment (match with syllabus)
+           - Example Relevance
+        2. Pillar 2: Pedagogy & Structure (weight: 25%)
+           - Explanation Clarity & Scaffolding
+           - Logical Flow & Transitions
+           - Pace & Time Management
+           - Formative Checks (verifying understanding)
+        3. Pillar 3: Communication & Delivery (weight: 15%)
+           - Fluency & Articulation (fillers/broken sentences)
+           - Voice Modulation & Energy
+           - Vocabulary Appropriateness (jargon handling)
+        4. Pillar 4: Student Engagement (weight: 20%)
+           - Questioning Quality (Higher-order vs Yes/No)
+           - Interaction Breadth (not just front-benchers)
+           - Acknowledgment & Reinforcement
+           - Attention-Grabbing Techniques (hooks/analogies)
+        5. Pillar 5: Classroom Management (weight: 10%)
+           - Noise & Disruption Handling
+           - Crowd Control
+           - Time Discipline (start/end alignment)
+        
+        RED FLAG LAYER (Veto Power):
+        - Categories: Rudeness/Condescension, Offensive Language, Factual Misinformation, Excessive Off-topic (>10%), Boundary Violations.
+        - Severities: Not Observed, Minor, Moderate, Severe.
+        
+        SCORING LOGIC:
+        - Score each of the 18 parameters on 1.0 - 5.0 scale (half-points allowed).
+        - Anchors: 1=Unacceptable, 2=Below Expectations, 3=Meets Expectations, 4=Strong, 5=Exemplary.
+        - Weighted Pillar Score (WPS) out of 5 using weights above.
+        - Red Flag Multiplier: None (1.0), 1 Minor (0.95), 2+ Minor (0.90), 1 Moderate (0.80), 2+ Moderate (0.65), Severe (0.50).
+        - Final LQS = WPS * Multiplier.
+        - Overall Rating Band: 
+            - 4.5 – 5.0: Exemplary
+            - 3.8 – 4.4: On Track
+            - 3.0 – 3.7: Needs Coaching
+            - Below 3.0 OR Any Severe Flag: Requires Intervention (Auto-escalate)
+        
         REQUIRED JSON STRUCTURE:
         {
-          "score": number (0-100),
-          "summary": "overall session summary",
-          "sections": [{ "title": "string", "startTime": "MM:SS", "endTime": "MM:SS", "summary": "string", "keyTakeaways": ["string"] }],
-          "sentenceImprovements": [{ "original": "string", "improved": "string", "reason": "string", "timestamp": "MM:SS" }],
-          "gapAnalysis": { "missingConcepts": ["string"] },
-          "suggestions": ["string"],
-          "flags": [{ "type": "warning|info|error", "message": "string", "timestamp": "MM:SS" }]
+          "summary": {
+            "topic": "string",
+            "overallRating": "Exemplary | On Track | Needs Coaching | Requires Intervention",
+            "weightedPillarScore": number,
+            "redFlagMultiplier": number,
+            "lectureQualityScore": number,
+            "redFlagsCount": { "minor": number, "moderate": number, "severe": number },
+            "recommendedNextStep": { "action": "Self-review | Peer observation | Coaching session | Formal review", "reason": "string", "targetCompletion": "string" }
+          },
+          "pillarSnapshot": [
+            { "pillar": "Content & Curriculum", "weight": "30%", "score": number },
+            { "pillar": "Pedagogy & Structure", "weight": "25%", "score": number },
+            { "pillar": "Student Engagement", "weight": "20%", "score": number },
+            { "pillar": "Communication & Delivery", "weight": "15%", "score": number },
+            { "pillar": "Classroom Management", "weight": "10%", "score": number }
+          ],
+          "topStrengths": [{ "text": "string", "timestamp": "MM:SS" }],
+          "topImprovements": [{ "text": "string", "timestamp": "MM:SS" }],
+          "detailedScorecard": [
+            {
+              "pillar": "string",
+              "parameters": [
+                {
+                  "name": "string",
+                  "score": number, 
+                  "anchor": "Unacceptable | Below Expectations | Meets Expectations | Strong | Exemplary",
+                  "whatWorked": ["observation with [MM:SS]"],
+                  "scopeForImprovement": ["observation with [MM:SS]"],
+                  "actionItems": [{ "task": "string", "example": "direct rewrite quote" }]
+                }
+              ]
+            }
+          ],
+          "redFlagLog": [
+            { "category": "string", "severity": "string", "timestamp": "MM:SS", "observation": "exact quote and impact" }
+          ],
+          "evidenceLog": {
+            "metrics": [
+              { "name": "Total filler words", "observed": "string", "benchmark": "Target: < 30" },
+              { "name": "Questions asked to students", "observed": "string", "benchmark": "Target: 15+" },
+              { "name": "Average wait time after question", "observed": "string", "benchmark": "Target: 5s+" },
+              { "name": "Longest silence stretch", "observed": "string", "benchmark": "Target: < 90s" },
+              { "name": "Professor-to-student talk ratio", "observed": "string", "benchmark": "Target: 75:25 or lower" },
+              { "name": "Topic transition count", "observed": "string", "benchmark": "Target: 5+" }
+            ],
+            "quantitativeData": {
+              "fillerCount": number,
+              "questionsCount": number,
+              "talkRatio": "string",
+              "waitTimeToAverage": number
+            }
+          }
         }`;
 
-        const analysisModel = genAI.getGenerativeModel({ 
-            model: "gemini-3.1-pro-preview",
-            generationConfig: { responseMimeType: "application/json" }
-        });
+    const analysisModel = genAI.getGenerativeModel({
+      model: "gemini-3-pro-preview",
+      generationConfig: { responseMimeType: "application/json" }
+    });
 
-        const analysisResult = await analysisModel.generateContent(analysisPrompt);
-        const analysisResponseText = analysisResult.response.text();
-        
-        let analysis;
-        try {
-            analysis = JSON.parse(analysisResponseText);
-        } catch (jsonErr) {
-            console.error("[ANALYSIS] JSON Parsing Error. Fallback to regex.");
-            const jsonMatch = analysisResponseText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                analysis = JSON.parse(jsonMatch[0]);
-            } else {
-                throw new Error("Failed to parse pedagogical analysis JSON");
-            }
-        }
+    const analysisResult = await analysisModel.generateContent(analysisPrompt);
+    const analysisResponseText = analysisResult.response.text();
 
-        console.log("[ANALYSIS] Updating database...");
-        report.pedagogicalAnalysis = analysis;
-        report.isAIProcessed = true;
-        report.aiAnalysisAt = new Date().toISOString();
-        await report.save();
-
-        console.log(`[ANALYSIS] SUCCESS. Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
-
-        return NextResponse.json({ success: true, analysis });
-    } catch (error: any) {
-        console.error("[ANALYSIS] FATAL ERROR:", error);
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    let analysis;
+    try {
+      analysis = JSON.parse(analysisResponseText);
+    } catch (jsonErr) {
+      console.error("[ANALYSIS] JSON Parsing Error. Fallback to regex.");
+      const jsonMatch = analysisResponseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        analysis = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error("Failed to parse pedagogical analysis JSON");
+      }
     }
+
+    console.log("[ANALYSIS] Updating database with Enhanced LQR data...");
+    report.pedagogicalAnalysis = analysis;
+    report.isAIProcessed = true;
+    report.aiAnalysisAt = new Date().toISOString();
+    await report.save();
+
+    console.log(`[ANALYSIS] SUCCESS. Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+
+    return NextResponse.json({ success: true, analysis });
+  } catch (error: any) {
+    console.error("[ANALYSIS] FATAL ERROR:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
 }

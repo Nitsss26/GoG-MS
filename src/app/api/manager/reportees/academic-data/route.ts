@@ -18,17 +18,24 @@ export async function GET(req: Request) {
         // 2. Find all reportees for this manager
         // Logic: Anyone pointing to them in reportsTo (string or array)
         // AND (if HOI) anyone at their same location
-        const matchingConditions: any[] = [
-            { reportsTo: managerId },
-            { reportsTo: { $in: [managerId] } }
-        ];
+        // AND (if AD/FOUNDER) EVERYONE with role FACULTY or PROFESSOR
+        let reportees;
 
-        // If manager is an HOI, also include everyone at their location
-        if (manager.role === "HOI" && manager.location) {
-            matchingConditions.push({ location: manager.location });
+        if (["AD", "FOUNDER"].includes(manager.role)) {
+            reportees = await Employee.find({ role: { $in: ["FACULTY", "PROFESSOR"] } });
+        } else {
+            const matchingConditions: any[] = [
+                { reportsTo: managerId },
+                { reportsTo: { $in: [managerId] } }
+            ];
+
+            // If manager is an HOI, also include everyone at their location
+            if (manager.role === "HOI" && manager.location) {
+                matchingConditions.push({ location: manager.location });
+            }
+
+            reportees = await Employee.find({ $or: matchingConditions });
         }
-
-        const reportees = await Employee.find({ $or: matchingConditions });
         const reporteeIds = reportees.map(r => r.id);
 
         if (reporteeIds.length === 0) {

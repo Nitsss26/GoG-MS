@@ -14,6 +14,7 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
     const [isMobileOpen, setIsMobileOpen] = useState(false);
 
     const isAuthPage = pathname === "/login";
+    const isStandalonePage = pathname.startsWith("/manager/lecture-report/");
 
     useEffect(() => {
         if (authLoading) return; // Wait for auth to initialize
@@ -30,6 +31,14 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
     }, [user, authLoading, pathname, router, isAuthPage]);
 
     if (authLoading) return null;
+
+    if (isStandalonePage) {
+        return (
+            <div className="min-h-screen w-full bg-white text-zinc-900 selection:bg-indigo-100">
+                {children}
+            </div>
+        );
+    }
 
     const showSidebar = user && !isAuthPage;
 

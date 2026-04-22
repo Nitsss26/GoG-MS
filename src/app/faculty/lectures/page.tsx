@@ -63,6 +63,8 @@ export default function LecturesPage() {
     const [photoFile, setPhotoFile] = useState<File | null>(null);
     const [recordingDuration, setRecordingDuration] = useState(0);
     const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [uploadLabel, setUploadLabel] = useState("");
     const [photoCoords, setPhotoCoords] = useState<{ lat: number; lng: number } | null>(null);
 
     // Date state for schedule and export
@@ -113,13 +115,18 @@ export default function LecturesPage() {
             let recordingUrl = "";
             let classPhotoUrl = "";
             if (recordingFile) {
-                const result = await uploadToCloudinary(recordingFile);
+                setUploadLabel("Uploading Recording...");
+                const result = await uploadToCloudinary(recordingFile, (p) => setUploadProgress(p));
                 recordingUrl = result.secure_url;
             }
             if (photoFile) {
-                const result = await uploadToCloudinary(photoFile);
+                setUploadLabel("Uploading Class Photo...");
+                setUploadProgress(0);
+                const result = await uploadToCloudinary(photoFile, (p) => setUploadProgress(p));
                 classPhotoUrl = result.secure_url;
             }
+            setUploadLabel("Finalizing Report...");
+            setUploadProgress(100);
             const res = await fetch("/api/faculty/lectures", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -155,6 +162,8 @@ export default function LecturesPage() {
             setMessage({ type: "error", text: e.message });
         } finally {
             setUploading(false);
+            setUploadProgress(0);
+            setUploadLabel("");
         }
     };
 
@@ -622,10 +631,18 @@ export default function LecturesPage() {
                                 disabled={uploading || !photoFile || !recordingFile}
                                 className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all disabled:opacity-30">
                                 {uploading ? (
-                                    <>
-                                        <Loader2 size={14} className="animate-spin" />
-                                        <span>Saving...</span>
-                                    </>
+                                    <div className="flex flex-col items-center gap-2 w-full">
+                                        <div className="flex items-center gap-2">
+                                            <Loader2 size={14} className="animate-spin" />
+                                            <span>{uploadLabel} ({uploadProgress}%)</span>
+                                        </div>
+                                        <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                                            <div 
+                                                className="h-full bg-white transition-all duration-300 ease-out" 
+                                                style={{ width: `${uploadProgress}%` }}
+                                            />
+                                        </div>
+                                    </div>
                                 ) : (
                                     <>
                                         <Upload size={14} />

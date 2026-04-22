@@ -6,7 +6,7 @@ import {
     Zap, ShieldAlert, FileText, X, Play, Users,
     ArrowLeft, ArrowRight, BookOpen, Sparkles, Brain,
     Cpu, SearchCode, MessageSquareQuote, Quote, TrendingUp,
-    Info, MessageSquare
+    Info, MessageSquare, Award
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from 'react-markdown';
@@ -110,76 +110,15 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
         setActiveModalTab("AUDIT");
     };
 
-    const handleGenerateAIAnalysis = async (reportId: string) => {
-        if (isAnalyzing) return;
-        setIsAnalyzing(true);
-        try {
-            // STEP 1: TRANSCRIBE
-            setReportData(prev => ({ ...prev, transcription: "Step 1/2: transcribing session audio..." }));
-            
-            const transRes = await fetch('/api/manager/lectures/transcribe', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ reportId })
-            });
-            
-            const transText = await transRes.text();
-            let transData;
-            try {
-                transData = JSON.parse(transText);
-            } catch (err) {
-                console.error("[UI] Transcribe Parse Error:", transText);
-                throw new Error("Transcription phase failed (Server timeout). Please check connection.");
-            }
-
-            if (!transData.success) {
-                throw new Error(transData.error || "Transcription failed");
-            }
-
-            // Immediately show transcription
-            setReportData(prev => ({ 
-                ...prev, 
-                transcription: transData.transcription
-            }));
-
-            // STEP 2: ANALYZE
-            setReportData(prev => ({ 
-                ...prev, 
-                pedagogicalAnalysis: { summary: "Step 2/2: analyzing pedagogical metrics..." } 
-            }));
-
-            const analRes = await fetch('/api/manager/lectures/analyze', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ reportId })
-            });
-
-            const analText = await analRes.text();
-            let analData;
-            try {
-                analData = JSON.parse(analText);
-            } catch (err) {
-                console.error("[UI] Analyze Parse Error:", analText);
-                throw new Error("Analysis phase failed. Please try again.");
-            }
-
-            if (analData.success) {
-                setReportData(prev => ({ 
-                    ...prev, 
-                    pedagogicalAnalysis: analData.analysis,
-                    isAIProcessed: true
-                }));
-                // Refresh list
-                fetchLectures();
-            } else {
-                alert(analData.error || "Analysis failed");
-            }
-        } catch (e: any) {
-            console.error("[UI] Analysis Flow Error:", e);
-            alert(`Analysis failed: ${e.message || "Unknown error"}`);
-        } finally {
-            setIsAnalyzing(false);
-        }
+    const handleGenerateAIAnalysis = async () => {
+        if (!reportData) return;
+        const reportId = (reportData as any)._id;
+        
+        // Immediately open the new report in a new tab with an analyze instruction
+        window.open(`/manager/lecture-report/${reportId}?analyze=true`, '_blank');
+        
+        // Also refresh the local list so the state updates eventually
+        setTimeout(() => fetchLectures(), 2000);
     };
 
     return (
@@ -521,15 +460,73 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                     <TrendingUp size={16} className="text-indigo-400" /> Executive summary
                                                 </h3>
                                                 <div className="text-sm font-bold text-zinc-400 leading-relaxed italic prose prose-invert max-w-none">
-                                                    <ReactMarkdown>{(reportData.pedagogicalAnalysis as any).summary}</ReactMarkdown>
+                                                    <ReactMarkdown>{(reportData.pedagogicalAnalysis as any).summary?.summary || (reportData.pedagogicalAnalysis as any).summary}</ReactMarkdown>
+                                                </div>
+                                                <div className="flex justify-end pt-4">
+                                                    <button 
+                                                        onClick={() => window.open(`/manager/lecture-report/${(reportData as any)._id}`, '_blank')}
+                                                        className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2"
+                                                    >
+                                                        <FileText size={14} />
+                                                        Open Full LQR Report
+                                                    </button>
                                                 </div>
                                                 <div className="mt-4 pt-4 border-t border-zinc-800 flex items-center gap-3">
                                                     <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500">
                                                         <Sparkles size={14} />
                                                     </div>
-                                                    <p className="text-[10px] text-zinc-500 font-bold italic tracking-tight">"{(reportData.pedagogicalAnalysis as any).industryBenchmarking}"</p>
+                                                    <p className="text-[10px] text-zinc-500 font-bold italic tracking-tight">"{(reportData.pedagogicalAnalysis as any).industryBenchmarking || "Benchmarked against industry standards."}"</p>
                                                 </div>
                                             </div>
+
+                                            {/* 20 Parameter Scorecard Table */}
+                                            {((reportData.pedagogicalAnalysis as any).scorecard?.length > 0) && (
+                                                <div className="space-y-6">
+                                                    <div className="flex items-center justify-between px-2">
+                                                        <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                                                            <Award size={14} className="text-amber-500" /> Pedagogical Performance Scorecard
+                                                        </h3>
+                                                        <span className="text-[8px] font-bold text-zinc-600 uppercase tracking-widest bg-zinc-950 px-2 py-1 rounded-md border border-zinc-900">
+                                                            Scale: 0-10
+                                                        </span>
+                                                    </div>
+                                                    <div className="bg-zinc-950/50 rounded-[2rem] border border-zinc-800/80 overflow-hidden shadow-2xl backdrop-blur-sm">
+                                                        <table className="w-full text-left border-collapse">
+                                                            <thead>
+                                                                <tr className="bg-zinc-900/50 border-b border-zinc-800">
+                                                                    <th className="px-6 py-4 text-[9px] font-black text-zinc-500 uppercase tracking-widest w-1/3">Judging Parameter</th>
+                                                                    <th className="px-6 py-4 text-[9px] font-black text-zinc-500 uppercase tracking-widest text-center w-24">Score</th>
+                                                                    <th className="px-6 py-4 text-[9px] font-black text-zinc-500 uppercase tracking-widest">AI Remarks & Observations</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-zinc-800/40">
+                                                                {(reportData.pedagogicalAnalysis as any).scorecard.map((item: any, i: number) => (
+                                                                    <tr key={i} className="group hover:bg-white/[0.01] transition-colors">
+                                                                        <td className="px-6 py-4">
+                                                                            <span className="text-[11px] font-black text-zinc-200 uppercase tracking-tight group-hover:text-white transition-colors">{item.parameter}</span>
+                                                                        </td>
+                                                                        <td className="px-6 py-4 text-center">
+                                                                            <div className={cn(
+                                                                                "inline-flex items-center justify-center w-10 h-10 rounded-xl font-black text-sm tabular-nums border",
+                                                                                parseInt(item.score) >= 8 ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                                                                                parseInt(item.score) >= 5 ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                                                                                "bg-red-500/10 text-red-400 border-red-500/20"
+                                                                            )}>
+                                                                                {item.score}
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="px-6 py-4">
+                                                                            <p className="text-[11px] font-bold text-zinc-500 italic leading-relaxed group-hover:text-zinc-400 transition-colors">
+                                                                                {item.remarks}
+                                                                            </p>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            )}
 
                                             {/* Flags */}
                                             {((reportData.pedagogicalAnalysis as any).flags?.length > 0) && (
@@ -671,7 +668,7 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                 <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest max-w-xs">Run the neural analysis to extract pedagogical insights from this lecture's recording.</p>
                                             </div>
                                             <button 
-                                                onClick={() => handleGenerateAIAnalysis((reportData as any)._id)}
+                                                onClick={() => handleGenerateAIAnalysis()}
                                                 className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all active:scale-95 shadow-lg shadow-indigo-600/20 flex items-center gap-2 group"
                                             >
                                                 <Brain size={16} className="group-hover:rotate-12 transition-transform" />

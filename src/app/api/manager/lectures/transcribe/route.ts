@@ -2,19 +2,21 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { LectureReport } from '@/models/Schemas';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY || "");
 
-export const maxDuration = 300; // 5 minutes (Transcription can take time)
+export const maxDuration = 300; // 5 minutes
 
 export async function POST(req: Request) {
     const startTime = Date.now();
     let tempAudioPath = "";
-    
+
     try {
         await dbConnect();
         const { reportId } = await req.json();
@@ -34,42 +36,27 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "No recording URL found" }, { status: 400 });
         }
 
-        // --- CLOUDINARY MP3 TRANSFORMATION ---
-        // Optimization: Download audio only, not the full video.
-        // Original: https://res.cloudinary.com/dwaepohvf/video/upload/v1234/file.mp4
-        // Audio: https://res.cloudinary.com/dwaepohvf/video/upload/f_mp3/v1234/file.mp3
+        // --- AUDIO PREPARATION ---
         let audioUrl = report.recordingUrl;
         if (audioUrl.includes('video/upload')) {
             audioUrl = audioUrl.replace('video/upload/', 'video/upload/f_mp3/');
-            audioUrl = audioUrl.replace(/\.[^/.]+$/, ".mp3"); // Replace extension with mp3
+            audioUrl = audioUrl.replace(/\.[^/.]+$/, ".mp3");
         }
 
         tempAudioPath = path.join(os.tmpdir(), `audio_${reportId}_${Date.now()}.mp3`);
 
-        console.log(`[TRANSCRIPTION] Step 1: Downloading Audio from: ${audioUrl}`);
+        console.log(`[TRANSCRIPTION] Step 1: Downloading Audio...`);
         try {
-            const response = await axios({
-                url: audioUrl,
-                method: 'GET',
-                responseType: 'stream'
-            });
-
+            const response = await axios({ url: audioUrl, method: 'GET', responseType: 'stream' });
             const writer = fs.createWriteStream(tempAudioPath);
             response.data.pipe(writer);
-
             await new Promise((resolve, reject) => {
                 writer.on('finish', resolve);
                 writer.on('error', reject);
             });
-            console.log(`[TRANSCRIPTION] Download complete.`);
         } catch (dlErr: any) {
-            console.error("[TRANSCRIPTION] Download Failed. Reverting to original URL if transformation failed.", dlErr.message);
-            // Fallback to original URL if transformation failed (might not be Cloudinary)
-            const response = await axios({
-                url: report.recordingUrl,
-                method: 'GET',
-                responseType: 'stream'
-            });
+            console.error("[TRANSCRIPTION] Transformation failed (423/Other). Falling back to source URL.", dlErr.message);
+            const response = await axios({ url: report.recordingUrl, method: 'GET', responseType: 'stream' });
             const writer = fs.createWriteStream(tempAudioPath);
             response.data.pipe(writer);
             await new Promise((resolve, reject) => {
@@ -79,37 +66,73 @@ export async function POST(req: Request) {
         }
 
         const audioSize = fs.statSync(tempAudioPath).size;
-        console.log(`[TRANSCRIPTION] Step 2: Sending to Gemini. Audio Size: ${(audioSize / 1024 / 1024).toFixed(2)} MB`);
-        
-        const audioData = fs.readFileSync(tempAudioPath);
-        const base64Audio = audioData.toString('base64');
+        // Determine mime type from extension or fallback
+        const extension = report.recordingUrl.split('.').pop()?.toLowerCase();
+        let mimeType = "audio/mpeg"; // Default MP3
+        if (extension === 'webm') mimeType = "audio/webm";
+        if (extension === 'wav') mimeType = "audio/wav";
+        if (extension === 'mp4') mimeType = "video/mp4";
+        if (extension === 'mov') mimeType = "video/quicktime";
 
-        const modelPro = genAI.getGenerativeModel({ model: "gemini-3.1-pro-preview" });
-        
+        console.log(`[TRANSCRIPTION] Step 2: Uploading to Gemini File API (${(audioSize / 1024 / 1024).toFixed(2)} MB) as ${mimeType}`);
+
+        // --- UPLOAD TO FILE API ---
+        const uploadResult = await fileManager.uploadFile(tempAudioPath, {
+            mimeType,
+            displayName: `Lecture_${reportId}`,
+        });
+
+        // Polling for file to be ACTIVE
+        let file = await fileManager.getFile(uploadResult.file.name);
+        let attempts = 0;
+        while (file.state === FileState.PROCESSING && attempts < 60) { // Increased attempts
+            attempts++;
+            console.log(`[TRANSCRIPTION] File state: PROCESSING... (Attempt ${attempts})`);
+            await new Promise((resolve) => setTimeout(resolve, 4000)); // Slower polling for large files
+            file = await fileManager.getFile(uploadResult.file.name);
+        }
+
+        if (file.state === FileState.FAILED) {
+            console.error("[TRANSCRIPTION] Gemini File API Error Details:", file.error);
+            throw new Error(`Gemini File API processing failed: ${file.error?.message || "Unknown reason"}`);
+        }
+
+        if (file.state !== FileState.ACTIVE) {
+            throw new Error(`Gemini File API timed out or state is ${file.state}`);
+        }
+
+        console.log(`[TRANSCRIPTION] Step 3: Generating Content using File URI`);
+        const modelPro = genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
+
         const transcriptionPrompt = `Transcribe this lecture audio accurately and COMPLETELY. 
-        It is CRITICAL that the transcription covers the ENTIRE duration of the audio file.
-        Include timestamps in [MM:SS] format at the beginning of each logical segment or every 30 seconds.
-        The content might be in Hindi, English, or Hinglish (mix of both). Transcribe it exactly as spoken.
-        Format the output as a clean stream of text with timestamps.`;
+        Include timestamps in [MM:SS] format every 30-60 seconds.
+        Hinglish (mix of Hindi/English) content should be transcribed as spoken.
+        Format accurately as a clean text stream. If the audio is long, provide the full transcript without truncation.`;
 
         const transcriptionResult = await modelPro.generateContent([
             {
-                inlineData: {
-                    data: base64Audio,
-                    mimeType: "audio/mp3"
+                fileData: {
+                    mimeType: file.mimeType,
+                    fileUri: file.uri
                 }
             },
             { text: transcriptionPrompt }
         ]);
 
         const transcriptionText = transcriptionResult.response.text();
-        console.log(`[TRANSCRIPTION] Success. Transcription Length: ${transcriptionText.length}`);
 
-        // Update Database with partial result
+        // Clean up: delete original file from File API to save space/quotas
+        try {
+            await fileManager.deleteFile(file.name);
+        } catch (delErr) {
+            console.warn("[TRANSCRIPTION] Post-process cleanup failed (non-critical):", delErr);
+        }
+
+        // Update Database
         report.transcription = transcriptionText;
         await report.save();
 
-        console.log(`[TRANSCRIPTION] Total duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+        console.log(`[TRANSCRIPTION] Success. Total duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 
         return NextResponse.json({ success: true, transcription: transcriptionText });
     } catch (error: any) {
