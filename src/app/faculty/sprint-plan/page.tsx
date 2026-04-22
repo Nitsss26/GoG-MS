@@ -893,6 +893,19 @@ export default function SprintPlanPage() {
                     </div>
                 </div>
             )}
+            {/* CUSTOM CLOCK-STYLE TIME PICKER */}
+            <AnimatePresence>
+                {activeTimePicker && (
+                    <TimePicker
+                        value={entries[activeTimePicker.idx]?.[activeTimePicker.field] || (activeTimePicker.field === "timeStart" ? "09:20" : "10:10")}
+                        onChange={(time) => {
+                            updateEntry(activeTimePicker.idx, activeTimePicker.field, time);
+                            setActiveTimePicker(null);
+                        }}
+                        onClose={() => setActiveTimePicker(null)}
+                    />
+                )}
+            </AnimatePresence>
         </div>
     );
 }
