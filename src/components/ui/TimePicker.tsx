@@ -12,7 +12,7 @@ interface TimePickerProps {
 
 export default function TimePicker({ value, onChange, onClose }: TimePickerProps) {
     const [hours, setHours] = useState(parseInt(value.split(":")[0]) || 9);
-    const [minutes, setMinutes] = useState(parseInt(value.split(":")[1]) || 20);
+    const [minutes, setMinutes] = useState(parseInt(value.split(":")[1]) || 0);
     const [mode, setMode] = useState<'hours' | 'minutes'>('hours');
 
     const handleSelect = (val: number) => {
@@ -30,8 +30,8 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
         onClose();
     };
 
-    // Standard clock values
-    const hourValues = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    // 24-hour clock values
+    const hourValues = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
     const minuteValues = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
     return (
@@ -41,7 +41,7 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 w-full max-w-[340px] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)]"
+                className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 w-full max-w-[360px] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)]"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}
@@ -50,7 +50,7 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
                         <div className="p-2 bg-indigo-500/10 rounded-xl border border-indigo-500/20">
                             <Clock size={18} className="text-indigo-400" />
                         </div>
-                        <h3 className="text-sm font-black text-white uppercase italic tracking-widest">Select Timing</h3>
+                        <h3 className="text-sm font-black text-white uppercase italic tracking-widest">Select Timing (24h)</h3>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full transition-colors text-zinc-500">
                         <X size={18} />
@@ -65,7 +65,7 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
                     >
                         {hours.toString().padStart(2, '0')}
                     </button>
-                    <span className="text-4xl font-black text-zinc-800">:</span>
+                    <span className="text-4xl font-black text-zinc-800 tracking-tighter self-center mb-1">:</span>
                     <button 
                         onClick={() => setMode('minutes')}
                         className={`text-5xl font-black tabular-nums transition-colors ${mode === 'minutes' ? 'text-indigo-400' : 'text-zinc-700'}`}
@@ -74,8 +74,8 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
                     </button>
                 </div>
 
-                {/* Clock Face */}
-                <div className="relative w-56 h-56 mx-auto bg-zinc-950/50 rounded-full border border-zinc-800/80 shadow-inner flex items-center justify-center">
+                {/* Clock Face for 24h */}
+                <div className="relative w-64 h-64 mx-auto bg-zinc-950/50 rounded-full border border-zinc-800/80 shadow-inner flex items-center justify-center overflow-hidden">
                     {/* Center Dot */}
                     <div className="absolute w-2 h-2 bg-indigo-500 rounded-full z-10" />
                     
@@ -83,7 +83,7 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
                     <motion.div 
                         className="absolute bottom-1/2 left-1/2 w-0.5 bg-indigo-500 origin-bottom z-0"
                         animate={{ 
-                            height: mode === 'hours' ? '70px' : '90px',
+                            height: mode === 'hours' ? (hours >= 12 ? '65px' : '95px') : '95px',
                             rotate: mode === 'hours' 
                                 ? (hours % 12) * 30 
                                 : minutes * 6 
@@ -94,31 +94,60 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
                     </motion.div>
 
                     {/* Numbers */}
-                    {(mode === 'hours' ? hourValues : minuteValues).map((val, i) => {
-                        const angle = (i * 30) - 90;
-                        const radius = mode === 'hours' ? 80 : 85;
-                        const x = Math.cos(angle * (Math.PI / 180)) * radius;
-                        const y = Math.sin(angle * (Math.PI / 180)) * radius;
-                        
-                        const isSelected = mode === 'hours' ? hours === val : minutes === val;
+                    {mode === 'hours' ? (
+                        hourValues.map((val) => {
+                            const isInner = val >= 12;
+                            const angle = ((val % 12) * 30) - 90;
+                            const radius = isInner ? 60 : 100;
+                            const x = Math.cos(angle * (Math.PI / 180)) * radius;
+                            const y = Math.sin(angle * (Math.PI / 180)) * radius;
+                            
+                            const isSelected = hours === val;
 
-                        return (
-                            <button
-                                key={val}
-                                onClick={() => handleSelect(val)}
-                                className={`absolute text-xs font-black w-8 h-8 flex items-center justify-center rounded-full transition-all duration-300 ${
-                                    isSelected 
-                                    ? 'text-white translate-z-10' 
-                                    : 'text-zinc-600 hover:text-zinc-400 hover:bg-white/5'
-                                }`}
-                                style={{
-                                    transform: `translate(${x}px, ${y}px)`
-                                }}
-                            >
-                                {mode === 'minutes' ? val.toString().padStart(2, '0') : val}
-                            </button>
-                        );
-                    })}
+                            return (
+                                <button
+                                    key={val}
+                                    onClick={() => handleSelect(val)}
+                                    className={`absolute text-[10px] font-black w-7 h-7 flex items-center justify-center rounded-full transition-all duration-300 ${
+                                        isSelected 
+                                        ? 'text-white bg-indigo-500 ring-2 ring-indigo-400/50 z-20 shadow-lg' 
+                                        : 'text-zinc-600 hover:text-zinc-300 hover:bg-white/5'
+                                    }`}
+                                    style={{
+                                        transform: `translate(${x}px, ${y}px)`
+                                    }}
+                                >
+                                    {val}
+                                </button>
+                            );
+                        })
+                    ) : (
+                        minuteValues.map((val, i) => {
+                            const angle = (i * 30) - 90;
+                            const radius = 100;
+                            const x = Math.cos(angle * (Math.PI / 180)) * radius;
+                            const y = Math.sin(angle * (Math.PI / 180)) * radius;
+                            
+                            const isSelected = minutes === val;
+
+                            return (
+                                <button
+                                    key={val}
+                                    onClick={() => handleSelect(val)}
+                                    className={`absolute text-[11px] font-black w-8 h-8 flex items-center justify-center rounded-full transition-all duration-300 ${
+                                        isSelected 
+                                        ? 'text-white bg-indigo-500 ring-2 ring-indigo-400/50 z-20 shadow-lg' 
+                                        : 'text-zinc-600 hover:text-zinc-300 hover:bg-white/5'
+                                    }`}
+                                    style={{
+                                        transform: `translate(${x}px, ${y}px)`
+                                    }}
+                                >
+                                    {val.toString().padStart(2, '0')}
+                                </button>
+                            );
+                        })
+                    )}
                 </div>
 
                 {/* Footer Actions */}
@@ -133,10 +162,11 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
                         onClick={confirmSelection}
                         className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
                     >
-                        <Check size={14} /> Set Time
+                        <Check size={14} /> Confirm
                     </button>
                 </div>
             </motion.div>
         </div>
     );
 }
+

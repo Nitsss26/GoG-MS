@@ -71,13 +71,30 @@ export async function GET(req: Request) {
             const existingReports = await LectureReport.find({ facultyId, date: targetDate });
 
             // Merge sprint plan entries with existing reports
+            const assignedReportIds = new Set();
             const dayLectures = dayEntries.map((entry: any, idx: number) => {
                 const lecNum = idx + 1;
-                const existing = existingReports.find((r: any) => 
-                    (r.sprintPlanId === activePlan?._id?.toString() && r.lectureNumber === lecNum) ||
-                    (r.date === targetDate && r.lectureNumber === lecNum) ||
-                    (r.courseName === entry.subjectName && r.topicsCovered === entry.topics)
+                
+                // 1. Primary Match: Sprint Plan ID + Lecture Number OR Date + Lecture Number
+                let existing = existingReports.find((r: any) => 
+                    !assignedReportIds.has(r._id.toString()) && (
+                        (r.sprintPlanId === activePlan?._id?.toString() && r.lectureNumber === lecNum) ||
+                        (r.date === targetDate && r.lectureNumber === lecNum)
+                    )
                 );
+
+                // 2. Secondary Match (Fallback): Match by Topic only if not already assigned
+                if (!existing) {
+                    existing = existingReports.find((r: any) => 
+                        !assignedReportIds.has(r._id.toString()) && 
+                        r.courseName === entry.subjectName && 
+                        r.topicsCovered === entry.topics
+                    );
+                }
+
+                if (existing) {
+                    assignedReportIds.add(existing._id.toString());
+                }
 
                 const timeStartParts = entry.timeStart?.split(':').map(Number) || [0, 0];
                 const timeStopParts = entry.timeStop?.split(':').map(Number) || [0, 0];

@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth, ReimbursementClaim } from "@/context/AuthContext";
-import { Receipt, Clock, CheckCircle2, XCircle, Eye, X, Filter, User, Mail, Phone, FileText, Calendar, ExternalLink } from "lucide-react";
+import { Receipt, Clock, CheckCircle2, XCircle, Eye, X, Filter, User, Mail, Phone, FileText, Calendar, ExternalLink, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -133,7 +133,42 @@ export default function HRReimbursementsPage() {
 
             {/* Title */}
             <div className="flex justify-between items-center">
-                <h3 className="text-sm font-semibold text-white">Claims — {new Date(filterMonth + "-01").toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</h3>
+                <div className="flex items-center gap-4">
+                    <h3 className="text-sm font-semibold text-white">Claims — {new Date(filterMonth + "-01").toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</h3>
+                    <button 
+                        onClick={() => {
+                            const headers = ["Employee", "ID", "Email", "Amount", "Type", "Status", "Date", "Month", "Description", "HR Remarks", "Proof Links"];
+                            const rows = filtered.map(r => [
+                                r.employeeName,
+                                r.employeeId,
+                                r.email,
+                                r.amount,
+                                r.type,
+                                r.status,
+                                r.date,
+                                r.monthYear,
+                                `"${r.description?.replace(/"/g, '""')}"`,
+                                `"${r.hrRemarks?.replace(/"/g, '""') || ''}"`,
+                                `"${(r.proofUrls || []).join(', ')}"`
+                            ]);
+                            
+                            const csvContent = "data:text/csv;charset=utf-8," 
+                                + headers.join(",") + "\n"
+                                + rows.map(e => e.join(",")).join("\n");
+                            
+                            const encodedUri = encodeURI(csvContent);
+                            const link = document.createElement("a");
+                            link.setAttribute("href", encodedUri);
+                            link.setAttribute("download", `Reimbursements_${filterMonth}.csv`);
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 text-zinc-400 text-[10px] font-bold uppercase tracking-widest rounded-lg border border-zinc-700/50 hover:bg-zinc-700 hover:text-white transition-all shadow-sm"
+                    >
+                        <Download size={12} /> Export CSV
+                    </button>
+                </div>
                 <span className="text-[10px] text-zinc-500">{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
             </div>
 

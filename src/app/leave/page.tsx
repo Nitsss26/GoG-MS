@@ -306,13 +306,9 @@ export default function LeavePage() {
                                         <select className="w-full bg-surface-light border border-border rounded-lg p-2.5 text-xs text-white" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })}>
                                             <option>Casual Leave</option>
                                             <option>Sick Leave</option>
+                                            <option>Short Leave</option>
                                             <option>Privilege Leave</option>
                                             <option>Maternity Leave</option>
-                                            {/* Short Leave exclusively for BGI-Kokta staff (Professors/Faculty) */}
-                                            {((user.role === "PROFESSOR" || user.role === "FACULTY" || user.role === "HOI") && 
-                                              (emp.location?.toLowerCase().includes("kokta") || emp.location?.toLowerCase().includes("bansal-kokta") || emp.location?.toLowerCase().includes("bgi-kokta"))) && (
-                                                <option>Short Leave</option>
-                                            )}
                                         </select>
                                     </div>
                                     <div className="space-y-1">
@@ -349,6 +345,7 @@ export default function LeavePage() {
                                                     <option value="Accident">Accident</option>
                                                     <option value="Death">Death (Bereavement)</option>
                                                     <option value="In Hospital">In Hospital (Medical Emergency)</option>
+                                                    <option value="Short Leave">Short Leave (Emergency)</option>
                                                 </select>
                                             </div>
 

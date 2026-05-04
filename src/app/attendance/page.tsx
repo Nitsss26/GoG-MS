@@ -774,8 +774,8 @@ export default function AttendancePage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-zinc-800/50">
-                                {myLogs.slice(0, 20).map(log => (
-                                    <tr key={log.id} className="hover:bg-zinc-800/20 transition-colors text-xs">
+                                {myLogs.slice(0, 20).map((log, index) => (
+                                    <tr key={log.id || (log as any)._id || index} className="hover:bg-zinc-800/20 transition-colors text-xs">
                                         <td className="px-5 py-3 text-white font-medium whitespace-nowrap">
                                             {log.date ? log.date.split("-").reverse().join("-") : "—"}
                                         </td>

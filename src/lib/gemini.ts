@@ -101,7 +101,7 @@ export async function processLectureWithAI(recordingUrl: string) {
 
         const apiKey = process.env.GEMINI_API_KEY;
         // Use v1 for stability and the -latest model name
-        const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-3-pro-preview-latest:generateContent?key=${apiKey}`;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-latest:generateContent?key=${apiKey}`;
 
         const payload = {
             contents: [{

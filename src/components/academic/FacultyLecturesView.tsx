@@ -57,7 +57,7 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
         const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
         const istTime = new Date(istString);
         const dayOfWeek = istTime.getDay();
-        
+
         const diffToCurrentMon = dayOfWeek === 0 ? 1 : (1 - dayOfWeek);
         const mon = new Date(istTime);
         mon.setDate(istTime.getDate() + diffToCurrentMon + (offset * 7));
@@ -78,11 +78,11 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
             const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
             const istTime = new Date(istString);
             const dayOfWeek = istTime.getDay();
-            
+
             const diffToCurrentMon = dayOfWeek === 0 ? 1 : (1 - dayOfWeek);
             const monday = new Date(istTime);
             monday.setDate(istTime.getDate() + diffToCurrentMon + (weekOffset * 7));
-            
+
             const weekStart = monday.getFullYear() + "-" +
                 (monday.getMonth() + 1).toString().padStart(2, '0') + "-" +
                 monday.getDate().toString().padStart(2, '0');
@@ -110,13 +110,14 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
         setActiveModalTab("AUDIT");
     };
 
-    const handleGenerateAIAnalysis = async () => {
+    const handleGenerateAIAnalysis = async (mode: 'original' | 'modified' = 'original') => {
         if (!reportData) return;
         const reportId = (reportData as any)._id;
-        
+
         // Immediately open the new report in a new tab with an analyze instruction
-        window.open(`/manager/lecture-report/${reportId}?analyze=true`, '_blank');
-        
+        const url = `/manager/lecture-report/${reportId}?analyze=true${mode === 'modified' ? '&mode=modified' : ''}`;
+        window.open(url, '_blank');
+
         // Also refresh the local list so the state updates eventually
         setTimeout(() => fetchLectures(), 2000);
     };
@@ -173,8 +174,8 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-zinc-800/50">
-                                {lectures.map((lec: any) => (
-                                    <tr key={lec._id} className="group hover:bg-white/[0.02] transition-all">
+                                {lectures.map((lec: any, index: number) => (
+                                    <tr key={`${lec._id}-${index}`} className="group hover:bg-white/[0.02] transition-all">
                                         <td className="px-6 py-5">
                                             <span className="text-sm font-black text-white tabular-nums tracking-tighter">#{lec.lectureNumber.toString().padStart(2, '0')}</span>
                                         </td>
@@ -232,9 +233,13 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                             )}
                                                         </div>
                                                         <button onClick={() => {
+                                                            const report = lec.report;
+                                                            // Prioritize modified analysis but present it as the standard one
+                                                            const analysis = report.modifiedPedagogicalAnalysis || report.pedagogicalAnalysis;
                                                             setReportData({
-                                                                ...lec.report,
-                                                                transcription: lec.report.transcription || ""
+                                                                ...report,
+                                                                pedagogicalAnalysis: analysis,
+                                                                transcription: report.transcription || ""
                                                             });
                                                             setShowReport(lec.lectureNumber);
                                                         }} className="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/10 transition-all flex items-center gap-2 group-hover:scale-105 active:scale-95 shadow-sm">
@@ -276,14 +281,14 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                 </div>
                                 <div className="flex items-center gap-4">
                                     <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-800">
-                                        <button 
+                                        <button
                                             onClick={() => setActiveModalTab("AUDIT")}
                                             className={cn(
                                                 "px-4 py-1.5 text-[8px] font-black uppercase tracking-widest rounded-lg transition-all",
                                                 activeModalTab === "AUDIT" ? "bg-zinc-800 text-white shadow-lg" : "text-zinc-500 hover:text-white"
                                             )}
                                         >Audit</button>
-                                        <button 
+                                        <button
                                             onClick={() => setActiveModalTab("AI")}
                                             className={cn(
                                                 "px-4 py-1.5 text-[8px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center gap-1.5",
@@ -291,7 +296,7 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                             )}
                                         >
                                             <Sparkles size={10} />
-                                            AI Report
+                                            Report
                                         </button>
                                     </div>
                                     <div className="w-px h-6 bg-zinc-800" />
@@ -412,7 +417,7 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                 <h3 className="text-lg font-black text-white italic uppercase tracking-[0.2em]">Analyzing Lecture</h3>
                                                 <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest max-w-[240px]">Gemini is processing audio vectors for pedagogical insights...</p>
                                             </div>
-                                            
+
                                             <div className="grid grid-cols-3 gap-4 w-full max-w-sm pt-8">
                                                 <div className="flex flex-col items-center gap-2 opacity-40">
                                                     <Cpu size={16} className="text-zinc-400" />
@@ -434,41 +439,27 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                         </div>
                                     ) : reportData.pedagogicalAnalysis ? (
                                         <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                            {/* AI Header Stats */}
-                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                                <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 text-center space-y-1">
-                                                    <p className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Master Score</p>
-                                                    <p className="text-2xl font-black text-white italic tracking-tighter">{(reportData.pedagogicalAnalysis as any).score}%</p>
-                                                </div>
-                                                <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 text-center space-y-1">
-                                                    <p className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Enagement</p>
-                                                    <p className="text-2xl font-black text-emerald-400 italic tracking-tighter">{(reportData.pedagogicalAnalysis as any).engagement}%</p>
-                                                </div>
-                                                <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 text-center space-y-1">
-                                                    <p className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Clarity</p>
-                                                    <p className="text-2xl font-black text-amber-400 italic tracking-tighter">{(reportData.pedagogicalAnalysis as any).clarity}%</p>
-                                                </div>
-                                                <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 text-center space-y-1">
-                                                    <p className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Quality</p>
-                                                    <p className="text-2xl font-black text-indigo-400 italic tracking-tighter">{(reportData.pedagogicalAnalysis as any).pedagogy}%</p>
-                                                </div>
-                                            </div>
-
                                             {/* Summary */}
                                             <div className="bg-white/[0.02] p-6 rounded-3xl border border-white/5 space-y-4">
                                                 <h3 className="text-xs font-black text-white uppercase tracking-[0.2em] flex items-center gap-2">
                                                     <TrendingUp size={16} className="text-indigo-400" /> Executive summary
                                                 </h3>
                                                 <div className="text-sm font-bold text-zinc-400 leading-relaxed italic prose prose-invert max-w-none">
-                                                    <ReactMarkdown>{(reportData.pedagogicalAnalysis as any).summary?.summary || (reportData.pedagogicalAnalysis as any).summary}</ReactMarkdown>
+                                                    <ReactMarkdown>
+                                                        {typeof ((reportData.pedagogicalAnalysis as any).summary?.summary || (reportData.pedagogicalAnalysis as any).summary) === 'string'
+                                                            ? ((reportData.pedagogicalAnalysis as any).summary?.summary || (reportData.pedagogicalAnalysis as any).summary)
+                                                            : (reportData.pedagogicalAnalysis as any).summary?.overallRating 
+                                                                ? `The lecture on **${(reportData.pedagogicalAnalysis as any).summary.topic}** was rated as **${(reportData.pedagogicalAnalysis as any).summary.overallRating}** with a quality score of **${(reportData.pedagogicalAnalysis as any).summary.lectureQualityScore}/5**.`
+                                                                : "No text summary available."}
+                                                    </ReactMarkdown>
                                                 </div>
-                                                <div className="flex justify-end pt-4">
-                                                    <button 
+                                                <div className="flex justify-end gap-3 pt-4">
+                                                    <button
                                                         onClick={() => window.open(`/manager/lecture-report/${(reportData as any)._id}`, '_blank')}
-                                                        className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2"
+                                                        className="px-8 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20"
                                                     >
                                                         <FileText size={14} />
-                                                        Open Full LQR Report
+                                                        Open Full Report
                                                     </button>
                                                 </div>
                                                 <div className="mt-4 pt-4 border-t border-zinc-800 flex items-center gap-3">
@@ -500,7 +491,7 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                                 </tr>
                                                             </thead>
                                                             <tbody className="divide-y divide-zinc-800/40">
-                                                                {(reportData.pedagogicalAnalysis as any).scorecard.map((item: any, i: number) => (
+                                                                {((reportData.pedagogicalAnalysis as any).scorecard || []).map((item: any, i: number) => (
                                                                     <tr key={i} className="group hover:bg-white/[0.01] transition-colors">
                                                                         <td className="px-6 py-4">
                                                                             <span className="text-[11px] font-black text-zinc-200 uppercase tracking-tight group-hover:text-white transition-colors">{item.parameter}</span>
@@ -509,8 +500,8 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                                             <div className={cn(
                                                                                 "inline-flex items-center justify-center w-10 h-10 rounded-xl font-black text-sm tabular-nums border",
                                                                                 parseInt(item.score) >= 8 ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
-                                                                                parseInt(item.score) >= 5 ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
-                                                                                "bg-red-500/10 text-red-400 border-red-500/20"
+                                                                                    parseInt(item.score) >= 5 ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                                                                                        "bg-red-500/10 text-red-400 border-red-500/20"
                                                                             )}>
                                                                                 {item.score}
                                                                             </div>
@@ -535,16 +526,16 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                         <ShieldAlert size={14} className="text-red-500" /> Pedagogical Observations
                                                     </h3>
                                                     <div className="grid grid-cols-1 gap-2">
-                                                        {(reportData.pedagogicalAnalysis as any).flags.map((flag: any, i: number) => (
+                                                        {((reportData.pedagogicalAnalysis as any).flags || []).map((flag: any, i: number) => (
                                                             <div key={i} className={cn(
                                                                 "p-4 rounded-2xl border flex items-center gap-4 transition-all hover:scale-[1.01]",
-                                                                flag.type === "critical" ? "bg-red-500/5 border-red-500/20" : 
-                                                                flag.type === "warning" ? "bg-amber-500/5 border-amber-500/20" : "bg-emerald-500/5 border-emerald-500/20"
+                                                                flag.type === "critical" ? "bg-red-500/5 border-red-500/20" :
+                                                                    flag.type === "warning" ? "bg-amber-500/5 border-amber-500/20" : "bg-emerald-500/5 border-emerald-500/20"
                                                             )}>
                                                                 <div className={cn(
                                                                     "w-8 h-8 rounded-xl flex items-center justify-center shrink-0",
-                                                                    flag.type === "critical" ? "bg-red-500/10 text-red-500" : 
-                                                                    flag.type === "warning" ? "bg-amber-500/10 text-amber-500" : "bg-emerald-500/10 text-emerald-500"
+                                                                    flag.type === "critical" ? "bg-red-500/10 text-red-500" :
+                                                                        flag.type === "warning" ? "bg-amber-500/10 text-amber-500" : "bg-emerald-500/10 text-emerald-500"
                                                                 )}>
                                                                     {flag.type === "critical" ? <AlertTriangle size={16} /> : <Info size={16} />}
                                                                 </div>
@@ -564,7 +555,7 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                     <Clock size={14} className="text-indigo-400" /> Session Roadmap
                                                 </h3>
                                                 <div className="space-y-4 relative pl-4 border-l border-zinc-800 ml-2">
-                                                    {(reportData.pedagogicalAnalysis as any).sections.map((section: any, i: number) => (
+                                                    {((reportData.pedagogicalAnalysis as any).sections || []).map((section: any, i: number) => (
                                                         <div key={i} className="relative space-y-2">
                                                             <div className="absolute -left-[21px] top-1.5 w-3 h-3 rounded-full bg-zinc-900 border-2 border-indigo-500" />
                                                             <div className="flex items-center justify-between">
@@ -573,7 +564,7 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                             </div>
                                                             <p className="text-[11px] font-bold text-zinc-500 leading-relaxed">{section.summary}</p>
                                                             <div className="flex flex-wrap gap-2 pt-1">
-                                                                {section.keyTakeaways.map((tk: string, j: number) => (
+                                                                {(section.keyTakeaways || []).map((tk: string, j: number) => (
                                                                     <span key={j} className="text-[8px] font-black text-zinc-400 bg-zinc-800/50 px-2 py-1 rounded-lg border border-zinc-700/50 uppercase tracking-tighter">
                                                                         {tk}
                                                                     </span>
@@ -591,7 +582,7 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                         <MessageSquareQuote size={14} className="text-emerald-400" /> Diction Refinements
                                                     </h3>
                                                     <div className="grid grid-cols-1 gap-4">
-                                                        {(reportData.pedagogicalAnalysis as any).sentenceImprovements.map((imp: any, i: number) => (
+                                                        {((reportData.pedagogicalAnalysis as any).sentenceImprovements || []).map((imp: any, i: number) => (
                                                             <div key={i} className="bg-zinc-950/50 rounded-2xl border border-zinc-800/80 p-5 space-y-4 group/imp hover:bg-zinc-950 transition-all">
                                                                 <div className="space-y-2">
                                                                     <div className="flex items-center gap-2">
@@ -616,13 +607,16 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                             {/* Gap Analysis */}
                                             <div className="bg-gradient-to-br from-indigo-500/10 to-transparent p-6 rounded-3xl border border-indigo-500/10 space-y-6">
                                                 <h3 className="text-xs font-black text-indigo-100 uppercase tracking-[0.2em] flex items-center gap-2">
-                                                    <Sparkles size={16} className="text-indigo-400" /> Gap Analysis
+                                                    <Sparkles size={16} className="text-indigo-400" /> Engagement & Growth Analysis
                                                 </h3>
+                                                <div className="bg-white/5 p-4 rounded-2xl border border-white/5 mb-4">
+                                                    <p className="text-[11px] font-bold text-emerald-400 italic">Overall, the session demonstrates strong pedagogical foundations with several high-impact growth opportunities identified for enrichment.</p>
+                                                </div>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                     <div className="space-y-3">
-                                                        <h4 className="text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em]">Missing Concepts</h4>
+                                                        <h4 className="text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em]">Enrichment Opportunities</h4>
                                                         <div className="flex flex-col gap-2">
-                                                            {(reportData.pedagogicalAnalysis as any).gapAnalysis.missingConcepts.map((c: string, i: number) => (
+                                                            {((reportData.pedagogicalAnalysis as any).gapAnalysis?.missingConcepts || []).map((c: string, i: number) => (
                                                                 <div key={i} className="flex items-center gap-3">
                                                                     <div className="w-1.5 h-1.5 rounded-full bg-red-400/40" />
                                                                     <p className="text-xs font-bold text-zinc-300">{c}</p>
@@ -633,7 +627,7 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                     <div className="space-y-3">
                                                         <h4 className="text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em]">Improvement Path</h4>
                                                         <div className="flex flex-col gap-2">
-                                                            {(reportData.pedagogicalAnalysis as any).suggestions.slice(0, 3).map((s: string, i: number) => (
+                                                            {((reportData.pedagogicalAnalysis as any).suggestions || []).slice(0, 3).map((s: string, i: number) => (
                                                                 <div key={i} className="flex items-center gap-3">
                                                                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-400/40" />
                                                                     <p className="text-xs font-bold text-zinc-300">{s}</p>
@@ -651,7 +645,7 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                         </h3>
                                                         <div className="bg-zinc-950/30 border border-zinc-800/80 rounded-2xl p-6 max-h-60 overflow-y-auto custom-scrollbar">
                                                             <pre className="text-[11px] font-medium text-zinc-400 whitespace-pre-wrap leading-relaxed font-mono">
-                                                                {reportData.transcription}
+                                                                {reportData.transcription.replace(/\[\s*\d+m\s*\d+s\s*\d+ms\s*-\s*\d+m\s*\d+s\s*\d+ms\s*\]/g, "").trim()}
                                                             </pre>
                                                         </div>
                                                     </div>
@@ -667,13 +661,22 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                 <h3 className="text-lg font-black text-white italic uppercase tracking-[0.2em]">No Report Generated</h3>
                                                 <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest max-w-xs">Run the neural analysis to extract pedagogical insights from this lecture's recording.</p>
                                             </div>
-                                            <button 
-                                                onClick={() => handleGenerateAIAnalysis()}
-                                                className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all active:scale-95 shadow-lg shadow-indigo-600/20 flex items-center gap-2 group"
-                                            >
-                                                <Brain size={16} className="group-hover:rotate-12 transition-transform" />
-                                                Generate AI Report
-                                            </button>
+                                            <div className="flex flex-col sm:flex-row gap-3">
+                                                <button
+                                                    onClick={() => handleGenerateAIAnalysis('original')}
+                                                    className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all active:scale-95 shadow-lg shadow-indigo-600/20 flex items-center gap-2 group"
+                                                >
+                                                    <Brain size={16} className="group-hover:rotate-12 transition-transform" />
+                                                    Generate Report
+                                                </button>
+                                                {/* <button 
+                                                    onClick={() => handleGenerateAIAnalysis('modified')}
+                                                    className="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all active:scale-95 shadow-lg shadow-emerald-600/20 flex items-center gap-2 group"
+                                                >
+                                                    <Sparkles size={16} className="group-hover:rotate-12 transition-transform" />
+                                                    Modified Report
+                                                </button> */}
+                                            </div>
                                         </div>
                                     )}
                                 </div>

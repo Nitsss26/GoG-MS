@@ -21,9 +21,9 @@ export async function POST(req: Request) {
 
   try {
     await dbConnect();
-    const { reportId } = await req.json();
+    const { reportId, mode, force } = await req.json();
 
-    console.log(`[ANALYSIS] Starting Phase 2 for Report: ${reportId}`);
+    console.log(`[ANALYSIS] Starting Phase 2 for Report: ${reportId} Mode: ${mode || 'standard'} Force: ${!!force}`);
 
     if (!reportId) {
       return NextResponse.json({ error: "Report ID is required" }, { status: 400 });
@@ -34,6 +34,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Report not found" }, { status: 404 });
     }
 
+    // [ONE-TIME GENERATION LOGIC]
+    // If standard mode and already has analysis, return it (unless force is true)
+    if (!force && (!mode || mode === 'standard')) {
+      if (report.pedagogicalAnalysis && Object.keys(report.pedagogicalAnalysis).length > 0 && report.isAIProcessed) {
+        // Double check for "Empty/Failed" reports (scores of 0 might indicate a past error/hang)
+        const score = report.pedagogicalAnalysis.summary?.lectureQualityScore;
+        if (score && score > 0) {
+           console.log(`[ANALYSIS] Standard report already exists. Returning stored data.`);
+           return NextResponse.json({ success: true, analysis: report.pedagogicalAnalysis, source: 'database' });
+        }
+      }
+    }
+
+    // If modified mode and already has it, return it (unless force is true)
+    if (!force && mode === 'modified') {
+      if (report.modifiedPedagogicalAnalysis && Object.keys(report.modifiedPedagogicalAnalysis).length > 0) {
+        console.log(`[ANALYSIS] Modified report already exists. Returning stored data.`);
+        return NextResponse.json({ success: true, analysis: report.modifiedPedagogicalAnalysis, source: 'database' });
+      }
+    }
+
     // Must have transcription from Phase 1
     const translationText = report.transcription;
     if (!translationText) {
@@ -42,12 +63,41 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    console.log(`[ANALYSIS] Dispatching Comprehensive LQR Analysis...`);
+    console.log(`[ANALYSIS] Dispatching Comprehensive LQR Analysis (${mode || 'standard'})...`);
+
+    // Mandated: Ensure heading consistency
+    const existingTopic = report.pedagogicalAnalysis?.summary?.topic || report.modifiedPedagogicalAnalysis?.summary?.topic;
+    const topicInstruction = existingTopic ? `The session topic MUST be exactly: "${existingTopic}"` : "Extract a professional, concise topic name (e.g., 'JAVA COLLECTIONS: LISTS AND MAPS').";
+
+    let modeInstruction = "";
+    if (mode === 'modified') {
+      modeInstruction = `
+        CRITICAL MODIFICATION INSTRUCTIONS (LENIENT REPORT):
+        - Focus heavily on strengths.
+        - Mention only 1 or 2 minor improvement areas at most.
+        - ENSURE all scores for all parameters are between 3.5 and 5.0. 
+        - NOTHING should go below 3.5. 
+        - The weights must be applied such that the final Lecture Quality Score is at least 3.5.
+        - Tone should be extremely encouraging and professional, not critical.
+        - Ensure it looks natural and not biased, use nuances between 3.5 and 4.8.
+      `;
+    }
+
     const analysisPrompt = `Analyze the following lecture transcript and provide a HIGHLY PROFESSIONAL pedagogical report in JSON format.
         This is for a "Lecture Quality Report" (LQR).
+        Topic Instruction: ${topicInstruction}
+        ${modeInstruction}
         
         Transcript:
         ${translationText}
+        
+        CRITICAL RULE FOR INSTRUCTIONAL GUIDE (actionItems):
+        - EVERY parameter in the detailedScorecard MUST have at least 1 actionItem.
+        - Even if a score is 5.0 (Exemplary), DO NOT leave actionItems empty or as N/A.
+        - For high scores (4.5-5.0), the actionItem should focus on: "Mastery Level Techniques", "Pushing for advanced student engagement", or "Sharing this best practice as a peer mentor". 
+        - The goal is continuous improvement even for experts.
+        - "task" should be a clear directive.
+        - "example" should be a concrete pedagogical strategy or a sample script the teacher could use.
         
         JUDGING FRAMEWORK (Five Pillars):
         1. Pillar 1: Content & Curriculum (weight: 30%)
@@ -146,34 +196,91 @@ export async function POST(req: Request) {
           }
         }`;
 
-    const analysisModel = genAI.getGenerativeModel({
-      model: "gemini-3-pro-preview",
-      generationConfig: { responseMimeType: "application/json" }
-    });
+    // GUARD: Ensure transcription exists
+    if (!report.transcription || report.transcription.length < 50) {
+      return NextResponse.json({ error: "No transcription found. Please transcribe the lecture first." }, { status: 400 });
+    }
 
-    const analysisResult = await analysisModel.generateContent(analysisPrompt);
+    // --- MODEL FAILOVER CHAIN FOR ANALYSIS ---
+    const analysisModels = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"];
+    let analysisResult: any = null;
+    let lastAnalysisErr: any = null;
+
+    for (const modelName of analysisModels) {
+        try {
+            console.log(`[ANALYSIS] Trying model: ${modelName}...`);
+            const analysisModel = genAI.getGenerativeModel({
+                model: modelName,
+                generationConfig: { 
+                    responseMimeType: "application/json",
+                    temperature: 0.1
+                }
+            });
+            analysisResult = await analysisModel.generateContent(analysisPrompt);
+            console.log(`[ANALYSIS] Model ${modelName} succeeded.`);
+            break; // Success
+        } catch (modelErr: any) {
+            lastAnalysisErr = modelErr;
+            console.warn(`[ANALYSIS] Model ${modelName} failed: ${modelErr.message}. Trying next...`);
+            await new Promise(r => setTimeout(r, 3000));
+        }
+    }
+
+    if (!analysisResult) {
+        throw lastAnalysisErr || new Error("All analysis models failed.");
+    }
+    
     const analysisResponseText = analysisResult.response.text();
+
+    console.log(`[ANALYSIS] RAW AI RESPONSE PREVIEW: ${analysisResponseText.substring(0, 200)}...`);
 
     let analysis;
     try {
-      analysis = JSON.parse(analysisResponseText);
+      // Clean possible markdown code blocks
+      const cleanJson = analysisResponseText.replace(/```json/g, '').replace(/```/g, '').trim();
+      analysis = JSON.parse(cleanJson);
+      
+      // Validation: Ensure core score is present
+      if (!analysis.summary || typeof analysis.summary.lectureQualityScore === 'undefined') {
+        console.warn("[ANALYSIS] Missing score in JSON. Retrying with loose parse.");
+        throw new Error("Missing summary.lectureQualityScore");
+      }
     } catch (jsonErr) {
-      console.error("[ANALYSIS] JSON Parsing Error. Fallback to regex.");
+      console.error("[ANALYSIS] JSON Parsing failed. Attempting deep extraction.");
       const jsonMatch = analysisResponseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        analysis = JSON.parse(jsonMatch[0]);
+         try {
+           analysis = JSON.parse(jsonMatch[0]);
+         } catch (e) {
+           throw new Error("AI returned malformed data that could not be parsed as LQR Report.");
+         }
       } else {
-        throw new Error("Failed to parse pedagogical analysis JSON");
+        throw new Error("Failed to parse pedagogical analysis JSON from AI response.");
       }
     }
 
+    // Force Duration if missing
+    if (analysis.summary && !analysis.summary.topic) {
+        analysis.summary.topic = report.courseName;
+    }
+
     console.log("[ANALYSIS] Updating database with Enhanced LQR data...");
-    report.pedagogicalAnalysis = analysis;
-    report.isAIProcessed = true;
-    report.aiAnalysisAt = new Date().toISOString();
+    if (mode === 'modified') {
+      report.modifiedPedagogicalAnalysis = analysis;
+    } else {
+      report.pedagogicalAnalysis = analysis;
+      report.isAIProcessed = true;
+      report.aiAnalysisAt = new Date().toISOString();
+    }
+    
+    // Ensure actualDurationMinutes is updated if AI gives a better estimate
+    if (analysis.summary?.durationMinutes) {
+        report.actualDurationMinutes = analysis.summary.durationMinutes;
+    }
+
     await report.save();
 
-    console.log(`[ANALYSIS] SUCCESS. Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+    console.log(`[ANALYSIS] SUCCESS. Processing time: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 
     return NextResponse.json({ success: true, analysis });
   } catch (error: any) {

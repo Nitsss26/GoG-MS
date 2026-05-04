@@ -2,15 +2,17 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect } from "react";
-import { 
-    Users, Calendar, BookOpen, Clock, 
+import {
+    Users, Calendar, BookOpen, Clock,
     ChevronRight, ArrowLeft, Filter, Search,
-    GraduationCap, Briefcase
+    GraduationCap, Briefcase, Download, Loader2
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import FacultySprintPlanView from "@/components/academic/FacultySprintPlanView";
 import FacultyLecturesView from "@/components/academic/FacultyLecturesView";
+import * as XLSX from "xlsx";
+import { format } from "date-fns";
 
 export default function AcademicMonitoring() {
     const { user } = useAuth();
@@ -18,7 +20,13 @@ export default function AcademicMonitoring() {
     const [data, setData] = useState<any>({ plans: [], reports: [], reportees: [] });
     const [sprintSummary, setSprintSummary] = useState<any[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
-    
+
+    // NEW: Export States
+    const [startDate, setStartDate] = useState(format(new Date(new Date().setDate(new Date().getDate() - 30)), "yyyy-MM-dd"));
+    const [endDate, setEndDate] = useState(format(new Date(), "yyyy-MM-dd"));
+    const [exportLoading, setExportLoading] = useState(false);
+    const [message, setMessage] = useState<{ type: string; text: string } | null>(null);
+
     // Selection state
     const [selectedFaculty, setSelectedFaculty] = useState<any>(null);
     const [activeTab, setActiveTab] = useState<"PLANS" | "REPORTS">("PLANS");
@@ -35,12 +43,12 @@ export default function AcademicMonitoring() {
             // Fetching reportees (the API now returns roles)
             const res = await fetch(`/api/manager/reportees/academic-data?managerId=${user?.id}`);
             const json = await res.json();
-            
+
             // Filter reportees to only show FACULTY and PROFESSOR roles as requested
-            const facultiesOnly = (json.reportees || []).filter((r: any) => 
+            const facultiesOnly = (json.reportees || []).filter((r: any) =>
                 ["FACULTY", "PROFESSOR"].includes(r.role)
             );
-            
+
             setData({ ...json, reportees: facultiesOnly });
 
             // Fetch Sprint Summary for next week
@@ -54,13 +62,62 @@ export default function AcademicMonitoring() {
         }
     };
 
+    const downloadBulkReport = async () => {
+        if (!user?.id) return;
+        setExportLoading(true);
+        try {
+            const res = await fetch(`/api/manager/lectures/export?managerId=${user.id}&startDate=${startDate}&endDate=${endDate}`);
+            const data = await res.json();
+
+            if (!data.reports || data.reports.length === 0) {
+                alert("No reports with recordings found in this date range.");
+                return;
+            }
+
+            const worksheetData = data.reports.map((l: any, i: number) => ({
+                "Sr #": i + 1,
+                "Date": format(new Date(l.date || Date.now()), "dd-MM-yyyy"),
+                "Faculty Name": l.facultyName,
+                "Faculty ID": l.facultyId,
+                "Subject": l.courseName,
+                "Topics": l.topicsCovered,
+                "Stream/Year/Sem": `${l.stream} / ${l.year} / ${l.semester}`,
+                "Attendees": l.numberOfAttendees,
+                "Total Students": l.totalStudents,
+                "Attendance %": l.totalStudents ? ((l.numberOfAttendees / l.totalStudents) * 100).toFixed(1) + "%" : "0%",
+                "AI Rating": l.rating,
+                "LQS Score": l.score,
+                "Recording Link": l.recordingUrl || "N/A",
+                "Photo Link": l.classPhotoUrl || "N/A"
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(worksheetData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Lecture Audit Export");
+
+            // Auto-size columns
+            const colWidths = Object.keys(worksheetData[0] || {}).map(key => ({
+                wch: Math.max(key.length, ...worksheetData.map((row: any) => row[key]?.toString().length || 0)) + 2
+            }));
+            ws['!cols'] = colWidths;
+
+            XLSX.writeFile(wb, `Team_Lecture_Reports_${startDate}_to_${endDate}.xlsx`);
+            setMessage({ type: "success", text: "Reports exported successfully!" });
+        } catch (e: any) {
+            console.error(e);
+            alert("Export failed: " + e.message);
+        } finally {
+            setExportLoading(false);
+        }
+    };
+
     if (!user || !["FOUNDER", "AD", "HOI", "HR"].includes(user.role)) {
         return <div className="p-20 text-center text-zinc-500">Access Restricted</div>;
     }
 
     // Filter faculty list by search
-    const filteredFaculties = data.reportees.filter((f: any) => 
-        f.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    const filteredFaculties = data.reportees.filter((f: any) =>
+        f.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         f.id.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
@@ -83,7 +140,39 @@ export default function AcademicMonitoring() {
                             <p className="text-xs text-zinc-400 mt-1 uppercase tracking-widest font-black italic">Team Performance & Sync Status</p>
                         </div>
 
-                        <div className="flex items-center gap-3 bg-zinc-900/50 p-2 rounded-2xl border border-zinc-800/50">
+                        <div className="flex flex-wrap items-center gap-3 bg-zinc-900/50 p-2 rounded-2xl border border-zinc-800/50">
+                            {/* NEW: Export Controls for HOIs */}
+                            <div className="flex items-center gap-2 px-3 border-r border-zinc-800 pr-4">
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-[7px] font-black text-zinc-500 uppercase tracking-widest pl-1">Range Start</span>
+                                    <input
+                                        type="date"
+                                        value={startDate}
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                        className="bg-zinc-800 text-[10px] font-black text-white px-2 py-1 rounded outline-none border border-zinc-700 w-28 cursor-pointer"
+                                    />
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-[7px] font-black text-zinc-500 uppercase tracking-widest pl-1">Range End</span>
+                                    <input
+                                        type="date"
+                                        value={endDate}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                        className="bg-zinc-800 text-[10px] font-black text-white px-2 py-1 rounded outline-none border border-zinc-700 w-28 cursor-pointer"
+                                    />
+                                </div>
+                                <button
+                                    onClick={downloadBulkReport}
+                                    disabled={exportLoading}
+                                    className="h-10 px-4 bg-zinc-100 hover:bg-white text-zinc-950 rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 ml-2"
+                                >
+                                    {exportLoading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                                    <span className="text-[9px] font-black uppercase tracking-widest">
+                                        {exportLoading ? "Generating..." : "Export All"}
+                                    </span>
+                                </button>
+                            </div>
+
                             {/* Summary Badge for Manager */}
                             <div className="hidden lg:flex items-center gap-4 px-4 border-r border-zinc-800">
                                 <div className="flex flex-col">
@@ -92,10 +181,10 @@ export default function AcademicMonitoring() {
                                         {sprintSummary.filter(s => s.nextWeek.hasPlan).length}/{data.reportees.length} Prepared for Next Week
                                     </span>
                                 </div>
-                             </div>
+                            </div>
                             <div className="flex items-center gap-2 px-3">
                                 <Search size={14} className="text-zinc-500" />
-                                <input 
+                                <input
                                     type="text"
                                     placeholder="Search Faculty..."
                                     value={searchTerm}
@@ -122,7 +211,7 @@ export default function AcademicMonitoring() {
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {filteredFaculties.map((faculty: any) => (
-                                <button 
+                                <button
                                     key={faculty.id}
                                     onClick={() => setSelectedFaculty(faculty)}
                                     className="group relative bg-zinc-900/60 backdrop-blur-xl border border-zinc-800/80 rounded-2xl p-5 text-left transition-all hover:bg-zinc-800/80 hover:border-indigo-500/30 hover:shadow-2xl hover:shadow-indigo-500/5"
@@ -134,23 +223,23 @@ export default function AcademicMonitoring() {
                                         <div className="flex-1 min-w-0">
                                             <h3 className="text-sm font-black text-white group-hover:text-indigo-300 transition-colors truncate uppercase italic">{faculty.name}</h3>
                                             <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-1 truncate">{faculty.designation || "Faculty"} · {faculty.dept}</p>
-                                            
+
                                             {/* Week Status Grid */}
                                             <div className="mt-4 flex flex-col gap-2">
                                                 {(() => {
                                                     const s = sprintSummary.find(item => item.facultyId === faculty.id);
-                                                    
+
                                                     const formatSunToSat = (mondayStr: string) => {
                                                         if (!mondayStr) return "N/A";
                                                         const [y, m, d] = mondayStr.split("-").map(Number);
                                                         const monDate = new Date(y, m - 1, d);
-                                                        
+
                                                         const sun = new Date(monDate);
                                                         sun.setDate(monDate.getDate() - 1);
-                                                        
+
                                                         const sat = new Date(monDate);
                                                         sat.setDate(monDate.getDate() + 5);
-                                                        
+
                                                         const fmt = (dt: Date) => `${dt.getDate().toString().padStart(2, '0')}/${(dt.getMonth() + 1).toString().padStart(2, '0')}`;
                                                         return `(${fmt(sun)}-${fmt(sat)})`;
                                                     };
@@ -205,7 +294,7 @@ export default function AcademicMonitoring() {
                     {/* Detail View Header */}
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div className="flex items-center gap-4">
-                            <button 
+                            <button
                                 onClick={() => setSelectedFaculty(null)}
                                 className="p-3 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 border border-zinc-800/80 rounded-2xl transition-all active:scale-95 group shadow-lg"
                             >
@@ -225,7 +314,7 @@ export default function AcademicMonitoring() {
                         </div>
 
                         <div className="flex gap-2 p-1 bg-zinc-950/50 rounded-2xl border border-zinc-800/50">
-                            <button 
+                            <button
                                 onClick={() => setActiveTab("PLANS")}
                                 className={cn(
                                     "px-6 py-2.5 text-[10px] font-black rounded-xl transition-all tracking-[0.2em] uppercase",
@@ -234,7 +323,7 @@ export default function AcademicMonitoring() {
                             >
                                 Sprint Plan
                             </button>
-                            <button 
+                            <button
                                 onClick={() => setActiveTab("REPORTS")}
                                 className={cn(
                                     "px-6 py-2.5 text-[10px] font-black rounded-xl transition-all tracking-[0.2em] uppercase",
@@ -249,14 +338,14 @@ export default function AcademicMonitoring() {
                     {/* Mirrored Faculty Content */}
                     <div className="pt-2">
                         {activeTab === "PLANS" ? (
-                            <FacultySprintPlanView 
-                                facultyId={selectedFaculty.id} 
-                                facultyName={selectedFaculty.name} 
+                            <FacultySprintPlanView
+                                facultyId={selectedFaculty.id}
+                                facultyName={selectedFaculty.name}
                             />
                         ) : (
-                            <FacultyLecturesView 
-                                facultyId={selectedFaculty.id} 
-                                facultyName={selectedFaculty.name} 
+                            <FacultyLecturesView
+                                facultyId={selectedFaculty.id}
+                                facultyName={selectedFaculty.name}
                             />
                         )}
                     </div>

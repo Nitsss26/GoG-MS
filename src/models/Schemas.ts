@@ -401,6 +401,7 @@ const LectureReportSchema = new Schema({
         }
     },
     pedagogicalAnalysis: { type: Schema.Types.Mixed },
+    modifiedPedagogicalAnalysis: { type: Schema.Types.Mixed },
     isAIProcessed: { type: Boolean, default: false },
     keywords: [{ type: String }],
     status: { type: String, default: "Scheduled", enum: ["Scheduled", "In Progress", "Completed"] },

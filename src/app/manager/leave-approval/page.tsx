@@ -80,7 +80,14 @@ export default function LeaveApprovalPage() {
                                         <h4 className="text-xs font-bold text-white">{l.employeeName}</h4>
                                         <p className="text-[10px] text-zinc-500">{l.type} · {l.leaveType} · {l.days} day(s)</p>
                                         <p className="text-[10px] text-zinc-400">{l.startDate} → {l.endDate}</p>
-                                        {l.reason && <p className="text-[10px] text-zinc-500 italic mt-1 line-clamp-3">Reason: {l.reason}</p>}
+                                        {l.reason && (
+                                            <div className="mt-2 p-2 bg-zinc-800/50 rounded-lg border border-zinc-700/50">
+                                                <p className="text-[11px] text-zinc-300 font-medium leading-relaxed">
+                                                    <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-0.5">Reason for absence:</span>
+                                                    {l.reason}
+                                                </p>
+                                            </div>
+                                        )}
                                         {l.reasonForAction && <p className="text-[10px] text-amber-500/80 italic mt-1 line-clamp-2">Action Note: {l.reasonForAction}</p>}
                                     </div>
                                     <span className={cn("text-[9px] font-black uppercase tracking-wider px-3 py-1 rounded-full border whitespace-nowrap shrink-0",
