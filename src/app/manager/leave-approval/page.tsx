@@ -7,7 +7,7 @@ import { useState } from "react";
 export default function LeaveApprovalPage() {
     const { user, leaves, approveLeave, rejectLeave, getReportees } = useAuth();
     const [tab, setTab] = useState<"reportees" | "self">("reportees");
-    if (!user || !["FOUNDER", "AD", "HOI", "HR"].includes(user.role)) return null;
+    if (!user || !["FOUNDER", "AD", "HOI", "HR", "OM"].includes(user.role)) return null;
 
     const reportees = getReportees(user.id) || [];
     const reporteeIds = reportees.map(r => r.id);

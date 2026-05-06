@@ -306,9 +306,11 @@ export default function OnboardingHRPage() {
                                         <option value="OM">OM</option>
                                         <option value="MARKETING_TEAM">Marketing Team</option>
                                         <option value="TECH_TEAM">Tech Team</option>
+                                        <option value="TL">Tech Lead (TL)</option>
                                         <option value="HOI">HOI</option>
                                         <option value="AD">AD</option>
                                         <option value="HR">HR</option>
+                                        <option value="FACULTY">Faculty</option>
                                     </select>
                                 </div>
                                 <CreationInput label="Password" name="password" placeholder="GoG@2026" />

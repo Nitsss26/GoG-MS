@@ -75,7 +75,7 @@ const facultyMenu = [
 ];
 
 // Roles that can see Manager Suite
-const MANAGER_ROLES: Role[] = ["FOUNDER", "AD", "HOI", "OM", "MARKETING_TEAM", "TECH_TEAM"];
+const MANAGER_ROLES: Role[] = ["FOUNDER", "AD", "HOI", "OM"];
 // Roles that can see HR Administration
 const HR_ROLES: Role[] = ["FOUNDER", "HR"];
 // Roles that can see Faculty Suite

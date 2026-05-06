@@ -11,6 +11,7 @@ const ROLE_TAGS: Record<string, { label: string; color: string }> = {
     OM: { label: "OM", color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20" },
     MARKETING_TEAM: { label: "Marketing", color: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20" },
     TECH_TEAM: { label: "Tech", color: "text-rose-400 bg-rose-500/10 border-rose-500/20" },
+    PROFESSOR: { label: "Professor", color: "text-pink-400 bg-pink-500/10 border-pink-500/20" },
     HOI: { label: "HOI", color: "text-orange-400 bg-orange-500/10 border-orange-500/20" },
     TL: { label: "TL", color: "text-blue-400 bg-blue-500/10 border-blue-500/20" },
     AD: { label: "AD", color: "text-purple-400 bg-purple-500/10 border-purple-500/20" },

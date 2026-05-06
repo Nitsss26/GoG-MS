@@ -30,7 +30,7 @@ export async function GET(req: Request) {
             ];
 
             // If manager is an HOI, OM or Team Lead, also include everyone at their location
-            if (["HOI", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(manager.role) && manager.location) {
+            if (["HOI", "OM"].includes(manager.role) && manager.location) {
                 matchingConditions.push({ location: manager.location });
             }
 

@@ -9,7 +9,7 @@ export default function MisbehaviourPage() {
     const { user, getReportees, reportMisbehaviour, misbehaviourReports, deductChance, employees, pipRecords } = useAuth();
     const [showForm, setShowForm] = useState(false);
     const [form, setForm] = useState({ employeeId: "", type: "Behavioral" as "Behavioral" | "Performance" | "Meeting Absent", description: "" });
-    if (!user || !["FOUNDER", "AD", "HOI", "HR"].includes(user.role)) return null;
+    if (!user || !["FOUNDER", "AD", "HOI", "HR", "OM"].includes(user.role)) return null;
     const reportees = getReportees(user.id);
     const myReports = misbehaviourReports.filter(m => m.reportedBy === user.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 

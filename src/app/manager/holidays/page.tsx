@@ -13,7 +13,7 @@ export default function HolidaysPage() {
     const [proofUrl, setProofUrl] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
-    if (!user || !["FOUNDER", "AD", "HOI", "HR"].includes(user.role)) return null;
+    if (!user || !["FOUNDER", "AD", "HOI", "HR", "OM"].includes(user.role)) return null;
 
     const handleProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];

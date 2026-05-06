@@ -248,8 +248,8 @@ export default function SprintPlanPage() {
             stream: facultyStreams[0] || STREAMS[0],
             year: YEARS[0],
             semester: SEMESTERS[0],
-            subjectCode: Object.keys(facultySubjects)[0] || Object.keys(SUBJECTS)[0],
-            subjectName: facultySubjects[Object.keys(facultySubjects)[0]] || SUBJECTS[Object.keys(SUBJECTS)[0]],
+            subjectCode: "",
+            subjectName: "",
             topics: "",
             section: ""
         }]);
@@ -468,8 +468,8 @@ export default function SprintPlanPage() {
         doc.save(`SprintPlan_${user?.name || 'Faculty'}_${weekInfo.start}.pdf`);
     };
 
-    if (!user || !["FACULTY", "PROFESSOR"].includes(user.role)) {
-        return <div className="flex items-center justify-center h-[80vh] text-zinc-400">Access restricted to Faculty/Professors</div>;
+    if (!user || !["FACULTY", "PROFESSOR", "MARKETING_TEAM", "TECH_TEAM"].includes(user.role)) {
+        return <div className="flex items-center justify-center h-[80vh] text-zinc-400">Access restricted to Faculty/Professors & Specific Teams</div>;
     }
 
     return (
@@ -650,6 +650,7 @@ export default function SprintPlanPage() {
                                                         }}
                                                             disabled={plan?.isLocked}
                                                             className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50 font-medium appearance-none">
+                                                            <option value="">-- Select Subject --</option>
                                                             {Object.entries(facultySubjects).map(([code, name]) => (
                                                                 <option key={code} value={code}>{name}</option>
                                                             ))}

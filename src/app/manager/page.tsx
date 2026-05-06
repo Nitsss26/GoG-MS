@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 export default function ManagerHub() {
     const { user, getReportees, leaves, attendanceRecords, pipRecords, misbehaviourReports, ratings } = useAuth();
-    if (!user || !["FOUNDER", "AD", "HOI", "HR"].includes(user.role)) return null;
+    if (!user || !["FOUNDER", "AD", "HOI", "HR", "OM"].includes(user.role)) return null;
     const reportees = getReportees(user.id);
     const reporteeIds = reportees.map(r => r.id);
     const pendingLeaves = leaves.filter(l => reporteeIds.includes(l.employeeId) && l.status === "Pending");

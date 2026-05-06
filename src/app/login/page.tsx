@@ -12,6 +12,8 @@ const ROLE_OPTIONS = [
     { key: "TL", label: "Tech Lead (TL)" },
     { key: "HOI", label: "Head of Institute (HOI)" },
     { key: "OM", label: "Operations Manager / Growth Manager" },
+    { key: "MARKETING_TEAM", label: "Marketing Team" },
+    { key: "TECH_TEAM", label: "Tech Team" },
     { key: "PROFESSOR", label: "Academic Faculty / Professor" },
 ];
 

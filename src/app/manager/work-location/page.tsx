@@ -12,7 +12,7 @@ export default function WorkLocationPage() {
     const [schedule, setSchedule] = useState<Record<string, { location: string; clockInTime: string; clockOutTime: string }>>(
         DAYS.reduce((acc, d) => ({ ...acc, [d]: { location: (colleges && colleges[0]?.id) || "", clockInTime: "09:00", clockOutTime: "18:00" } }), {})
     );
-    if (!user || !["FOUNDER", "AD", "HOI", "HR"].includes(user.role)) return null;
+    if (!user || !["FOUNDER", "AD", "HOI", "HR", "OM"].includes(user.role)) return null;
     const reportees = getReportees(user.id) || [];
 
     const handleSelect = (id: string) => {

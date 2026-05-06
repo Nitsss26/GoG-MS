@@ -326,7 +326,7 @@ const SprintPlanSchema = new Schema({
         year: { type: String },
         semester: { type: String },
         subjectCode: { type: String },
-        subjectName: { type: String, required: true },
+        subjectName: { type: String },
         topics: { type: String },
         section: { type: String }
     }],

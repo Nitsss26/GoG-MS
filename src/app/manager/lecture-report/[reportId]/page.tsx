@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useParams, useSearchParams } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 import {
     CheckCircle2, AlertTriangle, ShieldAlert, Award,
     TrendingUp, Clock, Users, BookOpen, ChevronRight,
@@ -16,6 +17,10 @@ import jsPDF from "jspdf";
 export default function LQRPage() {
     const params = useParams();
     const searchParams = useSearchParams();
+    const { user } = useAuth();
+    
+    if (!user || !["FOUNDER", "AD", "HOI", "HR", "OM"].includes(user.role)) return null;
+
     const shouldAnalyze = searchParams.get("analyze") === "true";
 
     const [loading, setLoading] = useState(true);

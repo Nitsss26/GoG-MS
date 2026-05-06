@@ -10,7 +10,7 @@ export default function ManagerAttendanceOverridePage() {
     const [creditModalEmp, setCreditModalEmp] = useState<string | null>(null);
     const [creditReason, setCreditReason] = useState("");
 
-    if (!user || !["HOI", "AD", "HR", "FOUNDER"].includes(user.role)) return null;
+    if (!user || !["HOI", "AD", "HR", "FOUNDER", "OM"].includes(user.role)) return null;
 
     const todayDate = new Date().toISOString().split("T")[0];
     const reportees = getReportees(user.id) || [];
