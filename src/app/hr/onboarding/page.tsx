@@ -304,6 +304,8 @@ export default function OnboardingHRPage() {
                                     <select name="role" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary/50">
                                         <option value="PROFESSOR">Professor</option>
                                         <option value="OM">OM</option>
+                                        <option value="MARKETING_TEAM">Marketing Team</option>
+                                        <option value="TECH_TEAM">Tech Team</option>
                                         <option value="HOI">HOI</option>
                                         <option value="AD">AD</option>
                                         <option value="HR">HR</option>

@@ -166,7 +166,7 @@ export default function AttendancePage() {
     const assignedClockOut = expected.out;
 
     // Resolve college from location ID
-    const isWFH = assignedLocationId.toLowerCase() === "wfh";
+    const isWFH = assignedLocationId?.toLowerCase() === "wfh";
     const college = isWFH ? null : colleges.find(c => c.id === assignedLocationId || c.shortName === assignedLocationId || c.name === assignedLocationId);
     const displayLocation = isWFH ? "Work From Home" : college?.shortName || assignedLocationId;
 
@@ -191,7 +191,7 @@ export default function AttendancePage() {
                 let targetCollege = college;
                 let dist = 999999;
 
-                if ((emp.role === "HOI" || emp.role === "OM") && colleges.length > 0) {
+                if ((emp.role === "HOI" || emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM") && colleges.length > 0) {
                     let closestCollege = colleges[0];
                     let minDistance = 999999;
 

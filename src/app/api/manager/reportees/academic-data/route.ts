@@ -29,8 +29,8 @@ export async function GET(req: Request) {
                 { reportsTo: { $in: [managerId] } }
             ];
 
-            // If manager is an HOI, also include everyone at their location
-            if (manager.role === "HOI" && manager.location) {
+            // If manager is an HOI, OM or Team Lead, also include everyone at their location
+            if (["HOI", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(manager.role) && manager.location) {
                 matchingConditions.push({ location: manager.location });
             }
 

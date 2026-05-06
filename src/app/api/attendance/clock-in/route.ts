@@ -70,7 +70,7 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: "Location coordinates missing from request." }, { status: 400 });
             }
 
-            if (employee.role === "HOI" || employee.role === "OM") {
+            if (employee.role === "HOI" || employee.role === "OM" || employee.role === "MARKETING_TEAM" || employee.role === "TECH_TEAM") {
                 const dbCampuses = await Location.find({});
                 const map = new Map();
                 for (const c of COLLEGES) map.set(c.id, c);

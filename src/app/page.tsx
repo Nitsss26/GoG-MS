@@ -241,7 +241,7 @@ export default function Home() {
     useEffect(() => { setMounted(true); setTodayStr(new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })); }, []);
 
     // Manager/Reportee logic needed for stats filtering
-    const isManagerRole = user?.role ? ["FOUNDER", "AD", "HOI", "OM"].includes(user.role) : false;
+    const isManagerRole = user?.role ? ["FOUNDER", "AD", "HOI", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(user.role) : false;
     const reportees = (user && (isManagerRole || user?.role === "HR")) ? getReportees(user.id) : [];
     const reporteeIds = reportees.map(r => r.id);
 
@@ -395,7 +395,10 @@ export default function Home() {
                             </div>
                             <div className="grid gap-2">
                                 {stats
-                                    .filter(s => s.emp?.role === "OM")
+                                    .filter(s => {
+                                        const r = s.emp?.role?.toUpperCase();
+                                        return r === "OM" || r === "MARKETING_TEAM" || r === "TECH_TEAM";
+                                    })
                                     .slice(0, 3)
                                     .map((s, i) => {
                                         const emp = s.emp;

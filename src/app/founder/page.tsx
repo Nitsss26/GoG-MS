@@ -56,6 +56,8 @@ export default function FounderConsolePage() {
         { role: "TL", count: employees.filter(e => e.role === "TL").length, color: "bg-blue-500" },
         { role: "HOI", count: employees.filter(e => e.role === "HOI").length, color: "bg-orange-500" },
         { role: "OM", count: employees.filter(e => e.role === "OM").length, color: "bg-cyan-500" },
+        { role: "MARKETING", count: employees.filter(e => e.role === "MARKETING_TEAM").length, color: "bg-indigo-500" },
+        { role: "TECH", count: employees.filter(e => e.role === "TECH_TEAM").length, color: "bg-rose-500" },
         { role: "FACULTY", count: employees.filter(e => e.role === "FACULTY").length, color: "bg-pink-500" },
     ];
 

@@ -34,7 +34,7 @@ export default function MeetingsPage() {
 
     const [searchTerm, setSearchTerm] = useState("");
 
-    const canSchedule = ["FOUNDER", "HR", "AD", "HOI", "OM", "TL"].includes(user?.role || "");
+    const canSchedule = ["FOUNDER", "HR", "AD", "HOI", "OM", "TL", "MARKETING_TEAM", "TECH_TEAM"].includes(user?.role || "");
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -96,7 +96,7 @@ export default function MeetingsPage() {
             (user?.id && getReportees(user.id).some(r => r.id === m.employeeId || m.attendees?.some(a => a.id === r.id)))
         );
 
-    const selectableEmployees = (user?.role === "HOI" || user?.role === "OM")
+    const selectableEmployees = (user?.role === "HOI" || user?.role === "OM" || user?.role === "MARKETING_TEAM" || user?.role === "TECH_TEAM")
         ? getReportees(user.id)
         : employees.filter(e => e.id !== user?.id);
     const searchedEmployees = selectableEmployees.filter(e =>

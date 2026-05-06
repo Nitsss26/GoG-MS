@@ -29,7 +29,7 @@ import {
 import { CUSTOM_SCHEDULE_RULES, FALLBACK_TIMINGS, isThirdSaturday } from '@/lib/attendance-config';
 
 // ─── TYPES ───
-export type Role = "FOUNDER" | "HR" | "AD" | "TL" | "HOI" | "OM" | "FACULTY" | "PROFESSOR";
+export type Role = "FOUNDER" | "HR" | "AD" | "TL" | "HOI" | "OM" | "FACULTY" | "PROFESSOR" | "MARKETING_TEAM" | "TECH_TEAM";
 
 export interface PortalNotification {
     id: string; from: string; fromName: string; to: string; toName: string;
@@ -1414,7 +1414,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (emp.role === "FOUNDER") level = "C-Suite";
                 else if (emp.role === "AD" || emp.role === "HR" || emp.role === "TL") level = "Management";
                 else if (emp.role === "HOI") level = "Leadership";
-                else if (emp.role === "OM") level = "OM";
+                else if (emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM") level = "OM";
                 else if (emp.role === "FACULTY" || emp.role === "PROFESSOR") level = "Faculty";
 
                 // Enforce "Tech Lead" designation for TL role (Failsafe)
@@ -1424,7 +1424,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 let parentId = Array.isArray(emp.reportsTo) ? emp.reportsTo[0] : emp.reportsTo;
 
                 // Fallback for academic/ops staff to ensure they have a parent if reportsTo is missing
-                if (!parentId && (emp.role === "OM" || emp.role === "PROFESSOR" || emp.role === "FACULTY")) {
+                if (!parentId && (emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM" || emp.role === "PROFESSOR" || emp.role === "FACULTY")) {
                     // Logic for default reporting to be dynamic if possible, 
                     // otherwise default to Founder (or stay unassigned)
                     parentId = "FND001"; 
@@ -1839,12 +1839,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 return ["AD", "HOI", "FACULTY", "PROFESSOR", "OM"].includes(e.role);
             }
             if (manager.role === "AD") {
-                return ["HOI", "FACULTY", "PROFESSOR", "OM"].includes(e.role) && isReportee;
+                return ["HOI", "FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(e.role) && isReportee;
             }
             if (manager.role === "HOI") {
-                return ["FACULTY", "PROFESSOR", "OM"].includes(e.role) && isReportee;
+                return ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(e.role) && isReportee;
             }
-            if (manager.role === "OM") {
+            if (["OM", "MARKETING_TEAM", "TECH_TEAM"].includes(manager.role)) {
                 return ["FACULTY", "PROFESSOR"].includes(e.role) && isReportee;
             }
 
@@ -2331,7 +2331,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const now = new Date();
         const appliedAt = now.toISOString();
 
-        const isHierarchical = user.role === "OM" || user.role === "PROFESSOR";
+        const isHierarchical = user.role === "OM" || user.role === "MARKETING_TEAM" || user.role === "TECH_TEAM" || user.role === "PROFESSOR";
         const initialStatus = isHierarchical ? "Pending HOI Approval" : "Pending";
 
         const newLeave: LeaveRequest = {

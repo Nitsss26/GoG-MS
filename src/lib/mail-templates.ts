@@ -98,7 +98,7 @@ export const getAuthorityEmails = (employee: any, allEmployees: any[]) => {
 
     // 5. Explicit HOI Inclusion for certain roles
     // If sender is Professor or OM, ensure ALL HOIs are fetched from the email field of the employees list
-    if (employee?.role === "PROFESSOR" || employee?.role === "OM") {
+    if (employee?.role === "PROFESSOR" || employee?.role === "OM" || employee?.role === "MARKETING_TEAM" || employee?.role === "TECH_TEAM") {
         const hoiEmails = allEmployees
             .filter(e => e.role === "HOI" && e.email)
             .map(e => e.email!.toLowerCase());

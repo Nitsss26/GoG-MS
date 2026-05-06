@@ -33,7 +33,10 @@ export default function LeaderboardPage() {
 
     const omRankings = useMemo(() => {
         return stats
-            .filter(s => s.emp?.role?.toUpperCase() === "OM")
+            .filter(s => {
+                const r = s.emp?.role?.toUpperCase();
+                return r === "OM" || r === "MARKETING_TEAM" || r === "TECH_TEAM";
+            })
             .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount)
             .slice(0, 16);
     }, [stats]);
@@ -535,7 +538,12 @@ function LeaderboardBox({ data, rank, type, onRespClick, onAuditClick, canAdd }:
                     {data.emp?.name}
                 </h3>
                 <p className="text-[6px] sm:text-[7px] text-zinc-500 font-bold uppercase tracking-[0.1em] truncate px-4">
-                    {data.emp?.role === "FOUNDER" ? "Founder" : data.emp?.role === "OM" ? "Operation Manager" : data.emp?.role === "PROFESSOR" ? "Professor" : data.emp?.designation}
+                    {data.emp?.role === "FOUNDER" ? "Founder" : 
+                     data.emp?.role === "OM" ? "Operation Manager" : 
+                     data.emp?.role === "MARKETING_TEAM" ? "Marketing Team" : 
+                     data.emp?.role === "TECH_TEAM" ? "Tech Team" : 
+                     data.emp?.role === "PROFESSOR" ? "Professor" : 
+                     data.emp?.designation}
                 </p>
 
                 {/* Stars Display */}

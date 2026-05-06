@@ -75,7 +75,7 @@ const facultyMenu = [
 ];
 
 // Roles that can see Manager Suite
-const MANAGER_ROLES: Role[] = ["FOUNDER", "AD", "HOI"];
+const MANAGER_ROLES: Role[] = ["FOUNDER", "AD", "HOI", "OM", "MARKETING_TEAM", "TECH_TEAM"];
 // Roles that can see HR Administration
 const HR_ROLES: Role[] = ["FOUNDER", "HR"];
 // Roles that can see Faculty Suite
@@ -112,6 +112,8 @@ const ROLE_COLORS: Record<Role, { bg: string; text: string; label: string }> = {
     TL: { bg: "bg-blue-500/20", text: "text-blue-400", label: "Tech Lead" },
     HOI: { bg: "bg-orange-500/20", text: "text-orange-400", label: "Head of Inst." },
     OM: { bg: "bg-cyan-500/20", text: "text-cyan-400", label: "Ops Manager" },
+    MARKETING_TEAM: { bg: "bg-indigo-500/20", text: "text-indigo-400", label: "Marketing Team" },
+    TECH_TEAM: { bg: "bg-rose-500/20", text: "text-rose-400", label: "Tech Team" },
     FACULTY: { bg: "bg-pink-500/20", text: "text-pink-400", label: "Faculty" },
     PROFESSOR: { bg: "bg-pink-500/20", text: "text-pink-400", label: "Professor" },
 };

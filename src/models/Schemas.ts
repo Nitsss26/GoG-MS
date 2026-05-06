@@ -310,7 +310,7 @@ const MeetingRequestSchema = new Schema({
 const SprintPlanSchema = new Schema({
     facultyId: { type: String, required: true },
     facultyName: { type: String, required: true },
-    college: { type: String, required: true },
+    college: { type: String },
     weekStartDate: { type: String, required: true },
     weekEndDate: { type: String, required: true },
     stream: { type: String },
@@ -327,7 +327,7 @@ const SprintPlanSchema = new Schema({
         semester: { type: String },
         subjectCode: { type: String },
         subjectName: { type: String, required: true },
-        topics: { type: String, required: true },
+        topics: { type: String },
         section: { type: String }
     }],
     changeRequests: [{
@@ -359,7 +359,7 @@ const LectureReportSchema = new Schema({
     lectureNumber: { type: Number, required: true },
     sprintPlanId: { type: String },
     courseName: { type: String, required: true },
-    topicsCovered: { type: String, required: true },
+    topicsCovered: { type: String },
     scheduledDuration: { type: Number },
     stream: { type: String },
     year: { type: String },
