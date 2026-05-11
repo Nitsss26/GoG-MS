@@ -44,10 +44,10 @@ export default function BiWeeklyReportPage() {
         setIsUploading(true);
         const formData = new FormData();
         formData.append("file", file);
-        formData.append("upload_preset", "gog_oms"); // Standard preset for GOG
+        formData.append("upload_preset", "GOG-MS"); // Standard preset for GOG
 
         try {
-            const res = await fetch(`https://api.cloudinary.com/v1_1/dwaepohvf/image/upload`, {
+            const res = await fetch(`https://api.cloudinary.com/v1_1/dtkim5oeu/image/upload`, {
                 method: "POST",
                 body: formData
             });

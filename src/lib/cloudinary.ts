@@ -1,5 +1,5 @@
 // Cloudinary Upload Utility — Unsigned upload with preset GOG-MS
-const CLOUD_NAME = "dwaepohvf";
+const CLOUD_NAME = "dtkim5oeu";
 const UPLOAD_PRESET = "GOG-MS";
 const UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
 

@@ -427,7 +427,7 @@ const INITIAL_EMPLOYEES: Employee[] = [
         name: "Nitesh",
         email: "nitesh@geeksofgurukul.com",
         role: "TL",
-        photoUrl: "https://res.cloudinary.com/dwaepohvf/image/upload/v1773050409/sdgubdunfbltriwqhddr.jpg",
+        photoUrl: "https://res.cloudinary.com/dtkim5oeu/image/upload/v1773050409/sdgubdunfbltriwqhddr.jpg",
         isOnboarded: true,
         dept: "NIT",
         designation: "Tech Lead",
@@ -2500,7 +2500,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const isHOI = user.role === "HOI";
         const isAD = user.role === "AD";
 
-        if (targetCategoryNormalized.includes("hr") || targetCategoryNormalized.includes("account") || targetCategoryNormalized.includes("attendance") || targetCategoryNormalized.includes("others")) {
+        if (targetCategoryNormalized.includes("against hr")) {
+            // Against HR - To Founders, NO HR in CC
+            finalRouteTo = founders[0] || hrId; // Fallback to HR only if no founder exists
+            finalCC = [...new Set([...finalCC, ...founders])];
+        } else if ((targetCategoryNormalized.includes("hr") || targetCategoryNormalized.includes("account") || targetCategoryNormalized.includes("attendance") || targetCategoryNormalized.includes("others")) && !targetCategoryNormalized.includes("against")) {
             // HR/Accounts/Attendance/Others - To HR, CC: Founders
             finalRouteTo = hrId;
             finalCC = [...new Set([...finalCC, ...founders, ...hrEmployees.map(h => h.id)])];

@@ -29,6 +29,7 @@ export async function POST(req: Request) {
         // Ticket ID Generation Logic
         const getCategoryCode = (cat: string) => {
             if (cat.includes("Attendance Override")) return "AO";
+            if (cat.includes("Against HR")) return "GR";
             if (cat.includes("HR Desk")) return "HR";
             if (cat.includes("Misconduct")) return "MI";
             if (cat.includes("Academic")) return "AC";

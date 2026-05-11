@@ -6,7 +6,7 @@ import {
     Briefcase, Award, Network, Megaphone, Ticket, Receipt,
     FileText, CalendarCheck, AlertTriangle, UserCog, Star, MapPin, ClipboardList,
     Crown, Bell, Activity, Flag, ShieldAlert, Trophy, TrendingUp, Shirt,
-    BookOpen, Timer, Mic, GraduationCap, Video
+    BookOpen, Timer, Mic, GraduationCap, Video, Download
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -67,6 +67,11 @@ const founderMenu = [
     { label: "Workforce", icon: Users, path: "/employees" },
 ];
 
+const techLeadMenu = [
+    { label: "Asset Exports", icon: Download, path: "/tech-lead/exports" },
+    { label: "System Status", icon: Activity, path: "/tech-lead/status" },
+];
+
 const facultyMenu = [
     { label: "Faculty Dashboard", icon: GraduationCap, path: "/faculty" },
     { label: "Sprint Plan", icon: CalendarCheck, path: "/faculty/sprint-plan" },
@@ -80,6 +85,8 @@ const MANAGER_ROLES: Role[] = ["FOUNDER", "AD", "HOI", "OM"];
 const HR_ROLES: Role[] = ["FOUNDER", "HR"];
 // Roles that can see Faculty Suite
 const FACULTY_ROLES: Role[] = ["FACULTY", "PROFESSOR"];
+// Roles that can see Tech Support
+const TECH_LEAD_ROLES: Role[] = ["TL", "FOUNDER"];
 
 function NavSection({ title, items, pathname }: { title: string; items: typeof coreMenu; pathname: string }) {
     return (
@@ -177,6 +184,11 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
                 {/* Founder Console: Visible to FOUNDER only */}
                 {role === "FOUNDER" && (
                     <NavSection title="Founder Console" items={founderMenu} pathname={pathname} />
+                )}
+
+                {/* Tech Support: Visible to TL, FOUNDER */}
+                {role && TECH_LEAD_ROLES.includes(role) && (
+                    <NavSection title="Tech Support" items={techLeadMenu} pathname={pathname} />
                 )}
             </nav>
 

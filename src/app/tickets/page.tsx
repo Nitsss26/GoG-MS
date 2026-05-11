@@ -350,6 +350,7 @@ export default function TicketsPage() {
                                         <option value="Misconduct">Misconduct / Institute Issues</option>
                                         <option value="Academic">Academic / Student Concerns</option>
                                         <option value="Technical">Technical Issues</option>
+                                        <option value="Against HR (Confidential to Founders)">Against HR (Confidential to Founders)</option>
                                         <option value="Attendance Override Request">Attendance Override Request</option>
                                         <option value="Others">Others</option>
                                     </select>

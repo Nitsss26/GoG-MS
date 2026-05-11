@@ -20,7 +20,7 @@ const ProfessionalWrapper = (title: string, content: string, color: string = "#1
         <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
             <!-- Header -->
             <div style="background-color: #0d0f12; padding: 24px; text-align: center; border-bottom: 4px solid ${color};">
-                <img src="https://res.cloudinary.com/dwaepohvf/image/upload/v1774941478/euchwm1um5zuiz5l01vr.png" alt="Geeks of Gurukul" style="height: 32px; display: block; margin: 0 auto; filter: brightness(1.5);">
+                <img src="https://res.cloudinary.com/dtkim5oeu/image/upload/v1774941478/euchwm1um5zuiz5l01vr.png" alt="Geeks of Gurukul" style="height: 32px; display: block; margin: 0 auto; filter: brightness(1.5);">
             </div>
             
             <!-- Body -->
