@@ -43,11 +43,13 @@ const EmployeeSchema = new Schema({
             date: { type: String }
         }]
     },
-    biWeeklyScores: [{
+    monthlyScores: [{
         score: { type: Number },
         period: { type: String },
         date: { type: String },
-        points: { type: Number }
+        points: { type: Number },
+        screenshotUrl: { type: String },
+        comment: { type: String }
     }],
     education: [{
         degree: String,

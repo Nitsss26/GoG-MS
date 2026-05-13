@@ -9,7 +9,11 @@ import { cn } from "@/lib/utils";
 import { calculatePerformance, LEADERBOARD_START_DATE, getLeaderboardStats } from "@/lib/performance-utils";
 
 export default function LeaderboardPage() {
-    const { user, employees, performanceStars, attendanceRecords, additionalResponsibilities, holidays, getReportees } = useAuth();
+    const { 
+        user, employees, performanceStars, attendanceRecords, 
+        additionalResponsibilities, holidays, getReportees, 
+        ratings, addAdditionalResponsibility 
+    } = useAuth();
 
     const [showRules, setShowRules] = useState(false);
     const [selectedEmpForAudit, setSelectedEmpForAudit] = useState<any>(null);
@@ -17,13 +21,12 @@ export default function LeaderboardPage() {
     const [respDescription, setRespDescription] = useState("");
     const [respPoints, setRespPoints] = useState<number>(10);
     const [isSubmittingResp, setIsSubmittingResp] = useState(false);
-    const { addAdditionalResponsibility } = useAuth();
     const isADorFounder = user?.role === "AD" || user?.role === "FOUNDER";
 
     const stats = useMemo(() => {
         if (!employees || !performanceStars || !user) return [];
-        return getLeaderboardStats(employees, attendanceRecords, additionalResponsibilities, holidays, performanceStars);
-    }, [employees, performanceStars, attendanceRecords, additionalResponsibilities, user]);
+        return getLeaderboardStats(employees, attendanceRecords, additionalResponsibilities, holidays, performanceStars, ratings);
+    }, [employees, performanceStars, attendanceRecords, additionalResponsibilities, holidays, user, ratings]);
 
     const foundersRankings = useMemo(() => {
         return stats

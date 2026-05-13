@@ -20,9 +20,9 @@ export default function RatingsPortal() {
         e.preventDefault();
         if (!selectedEmployee || score === 0) return;
 
-        // Current Bi-weekly Period determination (Naive implementation for UI)
+        // Current Monthly Period determination
         const d = new Date();
-        const periodText = `H${d.getDate() <= 15 ? 1 : 2} ${d.toLocaleString("default", { month: "short" })} ${d.getFullYear()}`;
+        const periodText = `${d.toLocaleString("default", { month: "long" })} ${d.getFullYear()}`;
 
         addRating(selectedEmployee, user.id, score, periodText, comment);
         setSelectedEmployee(null);
@@ -35,7 +35,7 @@ export default function RatingsPortal() {
             <header>
                 <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
                     <Star size={20} className="text-yellow-500 fill-yellow-500" />
-                    Bi-Weekly Ratings
+                    Monthly Ratings
                 </h1>
                 <p className="text-xs text-zinc-400 mt-1">
                     Evaluate and score your direct reportees (OMs & Faculties) to influence the global Leaderboard.

@@ -39,7 +39,7 @@ const managerMenu = [
     { label: "Report Misbehaviour", icon: AlertTriangle, path: "/manager/misbehaviour" },
     { label: "Ratings", icon: Star, path: "/manager/ratings" },
     { label: "Work Location", icon: MapPin, path: "/manager/work-location" },
-    { label: "Bi-Weekly Progress", icon: TrendingUp, path: "/management/bi-weekly" },
+    { label: "Monthly Progress", icon: TrendingUp, path: "/management/monthly" },
     { label: "Holidays", icon: CalendarCheck, path: "/manager/holidays" },
     { label: "Attendance Override", icon: ClipboardList, path: "/manager/attendance-override" },
     { label: "Locations Map", icon: MapPin, path: "/locations" },

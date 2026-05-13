@@ -7,18 +7,18 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export default function BiWeeklyReportPage() {
-    const { user, employees, getReportees, addBiWeeklyRating } = useAuth();
+export default function MonthlyReportPage() {
+    const { user, employees, getReportees, addMonthlyRating } = useAuth();
     const [selectedId, setSelectedId] = useState<string>("");
     const [score, setScore] = useState<number>(4.0);
+    const [bonusPoints, setBonusPoints] = useState<number>(0);
     const [screenshotUrl, setScreenshotUrl] = useState<string>("");
+    const [comment, setComment] = useState<string>("");
     const [isUploading, setIsUploading] = useState(false);
     const [period, setPeriod] = useState<string>(() => {
         const now = new Date();
-        const start = now.getDate() <= 15 ? 1 : 16;
-        const end = now.getDate() <= 15 ? 15 : new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-        const month = now.toLocaleString('default', { month: 'short' });
-        return `${start}-${end} ${month} ${now.getFullYear()}`;
+        const month = now.toLocaleString('default', { month: 'long' });
+        return `${month} ${now.getFullYear()}`;
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -34,8 +34,9 @@ export default function BiWeeklyReportPage() {
         if (score > 4.2) p = score * 10;
         else if (score >= 2.0 && score <= 3.5) p = (score - 5) * 10;
         else if (score < 2.0) p = (score - 5) * 20;
-        return Math.round(p);
-    }, [score]);
+        else p = 0;
+        return Math.round(p) + bonusPoints;
+    }, [score, bonusPoints]);
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -74,17 +75,15 @@ export default function BiWeeklyReportPage() {
         setMessage(null);
 
         try {
-            if (!screenshotUrl) {
-                setMessage({ type: 'error', text: "MANDATORY: 1:1 Meeting screenshot is required for session verification." });
-                setIsSubmitting(false);
-                return;
-            }
-            await addBiWeeklyRating(selectedId, score, period, screenshotUrl);
-            setMessage({ type: 'success', text: "Performance data recorded. Projected points: " + projectedPoints });
+            // Screenshot is now optional
+            await addMonthlyRating(selectedId, score, period, screenshotUrl || "", projectedPoints, comment);
+            setMessage({ type: 'success', text: "Performance data recorded. Total points: " + projectedPoints });
             // Reset
             setScore(4.0);
+            setBonusPoints(0);
             setSelectedId("");
             setScreenshotUrl("");
+            setComment("");
         } catch (err) {
             setMessage({ type: 'error', text: "Failed to save record. Please try again." });
         } finally {
@@ -100,7 +99,7 @@ export default function BiWeeklyReportPage() {
         <div className="p-6 max-w-4xl mx-auto space-y-6">
             <div className="flex flex-col gap-1">
                 <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-                    <TrendingUp className="text-primary" /> Management Hub: Bi-Weekly Productivity
+                    <TrendingUp className="text-primary" /> Management Hub: Monthly Productivity
                 </h1>
                 <p className="text-zinc-500 text-sm">Assign productivity scores and bonus points to your direct reportees.</p>
             </div>
@@ -138,57 +137,68 @@ export default function BiWeeklyReportPage() {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t border-zinc-800/50">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-4 border-t border-zinc-800/50">
                             <div className="space-y-4">
                                 <label className="flex items-center gap-2 text-sm font-bold text-zinc-400">
-                                    Productivity Score <span className="text-[10px] font-normal text-zinc-600">(0.0 - 5.0)</span>
+                                    Productivity Score
                                 </label>
-                                <div className="flex items-center gap-6">
+                                <div className="flex items-center gap-3">
                                     <input
                                         type="range" min="1.0" max="5.0" step="0.1" value={score}
                                         onChange={(e) => setScore(parseFloat(e.target.value))}
                                         className="flex-1 h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-primary"
                                     />
-                                    <span className={cn(
-                                        "w-12 text-center text-lg font-black border rounded-lg py-1 transition-colors",
-                                        score > 4.2 ? "text-emerald-400 bg-emerald-400/10 border-emerald-400/20" :
-                                        score <= 3.5 ? "text-red-400 bg-red-400/10 border-red-400/20" :
-                                        "text-primary bg-primary/10 border-primary/20"
+                                    <div className={cn(
+                                        "w-12 h-10 flex items-center justify-center text-lg font-black border rounded-xl transition-all shadow-inner",
+                                        score > 4.2 ? "text-emerald-400 bg-emerald-400/5 border-emerald-500/20 shadow-emerald-500/5" :
+                                        score <= 3.5 ? "text-red-400 bg-red-400/5 border-red-500/20 shadow-red-500/5" :
+                                        "text-primary bg-primary/5 border-primary/20 shadow-primary/5"
                                     )}>
                                         {score.toFixed(1)}
-                                    </span>
+                                    </div>
                                 </div>
-                                <div className="grid grid-cols-5 gap-1">
+                                <div className="flex gap-1">
                                     {[1, 2, 3, 4, 5].map(i => (
-                                        <Star key={i} size={14} className={i <= score ? "text-amber-400 fill-amber-400" : "text-zinc-800"} />
+                                        <Star key={i} size={14} className={i <= Math.floor(score) ? "text-amber-400 fill-amber-400" : "text-zinc-800"} />
                                     ))}
                                 </div>
                             </div>
 
                             <div className="space-y-4">
                                 <label className="flex items-center gap-2 text-sm font-bold text-zinc-400">
-                                    Leaderboard Points <span className="text-[10px] font-normal text-zinc-600">(Auto-calculated)</span>
+                                    Bonus Points <span className="text-[10px] font-normal text-zinc-600">(Manual)</span>
+                                </label>
+                                <div className="relative group">
+                                    <input
+                                        type="number"
+                                        value={bonusPoints}
+                                        onChange={(e) => setBonusPoints(parseInt(e.target.value) || 0)}
+                                        className="w-full bg-zinc-800/30 border border-zinc-800 rounded-xl px-4 py-2 text-sm font-bold text-white focus:outline-none focus:border-primary/50 transition-all"
+                                        placeholder="+0"
+                                    />
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black uppercase tracking-widest text-zinc-500 group-focus-within:text-primary transition-colors">Bonus</div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <label className="flex items-center gap-2 text-sm font-bold text-zinc-400">
+                                    Final Points <span className="text-[10px] font-normal text-zinc-600">(Leaderboard)</span>
                                 </label>
                                 <div className={cn(
-                                    "w-full bg-zinc-800/50 border rounded-xl px-4 py-2.5 text-sm font-black flex items-center justify-between",
-                                    projectedPoints > 0 ? "border-emerald-500/20 text-emerald-400" :
-                                    projectedPoints < 0 ? "border-red-500/20 text-red-400" :
+                                    "w-full bg-zinc-800/50 border rounded-xl px-4 py-2.5 text-sm font-black flex items-center justify-between transition-all",
+                                    projectedPoints > 0 ? "border-emerald-500/20 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.05)]" :
+                                    projectedPoints < 0 ? "border-red-500/20 text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.05)]" :
                                     "border-zinc-700/50 text-zinc-500"
                                 )}>
                                     <span>{projectedPoints >= 0 ? "+" : ""}{projectedPoints}</span>
-                                    <span className="text-[9px] uppercase tracking-widest opacity-60">{projectedPoints >= 0 ? "Bonus" : "Penalty"}</span>
+                                    <span className="text-[9px] uppercase tracking-widest opacity-60">Impact</span>
                                 </div>
-                                <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">
-                                    {score > 4.2 ? "High Performance Bonus Applied" : 
-                                     score < 3.5 ? "Low Productivity Penalty Applied" : 
-                                     "Neutral Performance Range"}
-                                </p>
                             </div>
                         </div>
 
                         <div className="space-y-4 pt-4 border-t border-zinc-800/50">
                             <label className="flex items-center gap-2 text-sm font-bold text-zinc-400">
-                                Proof of 1:1 Meeting <span className="text-[10px] font-normal text-red-500">(Mandatory)</span>
+                                Proof of 1:1 Meeting <span className="text-[10px] font-normal text-zinc-500">(Optional)</span>
                             </label>
                             <div className={cn(
                                 "relative group overflow-hidden rounded-2xl border-2 border-dashed transition-all",
@@ -220,12 +230,25 @@ export default function BiWeeklyReportPage() {
                                         </div>
                                         <div className="mt-4 text-center">
                                             <p className="text-xs font-black text-white uppercase tracking-widest">{isUploading ? "Uploading Proof..." : "Click to Upload Screenshot"}</p>
-                                            <p className="text-[9px] text-zinc-600 mt-1 uppercase font-bold tracking-widest">Mandatory for verification</p>
+                                            <p className="text-[9px] text-zinc-600 mt-1 uppercase font-bold tracking-widest">Verify session with a screenshot</p>
                                         </div>
                                         <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} disabled={isUploading} />
                                     </label>
                                 )}
                             </div>
+                        </div>
+
+                        <div className="space-y-4 pt-4 border-t border-zinc-800/50">
+                            <label className="flex items-center gap-2 text-sm font-bold text-zinc-400">
+                                Remarks / Feedback <span className="text-[10px] font-normal text-zinc-500">(Optional)</span>
+                            </label>
+                            <textarea
+                                value={comment}
+                                onChange={(e) => setComment(e.target.value)}
+                                rows={3}
+                                className="w-full bg-zinc-800/30 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-primary/50 transition-all resize-none"
+                                placeholder="Add context for this performance assessment..."
+                            />
                         </div>
 
                         <div className="space-y-4 pt-4 border-t border-zinc-800/50">
@@ -241,7 +264,7 @@ export default function BiWeeklyReportPage() {
                         </div>
 
                         <button
-                            disabled={isSubmitting || !selectedId || !screenshotUrl || isUploading}
+                            disabled={isSubmitting || !selectedId || isUploading}
                             className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20"
                         >
                             {isSubmitting ? "Processing..." : isUploading ? "Uploading Screenshot..." : <><Save size={18} /> Submit Performance Record</>}

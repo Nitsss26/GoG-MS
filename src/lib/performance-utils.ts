@@ -1,4 +1,4 @@
-export const LEADERBOARD_START_DATE = new Date("2026-04-01");
+export const LEADERBOARD_START_DATE = new Date("2026-05-01");
 
 export interface AuditEntry {
     date: string;
@@ -34,11 +34,12 @@ export interface PerformanceStats {
 export function calculatePerformance(
     attendanceRecords: any[],
     additionalResponsibilities: any[],
-    biWeeklyScores: any[],
+    monthlyScores: any[],
     employeeId: string,
     holidays: any[] = [],
     employeeLocation: string = "",
-    baseStars: number = 3.0
+    baseStars: number = 3.0,
+    globalRatings: any[] = []
 ): PerformanceStats {
     const START_DATE = LEADERBOARD_START_DATE;
     const auditTrail: AuditEntry[] = [];
@@ -55,20 +56,31 @@ export function calculatePerformance(
         return r.employeeId === employeeId && r.status === "Approved" && rDate >= START_DATE;
     });
 
-    // Filter Ratings: Only from April 1st
-    const myRatings = (biWeeklyScores || []).filter(r => {
+    // Filter Ratings (both from employee.monthlyScores and global ratings array): Only from April 1st
+    const filteredMonthlyScores = (monthlyScores || []).filter(r => {
         let rDate;
         if (r.date) {
             rDate = new Date(r.date);
         } else if (r.period) {
-            // Assume period format "MMM DD - MMM DD, YYYY"
-            const parts = r.period.split(" - ");
-            const yearMatch = parts[1].match(/\d{4}/);
-            const year = yearMatch ? yearMatch[0] : "2026";
-            rDate = new Date(`${parts[0]}, ${year}`);
+            if (r.period.includes(" - ")) {
+                const parts = r.period.split(" - ");
+                const yearMatch = parts[1].match(/\d{4}/);
+                const year = yearMatch ? yearMatch[0] : "2026";
+                rDate = new Date(`${parts[0]}, ${year}`);
+            } else {
+                rDate = new Date(r.period);
+            }
         }
         return rDate && rDate >= START_DATE;
     });
+
+    const myGlobalRatings = (globalRatings || []).filter(r => {
+        const rDate = new Date(r.date);
+        return r.employeeId === employeeId && rDate >= START_DATE;
+    });
+
+    // Combine them for processing
+    const allRatings = [...filteredMonthlyScores, ...myGlobalRatings];
 
     let points = 0;
     let lateCount = 0;
@@ -159,21 +171,38 @@ export function calculatePerformance(
     });
 
     // 4. Rating Points
-    myRatings.forEach(r => {
+    allRatings.forEach(r => {
         const rating = r.score || r.rating || 0;
         const date = r.date || (r.period ? r.period.split(" - ")[0] : "");
-        if (rating > 4.2) {
-            const val = rating * 10;
+        
+        // If the rating has explicitly stored points (including manual bonuses), use them
+        if (r.points !== undefined && r.points !== null && r.points !== 0) {
+            const val = r.points;
             points += val;
-            auditTrail.push({ date, points: val, type: 'Rating', reason: `High Performance Rating: ${rating.toFixed(1)}` });
-        } else if (rating >= 2.0 && rating <= 3.5) {
-            const val = (rating - 5) * 10;
-            points += val;
-            auditTrail.push({ date, points: val, type: 'Penalty', reason: `Low Performance Penalty: ${rating.toFixed(1)}` });
-        } else if (rating < 2.0 && rating > 0) {
-            const val = (rating - 5) * 20;
-            points += val;
-            auditTrail.push({ date, points: val, type: 'Penalty', reason: `Critical Performance Penalty: ${rating.toFixed(1)}` });
+            auditTrail.push({ 
+                date, 
+                points: val, 
+                type: val > 0 ? 'Rating' : 'Penalty', 
+                reason: `Monthly Progress Rating: ${rating.toFixed(1)}/5 Score` 
+            });
+        } else if (rating > 0) {
+            // Fallback to auto-calculation for legacy records or neutral ratings
+            if (rating > 4.2) {
+                const val = Math.round(rating * 10);
+                points += val;
+                auditTrail.push({ date, points: val, type: 'Rating', reason: `Monthly Progress Rating: ${rating.toFixed(1)}/5 Score` });
+            } else if (rating >= 2.0 && rating <= 3.5) {
+                const val = Math.round((rating - 5) * 10);
+                points += val;
+                auditTrail.push({ date, points: val, type: 'Penalty', reason: `Monthly Progress Rating: ${rating.toFixed(1)}/5 Score` });
+            } else if (rating < 2.0) {
+                const val = Math.round((rating - 5) * 20);
+                points += val;
+                auditTrail.push({ date, points: val, type: 'Penalty', reason: `Monthly Progress Rating: ${rating.toFixed(1)}/5 Score` });
+            } else {
+                // Neutral rating (3.5 - 4.2)
+                auditTrail.push({ date, points: 0, type: 'Rating', reason: `Monthly Progress Rating: ${rating.toFixed(1)}/5 Score` });
+            }
         }
     });
 
@@ -249,7 +278,8 @@ export function getLeaderboardStats(
     attendanceRecords: any[],
     additionalResponsibilities: any[],
     holidays: any[],
-    performanceStars: any[]
+    performanceStars: any[],
+    ratings: any[] = []
 ) {
     return performanceStars
         .map(s => {
@@ -260,10 +290,12 @@ export function getLeaderboardStats(
             const perf = calculatePerformance(
                 attendanceRecords,
                 additionalResponsibilities,
-                emp.biWeeklyScores || [],
+                emp.monthlyScores || [],
                 s.employeeId,
                 holidays,
-                emp.location
+                emp.location,
+                3.0,
+                ratings
             );
 
             return {

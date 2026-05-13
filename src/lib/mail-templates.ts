@@ -15,17 +15,17 @@ export const formatDate = (dateStr: string) => {
 /**
  * Wraps email content in a professional GoG OMS themed layout.
  */
-const ProfessionalWrapper = (title: string, content: string, color: string = "#10b981") => {
+const ProfessionalWrapper = (title: string, content: string, color: string = "#10b981", centered: boolean = false) => {
     return `
         <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
             <!-- Header -->
             <div style="background-color: #0d0f12; padding: 24px; text-align: center; border-bottom: 4px solid ${color};">
-                <img src="https://res.cloudinary.com/dtkim5oeu/image/upload/v1774941478/euchwm1um5zuiz5l01vr.png" alt="Geeks of Gurukul" style="height: 32px; display: block; margin: 0 auto; filter: brightness(1.5);">
+                <img src="https://res.cloudinary.com/dtkim5oeu/image/upload/v1778586028/chch3tsi7uci1lwrv9at.png" alt="Geeks of Gurukul" style="height: 32px; display: block; margin: 0 auto; filter: brightness(1.5);">
             </div>
             
             <!-- Body -->
             <div style="padding: 32px 24px;">
-                <h1 style="color: #111827; font-size: 22px; font-weight: 800; margin: 0 0 16px 0; letter-spacing: -0.025em;">${title}</h1>
+                <h1 style="color: #111827; font-size: 22px; font-weight: 800; margin: 0 0 16px 0; letter-spacing: -0.025em; ${centered ? 'text-align: center;' : ''}">${title}</h1>
                 <div style="color: #4b5563; font-size: 15px; line-height: 1.6;">
                     ${content}
                 </div>
@@ -210,14 +210,14 @@ export const getLeaveTemplate = (leave: any, status: 'Pending' | 'Approved' | 'R
 
     return {
         subject: `[LEAVE REQUEST] ${leave.employeeName} - ${formatDate(leave.startDate)}`,
-        html: ProfessionalWrapper(title, content + 
+        html: ProfessionalWrapper(title, content +
             (leave.reasonForAction ? `
                 <div style="background-color: #f8fafc; border-radius: 8px; padding: 16px; margin-top: 20px; border-left: 4px solid ${statusColor};">
                     <strong style="color: #475569; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 4px;">Decision Remarks</strong>
                     <p style="margin: 0; color: #1e293b; font-size: 14px;">${leave.reasonForAction}</p>
                 </div>
             ` : '') +
-            (leave.lossOfPayDays ? `<p style="color: #ef4444; font-weight: bold; margin-top: 10px;">⚠️ Loss of Pay (LOP): ${leave.lossOfPayDays} days applied.</p>` : ''), 
+            (leave.lossOfPayDays ? `<p style="color: #ef4444; font-weight: bold; margin-top: 10px;">⚠️ Loss of Pay (LOP): ${leave.lossOfPayDays} days applied.</p>` : ''),
             statusColor)
     };
 };
@@ -353,7 +353,7 @@ export const getMoMTemplate = (meeting: any, mom: any) => {
 export const getAdditionalResponsibilityTemplate = (resp: any) => {
     const title = `Additional Responsibility ${resp.status || 'Assigned'}`;
     const statusColor = resp.status === 'Approved' ? '#10b981' : resp.status === 'Rejected' ? '#ef4444' : '#f59e0b';
-    
+
     const content = DataTable([
         { label: "Employee Name", value: resp.employeeName },
         { label: "Description", value: resp.description },
@@ -464,34 +464,63 @@ export const getDressCodeWarningTemplate = (employee: any, defaults: number) => 
 
 export const getRatingTemplate = (rating: any) => {
     const title = "Performance Assessment";
-    const stars = Array.from({ length: 5 }).map((_, i) => `<span style="color: ${i < rating.score ? '#f59e0b' : '#d1d5db'}; font-size: 24px;">★</span>`).join('');
+    const stars = Array.from({ length: 5 }).map((_, i) =>
+        `<span style="color: ${i < rating.score ? '#f59e0b' : '#e5e7eb'}; font-size: 28px; margin: 0 2px;">★</span>`
+    ).join('');
 
-    const content = DataTable([
-        { label: "Evaluation Period", value: rating.period },
-        { label: "Aggregate Score", value: `${rating.score} / 5`, color: "#b91c1c" },
-        { label: "Evaluator", value: rating.ratedByName }
-    ]);
+    const pointsColor = rating.points > 0 ? '#10b981' : rating.points < 0 ? '#ef4444' : '#6b7280';
+    const pointsLabel = rating.points > 0 ? "Gain" : rating.points < 0 ? "Penalty" : "Neutral";
 
     return {
-        subject: `[SCORE] Academic/Perf Assessment Result: ${rating.score}/5`,
+        subject: `[PERFORMANCE] ${rating.period} Assessment Result: ${rating.score}/5`,
         html: ProfessionalWrapper(title, `
-            <div style="text-align: center; margin-bottom: 20px;">
-                <div style="display: inline-block; background: #fff7ed; padding: 10px 20px; border-radius: 100px; border: 1px solid #ffedd5;">
+            <div style="background-color: #fcfcfd; border-radius: 16px; padding: 24px; border: 1px solid #f1f5f9; text-align: center; margin-bottom: 24px;">
+                <p style="margin: 0 0 12px 0; color: #64748b; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Overall Rating</p>
+                <div style="margin-bottom: 16px;">
                     ${stars}
                 </div>
+                <div style="font-size: 36px; font-weight: 900; color: #0f172a; margin-bottom: 4px;">${rating.score}<span style="font-size: 16px; color: #94a3b8; font-weight: 500;">/5.0</span></div>
+                <div style="display: inline-flex; align-items: center; padding: 4px 12px; background-color: ${pointsColor}15; border-radius: 100px; color: ${pointsColor}; font-size: 12px; font-weight: 700; border: 1px solid ${pointsColor}30;">
+                    ${rating.points >= 0 ? '+' : ''}${rating.points} Leaderboard Points (${pointsLabel})
+                </div>
             </div>
-            ${content}
+
+            <div style="background-color: #ffffff; border-radius: 12px; border: 1px solid #f1f5f9; padding: 20px; margin-bottom: 24px;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding-bottom: 12px; border-bottom: 1px solid #f8fafc;">
+                            <span style="display: block; font-size: 11px; color: #94a3b8; text-transform: uppercase; font-weight: 700; margin-bottom: 4px;">Evaluation Period</span>
+                            <span style="font-size: 14px; color: #1e293b; font-weight: 600;">${rating.period}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding-top: 12px;">
+                            <span style="display: block; font-size: 11px; color: #94a3b8; text-transform: uppercase; font-weight: 700; margin-bottom: 4px;">Evaluator</span>
+                            <span style="font-size: 14px; color: #1e293b; font-weight: 600;">${rating.ratedByName}</span>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
             ${rating.comment ? `
-            <div style="background-color: #f8fafc; padding: 16px; border-radius: 8px; margin-top: 15px; border-left: 4px solid #64748b;">
-                <strong style="color: #334155; font-size: 12px; text-transform: uppercase;">Direct Feedback</strong>
-                <p style="margin: 5px 0 0 0; color: #475569; font-style: italic;">"${rating.comment}"</p>
+            <div style="background-color: #f8fafc; padding: 20px; border-radius: 12px; margin-top: 24px; position: relative; border-left: 4px solid #10b981;">
+                <strong style="color: #0f172a; font-size: 12px; text-transform: uppercase; display: block; margin-bottom: 8px;">Direct Feedback</strong>
+                <p style="margin: 0; color: #475569; font-size: 14px; line-height: 1.6; font-style: italic;">"${rating.comment}"</p>
             </div>` : ''}
+
             ${rating.screenshotUrl ? `
-            <div style="margin-top: 20px; padding: 16px; background-color: #f0fdf4; border-radius: 8px; border: 1px dashed #22c55e;">
-                <strong style="color: #166534; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 8px;">1:1 Session Proof (Attached)</strong>
-                <a href="${rating.screenshotUrl}" style="color: #10b981; font-size: 13px; font-weight: 700; text-decoration: none;">View Screenshot Online ↗</a>
+            <div style="margin-top: 24px; padding: 20px; background-color: #f0fdf4; border-radius: 12px; border: 1px dashed #bbf7d0; text-align: center;">
+                <p style="color: #166534; font-size: 12px; font-weight: 700; text-transform: uppercase; margin: 0 0 12px 0;">1:1 Session Proof</p>
+                <a href="${rating.screenshotUrl}" style="display: inline-block; background-color: #10b981; color: #ffffff; font-size: 13px; font-weight: 700; text-decoration: none; padding: 10px 24px; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2);">View Session Screenshot ↗</a>
             </div>` : ''}
-        `, "#10b981")
+
+            <div style="margin-top: 32px; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 24px;">
+                <p style="margin: 0; color: #64748b; font-size: 12px; line-height: 1.6;">
+                    These points contribute directly to your position on the leaderboard. 
+                    Keep up the great work to earn an increment!
+                </p>
+            </div>
+        `, "#10b981", true)
     };
 };
 

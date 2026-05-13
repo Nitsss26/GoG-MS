@@ -66,7 +66,7 @@ export interface Employee extends User {
         total: number;
         records: { amount: number; reason: string; date: string; }[];
     };
-    biWeeklyScores?: {
+    monthlyScores?: {
         score: number;
         period: string;
         date?: string;
@@ -188,10 +188,10 @@ export interface MeetingRequest {
     status: "Pending" | "Scheduled" | "Completed" | "Rescheduled";
     googleLink?: string;
     agenda?: string;
-    attendees?: { 
-        id: string; 
-        name: string; 
-        status?: 'Present' | 'Absent (Genuine)' | 'Absent (Non-Genuine)'; 
+    attendees?: {
+        id: string;
+        name: string;
+        status?: 'Present' | 'Absent (Genuine)' | 'Absent (Non-Genuine)';
         reason?: string;
         joinedAt?: string;
         isGenuine?: boolean;
@@ -475,7 +475,7 @@ const INITIAL_EMPLOYEES: Employee[] = [
         blood_group: "A-",
         upload_your_bachelor_s_marksheet__all_marksheet_together_: "https://drive.google.com/open?id=1WP5H6us9EkJfdqdJlXaAb3gpDbTCHM2v",
         upload_your_masters_marksheet__all_marksheet_together_: "",
-        biWeeklyScores: [
+        monthlyScores: [
             { period: "Mar 01 - Mar 15, 2026", score: 4.2, points: 35, status: "Recorded" },
             { period: "Feb 15 - Feb 28, 2026", score: 3.5, points: -45, status: "Recorded" },
             { period: "Feb 01 - Feb 14, 2026", score: 4.8, points: 50, status: "Recorded" },
@@ -546,7 +546,7 @@ const INITIAL_EMPLOYEES: Employee[] = [
         panCardUrl: "https://drive.google.com/open?id=1mG0Ma-zEhmQqR2VUkfe3wCx1QZlzmfrO",
         passportPhotoUrl: "https://drive.google.com/open?id=1Bnxj1GQwbBvUM-ywSJHJVaOAg8Og7XXN",
         bankPassbookUrl: "https://drive.google.com/open?id=1PgHGUzgBUMmJ3bJyASP0dqO9jsQkDXpD",
-        biWeeklyScores: [
+        monthlyScores: [
             { period: "Feb 15 - Feb 28, 2026", score: 4.9, points: 490, date: "2026-02-28" },
             { period: "Feb 01 - Feb 14, 2026", score: 4.8, points: 480, date: "2026-02-14" }
         ],
@@ -1237,7 +1237,7 @@ const INITIAL_NOTICES: Notice[] = [
     },
     {
         id: "n5",
-        title: "Bi-Weekly Performance Scores",
+        title: "Monthly Performance Scores",
         content: "Performance scores for the period Feb 15 - Feb 28 are now live. Please check your dashboard to view your stars and feedback.",
         category: "General",
         createdBy: "AD001",
@@ -1348,7 +1348,7 @@ interface AuthContextType {
     addMarkAsPresentRequest: (req: Omit<MarkAsPresentRequest, "id" | "status" | "appliedAt" | "employeeName">) => Promise<void>;
     resolveMarkAsPresentRequest: (id: string, status: "Approved" | "Rejected") => void;
     resolveDressCodeCheck: (recordId: string, status: "Approved" | "Rejected") => Promise<void>;
-    addBiWeeklyRating: (employeeId: string, score: number, period: string, screenshotUrl?: string) => Promise<void>;
+    addMonthlyRating: (employeeId: string, score: number, period: string, screenshotUrl?: string, points?: number, comment?: string) => Promise<void>;
     addMeetingRequest: (req: Omit<MeetingRequest, "id" | "status" | "employeeId" | "employeeName" | "createdAt">) => void;
     joinMeeting: (meetingId: string) => void;
     submitAbsenceReason: (meetingId: string, reason: string) => void;
@@ -1427,7 +1427,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (!parentId && (emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM" || emp.role === "PROFESSOR" || emp.role === "FACULTY")) {
                     // Logic for default reporting to be dynamic if possible, 
                     // otherwise default to Founder (or stay unassigned)
-                    parentId = "FND001"; 
+                    parentId = "FND001";
                 }
 
                 const finalName = emp.id === "FND003" ? "Neeraj Sahu" : emp.name;
@@ -1615,20 +1615,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const result = await res.json();
                 if (result.success && result.data) {
                     const { attendanceRecords: globalAttendance, additionalResponsibilities: globalResp, holidays: globalHolidays, performanceStars: globalStars, employees: latestEmployees } = result.data;
-                    
+
                     if (Array.isArray(globalAttendance)) setAttendanceRecords(globalAttendance);
                     if (Array.isArray(globalResp)) setAdditionalResponsibilities(globalResp);
                     if (Array.isArray(globalHolidays)) setHolidays(globalHolidays);
                     if (Array.isArray(globalStars)) setPerformanceStars(globalStars);
-                    
-                    // Also merge biWeeklyScores from latestEmployees into current employees state
+
+                    // Also merge monthlyScores from latestEmployees into current employees state
                     if (Array.isArray(latestEmployees)) {
                         setEmployees(prev => {
                             const updated = [...prev];
                             latestEmployees.forEach(le => {
                                 const idx = updated.findIndex(e => e.id === le.id);
                                 if (idx !== -1) {
-                                    updated[idx] = { ...updated[idx], biWeeklyScores: le.biWeeklyScores || [] };
+                                    updated[idx] = { ...updated[idx], monthlyScores: le.monthlyScores || [] };
                                 }
                             });
                             return updated;
@@ -1755,7 +1755,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // ─── HELPERS ───
     const getExpectedTiming = useCallback((employeeId: string, date: string | Date = new Date()) => {
         const d = typeof date === 'string' ? (date ? new Date(date) : new Date()) : date;
-        
+
         // Handle invalid date objects to prevent runtime RangeError
         if (isNaN(d.getTime())) {
             const emp = employees.find(e => e.id === employeeId);
@@ -2149,9 +2149,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         if (e.id === record.employeeId) {
                             const newDefaults = status === "Rejected" ? (e.dressCodeDefaults || 0) + 1 : (e.dressCodeDefaults || 0);
 
-                            // Update bi-weekly scores
-                            const currentPeriod = "Mar 01 - Mar 15, 2026"; // Current period based on system time 2026-03-14
-                            const scores = [...(e.biWeeklyScores || [])];
+                            // Update monthly scores
+                            const currentPeriod = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
+                            const scores = [...(e.monthlyScores || [])];
                             let periodIndex = scores.findIndex(s => s.period === currentPeriod);
 
                             if (periodIndex === -1) {
@@ -2160,7 +2160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                                 scores[periodIndex] = { ...scores[periodIndex], points: (scores[periodIndex].points || 0) + points };
                             }
 
-                            return { ...e, dressCodeDefaults: newDefaults, biWeeklyScores: scores };
+                            return { ...e, dressCodeDefaults: newDefaults, monthlyScores: scores };
                         }
                         return e;
                     }));
@@ -2186,58 +2186,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
     }, [employees]);
 
-    const addBiWeeklyRating = async (employeeId: string, score: number, period: string, screenshotUrl?: string) => {
-        // AUTOMATED SCORING (User Rules):
-        // Rating > 4.2: (Rating × 10)
-        // Rating 2.0 - 3.5: (Rating - 5) × 10
-        // Rating < 2.0: (Rating - 5) × 20
-        // Rating 3.5 - 4.2: 0 points (Neutral)
-        let points = 0;
-        if (score > 4.2) points = score * 10;
-        else if (score >= 2.0 && score <= 3.5) points = (score - 5) * 10;
-        else if (score < 2.0) points = (score - 5) * 20;
+    const addMonthlyRating = async (employeeId: string, score: number, period: string, screenshotUrl?: string, manualPoints?: number, comment?: string) => {
+        // AUTOMATED SCORING (Leaderboard Rules) - Used only if manualPoints not provided:
+        let points = manualPoints ?? 0;
+        
+        if (manualPoints === undefined) {
+            if (score > 4.2) {
+                points = score * 10;
+            } else if (score >= 2.0 && score <= 3.5) {
+                points = (score - 5) * 10;
+            } else if (score < 2.0) {
+                points = (score - 5) * 20;
+            } else {
+                points = 0;
+            }
+        }
 
         const clampedPoints = Math.round(points);
-        const newScore = { score, period, date: new Date().toISOString().split('T')[0], points: clampedPoints, screenshotUrl };
-
-        setEmployees(prev => prev.map(e => {
-            if (e.id === employeeId) {
-                const scores = [...(e.biWeeklyScores || []), newScore];
-                return { ...e, biWeeklyScores: scores };
-            }
-            return e;
-        }));
+        const newScore = { score, period, date: new Date().toISOString().split('T')[0], points: clampedPoints, screenshotUrl, comment };
 
         try {
             const emp = employees.find(emp => emp.id === employeeId);
             if (!emp) return;
 
-            // Persist to DB
-            await fetch("/api/employees", {
+            // Robust state update: calculate the new array first
+            const existingScores = emp.monthlyScores || [];
+            // Remove any existing entry for the same period to avoid duplicates if re-rated
+            const filteredScores = existingScores.filter(s => s.period !== period);
+            const updatedScores = [...filteredScores, newScore];
+
+            // 1. Update DB first to ensure persistence
+            const res = await fetch("/api/employees", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id: employeeId, biWeeklyScores: [...(emp.biWeeklyScores || []), newScore] })
+                body: JSON.stringify({ id: employeeId, monthlyScores: updatedScores })
             });
+
+            if (!res.ok) throw new Error("Failed to persist rating to database");
+
+            // 2. Update local state only after DB success
+            setEmployees(prev => prev.map(e => {
+                if (e.id === employeeId) {
+                    return { ...e, monthlyScores: updatedScores };
+                }
+                return e;
+            }));
 
             // --- EMAIL NOTIFICATION ---
             const authorities = getAuthorityEmails(emp, employees);
             const template = getRatingTemplate({ ...newScore, employeeName: emp?.name, ratedByName: user?.name ?? "Manager" });
-            
+
             // If screenshot exists, attach it to the mail
             const attachments = screenshotUrl ? [{
                 filename: 'meeting-proof.jpg',
                 path: screenshotUrl
             }] : [];
 
-            sendMail({ 
-                to: emp?.email || "", 
-                cc: authorities, 
-                subject: `[BI-WEEKLY] ${emp?.name} - Score: ${score}/5`, 
+            sendMail({
+                to: emp?.email || "",
+                cc: authorities,
+                subject: `MONTHLY PROGRESS ${emp?.name} - Score: ${score}/5`,
                 html: template.html,
                 attachments
             });
         } catch (err) {
-            console.error("Failed to add bi-weekly rating:", err);
+            console.error("Failed to add monthly rating:", err);
+            throw err; // Re-throw to show error in UI
         }
     };
 
@@ -2322,7 +2336,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // ─── LEAVES ───
     const addLeaveRequest = async (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName" | "hoiApproval" | "hrApproval">) => {
         if (!user) return;
-        
+
         if (req.leaveType === "Short" && !req.reason) {
             alert("A detailed reason is mandatory for Short Leave.");
             return;
@@ -2374,8 +2388,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (!leave || !user) return;
 
             const isHR = user.role === "HR" || user.role === "FOUNDER";
-            const isManager = (user.role === "HOI" || user.role === "AD" || user.role === "TL") && 
-                             (leave.location === (user as Employee).location || getReportees(user.id).some(r => r.id === leave.employeeId));
+            const isManager = (user.role === "HOI" || user.role === "AD" || user.role === "TL") &&
+                (leave.location === (user as Employee).location || getReportees(user.id).some(r => r.id === leave.employeeId));
 
             let nextStatus = leave.status;
             let updates: any = { reasonForAction: reason };
@@ -2392,7 +2406,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 updates.hoiApproval = "Approved";
                 updates.hoiApproverId = user.id;
                 updates.hoiApprovedAt = new Date().toISOString();
-                
+
                 if (leave.status === "Pending HOI Approval") {
                     nextStatus = "Pending"; // Now waiting for HR
                     updates.status = nextStatus;
@@ -2415,11 +2429,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const emp = employees.find(e => e.id === updated.employeeId);
                 const { subject, html } = getLeaveTemplate(updated, updated.status);
                 if (emp?.email) {
-                    sendMail({ 
-                        to: emp.email, 
-                        cc: getAuthorityEmails(emp, employees), 
-                        subject, 
-                        html 
+                    sendMail({
+                        to: emp.email,
+                        cc: getAuthorityEmails(emp, employees),
+                        subject,
+                        html
                     });
                 }
             }
@@ -2432,11 +2446,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             const isHR = user.role === "HR" || user.role === "FOUNDER";
             const finalApplyLOP = applyLOP || (leave?.leaveType === "Emergency");
-            
-            let updates: any = { 
-                status: "Rejected", 
-                lossOfPayDays: finalApplyLOP ? 2 : (leave?.lossOfPayDays || 0), 
-                reasonForAction: reason 
+
+            let updates: any = {
+                status: "Rejected",
+                lossOfPayDays: finalApplyLOP ? 2 : (leave?.lossOfPayDays || 0),
+                reasonForAction: reason
             };
 
             if (isHR) {
@@ -2460,11 +2474,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const emp = employees.find(e => e.id === updated.employeeId);
                 const { subject, html } = getLeaveTemplate(updated, "Rejected");
                 if (emp?.email) {
-                    sendMail({ 
-                        to: emp.email, 
-                        cc: getAuthorityEmails(emp, employees), 
-                        subject, 
-                        html 
+                    sendMail({
+                        to: emp.email,
+                        cc: getAuthorityEmails(emp, employees),
+                        subject,
+                        html
                     });
                 }
             }
@@ -2561,14 +2575,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const raiser = employees.find(e => e.id === user.id);
                 // Robust target identification: Always fall back to HR if specified target is invalid
                 const targetEmp = employees.find(e => e.id === finalRouteTo) || employees.find(e => e.id === hrId);
-                
+
                 const { subject: mailSub, html: mailHtml } = getTicketTemplate(data, 'raised');
                 if (targetEmp?.email) {
-                    const mailRes = await sendMail({ 
-                        to: targetEmp.email, 
-                        cc: [...new Set([...getAuthorityEmails(raiser, employees), raiser?.email, ...(data.cc || [])])].filter(Boolean) as string[], 
-                        subject: mailSub, 
-                        html: mailHtml 
+                    const mailRes = await sendMail({
+                        to: targetEmp.email,
+                        cc: [...new Set([...getAuthorityEmails(raiser, employees), raiser?.email, ...(data.cc || [])])].filter(Boolean) as string[],
+                        subject: mailSub,
+                        html: mailHtml
                     });
                     if (mailRes?.messageId) {
                         await fetch("/api/tickets", {
@@ -2607,10 +2621,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                 const raiser = employees.find(e => e.id === updated.raisedBy);
                 const { subject, html } = getTicketTemplate(updated, 'resolved');
-                if (raiser?.email) sendMail({ 
-                    to: raiser.email, 
-                    cc: Array.from(new Set([...getAuthorityEmails(raiser, employees), ...(updated.cc || [])])), 
-                    subject: `Re: ${subject}`, 
+                if (raiser?.email) sendMail({
+                    to: raiser.email,
+                    cc: Array.from(new Set([...getAuthorityEmails(raiser, employees), ...(updated.cc || [])])),
+                    subject: `Re: ${subject}`,
                     html,
                     inReplyTo: updated.originalMessageId,
                     references: updated.originalMessageId
@@ -2638,17 +2652,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const res = await fetch("/api/tickets", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ 
-                    id, 
+                body: JSON.stringify({
+                    id,
                     forwardedTo: targetId,
                     routeTo: targetId,
-                    $push: { 
-                        forwardHistory: { 
-                            forwardedTo: targetId, 
-                            forwardBy: user.id, 
-                            date: new Date().toISOString(), 
-                            remarks 
-                        } 
+                    $push: {
+                        forwardHistory: {
+                            forwardedTo: targetId,
+                            forwardBy: user.id,
+                            date: new Date().toISOString(),
+                            remarks
+                        }
                     }
                 })
             });
@@ -2656,10 +2670,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (updated.id) {
                 setTickets(prev => prev.map(t => t.id === id ? updated : t));
                 const { subject, html } = getTicketForwardTemplate(updated, targetEmp?.name || "Team", user.name, remarks);
-                if (targetEmp?.email) sendMail({ 
-                    to: targetEmp.email, 
-                    cc: Array.from(new Set([...(updated.cc || []), user.email])).filter(Boolean) as string[], 
-                    subject: `Re: ${subject}`, 
+                if (targetEmp?.email) sendMail({
+                    to: targetEmp.email,
+                    cc: Array.from(new Set([...(updated.cc || []), user.email])).filter(Boolean) as string[],
+                    subject: `Re: ${subject}`,
                     html,
                     inReplyTo: updated.originalMessageId,
                     references: updated.originalMessageId
@@ -2713,14 +2727,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const proposeHoliday = async (h: Omit<Holiday, "id" | "proposedBy" | "status" | "proposedByName">) => {
         if (!user) return;
         const isHRorFounder = user.role === "HR" || user.role === "FOUNDER";
-        const newHol: Holiday = { 
-            ...h, 
-            id: `HOL${uid()}`, 
-            proposedBy: user.id, 
-            proposedByName: user.name, 
-            status: isHRorFounder ? "Approved" : "Proposed" 
+        const newHol: Holiday = {
+            ...h,
+            id: `HOL${uid()}`,
+            proposedBy: user.id,
+            proposedByName: user.name,
+            status: isHRorFounder ? "Approved" : "Proposed"
         };
-        
+
         try {
             const res = await fetch("/api/holidays", {
                 method: "POST",
@@ -2733,8 +2747,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                 if (isHRorFounder) {
                     const msg = h.customMessage || `${h.name} on ${h.date} is declared as a holiday.`;
-                    addAnnouncement({ 
-                        title: `Holiday: ${h.name}`, content: msg, category: "General" 
+                    addAnnouncement({
+                        title: `Holiday: ${h.name}`, content: msg, category: "General"
                     });
                 }
 
@@ -2762,8 +2776,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 sendMail({ to: founders, cc: ccEmails, subject: mailSub, html: mailHtml });
 
                 const msg = customMessage || `${updated.name} on ${updated.date} has been approved as an official holiday.`;
-                addAnnouncement({ 
-                    title: `Holiday: ${updated.name}`, content: msg, category: "General" 
+                addAnnouncement({
+                    title: `Holiday: ${updated.name}`, content: msg, category: "General"
                 });
             }
         } catch (err) { console.error(err); }
@@ -3085,7 +3099,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const updateSingleDaySchedule = async (employeeId: string, date: string, location: string, clockInTime: string, clockOutTime: string) => {
         if (!user) return;
-        
+
         const actor = employees.find(e => e.id === user.id);
         const emp = employees.find(e => e.id === employeeId);
         if (!emp) return;
@@ -3135,9 +3149,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const hrEmails = employees.filter(e => e.role === "HR").map(e => e.email).filter(Boolean) as string[];
                 const adEmails = employees.filter(e => e.role === "AD").map(e => e.email).filter(Boolean) as string[];
                 const founderEmails = employees.filter(e => e.role === "FOUNDER").map(e => e.email).filter(Boolean) as string[];
-                
+
                 const { subject, html } = getScheduleChangeTemplate(actor, emp, date, oldSchedule, newSchedule);
-                
+
                 // Recipients: HR, AD, CEOs (Founders), and the Person who did this (Actor)
                 const to = [...new Set([...hrEmails, ...adEmails, ...founderEmails, user.email].filter(Boolean) as string[])];
                 const cc = emp.email ? [emp.email] : [];
@@ -3208,22 +3222,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setAdditionalResponsibilities(prev => prev.map(r => r.id === id ? updated : r));
                 if (status === "Approved") {
                     recalculatePerformance(updated.employeeId);
-                    
+
                     const emp = employees.find(e => e.id === updated.employeeId);
                     const ccEmails = getAuthorityEmails(emp, employees);
                     const { subject: mailSub, html: mailHtml } = getAdditionalResponsibilityTemplate(updated);
-                    
+
                     const adAssignerEmails = employees.filter(e => e.role === "AD" && e.email).map(e => e.email) as string[];
                     const hrEmails = employees.filter(e => e.role === "HR" && e.email).map(e => e.email) as string[];
                     const founderEmails = employees.filter(e => e.role === "FOUNDER" && e.email).map(e => e.email) as string[];
                     const finalCC = [...new Set([...ccEmails, ...adAssignerEmails, ...hrEmails, ...founderEmails])];
 
                     if (emp?.email) {
-                        sendMail({ 
-                            to: emp.email, 
-                            cc: finalCC, 
-                            subject: mailSub, 
-                            html: mailHtml 
+                        sendMail({
+                            to: emp.email,
+                            cc: finalCC,
+                            subject: mailSub,
+                            html: mailHtml
                         });
                     }
                 }
@@ -3268,7 +3282,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // --- EMAIL NOTIFICATION & PROFESSIONAL TEMPLATE ---
                 const attendeeEmails = req.attendees?.map(att => employees.find(e => e.id === att.id)?.email).filter(Boolean) as string[] || [];
                 const { subject, html } = getMeetingTemplate(data, user);
-                
+
                 if (attendeeEmails.length > 0 || mgtEmails.length > 0) {
                     sendMail({
                         to: attendeeEmails,
@@ -3285,7 +3299,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!user) return;
         const m = meetings.find(mt => mt.id === meetingId);
         if (!m) return;
-        const updatedAttendees = m.attendees?.map(att => 
+        const updatedAttendees = m.attendees?.map(att =>
             att.id === user.id ? { ...att, joinedAt: new Date().toISOString(), status: 'Present' as const } : att
         );
         try {
@@ -3305,18 +3319,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!user) return;
         const m = meetings.find(mt => mt.id === meetingId);
         if (!m) return;
-        
+
         // Check if within 1 hour of scheduled time
         const meetingDateTime = new Date(`${m.date}T${m.time}`);
         const now = new Date();
         const diffHours = (now.getTime() - meetingDateTime.getTime()) / (1000 * 60 * 60);
-        
+
         if (diffHours > 1) {
             alert("Absence reasons can only be submitted within 1 hour of the meeting start time.");
             return;
         }
 
-        const updatedAttendees = m.attendees?.map(att => 
+        const updatedAttendees = m.attendees?.map(att =>
             att.id === user.id ? { ...att, reason } : att
         );
         try {
@@ -3530,7 +3544,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             approveAdditionalResponsibility, addMeetingRequest, updateMeetingStatus,
             getReportees, getManagerChain, generatePayroll, addEmployee, updateOnboarding,
             removeFromPIP, deductChance, resetChances,
-            addBiWeeklyRating,
+            addMonthlyRating,
             addJobPosting, closeJobPosting, generateCertificate, submitResignation, approveResignation,
             requestAsset, assignAsset, updateAssetRequestStatus,
             addNotification, markNotificationRead, getMyNotifications,

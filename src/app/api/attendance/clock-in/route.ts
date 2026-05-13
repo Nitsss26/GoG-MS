@@ -124,8 +124,8 @@ export async function POST(req: Request) {
         const currentPeriod = "Mar 01 - Mar 15, 2026";
         const points = 2;
         const employeeUpdate = await Employee.findOneAndUpdate(
-            { id: employeeId, "biWeeklyScores.period": currentPeriod },
-            { $inc: { "biWeeklyScores.$.points": points } },
+            { id: employeeId, "monthlyScores.period": currentPeriod },
+            { $inc: { "monthlyScores.$.points": points } },
             { new: true }
         );
 
@@ -134,7 +134,7 @@ export async function POST(req: Request) {
                 { id: employeeId },
                 {
                     $push: {
-                        biWeeklyScores: {
+                        monthlyScores: {
                             period: currentPeriod,
                             score: 0,
                             points: points,

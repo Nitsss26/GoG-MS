@@ -37,8 +37,8 @@ export async function PATCH(req: Request) {
         // Update Employee Points
         const currentPeriod = "Mar 01 - Mar 15, 2026";
         const employeeUpdate = await Employee.findOneAndUpdate(
-            { id: attendance.employeeId, "biWeeklyScores.period": currentPeriod },
-            { $inc: { "biWeeklyScores.$.points": points } },
+            { id: attendance.employeeId, "monthlyScores.period": currentPeriod },
+            { $inc: { "monthlyScores.$.points": points } },
             { new: true }
         );
 
@@ -47,7 +47,7 @@ export async function PATCH(req: Request) {
                 { id: attendance.employeeId },
                 {
                     $push: {
-                        biWeeklyScores: {
+                        monthlyScores: {
                             period: currentPeriod,
                             score: 0,
                             points: points,

@@ -233,7 +233,12 @@ function FloatingChatbot({ sops }: { sops: any[] }) {
 
 // â”€â”€â”€ MAIN DASHBOARD â”€â”€â”€
 export default function Home() {
-    const { user, employees, notices, sops, attendanceRecords, holidays, performanceStars, leaves, pipRecords, reimbursements, tickets, getReportees, sopNotifications, getExpectedTiming, additionalResponsibilities } = useAuth();
+    const { 
+        user, employees, notices, sops, attendanceRecords, 
+        holidays, performanceStars, leaves, pipRecords, 
+        reimbursements, tickets, getReportees, sopNotifications, 
+        getExpectedTiming, additionalResponsibilities, ratings 
+    } = useAuth();
     const [mounted, setMounted] = useState(false);
     const [todayStr, setTodayStr] = useState("");
     const [selectedNotice, setSelectedNotice] = useState<any>(null);
@@ -247,8 +252,51 @@ export default function Home() {
 
     const stats = useMemo(() => {
         if (!user || !employees || !performanceStars) return [];
-        return getLeaderboardStats(employees, attendanceRecords, additionalResponsibilities, holidays, performanceStars);
-    }, [employees, performanceStars, attendanceRecords, additionalResponsibilities, user?.id]);
+        return getLeaderboardStats(employees, attendanceRecords, additionalResponsibilities, holidays, performanceStars, ratings);
+    }, [employees, performanceStars, attendanceRecords, additionalResponsibilities, holidays, user?.id, ratings]);
+
+    const myStats = useMemo(() => {
+        const found = stats.find(s => s.employeeId === user?.id);
+        if (found) return found;
+        
+        // If not in stats (e.g. founder/blocked email), calculate manually
+        if (!user || !employees) return null;
+        const emp = user as any;
+        
+        return calculatePerformance(
+            attendanceRecords,
+            additionalResponsibilities,
+            emp.monthlyScores || [],
+            user.id,
+            holidays,
+            emp.location,
+            3.0,
+            ratings
+        );
+    }, [stats, user, employees, attendanceRecords, additionalResponsibilities, holidays, ratings]);
+
+    // Top Reports from SDE & Professors
+    const topReports = useMemo(() => {
+        if (!employees) return [];
+        const allReports: any[] = [];
+        employees.forEach(emp => {
+            const role = emp.role?.toUpperCase();
+            const desig = emp.designation?.toLowerCase() || "";
+            const isSDEorProf = role === "PROFESSOR" || role === "FACULTY" || desig.includes("sde") || desig.includes("software");
+            
+            if (isSDEorProf && emp.monthlyScores) {
+                emp.monthlyScores.forEach((s: any) => {
+                    allReports.push({
+                        period: s.period,
+                        name: emp.name,
+                        points: s.points,
+                        score: s.score
+                    });
+                });
+            }
+        });
+        return allReports.sort((a, b) => b.points - a.points).slice(0, 5);
+    }, [employees]);
 
 
     if (!user || !mounted) return null;
@@ -262,21 +310,31 @@ export default function Home() {
 
     // Birthdays
     const today = new Date();
-    // Improved Birthday Logic (Handles Year Wrap)
+    // Improved Birthday Logic (Handles Year Wrap and Multiple Formats)
     const upcomingBirthdays = employees.filter(e => {
         if (!e.dateOfBirth) return false;
-        const [d, m, y] = e.dateOfBirth.split("-").map(Number);
+        const parts = e.dateOfBirth.split(/[-/]/);
+        if (parts.length < 2) return false;
+        const d = parseInt(parts[0]);
+        const m = parseInt(parts[1]);
+        if (isNaN(d) || isNaN(m)) return false;
+        
         const dobDate = new Date(today.getFullYear(), m - 1, d);
-        if (dobDate < today) dobDate.setFullYear(today.getFullYear() + 1);
+        if (dobDate < today) {
+            // Check if it's today (ignoring hours)
+            const isToday = dobDate.getDate() === today.getDate() && dobDate.getMonth() === today.getMonth();
+            if (!isToday) dobDate.setFullYear(today.getFullYear() + 1);
+        }
+        
         const diff = (dobDate.getTime() - today.getTime()) / (1000 * 3600 * 24);
-        return diff >= 0 && diff <= 30;
+        return diff >= -1 && diff <= 30; // Include today and next 30 days
     }).sort((a, b) => {
-        const [da, ma] = a.dateOfBirth!.split("-").map(Number);
-        const [db, mb] = b.dateOfBirth!.split("-").map(Number);
-        const nextA = new Date(today.getFullYear(), ma - 1, da);
-        if (nextA < today) nextA.setFullYear(today.getFullYear() + 1);
-        const nextB = new Date(today.getFullYear(), mb - 1, db);
-        if (nextB < today) nextB.setFullYear(today.getFullYear() + 1);
+        const partsA = a.dateOfBirth!.split(/[-/]/);
+        const partsB = b.dateOfBirth!.split(/[-/]/);
+        const nextA = new Date(today.getFullYear(), parseInt(partsA[1]) - 1, parseInt(partsA[0]));
+        if (nextA < today && (nextA.getDate() !== today.getDate() || nextA.getMonth() !== today.getMonth())) nextA.setFullYear(today.getFullYear() + 1);
+        const nextB = new Date(today.getFullYear(), parseInt(partsB[1]) - 1, parseInt(partsB[0]));
+        if (nextB < today && (nextB.getDate() !== today.getDate() || nextB.getMonth() !== today.getMonth())) nextB.setFullYear(today.getFullYear() + 1);
         return nextA.getTime() - nextB.getTime();
     });
 
@@ -622,63 +680,62 @@ export default function Home() {
                 {/* Birthdays Section */}
                 <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-3 lg:col-span-1">
                     <h3 className="text-sm font-bold text-white flex items-center gap-2"><Cake size={16} className="text-pink-400" /> Upcoming Birthdays</h3>
-                    <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                    <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
                         {upcomingBirthdays.length === 0 ? <p className="text-[10px] text-zinc-500 italic">No upcoming birthdays</p> :
                             upcomingBirthdays.map(e => {
-                                const dobParts = e.dateOfBirth?.split("-").map(Number);
-                                const d = dobParts?.[0] || 1;
-                                const m = dobParts?.[1] || 1;
+                                const parts = e.dateOfBirth!.split(/[-/]/);
+                                const d = parseInt(parts[0]);
+                                const m = parseInt(parts[1]);
                                 const bday = new Date(today.getFullYear(), m - 1, d);
-                                if (bday < today) bday.setFullYear(today.getFullYear() + 1);
+                                if (bday < today) {
+                                    const isToday = bday.getDate() === today.getDate() && bday.getMonth() === today.getMonth();
+                                    if (!isToday) bday.setFullYear(today.getFullYear() + 1);
+                                }
                                 const daysUntil = Math.ceil((bday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
                                 return (
                                     <div key={e.id} className="flex items-center gap-3 p-2.5 bg-zinc-800/30 rounded-xl">
                                         <div className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700/50 overflow-hidden flex items-center justify-center text-pink-400 text-xs font-bold">
-                                            {e.photoUrl ? <img src={e.photoUrl} alt="" className="w-full h-full object-cover" /> : e.name[0]}
+                                            {e.photoUrl ? <img src={resolveImageUrl(e.photoUrl)} alt="" className="w-full h-full object-cover" /> : e.name[0]}
                                         </div>
-                                        <div className="flex-1"><p className="text-[11px] font-bold text-white">{e.name}</p><p className="text-[9px] text-zinc-500">{e.designation}</p></div>
-                                        <span className="text-[9px] font-bold text-pink-400">{daysUntil === 0 ? "🎉 Today!" : `${daysUntil}d`}</span>
+                                        <div className="flex-1">
+                                            <p className="text-[11px] font-bold text-white">{e.name}</p>
+                                            <p className="text-[9px] text-zinc-500">{e.designation}</p>
+                                            <p className="text-[8px] text-zinc-600 font-mono">{d} {new Date(2000, m - 1).toLocaleString('default', { month: 'short' })}</p>
+                                        </div>
+                                        <span className="text-[9px] font-bold text-pink-400">{daysUntil <= 0 ? "🎉 Today!" : `${daysUntil}d`}</span>
                                     </div>
                                 );
                             })}
                     </div>
                 </div>
 
-                {/* Bi-Weekly Performance Section - PLACED RIGHT OF BIRTHDAYS */}
+                {/* Monthly Performance Section - PLACED RIGHT OF BIRTHDAYS */}
                 <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-3 lg:col-span-1">
                     <div className="flex justify-between items-center">
-                        <h3 className="text-sm font-bold text-white flex items-center gap-2"><Star size={16} className="text-blue-400" /> Bi-Weekly Performance</h3>
-                        <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">Recent Scores</span>
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2"><Star size={16} className="text-blue-400" /> Top Faculty Reports</h3>
+                        <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">Top 5 Records</span>
                     </div>
                     <div className="overflow-x-auto rounded-xl border border-zinc-800/50">
                         <table className="w-full text-left">
                             <thead className="bg-zinc-800/50 text-[9px] uppercase tracking-widest text-zinc-400">
                                 <tr>
                                     <th className="px-4 py-2.5 font-bold">Period</th>
-                                    <th className="px-4 py-2.5 font-bold text-center">Score</th>
+                                    <th className="px-4 py-2.5 font-bold">Name</th>
                                     <th className="px-4 py-2.5 font-bold text-center">Points</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-zinc-800/50">
-                                {emp.biWeeklyScores && emp.biWeeklyScores.length > 0 ? (
-                                    emp.biWeeklyScores.slice(0, 3).map((s: any, i: number) => (
-                                        <tr key={i} className="hover:bg-zinc-800/30 transition-colors text-xs border-zinc-800/50">
-                                            <td className="px-4 py-3 font-medium text-white">{s.period}</td>
-                                            <td className="px-4 py-3 text-center">
-                                                <div className="flex justify-center">
-                                                    <div className="flex gap-0.5">
-                                                        {Array.from({ length: 5 }).map((_, j) => (
-                                                            <Star key={j} size={12} className={j < Math.floor(s.score || 0) ? "text-yellow-400 fill-yellow-400" : "text-zinc-700"} />
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3 text-center font-bold text-blue-400">{s.points}</td>
+                                {topReports.length > 0 ? (
+                                    topReports.map((s, i) => (
+                                        <tr key={i} className={cn("hover:bg-zinc-800/30 transition-colors text-xs border-zinc-800/50", i === 0 ? "bg-primary/5" : "")}>
+                                            <td className="px-4 py-3 font-medium text-zinc-400">{s.period}</td>
+                                            <td className="px-4 py-3 font-bold text-white truncate max-w-[100px]">{s.name}</td>
+                                            <td className="px-4 py-3 text-center font-black text-blue-400">{s.points}</td>
                                         </tr>
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan={3} className="px-4 py-8 text-center text-zinc-500 italic text-[10px]">No performance data recorded for this period.</td>
+                                        <td colSpan={3} className="px-4 py-8 text-center text-zinc-500 italic text-[10px]">No faculty reports available yet.</td>
                                     </tr>
                                 )}
                             </tbody>
