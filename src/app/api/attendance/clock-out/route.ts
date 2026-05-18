@@ -6,14 +6,14 @@ import { getExpectedTimingInternal } from '@/lib/attendance-utils';
 export async function POST(req: Request) {
     try {
         await dbConnect();
-        const { employeeId, time } = await req.json();
+        const { employeeId, time, date: overrideDate } = await req.json();
         const now = new Date();
         const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
         const istTime = new Date(istString);
         
-        const today = istTime.getFullYear() + "-" + 
+        const today = overrideDate || (istTime.getFullYear() + "-" + 
                      (istTime.getMonth() + 1).toString().padStart(2, '0') + "-" + 
-                     istTime.getDate().toString().padStart(2, '0');
+                     istTime.getDate().toString().padStart(2, '0'));
 
         // 1. Fetch Employee
         const employee = await Employee.findOne({ id: employeeId });
@@ -43,8 +43,8 @@ export async function POST(req: Request) {
         const [schedHours, schedMins] = expectedOut.split(':').map(Number);
         const schedTotalMins = schedHours * 60 + schedMins;
 
-        // 3. Enforce 12 PM Rule
-        if (outHours < 12) {
+        // 3. Enforce 12 PM Rule (Skip for overrides)
+        if (!overrideDate && outHours < 12) {
             return NextResponse.json({ error: "Clock-out is only allowed after 12:00 PM." }, { status: 403 });
         }
 
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
             {
                 $set: {
                     clockOut: time,
-                    "flags.earlyOut": isEarly
+                    "flags.earlyOut": overrideDate ? false : isEarly
                 }
             },
             { new: true }

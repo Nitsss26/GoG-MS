@@ -8,7 +8,7 @@ import { COLLEGES } from '@/lib/colleges';
 export async function POST(req: Request) {
     try {
         await dbConnect();
-        const { employeeId, lat, lng, dressCodeImageUrl } = await req.json();
+        const { employeeId, lat, lng, dressCodeImageUrl, isOverride, date: overrideDate } = await req.json();
 
         // 1. Fetch Employee
         const employee = await Employee.findOne({ id: employeeId });
@@ -23,9 +23,9 @@ export async function POST(req: Request) {
         const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
         const istTime = new Date(istString);
         
-        const today = istTime.getFullYear() + "-" + 
+        const today = overrideDate || (istTime.getFullYear() + "-" + 
                      (istTime.getMonth() + 1).toString().padStart(2, '0') + "-" + 
-                     istTime.getDate().toString().padStart(2, '0');
+                     istTime.getDate().toString().padStart(2, '0'));
         
         const currentTime = istTime.getHours() * 60 + istTime.getMinutes();
         
@@ -58,14 +58,14 @@ export async function POST(req: Request) {
         // 4. Window Timing Check
         const isLate = currentTime > schedTime;
 
-        if (currentTime < schedTime - 30) {
+        if (!isOverride && currentTime < schedTime - 30) {
             return NextResponse.json({ error: `Too early to clock-in. Window opens at ${Math.floor((schedTime - 30) / 60).toString().padStart(2, '0')}:${((schedTime - 30) % 60).toString().padStart(2, '0')}` }, { status: 403 });
         }
 
         // 5. Geofencing Check (Skip if WFH)
         const isWFH = expectedLocationId.toLowerCase() === "wfh";
         let campus = null;
-        if (!isWFH) {
+        if (!isWFH && !isOverride) {
             if (typeof lat !== 'number' || typeof lng !== 'number') {
                 return NextResponse.json({ error: "Location coordinates missing from request." }, { status: 400 });
             }
@@ -107,11 +107,11 @@ export async function POST(req: Request) {
         // 6. Clock-in
         const updateData: any = {
             clockIn: istTime.getHours().toString().padStart(2, '0') + ":" + istTime.getMinutes().toString().padStart(2, '0') + ":" + istTime.getSeconds().toString().padStart(2, '0'),
-            location: isWFH ? "WFH" : campus?.id,
+            location: isWFH ? "WFH" : (isOverride ? (expectedLocationId || "Office") : campus?.id),
             status: "Present",
             dressCodeImageUrl: dressCodeImageUrl,
-            dressCodeStatus: "Pending",
-            ...(isLate ? { "flags.late": true } : {})
+            dressCodeStatus: isOverride ? "Approved" : "Pending",
+            ...(isOverride ? {} : (isLate ? { "flags.late": true } : {}))
         };
 
         const attendance = await Attendance.findOneAndUpdate(

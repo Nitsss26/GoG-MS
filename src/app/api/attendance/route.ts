@@ -35,3 +35,13 @@ export async function GET(req: Request) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
+export async function DELETE(req: Request) {
+    try {
+        await dbConnect();
+        const { employeeId, date } = await req.json();
+        await Attendance.findOneAndDelete({ employeeId, date });
+        return NextResponse.json({ message: "Record deleted" });
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}

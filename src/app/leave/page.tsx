@@ -7,6 +7,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Calendar, Plus, CheckCircle2, XCircle, X, Clock, HelpCircle, AlertCircle, Upload, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+const formatDate = (dateStr: string) => {
+    if (!dateStr) return "";
+    const [year, month, day] = dateStr.split("-");
+    if (!year || !month || !day) return dateStr;
+    return `${day}-${month}-${year}`;
+};
+
 export default function LeavePage() {
     const { user, leaves, employees, addLeaveRequest, approveLeave, rejectLeave, getReportees } = useAuth();
     const [showModal, setShowModal] = useState(false);
@@ -206,7 +213,7 @@ export default function LeavePage() {
                                         </td>
                                         <td className="px-5 py-4">
                                             <div className="space-y-1">
-                                                <p className="text-white">{req.startDate} — {req.endDate}</p>
+                                                <p className="text-white whitespace-nowrap">{formatDate(req.startDate)} — {formatDate(req.endDate)}</p>
                                                 <p className="text-[10px] text-muted-foreground">{req.days} Working Days</p>
                                             </div>
                                         </td>

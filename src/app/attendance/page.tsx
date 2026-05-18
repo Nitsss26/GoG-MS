@@ -17,7 +17,7 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 export default function AttendancePage() {
-    const { user, employees, clockIn, clockOut, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests, colleges, resolveDressCodeCheck, getExpectedTiming, holidays, getReportees, leaves } = useAuth();
+    const { user, employees, clockIn, clockOut, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests, colleges, resolveDressCodeCheck, getExpectedTiming, holidays, getReportees, leaves, overrideAttendance } = useAuth();
     const searchParams = useSearchParams();
     const [currentTime, setCurrentTime] = useState<string | null>(null);
     const [currentDate, setCurrentDate] = useState<string | null>(null);
@@ -123,12 +123,42 @@ export default function AttendancePage() {
             if (record) {
                 if (record.status === "On Leave") status = "On Leave";
                 else if (record.clockOut) status = "Clocked Out";
-                else status = "Working";
+                else {
+                    // Logic for No Clock-out
+                    const expectedOut = getExpectedTiming(employee.id, selectedGlobalDate).out;
+                    const [h, m] = expectedOut.split(':').map(Number);
+                    const outTime = new Date(selectedGlobalDate);
+                    outTime.setHours(h, m, 0);
+
+                    const graceTime = new Date(outTime.getTime() + 30 * 60000); // 30 min grace
+                    const now = new Date();
+                    
+                    if (now > graceTime) {
+                        status = "No Clock-out";
+                    } else {
+                        status = "Working";
+                    }
+                }
             } else if (empHoliday) {
                 status = "Holiday";
             } else if (leaveToday) {
                 if (leaveToday.status === "Approved") status = "On Leave";
                 else status = "Leave Requested";
+            } else {
+                // Logic for No Clock-in vs Absent
+                const expectedIn = getExpectedTiming(employee.id, selectedGlobalDate).in;
+                const [h, m] = expectedIn.split(':').map(Number);
+                const startTime = new Date(selectedGlobalDate);
+                startTime.setHours(h, m, 0);
+
+                const absentThreshold = new Date(startTime.getTime() + 30 * 60 * 60000); // 30 hours
+                const now = new Date();
+
+                if (now > absentThreshold) {
+                    status = "Absent";
+                } else {
+                    status = "No Clock-in";
+                }
             }
 
             return { employee, record, status, scheduledLocation };
@@ -146,7 +176,7 @@ export default function AttendancePage() {
     const filteredTeamAttendanceList = useMemo(() => {
         if (filterStatus === "All") return teamAttendanceList;
         if (filterStatus === "Present") return teamAttendanceList.filter((l: any) => l.status === "Working" || l.status === "Clocked Out");
-        if (filterStatus === "Absent") return teamAttendanceList.filter((l: any) => l.status === "Absent" || l.status === "Leave Requested");
+        if (filterStatus === "Absent") return teamAttendanceList.filter((l: any) => l.status === "Absent" || l.status === "No Clock-in" || l.status === "Leave Requested");
         return teamAttendanceList.filter((l: any) => l.status === filterStatus);
     }, [teamAttendanceList, filterStatus]);
 
@@ -398,7 +428,7 @@ export default function AttendancePage() {
                     </div>
                     <div className={cn("px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border w-full sm:w-auto text-center",
                         hasCheckedIn ? (hasCheckedOut ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-green-500/10 text-green-400 border-green-500/20") : "bg-zinc-800 text-zinc-500 border-zinc-700"
-                    )}>{hasCheckedIn ? (hasCheckedOut ? "Clocked Out" : "Working") : "Not Clocked In"}</div>
+                    )}>{hasCheckedIn ? (hasCheckedOut ? "Clocked Out" : "Working") : "No Clock-in"}</div>
                 </div>
 
                 {/* Schedule */}
@@ -860,8 +890,8 @@ export default function AttendancePage() {
                                 filterStatus === "Absent" ? "bg-red-500/20 border-red-500/50 shadow-lg shadow-red-500/10 scale-[1.02]" : "bg-red-500/5 border-red-500/20 hover:bg-red-500/10"
                             )}
                         >
-                            <span className="text-xs font-bold text-red-400 block">Absent Today</span>
-                            <span className="text-lg font-black text-white">{teamAttendanceList.filter((l: any) => l.status === "Absent" || l.status === "Leave Requested").length}</span>
+                            <span className="text-xs font-bold text-red-400 block">No Clock-In Today</span>
+                            <span className="text-lg font-black text-white">{teamAttendanceList.filter((l: any) => l.status === "Absent" || l.status === "No Clock-in" || l.status === "Leave Requested").length}</span>
                         </div>
                     </div>
 
@@ -875,6 +905,7 @@ export default function AttendancePage() {
                                         <th className="px-4 py-3 font-bold">In / Out</th>
                                         <th className="px-4 py-3 font-bold">Location</th>
                                         <th className="px-4 py-3 font-bold">Flags Issued</th>
+                                        {isHRorFounder && <th className="px-4 py-3 font-bold text-center">Action</th>}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-zinc-800/50">
@@ -891,7 +922,8 @@ export default function AttendancePage() {
                                                             status === "Holiday" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
                                                                 status === "On Leave" ? "bg-purple-500/10 text-purple-400 border-purple-500/20" :
                                                                     status === "Leave Requested" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" :
-                                                                        "bg-zinc-800 text-zinc-500 border-zinc-700"
+                                                                        status === "No Clock-out" ? "bg-orange-500/10 text-orange-400 border-orange-500/20" :
+                                                                            "bg-zinc-800 text-zinc-500 border-zinc-700"
                                                 )}>
                                                     {status}
                                                 </span>
@@ -943,6 +975,33 @@ export default function AttendancePage() {
                                                     )}
                                                 </div>
                                             </td>
+                                            {isHRorFounder && (
+                                                <td className="px-4 py-3 text-center">
+                                                    {status === "Absent" || status === "No Clock-in" ? (
+                                                        <button 
+                                                            onClick={() => {
+                                                                if (confirm(`Mark ${employee.name} as Present for ${selectedGlobalDate}?`)) {
+                                                                    overrideAttendance(employee.id, selectedGlobalDate, "Present");
+                                                                }
+                                                            }}
+                                                            className="text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-1 rounded hover:bg-green-500/20 transition-all"
+                                                        >
+                                                            Mark Present
+                                                        </button>
+                                                    ) : (
+                                                        <button 
+                                                            onClick={() => {
+                                                                if (confirm(`Mark ${employee.name} as Absent for ${selectedGlobalDate}?`)) {
+                                                                    overrideAttendance(employee.id, selectedGlobalDate, "Absent");
+                                                                }
+                                                            }}
+                                                            className="text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-1 rounded hover:bg-red-500/20 transition-all"
+                                                        >
+                                                            Mark Absent
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            )}
                                         </tr>
                                     ))}
                                 </tbody>

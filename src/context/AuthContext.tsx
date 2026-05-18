@@ -1349,6 +1349,7 @@ interface AuthContextType {
     resolveMarkAsPresentRequest: (id: string, status: "Approved" | "Rejected") => void;
     resolveDressCodeCheck: (recordId: string, status: "Approved" | "Rejected") => Promise<void>;
     addMonthlyRating: (employeeId: string, score: number, period: string, screenshotUrl?: string, points?: number, comment?: string) => Promise<void>;
+    overrideAttendance: (employeeId: string, date: string, status: "Present" | "Absent") => Promise<void>;
     addMeetingRequest: (req: Omit<MeetingRequest, "id" | "status" | "employeeId" | "employeeName" | "createdAt">) => void;
     joinMeeting: (meetingId: string) => void;
     submitAbsenceReason: (meetingId: string, reason: string) => void;
@@ -2285,6 +2286,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const data = await res.json();
             if (data.message) setColleges(prev => prev.filter(c => c.id !== id));
         } catch (err) { console.error(err); }
+    };
+
+    const overrideAttendance = async (employeeId: string, date: string, status: "Present" | "Absent") => {
+        if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return;
+
+        try {
+            if (status === "Present") {
+                const expected = getExpectedTiming(employeeId, date);
+                // Create a record in DB
+                const res = await fetch("/api/attendance/clock-in", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ 
+                        employeeId, 
+                        location: expected.location, 
+                        time: expected.in, 
+                        date, 
+                        role: user.role, 
+                        skipChecks: true,
+                        isOverride: true 
+                    })
+                });
+                const data = await res.json();
+                if (data.record) {
+                    // Update clock-out as well to make it a full "Present" record
+                    await fetch("/api/attendance/clock-out", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ employeeId, time: expected.out, date })
+                    });
+                    
+                    // Update local state
+                    const fullRecord = { ...data.record, clockOut: expected.out, status: "Present" };
+                    setAttendanceRecords(prev => {
+                        const filtered = prev.filter(r => !(r.employeeId === employeeId && r.date === date));
+                        return [...filtered, fullRecord];
+                    });
+                }
+            } else {
+                // Mark as Absent (Delete record from DB)
+                const res = await fetch("/api/attendance", {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ employeeId, date })
+                });
+                if (res.ok) {
+                    setAttendanceRecords(prev => prev.filter(r => !(r.employeeId === employeeId && r.date === date)));
+                }
+            }
+        } catch (err) {
+            console.error("Override attendance failed:", err);
+        }
     };
 
     const restoreAttendanceCredits = (employeeId: string) => {
@@ -3527,15 +3580,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     const activityLogs = notifications;
 
+    const empExists = (id: string) => employees.some(e => e.id === id);
+
     return (
         <AuthContext.Provider value={{
-            user, employees, leaves, meetings, notices, payrollRecords, sops, attendanceRecords,
-            tickets, holidays, pipRecords, workSchedules, performanceStars, moms, reimbursements,
-            orgHierarchy, ratings, misbehaviourReports, additionalResponsibilities, notifications, activityLogs, colleges,
-            jobPostings, certificates, resignationRequests, assets, assetRequests,
+            user, 
+            employees, 
+            leaves: leaves.filter(l => empExists(l.employeeId)), 
+            meetings: meetings.filter(m => empExists(m.employeeId)), 
+            notices, 
+            payrollRecords: payrollRecords.filter(p => empExists(p.employeeId)), 
+            sops, 
+            attendanceRecords: attendanceRecords.filter(a => empExists(a.employeeId)),
+            tickets: tickets.filter(t => empExists(t.raisedBy)), 
+            holidays, 
+            pipRecords: pipRecords.filter(p => empExists(p.employeeId)), 
+            workSchedules: workSchedules.filter(w => empExists(w.employeeId)), 
+            performanceStars: performanceStars.filter(s => empExists(s.employeeId)), 
+            moms, 
+            reimbursements: reimbursements.filter(r => empExists(r.employeeId)),
+            orgHierarchy, 
+            ratings: ratings.filter(r => empExists(r.employeeId)), 
+            misbehaviourReports: misbehaviourReports.filter(m => empExists(m.employeeId)), 
+            additionalResponsibilities: additionalResponsibilities.filter(a => empExists(a.employeeId)), 
+            notifications: notifications.filter(n => n.to === "ALL" || empExists(n.to)), 
+            activityLogs, 
+            colleges,
+            jobPostings, 
+            certificates: certificates.filter(c => empExists(c.employeeId)), 
+            resignationRequests: resignationRequests.filter(r => empExists(r.employeeId)), 
+            assets, 
+            assetRequests: assetRequests.filter(a => empExists(a.employeeId)),
             login, logout, addNotice, addAnnouncement, editNotice, markAnnouncementRead, updateProfile, clockIn, clockOut, raiseTicket, resolveTicket, addADRemarks, forwardTicket,
             addLeaveRequest, approveLeave, rejectLeave, addReimbursement, updateReimbursementStatus,
-            proposeHoliday, approveHoliday, updateSOP, deleteSOP, addToPIP, markAttendanceOverride,
+            proposeHoliday, approveHoliday, updateSOP, deleteSOP, addToPIP, markAttendanceOverride, overrideAttendance,
             sopNotifications, masterSopContent, updateMasterSop, markSOPNotificationRead, markAllSOPNotificationsRead,
             reportMisbehaviour, addRating, assignWorkSchedule, approveWorkSchedule, addCollege,
             updateCollege,

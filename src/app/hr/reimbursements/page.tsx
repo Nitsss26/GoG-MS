@@ -27,9 +27,7 @@ export default function HRReimbursementsPage() {
     const [remarks, setRemarks] = useState("");
     const [inputAmount, setInputAmount] = useState<string>("");
     const [statusFilter, setStatusFilter] = useState("All");
-
-    const now = new Date();
-    const [filterMonth, setFilterMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
+    const [filterMonth, setFilterMonth] = useState("All");
 
     const isHR = user?.role === "HR" || user?.role === "FOUNDER";
     if (!user || !isHR) return null;
@@ -38,6 +36,7 @@ export default function HRReimbursementsPage() {
     const reporteeIds = reportees.map(r => r.id);
 
     const months: string[] = [];
+    const now = new Date();
     for (let i = 0; i < 12; i++) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
@@ -49,15 +48,20 @@ export default function HRReimbursementsPage() {
     };
 
     const filtered = reimbursements
-        .filter(r => r.monthYear === filterMonth)
+        .filter(r => filterMonth === "All" || r.monthYear === filterMonth)
         .filter(r => (user?.role === "HR" || user?.role === "FOUNDER") || reporteeIds.includes(r.employeeId))
         .filter(r => statusFilter === "All" || r.status === statusFilter)
         .sort((a, b) => {
+            // Sort by date descending
+            const dateA = new Date(a.date).getTime();
+            const dateB = new Date(b.date).getTime();
+            if (dateB !== dateA) return dateB - dateA;
+
             const order = ["Pending", "Approved - Pending Payment", "Approved - Payment Done", "Rejected"];
             return order.indexOf(a.status) - order.indexOf(b.status);
         });
 
-    const monthAll = reimbursements.filter(r => r.monthYear === filterMonth);
+    const monthAll = reimbursements.filter(r => filterMonth === "All" || r.monthYear === filterMonth);
     const totalAmount = monthAll.reduce((a, r) => a + r.amount, 0);
     const pendingCount = monthAll.filter(r => r.status === "Pending").length;
     const pendingAmount = monthAll.filter(r => r.status === "Pending").reduce((a, r) => a + r.amount, 0);
@@ -93,15 +97,26 @@ export default function HRReimbursementsPage() {
             <div className="flex items-center gap-3 flex-wrap">
                 <Filter size={14} className="text-zinc-500" />
                 <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-white font-bold">
+                    <option value="All">All Months</option>
                     {months.map(m => <option key={m} value={m}>{new Date(m + "-01").toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</option>)}
                 </select>
-                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-white font-bold">
-                    <option value="All">All Statuses</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Approved - Pending Payment">Approved - Pending Payment</option>
-                    <option value="Approved - Payment Done">Approved - Payment Done</option>
-                    <option value="Rejected">Rejected</option>
-                </select>
+
+                <div className="flex bg-zinc-900/50 p-1 rounded-xl border border-zinc-800 gap-1">
+                    {["All", "Pending", "Approved - Payment Done", "Rejected"].map((s) => (
+                        <button
+                            key={s}
+                            onClick={() => setStatusFilter(s)}
+                            className={cn(
+                                "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
+                                statusFilter === s 
+                                    ? "bg-primary text-primary-foreground shadow-lg" 
+                                    : "text-zinc-500 hover:text-white"
+                            )}
+                        >
+                            {s === "Approved - Payment Done" ? "Approved" : s}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {/* KPIs */}
@@ -137,7 +152,9 @@ export default function HRReimbursementsPage() {
             {/* Title */}
             <div className="flex justify-between items-center">
                 <div className="flex items-center gap-4">
-                    <h3 className="text-sm font-semibold text-white">Claims — {new Date(filterMonth + "-01").toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</h3>
+                    <h3 className="text-sm font-semibold text-white">
+                        Claims — {filterMonth === "All" ? "All Time" : new Date(filterMonth + "-01").toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
+                    </h3>
                     <button 
                         onClick={() => {
                             const headers = ["Employee", "ID", "Email", "Amount", "Type", "Status", "Date", "Month", "Description", "HR Remarks", "Proof Links"];
@@ -162,7 +179,7 @@ export default function HRReimbursementsPage() {
                             const encodedUri = encodeURI(csvContent);
                             const link = document.createElement("a");
                             link.setAttribute("href", encodedUri);
-                            link.setAttribute("download", `Reimbursements_${filterMonth}.csv`);
+                            link.setAttribute("download", `Reimbursements_${filterMonth === "All" ? "Global" : filterMonth}.csv`);
                             document.body.appendChild(link);
                             link.click();
                             document.body.removeChild(link);
