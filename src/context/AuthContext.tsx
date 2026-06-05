@@ -293,360 +293,8 @@ export interface Asset { id: string; name: string; type: string; serialNumber: s
 export interface AssetRequest { id: string; employeeId: string; employeeName: string; assetType: string; reason: string; status: "Pending" | "Approved" | "Rejected"; requestedAt: string; }
 
 // ─── INITIAL DATA ───
-const INITIAL_EMPLOYEES: Employee[] = [
-    {
-        id: "FND001",
-        name: "Chintan Vatsa Jha",
-        email: "ceo@geeksofgurukul.com",
-        role: "FOUNDER",
-        designation: "CEO",
-        status: "Active",
-        isOnboarded: true,
-        dept: "C-Suite",
-        reportsTo: [],
-        password: "password123",
-        chancesRemaining: 3,
-        joiningDate: "2023-03-26",
-        salary: 100000,
-        location: "Head Office"
-    },
-    {
-        id: "FND002",
-        name: "Ajay Katana",
-        email: "cto@geeksofgurukul.com",
-        role: "FOUNDER",
-        designation: "CTO",
-        status: "Active",
-        isOnboarded: true,
-        dept: "C-Suite",
-        reportsTo: [],
-        password: "password123",
-        chancesRemaining: 3,
-        joiningDate: "2023-03-26",
-        salary: 100000,
-        location: "Head Office"
-    },
-    {
-        id: "FND003",
-        name: "Neeraj Sahu",
-        email: "coo@geeksofgurukul.com",
-        role: "FOUNDER",
-        designation: "COO",
-        status: "Active",
-        isOnboarded: true,
-        dept: "C-Suite",
-        reportsTo: [],
-        password: "password123",
-        chancesRemaining: 3,
-        joiningDate: "2023-03-26",
-        salary: 100000,
-        location: "Head Office"
-    },
-    {
-        id: "EMP101",
-        name: "Ayush Chouhan",
-        email: "ayush.chouhan@geeksofgurukul.com",
-        role: "HOI",
-        designation: "Head of Institute (HOI)",
-        status: "Active",
-        isOnboarded: true,
-        dept: "Leadership",
-        reportsTo: ["FND001"],
-        password: "password123",
-        chancesRemaining: 3,
-        joiningDate: "2023-03-26",
-        salary: 75000,
-        location: "bansal-mandideep"
-    },
-    {
-        id: "EMP102",
-        name: "Sachin Kumar Gupta",
-        email: "sachin@geeksofgurukul.com",
-        role: "HOI",
-        designation: "Head of Institute (HOI)",
-        status: "Active",
-        isOnboarded: true,
-        dept: "Leadership",
-        reportsTo: ["FND001"],
-        password: "password123",
-        chancesRemaining: 3,
-        joiningDate: "2023-03-26",
-        salary: 75000,
-        location: "bansal-kokta"
-    },
-    {
-        id: "EMP135",
-        name: "Sidhartha Paikaray",
-        email: "sidhartha.paikaray@geeksofgurukul.com",
-        role: "HOI",
-        designation: "Head of Institute (HOI)",
-        status: "Active",
-        isOnboarded: true,
-        dept: "Leadership",
-        reportsTo: ["FND001"],
-        password: "password123",
-        chancesRemaining: 3,
-        joiningDate: "2023-03-26",
-        salary: 75000,
-        location: "centurion"
-    },
-    {
-        id: "EMP104",
-        name: "Vivek Yadav",
-        email: "hr@geeksofgurukul.com",
-        role: "HR",
-        designation: "HR and Admin Head",
-        status: "Active",
-        isOnboarded: true,
-        dept: "Management",
-        reportsTo: ["FND001"],
-        password: "password123",
-        chancesRemaining: 3,
-        joiningDate: "2023-03-26",
-        salary: 60000,
-        location: "sage-bhopal"
-    },
-    {
-        id: "EMP108",
-        name: "Raj Kumar Sahoo",
-        email: "raj@geeksofgurukul.com",
-        role: "AD",
-        designation: "Associate Director Business & Operations",
-        status: "Active",
-        isOnboarded: true,
-        dept: "Management",
-        reportsTo: ["FND001"],
-        password: "password123",
-        chancesRemaining: 3,
-        joiningDate: "2023-03-26",
-        salary: 60000,
-        location: "sage-bhopal"
-    },
-    {
-        id: "EMP127",
-        name: "Nitesh",
-        email: "nitesh@geeksofgurukul.com",
-        role: "TL",
-        photoUrl: "https://res.cloudinary.com/dtkim5oeu/image/upload/v1773050409/sdgubdunfbltriwqhddr.jpg",
-        isOnboarded: true,
-        dept: "NIT",
-        designation: "Tech Lead",
-        status: "Active",
-        joiningDate: "01-01-2024",
-        salary: 50000,
-        location: "sage-bhopal",
-        dateOfBirth: "26/08/2001",
-        phone: "7009090762",
-        bloodGroup: "A-",
-        reportsTo: ["FND001"],
-        chancesRemaining: 3,
-        password: "26082001",
-        address: "H.no 31 New Mahindra Colony, Amritsar",
-        bankAccountName: "Nitesh",
-        bankAccountNumber: "506402010521771",
-        ifscCode: "UBIN0550647",
-        upiId: "niteshshr123@oksbi",
-        collegeName: "NIT",
-        // Additional mapping from provided JSON
-        father_name_or_mother_name: "Ashok Kumar",
-        parents_phone_no_: "9781681700",
-        permanent_address: "H.no 31 New Mahindra Colony, Amritsar",
-        bachelor_s_qualification____ex___b_tech__cse____iit_guwahati_: "B.Tech (ECE) Major : NIT Jalandhar, B.Tech (CSE) Minor : NIT Jalandhar",
-        master_s_qualification____ex___m_tech__cse____iit_guwahati_: "NA",
-        you_are_from_: "NIT",
-        current_designation_at_gog: "Tech Lead",
-        upload_your_resume: "https://drive.google.com/open?id=13zk7FlZ6TffLQ2QAhcvpH1hSO02xQIFr",
-        upload_your_bachelor_s_passing_certificate: "https://drive.google.com/open?id=10Yk0jv-hmut2B_adfmPv6J13inXgpo_p",
-        upload_your_master_s_passing_certificate: "",
-        linkedin_id: "https://www.linkedin.com/in/nitesh-shr-304539281?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=android_app",
-        bank_account_number: "506402010521771",
-        ifsc_code: "UBIN0550647",
-        account_holder_name: "Nitesh",
-        upi_id: "niteshshr123@oksbi",
-        "10th_marksheet": "https://drive.google.com/open?id=1YSGezocgsOC1OgYY7hRaC2OAT1mmqunN",
-        "12th_marksheet": "https://drive.google.com/open?id=1-Q_KQ_mukFANYyxoWjJuJzYJMKTvLv6w",
-        aadhar_card: "https://drive.google.com/open?id=1v2JZ_rk-0xvWeWsROhrX0s7whQUBYY1R",
-        pan_card: "https://drive.google.com/open?id=1cwyx0nhkuUUq6lolWl6LboYNh8vo-QFQ",
-        passport_size_photo: "https://drive.google.com/open?id=1qyVg149Y__iOMj9qfTIgbpX0wKA4x1Yd",
-        bank_passbook___cancelled_cheque: "https://drive.google.com/open?id=1DtXUChLNmuuFUR-Pg7hcWUl6Fe1rf2vV",
-        experience_letter__if_any_: "",
-        which_college_are_you_from_: "NIT",
-        date_of_birth: "26/08/2001",
-        blood_group: "A-",
-        upload_your_bachelor_s_marksheet__all_marksheet_together_: "https://drive.google.com/open?id=1WP5H6us9EkJfdqdJlXaAb3gpDbTCHM2v",
-        upload_your_masters_marksheet__all_marksheet_together_: "",
-        monthlyScores: [
-            { period: "Mar 01 - Mar 15, 2026", score: 4.2, points: 35, status: "Recorded" },
-            { period: "Feb 15 - Feb 28, 2026", score: 3.5, points: -45, status: "Recorded" },
-            { period: "Feb 01 - Feb 14, 2026", score: 4.8, points: 50, status: "Recorded" },
-            { period: "Jan 15 - Jan 31, 2026", score: 3, points: -80, status: "Recorded" }
-        ],
-        designationDate: "01-12-2025",
-        fines: {
-            total: 2500,
-            records: [
-                { amount: 100, reason: "Late Arrival", date: "2026-03-03" },
-                { amount: 100, reason: "Late Arrival", date: "2026-03-02" },
-                { amount: 200, reason: "Dress Code Violation", date: "2026-02-23" },
-                { amount: 200, reason: "Dress Code Violation", date: "2026-02-21" },
-                { amount: 100, reason: "Late Arrival", date: "2026-02-18" },
-                { amount: 100, reason: "Late Arrival", date: "2026-02-17" },
-                { amount: 100, reason: "Late Arrival", date: "2026-02-12" },
-                { amount: 200, reason: "Dress Code Violation", date: "2026-02-11" },
-                { amount: 200, reason: "Dress Code Violation", date: "2026-02-07" },
-                { amount: 100, reason: "Late Arrival", date: "2026-02-03" },
-                { amount: 100, reason: "Late Arrival", date: "2026-01-23" },
-                { amount: 100, reason: "Late Arrival", date: "2026-01-21" },
-                { amount: 200, reason: "Dress Code Violation", date: "2026-01-19" },
-                { amount: 100, reason: "Late Arrival", date: "2026-01-17" },
-                { amount: 100, reason: "Late Arrival", date: "2026-01-15" },
-                { amount: 100, reason: "Late Arrival", date: "2026-01-14" },
-                { amount: 200, reason: "Dress Code Violation", date: "2026-01-13" },
-                { amount: 100, reason: "Late Arrival", date: "2026-01-12" },
-                { amount: 100, reason: "Late Arrival", date: "2026-01-08" }
-            ]
-        }
-    },
-    {
-        id: "EMP100",
-        name: "Anirudha Rajodiya",
-        email: "anirudha@geeksofgurukul.com",
-        role: "PROFESSOR",
-        photoUrl: "https://drive.google.com/open?id=1Bnxj1GQwbBvUM-ywSJHJVaOAg8Og7XXN",
-        isOnboarded: true,
-        dept: "IIT",
-        designation: "SDE & Professor",
-        status: "Active",
-        joiningDate: "2024-01-01",
-        salary: 50000,
-        location: "sage-bhopal",
-        dateOfBirth: "?",
-        phone: "7869751211",
-        bloodGroup: "?",
-        reportsTo: ["EMP135"],
-        chancesRemaining: 3,
-        password: "26082001",
-        address: "Khejra road, Gomati Marriage Garden, Gulab Ganj Cantt, Guna, 473001, Madhya Pradesh",
-        bankAccountName: "Anirudha Rajodiya",
-        bankAccountNumber: "157869751211",
-        ifscCode: "INDB0000069",
-        upiId: "7869751211@pthdfc",
-        collegeName: "IIT",
-        fatherMotherName: "Devendra Kumar Rajodiya",
-        parentsPhone: "6260744385",
-        bachelorQual: "B.Tech (AGFE) IIT KHARAGPUR",
-        masterQual: "M.Tech (AGFE) IIT KHARAGPUR",
-        linkedinId: "www.linkedin.com/in/anirudha-rajodiya-6356b5221",
-        resumeUrl: "https://drive.google.com/open?id=11I0VWsYzVjPmkf08f5k3zMqObeaQgk3-",
-        bachelorCertUrl: "https://drive.google.com/open?id=1YTlb0MDrM_9FEC3Iz02LLZIYymz1TNy2",
-        masterCertUrl: "https://drive.google.com/open?id=1ENCMDOgsT0LZ0Q0HV7F_9Bned-OTJaNX",
-        marksheet10Url: "https://drive.google.com/open?id=1QltZjpZi_zMayWGpt1M8uQwxFc2RTlHu",
-        marksheet12Url: "https://drive.google.com/open?id=1g20oyaIyxPYwFeuGmYO8YkRaDgvLyDqb",
-        aadharCardUrl: "https://drive.google.com/open?id=1UA0dYmFBUlIxtJlJlKL_n2Bd4kX9Hhht",
-        panCardUrl: "https://drive.google.com/open?id=1mG0Ma-zEhmQqR2VUkfe3wCx1QZlzmfrO",
-        passportPhotoUrl: "https://drive.google.com/open?id=1Bnxj1GQwbBvUM-ywSJHJVaOAg8Og7XXN",
-        bankPassbookUrl: "https://drive.google.com/open?id=1PgHGUzgBUMmJ3bJyASP0dqO9jsQkDXpD",
-        monthlyScores: [
-            { period: "Feb 15 - Feb 28, 2026", score: 4.9, points: 490, date: "2026-02-28" },
-            { period: "Feb 01 - Feb 14, 2026", score: 4.8, points: 480, date: "2026-02-14" }
-        ],
-        designationDate: "2024-01-01"
-    },
-    {
-        id: "EMP501", name: "Suman Rajak", email: "suman@geeksofgurukul.com", role: "PROFESSOR",
-        designation: "SDE & Professor", status: "Active", isOnboarded: true,
-        dateOfBirth: "22/02/2001", password: "22022001", phone: "6295861588",
-        bloodGroup: "B+", dept: "IIT", location: "IIT",
-        fatherMotherName: "Biswanath Rajak", parentsPhone: "8972337294",
-        address: "AMLAGORA , GARHBETA , PASCHIM MEDINIPUR , PIN - 721121",
-        bachelorQual: "B.Tech (ECE): Bankura Unnayani Institute of Engineering",
-        masterQual: "M.Tech (Control System) : IIT Kharagpur",
-        collegeName: "IIT", linkedinId: "linkedin.com/in/suman-rajak-264137225",
-        bankAccountNumber: "42262692885", ifscCode: "SBIN0000202", bankAccountName: "Suman Rajak",
-        upiId: "rajaksuman56@oksbi",
-        resumeUrl: "https://drive.google.com/open?id=1ZZQvqKUXmv03fzndCECTKQa31lXxuTIg",
-        bachelorCertUrl: "https://drive.google.com/open?id=1Pbw95x2HvXLYHANdhNeNCXbnfglbpNLs",
-        masterCertUrl: "https://drive.google.com/open?id=1myxb1UDH97HhDB__vfWX4fOqKRuaMik8",
-        marksheet10Url: "https://drive.google.com/open?id=1MyhVPpy-zpVVwDi3PfaN_lOTTvKEh1uB",
-        marksheet12Url: "https://drive.google.com/open?id=1lkWOlJ0zhHtQK6wMenaVRYHFLpzBQbpj",
-        aadharCardUrl: "https://drive.google.com/open?id=1vy_xag1-WfeQsGxuIaEIe-qzZtSfMMje",
-        panCardUrl: "https://drive.google.com/open?id=1EtOL15K7buZ7MkffUIdVj-2FCJJYQHPs",
-        passportPhotoUrl: "https://drive.google.com/open?id=1mowA0YVj0XIACM9m7FEq8Da8VdRhGtkF",
-        bankPassbookUrl: "https://drive.google.com/open?id=1STGEnG9p67CFedva2xlzT4w3mSSeiF_T",
-        bachelorMarksheetUrl: "https://drive.google.com/open?id=15-ZYsSixbFdQi0yoHMwC9xSZT1JlzHbH",
-        masterMarksheetUrl: "https://drive.google.com/open?id=1K-9WwEimPULbyh69Tf8r9XEsKQ0iIo1h",
-        joiningDate: "2024-03-13", salary: 50000, chancesRemaining: 3
-    },
-    {
-        id: "OM501", name: "Abhishek Tiwari", email: "abhishek.tiwari@geeksofgurukul.com", role: "OM",
-        designation: "Operation Manager", status: "Active", isOnboarded: true,
-        dateOfBirth: "05/05/2000", password: "05052000", phone: "7999284901",
-        bloodGroup: "A+", dept: "Operations", location: "Other College",
-        fatherMotherName: "NIRBHAY TIWARI", parentsPhone: "8989961318",
-        address: "103 BALAJI APPARTEMENT MAHABALI NAGAR KOLAR ROAD BHOPAL",
-        bachelorQual: "B.TECH (IT)", masterQual: "MBA",
-        collegeName: "Other College", linkedinId: "linkedin.com/in/abhishek-tiwari-b632601a6/",
-        bankAccountNumber: "903110110013943", ifscCode: "BKID0009031", bankAccountName: "ABHISHEK TIWARI",
-        upiId: "7999284901@YBL",
-        resumeUrl: "https://drive.google.com/open?id=1WRdpCgVd0Ph0PSXmfzbjt_C3AQryKqoT",
-        bachelorCertUrl: "https://drive.google.com/open?id=1JUQnbPzuG7De8bPqYNwvBNH4weE6POJ2",
-        marksheet10Url: "https://drive.google.com/open?id=1wxIpd9KgKyVegoGqCTOqq1bdKAzQyFUp",
-        marksheet12Url: "https://drive.google.com/open?id=1bHrBPwBcXiHVbguXW6KQadqVABwgchLn",
-        aadharCardUrl: "https://drive.google.com/open?id=1AnZDGT3w7lU50LBuJUteICAtSDU6IMnG",
-        panCardUrl: "https://drive.google.com/open?id=1g4l2tIIusMQ31QzqdT4MBPqbgPP7dI5q",
-        passportPhotoUrl: "https://drive.google.com/open?id=1isZBpoAP3_JhPi2wcfLobIAJu9dzQQh6",
-        bankPassbookUrl: "https://drive.google.com/open?id=14lLDNRqx54i4a0l6YkF2tNeZboCLaTqC",
-        expLetterUrl: "https://drive.google.com/open?id=1jGDIRxvPjgayBSVs8V_I2tUDOxL9a63n",
-        bachelorMarksheetUrl: "https://drive.google.com/open?id=1DlFFBOJraYX7Sfb1vHnQ0JKIUUX2kbtX",
-        joiningDate: "2024-03-13", salary: 35000, chancesRemaining: 3
-    },
-    {
-        id: "EMP502", name: "Vipul Kumar Gond", email: "vipul.gond@geeksofgurukul.com", role: "PROFESSOR",
-        designation: "SDE & Professor", status: "Active", isOnboarded: true,
-        dateOfBirth: "01/09/2001", password: "01092001", phone: "9565006194",
-        bloodGroup: "O+", dept: "IIT", location: "IIT",
-        fatherMotherName: "Rajesh Prasad Gond", parentsPhone: "7651967219",
-        address: "Jalalabad , Ghazipur , Uttar Pradesh",
-        bachelorQual: "B.Tech", collegeName: "IIT", linkedinId: "www.linkedin.com/in/vipul1877",
-        bankAccountNumber: "415302011017116", ifscCode: "UBIN0541532", bankAccountName: "VIPUL KUMAR GOND",
-        upiId: "9565096194@ybl",
-        resumeUrl: "https://drive.google.com/open?id=1VFSGJ5D3akYI7xBCzvXMXnDDp6iEX8vb",
-        bachelorCertUrl: "https://drive.google.com/open?id=1VZKUFmTG8ikCH7KWAG_0-7bDK20vV1Fa",
-        marksheet10Url: "https://drive.google.com/open?id=1jfP4q9079EtGQIGYOgnzcAzIcGKc4bmP",
-        marksheet12Url: "https://drive.google.com/open?id=1NeVk7D5bqoplTrQbNXj7PNAdFjUD6XlF",
-        aadharCardUrl: "https://drive.google.com/open?id=1Ucsdsl-7QF0NvxcPmXVLIUoqusk33Kxp",
-        panCardUrl: "https://drive.google.com/open?id=1ddaq1rUJT6Ychup4uvegT-Xqcw0TAo9E",
-        passportPhotoUrl: "https://drive.google.com/open?id=1eylzoHxJLgtupBlE6tzc8VcCANO7PzmW",
-        bankPassbookUrl: "https://drive.google.com/open?id=1YIHTGExb7fjN2cyFZBo1d_h9tTP2zR-U",
-        expLetterUrl: "https://drive.google.com/open?id=1ikZ25fUJcVa_BGAe94OO6WFbf6Qf4S6b",
-        bachelorMarksheetUrl: "https://drive.google.com/open?id=1-s_UUS9KLTxQkq8pQYqgmfDSevU4z1R-",
-        joiningDate: "2024-03-13", salary: 50000, chancesRemaining: 3
-    },
-    {
-        id: "OM502", name: "Shriyansh Shrivastava", email: "shriyansh@geeksofgurukul.com", role: "OM",
-        designation: "Operation Manager", status: "Active", isOnboarded: true,
-        dateOfBirth: "04/08/2004", password: "04082004", phone: "9617923667",
-        bloodGroup: "A-", dept: "Operations", location: "Other College",
-        fatherMotherName: "Raju Shrivastava", parentsPhone: "9981324819",
-        address: "Bijora Jaisinagar Sagar 470125",
-        bachelorQual: "B. Tech.(CSE)", masterQual: "no",
-        collegeName: "Other College", linkedinId: "https://www.linkedin.com/in/shriyansh-shrivastva-1828542a6",
-        bankAccountNumber: "3711597326", ifscCode: "CBIN0284173", bankAccountName: "Shriyansh Shrivastava",
-        upiId: "9617923667@ybl",
-        resumeUrl: "https://drive.google.com/open?id=1iel7lOQ9Nv2FsmX83kiAhT_GTGJazvI-",
-        bachelorCertUrl: "https://drive.google.com/open?id=13EnhUyjeRmnf6eZm0mfuUtje4ERyWv0R",
-        masterCertUrl: "https://drive.google.com/open?id=1D6Otk6I3ZP3duE0bo9wVAvnrdvDZCoQh",
-        marksheet10Url: "https://drive.google.com/open?id=1OFZ_TmzdJRIHCoG7XsoFtK-tR_H95Ax8",
-        marksheet12Url: "https://drive.google.com/open?id=1SpIJh4QRb94q0sFS8dZ9qnFAPYcgJHwc",
-        aadharCardUrl: "https://drive.google.com/open?id=1_ft2TMtx06V8OOVq6OJFWzfQl2qasyI2",
-        panCardUrl: "https://drive.google.com/open?id=1hqRY16DOS_NsqW5Ov1z1XVkGdXY1e9Wm",
-        passportPhotoUrl: "https://drive.google.com/open?id=143dM0jjj65w3Zjwrww4YOuBJkNxxRN-W",
-        bankPassbookUrl: "https://drive.google.com/open?id=1Xgz9JIEDmU8jDYAbIauZM-sjE6DBUx1B",
-        bachelorMarksheetUrl: "https://drive.google.com/open?id=1cmCGWhWP5xKlVPTjPx-IMWLeKp58dpBF",
-        masterMarksheetUrl: "https://drive.google.com/open?id=1djOZNZlQmTbwOq4kddQPqNNpEAKZBBd1",
-        joiningDate: "2024-03-13", salary: 35000, chancesRemaining: 3
-    }
-];
+const INITIAL_EMPLOYEES: Employee[] = [];
+
 const MASTER_SOP_CONTENT = `# **Standard Operating Procedure (SOP) || Geeks of Gurukul**
 
 **Organization:** Skillscan Edtech India Pvt. Ltd. (*Known as* **“Geeks of Gurukul”**)
@@ -1382,6 +1030,9 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// In-memory deduplication for birthday emails (replaces insecure localStorage tracking)
+const birthdayEmailsSent = new Set<string>();
+
 // ─── PROVIDER ───
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
@@ -1458,55 +1109,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [assetRequests, setAssetRequests] = useState<AssetRequest[]>([]);
     const router = useRouter();
 
-    // ─── PERSISTENCE ───
-    const DATA_VERSION = "v4_org_update_v15";
+    // ─── SESSION MANAGEMENT (Server-Side — No localStorage) ───
     useEffect(() => {
-        const s = (k: string) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } };
-        // Check data version — if old data exists, clear it to load new RBAC employee IDs
-        const storedVersion = localStorage.getItem("gog_data_version");
-        if (storedVersion !== DATA_VERSION) {
-            // Clear all old data keys to force fresh load
-            const keysToRemove = ["gog_user", "gog_employees", "gog_leaves", "gog_meetings", "gog_notices", "gog_payroll", "gog_sops", "gog_attendance", "gog_tickets", "gog_holidays", "gog_pip", "gog_schedules", "gog_stars", "gog_moms", "gog_reimbursements", "gog_ratings", "gog_misbehaviours", "gog_responsibilities", "gog_notifications", "gog_mark_present", "gog_hierarchy"];
-            keysToRemove.forEach(k => localStorage.removeItem(k));
-            localStorage.setItem("gog_data_version", DATA_VERSION);
+        // SECURITY KILL SWITCH: Clear ALL localStorage on every mount
+        // This ensures no sensitive data (passwords, salaries, etc.) persists in the browser
+        if (typeof window !== 'undefined') {
+            try { localStorage.clear(); } catch { }
         }
-        const su = s("gog_user");
-        if (su) {
-            // Persistence: 60 Day Expiry (60 * 24 * 60 * 60 * 1000)
-            const SIXTY_DAYS = 60 * 24 * 60 * 60 * 1000;
-            const now = Date.now();
-            const lastActive = su.lastActive || 0;
 
-            if (now - lastActive > SIXTY_DAYS) {
-                localStorage.removeItem("gog_user");
-                setUser(null);
-            } else {
-                // Update lastActive to implement sliding window
-                const updatedUser = { ...su, lastActive: now };
-                setUser(updatedUser);
-                localStorage.setItem("gog_user", JSON.stringify(updatedUser));
+        // Restore session from HTTP-only cookie via server API
+        const restoreSession = async () => {
+            try {
+                const res = await fetch('/api/auth/session');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.authenticated && data.user) {
+                        setUser({ ...data.user, id: data.user.employeeId || data.user.id });
+                    }
+                }
+            } catch (err) {
+                console.error('Session restore failed:', err);
+            } finally {
+                setAuthLoading(false);
             }
-        }
-        setAuthLoading(false);
-        const se = s("gog_employees"); if (se) setEmployees(se);
-        const sl = s("gog_leaves"); if (sl) setLeaves(sl);
-        const sm = s("gog_meetings"); if (sm) setMeetings(sm);
-        const sn = s("gog_notices"); if (sn) setNotices(sn);
-        const sp = s("gog_payroll"); if (sp) setPayrollRecords(sp);
-        const ss = s("gog_sops"); if (ss) setSops(ss);
-        const sa = s("gog_attendance"); if (sa) setAttendanceRecords(sa);
-        const st = s("gog_tickets"); if (st) setTickets(st);
-        const sh = s("gog_holidays"); if (sh) setHolidays(sh);
-        const spi = s("gog_pip"); if (spi) setPipRecords(spi);
-        const sw = s("gog_schedules"); if (sw) setWorkSchedules(sw);
-        const sst = s("gog_stars"); if (sst) setPerformanceStars(sst);
-        const smo = s("gog_moms"); if (smo) setMoms(smo);
-        const sr = s("gog_reimbursements"); if (sr) setReimbursements(sr);
-        const srt = s("gog_ratings"); if (srt) setRatings(srt);
-        const smb = s("gog_misbehaviours"); if (smb) setMisbehaviourReports(smb);
-        const sar = s("gog_responsibilities"); if (sar) setAdditionalResponsibilities(sar);
-        const sno = s("gog_notifications"); if (sno) setNotifications(sno);
-        const smpr = s("gog_mark_present"); if (smpr) setMarkAsPresentRequests(smpr);
+        };
+        restoreSession();
     }, []);
 
     // ─── FETCH MEETINGS ───
@@ -1539,28 +1166,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                             return true;
                         });
 
-                    setEmployees(prev => {
-                        const merged = [...prev];
-                        dbEmployees.forEach(dbE => {
-                            const index = merged.findIndex(e => e.id === dbE.id || (e.email && dbE.email && e.email === dbE.email));
-                            if (index !== -1) {
-                                // PROTECT core data for these specific IDs to ensure names/designations are never overridden by DB
-                                const protectedIds = ["FND001", "FND002", "FND003", "EMP104", "EMP108", "EMP127"];
-                                if (protectedIds.includes(merged[index].id)) {
-                                    const { name, designation, ...restOfDbData } = dbE;
-                                    merged[index] = { ...merged[index], ...restOfDbData };
-                                } else {
-                                    merged[index] = { ...merged[index], ...dbE };
-                                }
-                            } else {
-                                merged.push(dbE);
-                            }
-                        });
-                        // Save merged employees (with DB passwords) to localStorage
-                        // so they are available immediately on next page load
-                        try { localStorage.setItem("gog_employees", JSON.stringify(merged)); } catch { }
-                        return merged;
-                    });
+                    setEmployees(dbEmployees);
                 }
             } catch (err) {
                 console.error("Failed to fetch employees from database:", err);
@@ -1714,28 +1320,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     }, [user]);
 
-    useEffect(() => {
-        if (user) localStorage.setItem("gog_user", JSON.stringify(user)); else localStorage.removeItem("gog_user");
-        localStorage.setItem("gog_employees", JSON.stringify(employees));
-        localStorage.setItem("gog_leaves", JSON.stringify(leaves));
-        localStorage.setItem("gog_meetings", JSON.stringify(meetings));
-        localStorage.setItem("gog_notices", JSON.stringify(notices));
-        localStorage.setItem("gog_payroll", JSON.stringify(payrollRecords));
-        localStorage.setItem("gog_sops", JSON.stringify(sops));
-        localStorage.setItem("gog_attendance", JSON.stringify(attendanceRecords));
-        localStorage.setItem("gog_tickets", JSON.stringify(tickets));
-        localStorage.setItem("gog_holidays", JSON.stringify(holidays));
-        localStorage.setItem("gog_pip", JSON.stringify(pipRecords));
-        localStorage.setItem("gog_schedules", JSON.stringify(workSchedules));
-        localStorage.setItem("gog_stars", JSON.stringify(performanceStars));
-        localStorage.setItem("gog_moms", JSON.stringify(moms));
-        localStorage.setItem("gog_reimbursements", JSON.stringify(reimbursements));
-        localStorage.setItem("gog_ratings", JSON.stringify(ratings));
-        localStorage.setItem("gog_misbehaviours", JSON.stringify(misbehaviourReports));
-        localStorage.setItem("gog_responsibilities", JSON.stringify(additionalResponsibilities));
-        localStorage.setItem("gog_notifications", JSON.stringify(notifications));
-        localStorage.setItem("gog_mark_present", JSON.stringify(markAsPresentRequests));
-    }, [user, employees, leaves, meetings, notices, payrollRecords, sops, attendanceRecords, tickets, holidays, pipRecords, workSchedules, performanceStars, moms, reimbursements, ratings, misbehaviourReports, additionalResponsibilities, notifications, markAsPresentRequests]);
+    // NOTE: localStorage sync effect REMOVED for security.
+    // All data is now fetched from server APIs on each page load.
+    // No sensitive data is stored client-side.
 
     // Sync performanceStars for all OMs and Professors
     useEffect(() => {
@@ -1882,17 +1469,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             if (data.success && data.employee) {
                 const emp = data.employee;
-                const userWithExpiry = { ...emp, id: emp.employeeId || emp.id, lastActive: Date.now() };
-                setUser(userWithExpiry);
-                localStorage.setItem("gog_user", JSON.stringify(userWithExpiry));
+                const sessionUser = { ...emp, id: emp.employeeId || emp.id };
+                // Remove password from client-side state for security
+                delete (sessionUser as any).password;
+                setUser(sessionUser);
 
-                // Update employees list to ensure password/data is fresh
+                // Update employees list (no localStorage — session cookie handles auth)
                 setEmployees(prev => {
                     const updated = [...prev];
-                    const idx = updated.findIndex(e => e.id === userWithExpiry.id);
-                    if (idx !== -1) updated[idx] = { ...updated[idx], ...userWithExpiry };
-                    else updated.push(userWithExpiry);
-                    localStorage.setItem("gog_employees", JSON.stringify(updated));
+                    const idx = updated.findIndex(e => e.id === sessionUser.id);
+                    if (idx !== -1) updated[idx] = { ...updated[idx], ...sessionUser };
+                    else updated.push(sessionUser);
                     return updated;
                 });
 
@@ -1906,7 +1493,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return { success: false, msg: "Network error. Please try again." };
         }
     };
-    const logout = () => { setUser(null); localStorage.removeItem("gog_user"); router.push("/login"); };
+    const logout = async () => {
+        try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { }
+        if (typeof window !== 'undefined') { try { localStorage.clear(); } catch { } }
+        setUser(null);
+        router.push('/login');
+    };
 
     const changePassword = async (currentPassword: string, newPassword: string) => {
         if (!user) return { success: false, msg: "Not authenticated" };
@@ -1919,14 +1511,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
             const data = await res.json();
             if (data.success) {
-                const updatedUser = { ...user, password: newPassword } as Employee;
-                setUser(updatedUser);
+                // Update state without storing password in localStorage
                 setEmployees(prev => {
-                    const updated = prev.map(e => (e.id === user.id || e.email === user.email) ? { ...e, password: newPassword } : e);
-                    localStorage.setItem("gog_employees", JSON.stringify(updated));
-                    return updated;
+                    return prev.map(e => (e.id === user.id || e.email === user.email) ? { ...e, password: newPassword } : e);
                 });
-                localStorage.setItem("gog_user", JSON.stringify(updatedUser));
                 return { success: true, msg: "Password changed successfully! Login with your new password next time." };
             } else {
                 return { success: false, msg: data.error || "Failed to update password" };
@@ -1954,7 +1542,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const allEmails = employees.filter(e => e.email && e.status === "Active").map(e => e.email);
                 const { subject: mailSub, html: mailHtml } = getAnnouncementTemplate(newNotice);
                 sendMail({ to: allEmails, subject: mailSub, html: mailHtml });
-                localStorage.setItem("announcement_update", JSON.stringify({ id: data.id, ts: Date.now() }));
+                // Cross-tab notification removed (was localStorage-based, insecure)
             }
         } catch (err) { console.error(err); }
     };
@@ -1971,7 +1559,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const updated = await res.json();
             if (updated.id) {
                 setNotices(prev => prev.map(n => n.id === id ? updated : n));
-                localStorage.setItem("announcement_update", JSON.stringify({ id, action: "edit", ts: Date.now() }));
+                // Cross-tab notification removed (was localStorage-based, insecure)
             }
         } catch (err) { console.error(err); }
     };
@@ -2178,10 +1766,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         employees.forEach(emp => {
             if (emp.dateOfBirth && emp.dateOfBirth.startsWith(todayDDMM)) {
                 const key = `bday_sent_${emp.id}_${now.getFullYear()}`;
-                if (typeof window !== "undefined" && !localStorage.getItem(key)) {
+                // Use in-memory Set to deduplicate birthday emails within this session
+                if (typeof window !== "undefined" && !birthdayEmailsSent.has(key)) {
                     const template = getBirthdayTemplate(emp);
                     sendMail({ to: emp.email, cc: getAuthorityEmails(emp, employees), subject: template.subject, html: template.html });
-                    localStorage.setItem(key, "true");
+                    birthdayEmailsSent.add(key);
                 }
             }
         });
@@ -2867,7 +2456,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sendMail({ to: allEmails, subject: mailSub, html: mailHtml });
 
         // Inter-portal communication via localStorage
-        try { localStorage.setItem("sop_update", JSON.stringify({ ...notif, ts: Date.now() })); } catch { }
+        // SOP cross-tab notification removed (was localStorage-based, insecure)
     };
 
     const deleteSOP = (id: string) => {
@@ -2891,7 +2480,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }, 'deleted');
         sendMail({ to: allEmails, subject: mailSub, html: mailHtml });
 
-        try { localStorage.setItem("sop_update", JSON.stringify({ ...notif, ts: Date.now() })); } catch { }
+        // SOP cross-tab notification removed (was localStorage-based, insecure)
     };
 
     const markSOPNotificationRead = (sopNotifId: string) => {
@@ -2928,10 +2517,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }, 'updated');
         sendMail({ to: allEmails, subject: mailSub, html: mailHtml });
 
-        try {
-            localStorage.setItem("sop_update", JSON.stringify({ ...notif, ts: Date.now() }));
-            localStorage.setItem("master_sop_content", content);
-        } catch { }
+        // Master SOP localStorage caching removed (was insecure)
     };
 
     // ─── PIP ───
@@ -3482,20 +3068,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 body: JSON.stringify({ id: user.id, ...data })
             });
 
-            // Update localStorage for immediate persistence across tabs
-            const updatedUser = user ? { ...user, ...data } : null;
-            if (updatedUser) {
-                localStorage.setItem("gog_user", JSON.stringify(updatedUser));
-                // Update employees in localStorage too so it's consistent
-                const se = localStorage.getItem("gog_employees");
-                if (se) {
-                    try {
-                        const emps = JSON.parse(se);
-                        const updatedEmps = emps.map((e: any) => e.id === user.id ? { ...e, ...data } : e);
-                        localStorage.setItem("gog_employees", JSON.stringify(updatedEmps));
-                    } catch (e) { console.error("Could not update gog_employees in localStorage", e); }
-                }
-            }
+            // Profile update persisted via API call above — no localStorage needed
         } catch (err) {
             console.error("Failed to update profile in database:", err);
         }
@@ -3542,7 +3115,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (user && user.id === employeeId) {
             const updatedUser = { ...user, ...data };
             setUser(updatedUser);
-            localStorage.setItem("gog_user", JSON.stringify(updatedUser));
         }
 
         try {

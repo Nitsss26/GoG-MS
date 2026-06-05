@@ -1,9 +1,21 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import dbConnect from '@/lib/mongodb';
 import { Attendance, Employee } from '@/models/Schemas';
+import { verifySessionToken, COOKIE_NAME } from '@/lib/session';
 
 export async function GET(req: Request) {
     try {
+        // Authenticate session
+        const cookieStore = await cookies();
+        const sessionCookie = cookieStore.get(COOKIE_NAME);
+        if (!sessionCookie?.value) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        const session = verifySessionToken(sessionCookie.value);
+        if (!session) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
         await dbConnect();
         const { searchParams } = new URL(req.url);
         const date = searchParams.get('date');
@@ -37,6 +49,17 @@ export async function GET(req: Request) {
 }
 export async function DELETE(req: Request) {
     try {
+        // Authenticate session
+        const cookieStore = await cookies();
+        const sessionCookie = cookieStore.get(COOKIE_NAME);
+        if (!sessionCookie?.value) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        const session = verifySessionToken(sessionCookie.value);
+        if (!session || (session.role !== "FOUNDER" && session.role !== "HR")) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         await dbConnect();
         const { employeeId, date } = await req.json();
         await Attendance.findOneAndDelete({ employeeId, date });

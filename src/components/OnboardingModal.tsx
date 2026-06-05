@@ -59,7 +59,7 @@ export default function OnboardingModal() {
 
         // Implementation of file upload (using existing Cloudinary pattern if available)
         // For now, setting a placeholder URL to simulate upload
-        setForm({ ...form, [fieldName]: `https://res.cloudinary.com/simulated-upload/${file.name}` });
+        setForm({ ...form, [fieldName]: `/uploads/simulated/${file.name}` });
     };
 
     const handleSubmit = async () => {

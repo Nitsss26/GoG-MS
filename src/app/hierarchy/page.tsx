@@ -339,6 +339,7 @@ function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
     isExpanded?: boolean,
     onToggle?: () => void
 }) {
+    const { user } = useAuth();
     const colors = {
         "C-Suite": "from-amber-400/30 to-amber-600/30 border-amber-500/40 text-amber-500",
         "Management": "from-blue-400/30 to-blue-600/30 border-blue-500/40 text-blue-400",
@@ -392,7 +393,7 @@ function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
                 </div>
 
                 {/* Action Menu for Admin/HR */}
-                {typeof window !== 'undefined' && (localStorage.getItem('currentUser') && JSON.parse(localStorage.getItem('currentUser')!).role === 'Admin') && node.level !== "C-Suite" && (
+                {user && (user.role === 'HR' || user.role === 'FOUNDER') && node.level !== "C-Suite" && (
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-2 flex flex-col gap-1">
                         <button
                             onClick={(e) => {
