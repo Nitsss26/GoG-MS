@@ -1161,8 +1161,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                             id: dbEmp.employeeId || dbEmp.id
                         }))
                         .filter((e: any) => {
-                            // Strictly remove erroneous "HOI" records as requested
-                            if (e.id === "HOI" || e.name === "HOI" || e.designation === "HOI") return false;
+                            // Strictly remove erroneous "HOI" records where ID is literal "HOI"
+                            if (e.id === "HOI") return false;
                             return true;
                         });
 
