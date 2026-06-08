@@ -1430,7 +1430,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 return ["HOI", "FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(e.role) && isReportee;
             }
             if (manager.role === "HOI") {
-                return ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(e.role) && isReportee;
+                const isLocationMatch = manager.location && e.location === manager.location;
+                return ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(e.role) && (isReportee || isLocationMatch);
             }
             if (["OM", "MARKETING_TEAM", "TECH_TEAM"].includes(manager.role)) {
                 return ["FACULTY", "PROFESSOR"].includes(e.role) && isReportee;
@@ -2146,15 +2147,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const managerChain = getManagerChain(user.id);
         const empRecord = employees.find(e => e.id === user.id);
         const rm = empRecord?.reportsTo;
-        const hrEmployees = employees.filter(e => e.role === "HR");
+        const hrEmployees = employees.filter(e => e.role?.toUpperCase() === "HR");
         const hrId = hrEmployees[0]?.id || "HR001";
         const hrEmails = hrEmployees.map(h => h.email!).filter(Boolean);
-        const founders = employees.filter(e => e.role === "FOUNDER").map(f => f.id);
-        const founderEmails = employees.filter(e => e.role === "FOUNDER" && e.email).map(f => f.email!);
+        const founders = employees.filter(e => e.role?.toUpperCase() === "FOUNDER" || e.role?.toUpperCase() === "C-SUITE").map(f => f.id);
+        const founderEmails = employees.filter(e => e.role?.toUpperCase() === "FOUNDER" || e.role?.toUpperCase() === "C-SUITE").map(f => f.email!).filter(Boolean);
 
-        const isEmployee = ["OM", "FACULTY", "PROFESSOR", "BDE"].includes(user.role);
-        const isHOI = user.role === "HOI";
-        const isAD = user.role === "AD";
+        const isEmployee = ["OM", "FACULTY", "PROFESSOR", "BDE"].includes(user.role?.toUpperCase() || "");
+        const isHOI = user.role?.toUpperCase() === "HOI";
+        const isAD = user.role?.toUpperCase() === "AD";
 
         if (targetCategoryNormalized.includes("against hr")) {
             // Against HR - To Founders, NO HR in CC
@@ -2219,10 +2220,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const targetEmp = employees.find(e => e.id === finalRouteTo) || employees.find(e => e.id === hrId);
 
                 const { subject: mailSub, html: mailHtml } = getTicketTemplate(data, 'raised');
-                if (targetEmp?.email) {
+                
+                // Convert CC IDs to actual emails
+                const ccEmails = (data.cc || [])
+                    .map((idOrEmail: string) => {
+                        if (idOrEmail.includes('@')) return idOrEmail;
+                        const emp = employees.find(e => e.id === idOrEmail);
+                        return emp?.email;
+                    })
+                    .filter(Boolean);
+
+                const targetEmail = targetEmp?.email || hrEmails[0] || founderEmails[0] || "nitesh.singh@geeksofgurukul.com";
+
+                if (targetEmail) {
                     const mailRes = await sendMail({
-                        to: targetEmp.email,
-                        cc: [...new Set([...getAuthorityEmails(raiser, employees), raiser?.email, ...(data.cc || [])])].filter(Boolean) as string[],
+                        to: targetEmail,
+                        cc: [...new Set([...getAuthorityEmails(raiser, employees), raiser?.email, ...ccEmails])].filter(Boolean) as string[],
                         subject: mailSub,
                         html: mailHtml
                     });
@@ -2263,9 +2276,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
                 const raiser = employees.find(e => e.id === updated.raisedBy);
                 const { subject, html } = getTicketTemplate(updated, 'resolved');
+                
+                // Convert CC IDs to actual emails
+                const ccEmails = (updated.cc || [])
+                    .map((idOrEmail: string) => {
+                        if (idOrEmail.includes('@')) return idOrEmail;
+                        const emp = employees.find(e => e.id === idOrEmail);
+                        return emp?.email;
+                    })
+                    .filter(Boolean);
+
                 if (raiser?.email) sendMail({
                     to: raiser.email,
-                    cc: Array.from(new Set([...getAuthorityEmails(raiser, employees), ...(updated.cc || [])])),
+                    cc: Array.from(new Set([...getAuthorityEmails(raiser, employees), ...ccEmails])).filter(Boolean) as string[],
                     subject: `Re: ${subject}`,
                     html,
                     inReplyTo: updated.originalMessageId,
@@ -2312,9 +2335,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (updated.id) {
                 setTickets(prev => prev.map(t => t.id === id ? updated : t));
                 const { subject, html } = getTicketForwardTemplate(updated, targetEmp?.name || "Team", user.name, remarks);
+                
+                // Convert CC IDs to actual emails
+                const ccEmails = (updated.cc || [])
+                    .map((idOrEmail: string) => {
+                        if (idOrEmail.includes('@')) return idOrEmail;
+                        const emp = employees.find(e => e.id === idOrEmail);
+                        return emp?.email;
+                    })
+                    .filter(Boolean);
+
                 if (targetEmp?.email) sendMail({
                     to: targetEmp.email,
-                    cc: Array.from(new Set([...(updated.cc || []), user.email])).filter(Boolean) as string[],
+                    cc: Array.from(new Set([...ccEmails, user.email])).filter(Boolean) as string[],
                     subject: `Re: ${subject}`,
                     html,
                     inReplyTo: updated.originalMessageId,

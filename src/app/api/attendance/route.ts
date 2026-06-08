@@ -4,6 +4,8 @@ import dbConnect from '@/lib/mongodb';
 import { Attendance, Employee } from '@/models/Schemas';
 import { verifySessionToken, COOKIE_NAME } from '@/lib/session';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: Request) {
     try {
         // Authenticate session

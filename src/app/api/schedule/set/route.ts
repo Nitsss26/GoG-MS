@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { WorkSchedule, Employee } from '@/models/Schemas';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
     try {
         await dbConnect();
