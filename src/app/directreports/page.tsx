@@ -43,58 +43,27 @@ export default function DirectReportsPage() {
         setIsUploading(true);
         setError(null);
         setReportUrl(null);
-        setUploadProgress("Uploading audio to cloud...");
+        setUploadProgress("Uploading and processing directly via Gemini...");
 
         try {
-            // 1. Upload to Cloudinary
-            const recordingUrl = await uploadToCloudinary(file);
-            if (!recordingUrl) throw new Error("Failed to upload audio to Cloudinary.");
+            // 1. Create FormData
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("facultyId", faculty.id);
+            formData.append("facultyName", faculty.name);
+            formData.append("college", faculty.location || "Direct Upload");
 
-            setUploadProgress("Creating report entry...");
-            
-            // 2. Create Lecture Report
+            // 2. Upload and Process in one go
             const createRes = await fetch("/api/directreports", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    facultyId: faculty.id,
-                    facultyName: faculty.name,
-                    college: faculty.location,
-                    recordingUrl
-                })
+                body: formData
             });
             const createData = await createRes.json();
-            if (!createData.success) throw new Error(createData.error || "Failed to create report.");
+            if (!createData.success) throw new Error(createData.error || "Failed to process report.");
 
             const reportId = createData.reportId;
 
-            setUploadProgress("Transcribing audio (this may take a few minutes)...");
-
-            // 3. Transcribe
-            const transcribeRes = await fetch("/api/manager/lectures/transcribe", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ reportId, force: true })
-            });
-            const transcribeData = await transcribeRes.json();
-            if (!transcribeData.success && !transcribeData.locked) {
-                throw new Error(transcribeData.error || "Failed to transcribe audio.");
-            }
-
-            setUploadProgress("Generating LQS analysis...");
-
-            // 4. Analyze
-            const analyzeRes = await fetch("/api/manager/lectures/analyze", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ reportId, mode: "standard", force: true })
-            });
-            const analyzeData = await analyzeRes.json();
-            if (!analyzeData.success) {
-                throw new Error(analyzeData.error || "Failed to generate LQS report.");
-            }
-
-            setReportUrl(`/manager/reportees/academic-data/lecture/${reportId}`);
+            setReportUrl(`/manager/lecture-report/${reportId}`);
             setUploadProgress("");
 
         } catch (err: any) {
@@ -169,7 +138,7 @@ export default function DirectReportsPage() {
                                 </div>
                                 <div className="text-center">
                                     <p className="text-lg font-bold text-white mb-1">Click to Upload Audio</p>
-                                    <p className="text-sm text-zinc-500">Supports MP3, WAV, M4A, MP4 (max 20MB recommended)</p>
+                                    <p className="text-sm text-zinc-500">Supports MP3, WAV, M4A, MP4 (Supports large files &gt;300MB)</p>
                                 </div>
                             </>
                         )}

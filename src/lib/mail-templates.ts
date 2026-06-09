@@ -20,7 +20,7 @@ const ProfessionalWrapper = (title: string, content: string, color: string = "#1
         <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
             <!-- Header -->
             <div style="background-color: #0d0f12; padding: 24px; text-align: center; border-bottom: 4px solid ${color};">
-                <img src="/logo.png" alt="Geeks of Gurukul" style="height: 32px; display: block; margin: 0 auto; filter: brightness(1.5);">
+                <img src="https://res.cloudinary.com/dtkim5oeu/image/upload/v1780975214/u1di73fib4mijgih0hu9.png" alt="Geeks of Gurukul" style="height: 32px; display: block; margin: 0 auto; filter: brightness(1.5);">
             </div>
             
             <!-- Body -->
@@ -60,7 +60,7 @@ const DataTable = (items: { label: string; value: any; color?: string }[]) => {
 /**
  * Recursively fetches all managers in the reporting line and adds global oversight roles (Founder, HR, AD).
  */
-export const getAuthorityEmails = (employee: any, allEmployees: any[]) => {
+export const getAuthorityEmails = (employee: any, allEmployees: any[], excludeRoles: string[] = []) => {
     const authorities: Set<string> = new Set();
 
     // 1. Recursive Hierarchy Traversal
@@ -83,18 +83,24 @@ export const getAuthorityEmails = (employee: any, allEmployees: any[]) => {
     }
 
     // 2. Founders (Global Oversight)
-    const founders = allEmployees.filter(e => e.role === "FOUNDER" && e.email).map(e => e.email!.toLowerCase());
-    founders.forEach(email => authorities.add(email));
+    if (!excludeRoles.includes("FOUNDER")) {
+        const founders = allEmployees.filter(e => e.role === "FOUNDER" && e.email).map(e => e.email!.toLowerCase());
+        founders.forEach(email => authorities.add(email));
+    }
 
     // 3. HR (Global Oversight)
-    const hrEmails = allEmployees.filter(e => e.role === "HR" && e.email).map(e => e.email!.toLowerCase());
-    hrEmails.forEach(email => authorities.add(email));
+    if (!excludeRoles.includes("HR")) {
+        const hrEmails = allEmployees.filter(e => e.role === "HR" && e.email).map(e => e.email!.toLowerCase());
+        hrEmails.forEach(email => authorities.add(email));
+    }
 
     // 4. AD (Associate Director - Global Inclusion)
-    const adEmails = allEmployees
-        .filter(e => e.role === "AD" && e.email)
-        .map(e => e.email!.toLowerCase());
-    adEmails.forEach(email => authorities.add(email));
+    if (!excludeRoles.includes("AD")) {
+        const adEmails = allEmployees
+            .filter(e => e.role === "AD" && e.email)
+            .map(e => e.email!.toLowerCase());
+        adEmails.forEach(email => authorities.add(email));
+    }
 
     // 5. Explicit HOI Inclusion for certain roles
     // If sender is Professor or OM, ensure ALL HOIs are fetched from the email field of the employees list

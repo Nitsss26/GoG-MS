@@ -175,7 +175,7 @@ export default function AttendancePage() {
 
     const filteredTeamAttendanceList = useMemo(() => {
         if (filterStatus === "All") return teamAttendanceList;
-        if (filterStatus === "Present") return teamAttendanceList.filter((l: any) => l.status === "Working" || l.status === "Clocked Out");
+        if (filterStatus === "Present") return teamAttendanceList.filter((l: any) => l.status === "Working" || l.status === "Clocked Out" || l.status === "No Clock-out");
         if (filterStatus === "Absent") return teamAttendanceList.filter((l: any) => l.status === "Absent" || l.status === "No Clock-in" || l.status === "Leave Requested");
         return teamAttendanceList.filter((l: any) => l.status === filterStatus);
     }, [teamAttendanceList, filterStatus]);
@@ -871,7 +871,7 @@ export default function AttendancePage() {
                             )}
                         >
                             <span className="text-xs font-bold text-green-400 block">Present Today</span>
-                            <span className="text-lg font-black text-white">{teamAttendanceList.filter((l: any) => l.status === "Working" || l.status === "Clocked Out").length}</span>
+                            <span className="text-lg font-black text-white">{teamAttendanceList.filter((l: any) => l.status === "Working" || l.status === "Clocked Out" || l.status === "No Clock-out").length}</span>
                         </div>
                         <div 
                             onClick={() => setFilterStatus(prev => prev === "Holiday" ? "All" : "Holiday")}

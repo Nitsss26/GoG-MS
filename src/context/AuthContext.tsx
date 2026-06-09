@@ -2231,11 +2231,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     .filter(Boolean);
 
                 const targetEmail = targetEmp?.email || hrEmails[0] || founderEmails[0] || "nitesh.singh@geeksofgurukul.com";
+                const excludeRoles = targetCategoryNormalized.includes("against hr") ? ["HR"] : [];
 
                 if (targetEmail) {
                     const mailRes = await sendMail({
                         to: targetEmail,
-                        cc: [...new Set([...getAuthorityEmails(raiser, employees), raiser?.email, ...ccEmails])].filter(Boolean) as string[],
+                        cc: [...new Set([...getAuthorityEmails(raiser, employees, excludeRoles), raiser?.email, ...ccEmails])].filter(Boolean) as string[],
                         subject: mailSub,
                         html: mailHtml
                     });

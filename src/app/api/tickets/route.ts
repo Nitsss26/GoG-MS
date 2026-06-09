@@ -62,9 +62,17 @@ export async function POST(req: Request) {
         };
 
         const code = getCategoryCode(body.targetCategory);
-        const count = await Ticket.countDocuments({ id: { $regex: `^TK-GOG-${code}-` } });
-        const ticketId = `TK-GOG-${code}-${String(count + 1).padStart(3, '0')}`;
-        
+        const lastTicket = await Ticket.findOne({ id: { $regex: `^TK-GOG-${code}-` } }).sort({ id: -1 });
+        let nextNumber = 1;
+        if (lastTicket && lastTicket.id) {
+            const parts = lastTicket.id.split('-');
+            const lastNum = parseInt(parts[parts.length - 1], 10);
+            if (!isNaN(lastNum)) {
+                nextNumber = lastNum + 1;
+            }
+        }
+        const ticketId = `TK-GOG-${code}-${String(nextNumber).padStart(3, '0')}`;
+
         const ticketData = {
             ...body,
             id: ticketId
