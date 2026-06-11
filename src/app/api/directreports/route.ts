@@ -11,11 +11,12 @@ import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
 
 export const maxDuration = 900; // 15 mins
 
-const PROVIDED_API_KEY = "AIzaSyAvECzWcJpL7HXOhcAZ2SbojSUiRhu2SNM";
-
 export async function POST(req: Request) {
+    let rawAudioPath = "";
     let tempAudioPath = "";
+    let ultraCompressedPath = "";
     const startTime = Date.now();
+    
     try {
         const cookieStore = await cookies();
         const sessionCookie = cookieStore.get(COOKIE_NAME);
@@ -52,116 +53,234 @@ export async function POST(req: Request) {
         });
 
         await report.save();
-
         const reportId = report._id;
-        
         console.log(`[DIRECT REPORTS] Saved initial report ${reportId}`);
 
-        // Write file to disk
+        // Write raw file to disk
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         const fileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-        tempAudioPath = path.join(os.tmpdir(), `direct_${reportId}_${Date.now()}_${fileName}`);
         
-        fs.writeFileSync(tempAudioPath, buffer);
-        console.log(`[DIRECT REPORTS] File saved to ${tempAudioPath} (${(buffer.length/1024/1024).toFixed(2)} MB)`);
+        rawAudioPath = path.join(os.tmpdir(), `raw_direct_${reportId}_${Date.now()}_${fileName}`);
+        tempAudioPath = path.join(os.tmpdir(), `norm_direct_${reportId}_${Date.now()}.mp3`);
+        ultraCompressedPath = path.join(os.tmpdir(), `ultra_direct_${reportId}_${Date.now()}.mp3`);
+        
+        fs.writeFileSync(rawAudioPath, buffer);
+        console.log(`[DIRECT REPORTS] Raw file saved to ${rawAudioPath} (${(buffer.length/1024/1024).toFixed(2)} MB)`);
 
-        // Initialize AI tools with fallback
-        let activeApiKey = PROVIDED_API_KEY;
-        let fileManager = new GoogleAIFileManager(activeApiKey);
-        let genAI = new GoogleGenerativeAI(activeApiKey);
+        console.log(`[DIRECT REPORTS] Step 1.5: Normalizing Audio with FFMPEG...`);
+        // Dynamic import for ffmpeg path
+        const { default: ffmpeg } = await import('fluent-ffmpeg');
+        const { default: ffmpegInstaller } = await import('@ffmpeg-installer/ffmpeg');
+        ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
-        // Upload to Gemini
-        console.log(`[DIRECT REPORTS] Uploading to Gemini...`);
-        let uploadResult;
-        try {
-            uploadResult = await fileManager.uploadFile(tempAudioPath, {
-                mimeType: file.type || "audio/mp3",
-                displayName: `Direct_Lecture_${reportId}`,
+        // Helper: compress audio at a given bitrate
+        const compressAudio = (inputPath: string, outputPath: string, bitrate: string): Promise<boolean> => {
+            return new Promise((resolve) => {
+                ffmpeg(inputPath)
+                    .toFormat('mp3')
+                    .audioChannels(1)
+                    .audioFrequency(16000)
+                    .audioBitrate(bitrate)
+                    .on('end', () => resolve(true))
+                    .on('error', (err: any) => {
+                        console.error("[FFMPEG] Normalization failed:", err);
+                        fs.copyFileSync(inputPath, outputPath);
+                        resolve(true);
+                    })
+                    .save(outputPath);
             });
-        } catch (uploadErr: any) {
-            console.warn(`[DIRECT REPORTS] Upload with provided key failed: ${uploadErr.message}`);
-            // If the provided key is blocked (403), fallback to the system .env key
-            if (uploadErr.message?.includes('403') || uploadErr.message?.includes('denied access')) {
-                console.log(`[DIRECT REPORTS] Falling back to process.env.GEMINI_API_KEY`);
-                activeApiKey = process.env.GEMINI_API_KEY || "";
-                fileManager = new GoogleAIFileManager(activeApiKey);
-                genAI = new GoogleGenerativeAI(activeApiKey);
-                
-                uploadResult = await fileManager.uploadFile(tempAudioPath, {
-                    mimeType: file.type || "audio/mp3",
-                    displayName: `Direct_Lecture_${reportId}`,
-                });
-            } else {
-                throw uploadErr;
-            }
-        }
+        };
 
-        if (!uploadResult) {
-            throw new Error("Failed to upload file to Gemini File API");
-        }
+        await compressAudio(rawAudioPath, tempAudioPath, '32k'); // 32kbps = clear speech, small file
 
-        // Poll until ACTIVE
-        let geminiFile = await fileManager.getFile(uploadResult.file.name);
-        let attempts = 0;
-        while (geminiFile.state === FileState.PROCESSING && attempts < 300) {
-            attempts++;
-            await new Promise((resolve) => setTimeout(resolve, 3000));
-            geminiFile = await fileManager.getFile(uploadResult.file.name);
-        }
-        
-        if (geminiFile.state === FileState.FAILED) throw new Error(`File processing failed: ${geminiFile.error?.message}`);
-        if (geminiFile.state !== FileState.ACTIVE) throw new Error(`File timed out, state: ${geminiFile.state}`);
+        // Clean up raw file immediately
+        if (fs.existsSync(rawAudioPath)) fs.unlinkSync(rawAudioPath);
 
-        console.log(`[DIRECT REPORTS] Gemini File ACTIVE: ${geminiFile.uri}`);
+        const audioSize = fs.statSync(tempAudioPath).size;
+        const audioSizeMB = audioSize / (1024 * 1024);
+        const mimeType = "audio/mpeg";
 
-        // Phase 1: Transcribe
+        console.log(`[DIRECT REPORTS] Normalized audio: ${audioSizeMB.toFixed(2)} MB`);
+
+        // Initialize AI tools with system .env key only
+        const activeApiKey = process.env.GEMINI_API_KEY || "";
+        const fileManager = new GoogleAIFileManager(activeApiKey);
+        const genAI = new GoogleGenerativeAI(activeApiKey);
+
+        // --- TRANSCRIPTION PROMPT ---
         console.log(`[DIRECT REPORTS] Starting Transcription...`);
         const transcriptionPrompt = `Transcribe this lecture audio accurately and COMPLETELY. 
         Include timestamps in [MM:SS] format every 30-60 seconds.
         Hinglish (mix of Hindi/English) content should be transcribed as spoken.
         Format accurately as a clean text stream. If the audio is long, provide the full transcript without truncation.`;
 
-        const modelsToTry = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"];
+        const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"];
+
+        // --- STRATEGY: Inline Base64 (for files < 20MB — bypasses File API entirely) ---
+        const transcribeInline = async (filePath: string): Promise<string> => {
+            const fileBase64 = fs.readFileSync(filePath).toString('base64');
+            console.log(`[DIRECT REPORTS] Using INLINE strategy (${(Buffer.byteLength(fileBase64, 'base64') / 1024 / 1024).toFixed(1)} MB)`);
+
+            for (const modelName of modelsToTry) {
+                let retries = 3;
+                while (retries > 0) {
+                    try {
+                        console.log(`[DIRECT REPORTS] Trying inline with: ${modelName} (Retries left: ${retries})...`);
+                        const model = genAI.getGenerativeModel({ model: modelName });
+                        const result = await model.generateContent([
+                            { inlineData: { data: fileBase64, mimeType } },
+                            { text: transcriptionPrompt }
+                        ]);
+                        const text = result.response.text();
+                        if (text && text.length > 50) {
+                            console.log(`[DIRECT REPORTS] Inline ${modelName} succeeded. ${text.length} chars.`);
+                            return text;
+                        }
+                    } catch (err: any) {
+                        retries--;
+                        console.warn(`[DIRECT REPORTS] Inline ${modelName} failed: ${err.message}`);
+                        
+                        if (retries > 0) {
+                            const waitTimeMatch = err.message.match(/retry in (\d+\.\d+)s/i);
+                            let waitMs = 5000;
+                            if (waitTimeMatch) {
+                                waitMs = Math.ceil(parseFloat(waitTimeMatch[1])) * 1000 + 2000; // Add 2s buffer
+                            } else if (err.message.includes('429') || err.message.includes('503')) {
+                                waitMs = 15000; // 15 seconds default backoff
+                            }
+                            console.log(`[DIRECT REPORTS] Retrying ${modelName} in ${waitMs/1000}s...`);
+                            await new Promise(r => setTimeout(r, waitMs));
+                        }
+                    }
+                }
+            }
+            throw new Error("All models failed with inline strategy.");
+        };
+
+        // --- STRATEGY: File API (for files >= 20MB) ---
+        const transcribeViaFileAPI = async (): Promise<string> => {
+            console.log(`[DIRECT REPORTS] Using FILE API strategy`);
+
+            let uploadResult;
+            let uploadAttempts = 0;
+            const maxUploadRetries = 5;
+            while (uploadAttempts < maxUploadRetries) {
+                try {
+                    uploadAttempts++;
+                    uploadResult = await fileManager.uploadFile(tempAudioPath, {
+                        mimeType,
+                        displayName: `Direct_Lecture_${reportId}`,
+                    });
+                    break;
+                } catch (upErr: any) {
+                    const isRetryable = upErr.message?.includes('503') || upErr.message?.includes('500') || upErr.message?.includes('429');
+                    const delay = Math.pow(2, uploadAttempts) * 1000;
+                    console.warn(`[DIRECT REPORTS] Upload attempt ${uploadAttempts} failed: ${upErr.message}`);
+                    if (isRetryable && uploadAttempts < maxUploadRetries) {
+                        console.log(`[DIRECT REPORTS] Retrying in ${delay}ms...`);
+                        await new Promise(r => setTimeout(r, delay));
+                    } else {
+                        throw upErr;
+                    }
+                }
+            }
+
+            if (!uploadResult) {
+                throw new Error("File upload failed - no upload result.");
+            }
+
+            let geminiFile = await fileManager.getFile(uploadResult.file.name);
+            let attempts = 0;
+            while (geminiFile.state === FileState.PROCESSING && attempts < 300) {
+                attempts++;
+                await new Promise((resolve) => setTimeout(resolve, 3000));
+                geminiFile = await fileManager.getFile(uploadResult.file.name);
+            }
+            if (geminiFile.state === FileState.FAILED) throw new Error(`File processing failed: ${geminiFile.error?.message}`);
+            if (geminiFile.state !== FileState.ACTIVE) throw new Error(`File timed out, state: ${geminiFile.state}`);
+
+            console.log(`[DIRECT REPORTS] Gemini File ACTIVE: ${geminiFile.uri}`);
+
+            for (const modelName of modelsToTry) {
+                let retries = 3;
+                while (retries > 0) {
+                    try {
+                        console.log(`[DIRECT REPORTS] Trying File API with: ${modelName} (Retries left: ${retries})...`);
+                        const model = genAI.getGenerativeModel({ model: modelName });
+                        const result = await model.generateContent([
+                            { fileData: { mimeType: geminiFile.mimeType, fileUri: geminiFile.uri } },
+                            { text: transcriptionPrompt }
+                        ]);
+                        const text = result.response.text();
+                        if (text && text.length > 50) {
+                            console.log(`[DIRECT REPORTS] File API ${modelName} succeeded. ${text.length} chars.`);
+                            try { await fileManager.deleteFile(geminiFile.name); } catch {}
+                            return text;
+                        }
+                    } catch (err: any) {
+                        retries--;
+                        console.warn(`[DIRECT REPORTS] File API ${modelName} failed: ${err.message}`);
+                        
+                        if (retries > 0) {
+                            const waitTimeMatch = err.message.match(/retry in (\d+\.\d+)s/i);
+                            let waitMs = 5000;
+                            if (waitTimeMatch) {
+                                waitMs = Math.ceil(parseFloat(waitTimeMatch[1])) * 1000 + 2000;
+                            } else if (err.message.includes('429') || err.message.includes('503')) {
+                                waitMs = 15000;
+                            }
+                            console.log(`[DIRECT REPORTS] Retrying ${modelName} in ${waitMs/1000}s...`);
+                            await new Promise(r => setTimeout(r, waitMs));
+                        }
+                    }
+                }
+            }
+            try { await fileManager.deleteFile(geminiFile.name); } catch {}
+            throw new Error("All models failed with File API strategy.");
+        };
+
+        // --- EXECUTE THE BEST STRATEGY ---
         let transcriptionText = "";
 
-        for (const modelName of modelsToTry) {
+        if (audioSizeMB < 20) {
+            console.log(`[DIRECT REPORTS] Step 2: File is ${audioSizeMB.toFixed(1)}MB — using direct inline (no upload needed)`);
+            transcriptionText = await transcribeInline(tempAudioPath);
+        } else {
+            console.log(`[DIRECT REPORTS] Step 2: File is ${audioSizeMB.toFixed(1)}MB — using File API with inline fallback`);
             try {
-                const model = genAI.getGenerativeModel({ model: modelName });
-                const result = await model.generateContent([
-                    { fileData: { mimeType: geminiFile.mimeType, fileUri: geminiFile.uri } },
-                    { text: transcriptionPrompt }
-                ]);
-                const text = result.response.text();
-                if (text && text.length > 50) {
-                    transcriptionText = text;
-                    console.log(`[DIRECT REPORTS] Transcribed with ${modelName}`);
-                    break;
+                transcriptionText = await transcribeViaFileAPI();
+            } catch (fileApiErr: any) {
+                console.warn(`[DIRECT REPORTS] File API strategy FAILED: ${fileApiErr.message}`);
+                console.log(`[DIRECT REPORTS] FALLBACK: Re-compressing to 16kbps for inline upload...`);
+
+                await compressAudio(tempAudioPath, ultraCompressedPath, '16k');
+                const ultraSize = fs.statSync(ultraCompressedPath).size / (1024 * 1024);
+                console.log(`[DIRECT REPORTS] Ultra-compressed: ${ultraSize.toFixed(2)} MB`);
+
+                try {
+                    transcriptionText = await transcribeInline(ultraCompressedPath);
+                } finally {
+                    if (fs.existsSync(ultraCompressedPath)) fs.unlinkSync(ultraCompressedPath);
                 }
-            } catch (err: any) {
-                console.warn(`[DIRECT REPORTS] Transcribe model ${modelName} failed: ${err.message}`);
-                await new Promise(r => setTimeout(r, 2000));
             }
         }
 
         if (!transcriptionText || transcriptionText.length < 50) {
-            try { await fileManager.deleteFile(geminiFile.name); } catch {}
             throw new Error("Failed to transcribe audio.");
         }
 
-        // Save transcription midway just in case
+        // Save transcription midway
         report.transcription = transcriptionText;
         await report.save();
 
         // Phase 2: Analysis (LQS)
         console.log(`[DIRECT REPORTS] Starting Analysis...`);
         
-        // Exact LQS Prompt from analyze route
         const topicInstruction = "Extract a professional, concise topic name (e.g., 'JAVA COLLECTIONS: LISTS AND MAPS').";
         const analysisPrompt = `Analyze the following lecture transcript and provide a HIGHLY PROFESSIONAL pedagogical report in JSON format.
         This is for a "Lecture Quality Report" (LQR).
         Topic Instruction: ${topicInstruction}
-        
         
         Transcript:
         ${transcriptionText}
@@ -271,28 +390,49 @@ export async function POST(req: Request) {
           }
         }`;
 
+        const analysisModels = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"];
         let analysisResult: any = null;
-        for (const modelName of modelsToTry) {
-            try {
-                const analysisModel = genAI.getGenerativeModel({
-                    model: modelName,
-                    generationConfig: { 
-                        responseMimeType: "application/json",
-                        temperature: 0.1
+        let lastAnalysisErr: any = null;
+
+        for (const modelName of analysisModels) {
+            let retries = 3;
+            while (retries > 0 && !analysisResult) {
+                try {
+                    console.log(`[DIRECT REPORTS] Trying analysis model: ${modelName} (Retries left: ${retries})...`);
+                    const analysisModel = genAI.getGenerativeModel({
+                        model: modelName,
+                        generationConfig: { 
+                            responseMimeType: "application/json",
+                            temperature: 0.1
+                        }
+                    });
+                    
+                    analysisResult = await analysisModel.generateContent(analysisPrompt);
+                    console.log(`[DIRECT REPORTS] Analysis model ${modelName} succeeded.`);
+                    break;
+                } catch (modelErr: any) {
+                    retries--;
+                    lastAnalysisErr = modelErr;
+                    console.warn(`[DIRECT REPORTS] Analysis model ${modelName} failed: ${modelErr.message}`);
+                    
+                    if (retries > 0) {
+                        const waitTimeMatch = modelErr.message.match(/retry in (\d+\.\d+)s/i);
+                        let waitMs = 5000;
+                        if (waitTimeMatch) {
+                            waitMs = Math.ceil(parseFloat(waitTimeMatch[1])) * 1000 + 2000;
+                        } else if (modelErr.message.includes('429') || modelErr.message.includes('503')) {
+                            waitMs = 15000;
+                        }
+                        console.log(`[DIRECT REPORTS] Retrying analysis ${modelName} in ${waitMs/1000}s...`);
+                        await new Promise(r => setTimeout(r, waitMs));
                     }
-                });
-                analysisResult = await analysisModel.generateContent(analysisPrompt);
-                break;
-            } catch (modelErr: any) {
-                console.warn(`[DIRECT REPORTS] Analysis model ${modelName} failed: ${modelErr.message}`);
-                await new Promise(r => setTimeout(r, 3000));
+                }
             }
+            if (analysisResult) break;
         }
 
-        try { await fileManager.deleteFile(geminiFile.name); } catch {}
-
         if (!analysisResult) {
-            throw new Error("All analysis models failed.");
+            throw lastAnalysisErr || new Error("All analysis models failed.");
         }
 
         const analysisResponseText = analysisResult.response.text();
@@ -331,6 +471,8 @@ export async function POST(req: Request) {
         console.error("[DIRECT REPORTS] FATAL ERROR:", error);
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     } finally {
+        if (rawAudioPath && fs.existsSync(rawAudioPath)) fs.unlinkSync(rawAudioPath);
         if (tempAudioPath && fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
+        if (ultraCompressedPath && fs.existsSync(ultraCompressedPath)) fs.unlinkSync(ultraCompressedPath);
     }
 }

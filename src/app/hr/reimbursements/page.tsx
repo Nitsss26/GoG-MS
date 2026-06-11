@@ -248,13 +248,21 @@ export default function HRReimbursementsPage() {
                                         {r.proofUrls && r.proofUrls.length > 0 && (
                                             <div className="flex gap-1.5">
                                                 {r.proofUrls.slice(0, 3).map((url, i) => {
+                                                    let isPdf = url.toLowerCase().endsWith('.pdf');
+                                                    let isCloudinary = url.includes('cloudinary.com');
                                                     let previewUrl = url;
-                                                    if (!url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
-                                                    else if (url.toLowerCase().endsWith('.pdf')) previewUrl = url.replace(/\.pdf$/i, '.jpg');
+                                                    if (!isPdf && !url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
+                                                    else if (isPdf && isCloudinary) previewUrl = url.replace(/\.pdf$/i, '.jpg');
 
                                                     return (
-                                                        <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                                                            <img src={previewUrl} alt="" className="w-10 h-10 object-cover rounded-lg border border-zinc-800 cursor-pointer hover:border-primary/50" />
+                                                        <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block w-10 h-10 relative group">
+                                                            {isPdf && !isCloudinary ? (
+                                                                <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-800 rounded-lg border border-zinc-700 group-hover:border-primary/50 transition-colors">
+                                                                    <FileText size={14} className="text-zinc-500" />
+                                                                </div>
+                                                            ) : (
+                                                                <img src={previewUrl} alt="" className="w-full h-full object-cover rounded-lg border border-zinc-800 cursor-pointer group-hover:border-primary/50" />
+                                                            )}
                                                         </a>
                                                     )
                                                 })}
@@ -334,13 +342,22 @@ export default function HRReimbursementsPage() {
                                     <p className="text-[9px] text-zinc-500 font-bold uppercase">Proof / Invoices ({reviewClaim.proofUrls.length} files)</p>
                                     <div className="grid grid-cols-3 gap-2">
                                         {reviewClaim.proofUrls.map((url, i) => {
+                                            let isPdf = url.toLowerCase().endsWith('.pdf');
+                                            let isCloudinary = url.includes('cloudinary.com');
                                             let previewUrl = url;
-                                            if (!url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
-                                            else if (url.toLowerCase().endsWith('.pdf')) previewUrl = url.replace(/\.pdf$/i, '.jpg');
+                                            if (!isPdf && !url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
+                                            else if (isPdf && isCloudinary) previewUrl = url.replace(/\.pdf$/i, '.jpg');
                                             
                                             return (
-                                                <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                                                    <img src={previewUrl} alt={`Invoice Preview ${i + 1}`} className="w-full h-28 object-cover rounded-lg border border-zinc-800 cursor-pointer hover:border-primary/50 transition-colors" />
+                                                <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block w-full h-28 relative group">
+                                                    {isPdf && !isCloudinary ? (
+                                                        <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-800 rounded-lg border border-zinc-700 group-hover:border-primary/50 transition-colors">
+                                                            <FileText size={24} className="text-zinc-500 mb-1" />
+                                                            <span className="text-[9px] text-zinc-400 font-bold uppercase">PDF Document</span>
+                                                        </div>
+                                                    ) : (
+                                                        <img src={previewUrl} alt={`Invoice Preview ${i + 1}`} className="w-full h-full object-cover rounded-lg border border-zinc-800 cursor-pointer group-hover:border-primary/50 transition-colors" />
+                                                    )}
                                                 </a>
                                             )
                                         })}

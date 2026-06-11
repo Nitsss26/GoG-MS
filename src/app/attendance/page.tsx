@@ -572,7 +572,7 @@ export default function AttendancePage() {
                                                 </div>
                                                 <div className="flex-1">
                                                     <p className="text-xs font-bold text-emerald-400">✓ Photo Verified</p>
-                                                    <p className="text-[10px] text-zinc-500 mt-0.5">Live capture successfully processed via Cloudinary.</p>
+                                                    <p className="text-[10px] text-zinc-500 mt-0.5">Live capture successfully processed via {dressCodeUrl.includes("amazonaws.com") ? "AWS S3" : "Cloudinary"}.</p>
                                                     <a href={dressCodeUrl} target="_blank" rel="noopener" className="text-[10px] text-primary hover:underline font-bold mt-1 inline-block">Review Proof ↗</a>
                                                 </div>
                                                 <button
@@ -819,12 +819,12 @@ export default function AttendancePage() {
                                         </td>
                                         <td className="px-5 py-3">
                                             <div className="flex gap-1 flex-wrap">
-                                                {Object.entries(log.flags).filter(([_, v]) => v).map(([k]) => (
+                                                {Object.entries(log.flags || {}).filter(([_, v]) => v).map(([k]) => (
                                                     <span key={k} className={cn("text-[8px] font-bold px-1.5 py-0.5 rounded-full", FLAG_CONFIG[k]?.color || "text-zinc-400 bg-zinc-800")}>
                                                         {FLAG_CONFIG[k]?.emoji} {FLAG_CONFIG[k]?.label || k}
                                                     </span>
                                                 ))}
-                                                {Object.values(log.flags).every(v => !v) && <span className="text-[8px] text-zinc-600">Clean</span>}
+                                                {Object.values(log.flags || {}).every(v => !v) && <span className="text-[8px] text-zinc-600">Clean</span>}
                                             </div>
                                         </td>
                                     </tr>

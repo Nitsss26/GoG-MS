@@ -120,11 +120,21 @@ export async function GET(req: Request) {
                     status: existing ? existing.status : "Scheduled"
                 };
             });
-            allLectures.push(...dayLectures);
+            
+            const unassignedReports = existingReports
+                .filter(r => !assignedReportIds.has(r._id.toString()))
+                .map(r => r.toObject());
+
+            allLectures.push(...dayLectures, ...unassignedReports);
         }
 
         return NextResponse.json({ 
-            lectures: allLectures, 
+            lectures: allLectures.sort((a, b) => {
+                if (a.date !== b.date) {
+                    return a.date.localeCompare(b.date);
+                }
+                return a.lectureNumber - b.lectureNumber;
+            }), 
             date: targetDates[0], 
             sprintPlanId: plans[0]?._id?.toString() 
         });
@@ -176,16 +186,14 @@ export async function POST(req: Request) {
         }
 
         // Attendance Percentage Validation (50% rule)
-        const attendeeCount = parseInt(numberOfAttendees);
-        const totalCount = parseInt(totalStudents);
+        const attendeeCount = parseInt(numberOfAttendees) || 0;
+        const totalCount = parseInt(totalStudents) || 40; // Default to 40 if missing
         
-        if (!isNaN(attendeeCount) && !isNaN(totalCount) && totalCount > 0) {
+        if (totalCount > 0) {
             const percentage = (attendeeCount / totalCount) * 100;
             if (percentage < 50 && !reasonForLessAttendance) {
                 warnings.push(`Attendance: ${Math.round(percentage)}% (below 50%) — reason required`);
             }
-        } else if (!totalCount && attendeeCount < 50 && !reasonForLessAttendance && attendeeCount > 0) {
-             warnings.push("Attendance below 50 students — reason required");
         }
 
         const report = await LectureReport.findOneAndUpdate(
@@ -219,22 +227,7 @@ export async function POST(req: Request) {
             { upsert: true, new: true }
         );
 
-        // TRIGGER AI ANALYSIS ASYNCHRONOUSLY
-        if (recordingUrl && !report.aiAnalysisAt) {
-            processLectureWithAI(recordingUrl).then(async (result) => {
-                if (result) {
-                    await LectureReport.findByIdAndUpdate(report._id, {
-                        $set: {
-                            transcription: result.transcription,
-                            summary: result.summary,
-                            keywords: result.keywords,
-                            analysis: result.analysis,
-                            aiAnalysisAt: result.aiAnalysisAt
-                        }
-                    });
-                }
-            }).catch(err => console.error(`[AI] Failed analysis for report ${report._id}:`, err));
-        }
+        // AI Analysis will be triggered manually by managers instead of automatically on upload.
 
         return NextResponse.json({ message: "Lecture report submitted", report, warnings });
     } catch (error: any) {

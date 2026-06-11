@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useAuth, ReimbursementClaim } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
-import { Receipt, Plus, Clock, CheckCircle2, XCircle, ExternalLink, Upload, Loader2, X, Eye, Calendar, IndianRupee, AlertCircle, Filter, Briefcase } from "lucide-react";
+import { Receipt, Plus, Clock, CheckCircle2, XCircle, ExternalLink, Upload, Loader2, X, Eye, Calendar, IndianRupee, AlertCircle, Filter, Briefcase, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -190,13 +190,22 @@ export default function ReimbursementPage() {
                                     <p className="text-[9px] text-zinc-500 font-bold uppercase">Proof Images</p>
                                     <div className="grid grid-cols-3 gap-2">
                                         {viewClaim.proofUrls.map((url, i) => {
+                                            let isPdf = url.toLowerCase().endsWith('.pdf');
+                                            let isCloudinary = url.includes('cloudinary.com');
                                             let previewUrl = url;
-                                            if (!url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
-                                            else if (url.toLowerCase().endsWith('.pdf')) previewUrl = url.replace(/\.pdf$/i, '.jpg');
+                                            if (!isPdf && !url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
+                                            else if (isPdf && isCloudinary) previewUrl = url.replace(/\.pdf$/i, '.jpg');
 
                                             return (
-                                                <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                                                    <img src={previewUrl} alt={`Proof ${i + 1}`} className="w-full h-24 object-cover rounded-lg border border-zinc-800 cursor-pointer hover:border-primary/50 transition-colors" />
+                                                <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block w-full h-24 relative group">
+                                                    {isPdf && !isCloudinary ? (
+                                                        <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-800 rounded-lg border border-zinc-700 group-hover:border-primary/50 transition-colors">
+                                                            <FileText size={24} className="text-zinc-500 mb-1" />
+                                                            <span className="text-[9px] text-zinc-400 font-bold uppercase">PDF</span>
+                                                        </div>
+                                                    ) : (
+                                                        <img src={previewUrl} alt={`Proof ${i + 1}`} className="w-full h-full object-cover rounded-lg border border-zinc-800 cursor-pointer group-hover:border-primary/50 transition-colors" />
+                                                    )}
                                                 </a>
                                             )
                                         })}
@@ -281,13 +290,22 @@ export default function ReimbursementPage() {
                                     {proofUrls.length > 0 && (
                                         <div className="flex flex-wrap gap-2">
                                             {proofUrls.map((url, i) => {
+                                                let isPdf = url.toLowerCase().endsWith('.pdf');
+                                                let isCloudinary = url.includes('cloudinary.com');
                                                 let previewUrl = url;
-                                                if (!url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
-                                                else if (url.toLowerCase().endsWith('.pdf')) previewUrl = url.replace(/\.pdf$/i, '.jpg');
+                                                if (!isPdf && !url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
+                                                else if (isPdf && isCloudinary) previewUrl = url.replace(/\.pdf$/i, '.jpg');
 
                                                 return (
-                                                    <div key={i} className="relative group">
-                                                        <img src={previewUrl} alt={`Proof Preview ${i + 1}`} className="w-16 h-16 object-cover rounded-lg border border-zinc-800" />
+                                                    <div key={i} className="relative group w-16 h-16">
+                                                        {isPdf && !isCloudinary ? (
+                                                            <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-800 rounded-lg border border-zinc-700">
+                                                                <FileText size={16} className="text-zinc-500 mb-0.5" />
+                                                                <span className="text-[7px] text-zinc-400 font-bold uppercase">PDF</span>
+                                                            </div>
+                                                        ) : (
+                                                            <img src={previewUrl} alt={`Proof Preview ${i + 1}`} className="w-full h-full object-cover rounded-lg border border-zinc-800" />
+                                                        )}
                                                         <button type="button" onClick={() => setProofUrls(prev => prev.filter((_, j) => j !== i))}
                                                             className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                             <X size={8} className="text-white" />

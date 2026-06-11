@@ -146,21 +146,36 @@ export async function POST(req: Request) {
             console.log(`[TRANSCRIPTION] Using INLINE strategy (${(Buffer.byteLength(fileBase64, 'base64') / 1024 / 1024).toFixed(1)} MB)`);
 
             for (const modelName of modelsToTry) {
-                try {
-                    console.log(`[TRANSCRIPTION] Trying inline with: ${modelName}...`);
-                    const model = genAI.getGenerativeModel({ model: modelName });
-                    const result = await model.generateContent([
-                        { inlineData: { data: fileBase64, mimeType } },
-                        { text: transcriptionPrompt }
-                    ]);
-                    const text = result.response.text();
-                    if (text && text.length > 50) {
-                        console.log(`[TRANSCRIPTION] Inline ${modelName} succeeded. ${text.length} chars.`);
-                        return text;
+                let retries = 3;
+                while (retries > 0) {
+                    try {
+                        console.log(`[TRANSCRIPTION] Trying inline with: ${modelName} (Retries left: ${retries})...`);
+                        const model = genAI.getGenerativeModel({ model: modelName });
+                        const result = await model.generateContent([
+                            { inlineData: { data: fileBase64, mimeType } },
+                            { text: transcriptionPrompt }
+                        ]);
+                        const text = result.response.text();
+                        if (text && text.length > 50) {
+                            console.log(`[TRANSCRIPTION] Inline ${modelName} succeeded. ${text.length} chars.`);
+                            return text;
+                        }
+                    } catch (err: any) {
+                        retries--;
+                        console.warn(`[TRANSCRIPTION] Inline ${modelName} failed: ${err.message}`);
+                        
+                        if (retries > 0) {
+                            const waitTimeMatch = err.message.match(/retry in (\d+\.\d+)s/i);
+                            let waitMs = 5000;
+                            if (waitTimeMatch) {
+                                waitMs = Math.ceil(parseFloat(waitTimeMatch[1])) * 1000 + 2000;
+                            } else if (err.message.includes('429') || err.message.includes('503')) {
+                                waitMs = 15000;
+                            }
+                            console.log(`[TRANSCRIPTION] Retrying ${modelName} in ${waitMs/1000}s...`);
+                            await new Promise(r => setTimeout(r, waitMs));
+                        }
                     }
-                } catch (err: any) {
-                    console.warn(`[TRANSCRIPTION] Inline ${modelName} failed: ${err.message}`);
-                    await new Promise(r => setTimeout(r, 2000));
                 }
             }
             throw new Error("All models failed with inline strategy.");
@@ -212,26 +227,39 @@ export async function POST(req: Request) {
 
             // Generate with model failover
             for (const modelName of modelsToTry) {
-                try {
-                    console.log(`[TRANSCRIPTION] Trying File API with: ${modelName}...`);
-                    const model = genAI.getGenerativeModel({ model: modelName });
-                    const result = await model.generateContent([
-                        { fileData: { mimeType: file.mimeType, fileUri: file.uri } },
-                        { text: transcriptionPrompt }
-                    ]);
-                    const text = result.response.text();
-                    if (text && text.length > 50) {
-                        console.log(`[TRANSCRIPTION] File API ${modelName} succeeded. ${text.length} chars.`);
-                        // Cleanup uploaded file
-                        try { await fileManager.deleteFile(file.name); } catch {}
-                        return text;
+                let retries = 3;
+                while (retries > 0) {
+                    try {
+                        console.log(`[TRANSCRIPTION] Trying File API with: ${modelName} (Retries left: ${retries})...`);
+                        const model = genAI.getGenerativeModel({ model: modelName });
+                        const result = await model.generateContent([
+                            { fileData: { mimeType: file.mimeType, fileUri: file.uri } },
+                            { text: transcriptionPrompt }
+                        ]);
+                        const text = result.response.text();
+                        if (text && text.length > 50) {
+                            console.log(`[TRANSCRIPTION] File API ${modelName} succeeded. ${text.length} chars.`);
+                            try { await fileManager.deleteFile(file.name); } catch {}
+                            return text;
+                        }
+                    } catch (err: any) {
+                        retries--;
+                        console.warn(`[TRANSCRIPTION] File API ${modelName} failed: ${err.message}`);
+                        
+                        if (retries > 0) {
+                            const waitTimeMatch = err.message.match(/retry in (\d+\.\d+)s/i);
+                            let waitMs = 5000;
+                            if (waitTimeMatch) {
+                                waitMs = Math.ceil(parseFloat(waitTimeMatch[1])) * 1000 + 2000;
+                            } else if (err.message.includes('429') || err.message.includes('503')) {
+                                waitMs = 15000;
+                            }
+                            console.log(`[TRANSCRIPTION] Retrying ${modelName} in ${waitMs/1000}s...`);
+                            await new Promise(r => setTimeout(r, waitMs));
+                        }
                     }
-                } catch (err: any) {
-                    console.warn(`[TRANSCRIPTION] File API ${modelName} failed: ${err.message}`);
-                    await new Promise(r => setTimeout(r, 2000));
                 }
             }
-            // Cleanup on failure too
             try { await fileManager.deleteFile(file.name); } catch {}
             throw new Error("All models failed with File API strategy.");
         };
@@ -286,17 +314,11 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true, transcription: transcriptionText });
     } catch (error: any) {
         console.error("[TRANSCRIPTION] FATAL ERROR:", error);
+        
         // --- CRITICAL: Release the lock so the user can retry ---
-        try {
-            await dbConnect();
-            const report = await LectureReport.findById(JSON.parse(await req.clone().text()).reportId).catch(() => null);
-            if (report && report.status === "In Progress") {
-                report.status = "Completed";
-                await report.save();
-            }
-        } catch (unlockErr) {
-            console.error("[TRANSCRIPTION] Failed to release lock:", unlockErr);
-        }
+        // Since we cannot read the consumed request, we'll try to release based on the URL or rely on the 2-min stale lock feature.
+        // Actually, the stale lock auto-releases after 2 mins anyway!
+        
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     } finally {
         if (tempAudioPath && fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);

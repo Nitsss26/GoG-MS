@@ -1,24 +1,69 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import axios from "axios";
+import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
 import fs from "fs";
 import path from "path";
 import os from "os";
 import ffmpeg from "fluent-ffmpeg";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
+const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY as string);
 
 /**
- * Extracts compact audio from a video file to a temporary .mp3 file.
- * We use 32kbps mono to ensure the resulting Base64 fits within the 20MB inline data limit (approx 90 mins).
+ * Utility: Retry an async operation with exponential backoff
  */
-async function extractCompactAudio(videoPath: string): Promise<string> {
+async function withRetry<T>(
+    operation: () => Promise<T>,
+    maxRetries = 3,
+    baseDelay = 2000
+): Promise<T> {
+    let attempt = 0;
+    while (attempt < maxRetries) {
+        try {
+            return await operation();
+        } catch (error: any) {
+            attempt++;
+            console.warn(`[RETRY] Attempt ${attempt}/${maxRetries} failed: ${error?.message || "Unknown Error"}`);
+            if (attempt >= maxRetries) throw error;
+            await new Promise((res) => setTimeout(res, baseDelay * Math.pow(2, attempt - 1)));
+        }
+    }
+    throw new Error("Retry failed");
+}
+
+/**
+ * Utility: Enforce a timeout on an async operation
+ */
+async function withTimeout<T>(
+    operation: () => Promise<T>,
+    timeoutMs: number,
+    operationName = "Operation"
+): Promise<T> {
+    let timeoutId: NodeJS.Timeout;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`${operationName} timed out after ${timeoutMs}ms`)), timeoutMs);
+    });
+
+    return Promise.race([
+        operation(),
+        timeoutPromise
+    ]).finally(() => clearTimeout(timeoutId));
+}
+
+/**
+ * Extracts compact audio from a video URL to a temporary .mp3 file.
+ * We use 32kbps mono to compress the file size efficiently.
+ * ffmpeg supports reading from HTTP/HTTPS URLs natively, which avoids downloading the whole video.
+ */
+async function extractAudioFromUrl(videoUrl: string): Promise<string> {
     // Dynamic import to bypass Turbopack's static analyzer for native/installer modules
     const { default: ffmpegInstaller } = await import("@ffmpeg-installer/ffmpeg");
     ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
-    const audioPath = videoPath.replace(path.extname(videoPath), ".mp3");
+    const tempFileName = `audio_${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`;
+    const audioPath = path.join(os.tmpdir(), tempFileName);
+    
     return new Promise((resolve, reject) => {
-        ffmpeg(videoPath)
+        ffmpeg(videoUrl)
             .toFormat("mp3")
             .audioChannels(1)
             .audioBitrate("32k")
@@ -31,35 +76,48 @@ async function extractCompactAudio(videoPath: string): Promise<string> {
 export async function processLectureWithAI(recordingUrl: string) {
     if (!recordingUrl) return null;
 
-    let tempVideoPath = "";
     let tempAudioPath = "";
+    let uploadedFileName = "";
 
     try {
-        console.log(`[AI] Initializing Gemini-only Analysis for: ${recordingUrl}`);
+        console.log(`[AI] Initializing Gemini Analysis for: ${recordingUrl}`);
 
-        // 1. Download Video
-        const response = await axios.get(recordingUrl, {
-            responseType: 'arraybuffer',
-            timeout: 600000 // 10 mins for download
-        });
-
-        const videoBuffer = Buffer.from(response.data);
-        const fileName = `lec_${Date.now()}.mp4`;
-        tempVideoPath = path.join(os.tmpdir(), fileName);
-        fs.writeFileSync(tempVideoPath, videoBuffer);
-        console.log(`[AI] Video downloaded: ${tempVideoPath}`);
-
-        // 2. Extract Audio (Compact MP3)
-        console.log("[AI] Extracting compact MP3 for inline processing...");
-        tempAudioPath = await extractCompactAudio(tempVideoPath);
+        // 1. Extract Audio directly from URL with 10-minute timeout and 3 retries
+        console.log("[AI] Extracting compact MP3 from URL...");
+        tempAudioPath = await withRetry(
+            () => withTimeout(() => extractAudioFromUrl(recordingUrl), 10 * 60 * 1000, "Audio Extraction"),
+            3,
+            3000
+        );
         const audioSizeMB = fs.statSync(tempAudioPath).size / 1024 / 1024;
         console.log(`[AI] Audio extracted: ${tempAudioPath} (${audioSizeMB.toFixed(2)}MB)`);
 
-        if (audioSizeMB > 19) {
-            throw new Error(`Audio file too large (${audioSizeMB.toFixed(2)}MB) for inline analysis. Max 20MB.`);
-        }
+        // 2. Upload to Google AI File API with 5-minute timeout and 3 retries
+        console.log(`[AI] Uploading to Google AI File API...`);
+        const uploadResult = await withRetry(
+            () => withTimeout(() => fileManager.uploadFile(tempAudioPath, {
+                mimeType: "audio/mp3",
+                displayName: `Lecture_Audio_${Date.now()}`
+            }), 5 * 60 * 1000, "File API Upload"),
+            3,
+            3000
+        );
+        
+        uploadedFileName = uploadResult.file.name;
+        console.log(`[AI] Uploaded as ${uploadedFileName}. URI: ${uploadResult.file.uri}`);
 
-        const audioBase64 = fs.readFileSync(tempAudioPath).toString("base64");
+        // Wait for processing to complete (up to 5 minutes)
+        console.log(`[AI] Waiting for file processing...`);
+        await withTimeout(async () => {
+            let fileState = await fileManager.getFile(uploadedFileName);
+            while (fileState.state === FileState.PROCESSING) {
+                await new Promise((resolve) => setTimeout(resolve, 5000));
+                fileState = await fileManager.getFile(uploadedFileName);
+            }
+            if (fileState.state === FileState.FAILED) {
+                throw new Error("Google AI File processing failed.");
+            }
+        }, 5 * 60 * 1000, "File Processing Wait");
 
         // 3. Generate Audit Report via Gemini (Analysis + Transcription)
         const prompt = `
@@ -84,7 +142,7 @@ export async function processLectureWithAI(recordingUrl: string) {
             OUTPUT FORMAT (JSON):
             {
                 "transcription": "...",
-                "summary": "### CORE TOPICS\n- ...",
+                "summary": "### CORE TOPICS\\n- ...",
                 "keywords": ["topic1", "topic2", ...],
                 "analysis": {
                     "segmentedReport": [
@@ -99,59 +157,67 @@ export async function processLectureWithAI(recordingUrl: string) {
             }
         `;
 
-        const apiKey = process.env.GEMINI_API_KEY;
-        // Use v1 for stability and the -latest model name
-        const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-latest:generateContent?key=${apiKey}`;
-
-        const payload = {
-            contents: [{
-                parts: [
-                    { text: prompt },
+        console.log("[AI] Dispatching unified Gemini analysis request (via SDK)...");
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+        
+        // Retry the Generation Request up to 3 times with 10-minute timeout
+        const result = await withRetry(
+            () => withTimeout(() => model.generateContent({
+                contents: [
                     {
-                        inline_data: {
-                            mime_type: "audio/mp3",
-                            data: audioBase64
-                        }
+                        role: "user",
+                        parts: [
+                            { text: prompt },
+                            {
+                                fileData: {
+                                    mimeType: uploadResult.file.mimeType,
+                                    fileUri: uploadResult.file.uri
+                                }
+                            }
+                        ]
                     }
-                ]
-            }],
-            generationConfig: {
-                responseMimeType: "application/json"
-            }
-        };
+                ],
+                generationConfig: {
+                    responseMimeType: "application/json"
+                }
+            }), 10 * 60 * 1000, "Gemini Analysis Request"),
+            3,
+            5000 // 5 seconds base delay for Gemini limits
+        );
 
-        console.log("[AI] Dispatching unified Gemini analysis request (v1)...");
-        const aiResponse = await axios.post(apiUrl, payload, {
-            headers: { 'Content-Type': 'application/json' },
-            timeout: 600000 // 10 minutes for heavy analysis
-        });
-
-        if (!aiResponse.data || !aiResponse.data.candidates || !aiResponse.data.candidates[0]?.content?.parts[0]?.text) {
-            throw new Error("AI returned an empty or invalid response format.");
+        const responseText = result.response.text();
+        if (!responseText) {
+            throw new Error("AI returned an empty response.");
         }
 
-        const responseText = aiResponse.data.candidates[0].content.parts[0].text;
         const parsed = JSON.parse(responseText);
-
-        console.log(`[AI] Success: Exhaustive Audit report generated via Inline Gemini Pipeline`);
+        console.log(`[AI] Success: Exhaustive Audit report generated via Google AI File API`);
 
         return {
             ...parsed,
             aiAnalysisAt: new Date().toISOString()
         };
     } catch (error: any) {
-        console.error("[AI] FAILURE:", error.response?.data || error.message);
+        console.error("[AI] FAILURE:", error?.response?.data || error?.message || error);
         return {
             transcription: "Analysis failed.",
-            summary: `Error: ${error.message}. Please verify the API key and ensure the recording is not too long.`,
+            summary: `Error: ${error?.message || "Unknown error"}.`,
             aiAnalysisAt: new Date().toISOString()
         };
     } finally {
-        // Cleanup
-        [tempVideoPath, tempAudioPath].forEach(p => {
-            if (p && fs.existsSync(p)) {
-                try { fs.unlinkSync(p); } catch (e) { }
+        // Cleanup File API
+        if (uploadedFileName) {
+            try {
+                await fileManager.deleteFile(uploadedFileName);
+                console.log(`[AI] Deleted remote file ${uploadedFileName}`);
+            } catch (e: any) {
+                console.warn(`[AI] Failed to delete remote file: ${e.message}`);
             }
-        });
+        }
+        
+        // Cleanup local file
+        if (tempAudioPath && fs.existsSync(tempAudioPath)) {
+            try { fs.unlinkSync(tempAudioPath); } catch (e) { }
+        }
     }
 }

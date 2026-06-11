@@ -231,13 +231,21 @@ export default function TicketsPage() {
                                         {ticket.proofUrls && ticket.proofUrls.length > 0 && (
                                             <div className="flex flex-wrap gap-2">
                                                 {ticket.proofUrls.map((url, i) => {
+                                                    let isPdf = url.toLowerCase().endsWith('.pdf');
+                                                    let isCloudinary = url.includes('cloudinary.com');
                                                     let previewUrl = url;
-                                                    if (!url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
-                                                    else if (url.toLowerCase().endsWith('.pdf')) previewUrl = url.replace(/\.pdf$/i, '.jpg');
+                                                    if (!isPdf && !url.match(/\.[a-zA-Z0-9]+$/)) previewUrl += '.jpg';
+                                                    else if (isPdf && isCloudinary) previewUrl = url.replace(/\.pdf$/i, '.jpg');
 
                                                     return (
-                                                        <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                                                            <img src={previewUrl} alt={`Proof ${i + 1}`} className="w-9 h-9 object-cover rounded-md border border-zinc-700 hover:border-primary transition-colors" />
+                                                        <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block w-9 h-9 relative group">
+                                                            {isPdf && !isCloudinary ? (
+                                                                <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-800 rounded-md border border-zinc-700 group-hover:border-primary transition-colors">
+                                                                    <FileText size={14} className="text-zinc-500" />
+                                                                </div>
+                                                            ) : (
+                                                                <img src={previewUrl} alt={`Proof ${i + 1}`} className="w-full h-full object-cover rounded-md border border-zinc-700 group-hover:border-primary transition-colors" />
+                                                            )}
                                                         </a>
                                                     );
                                                 })}

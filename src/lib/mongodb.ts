@@ -1,4 +1,12 @@
 import mongoose from 'mongoose';
+import { setServers } from "node:dns/promises";
+
+// Configure DNS servers globally to avoid timeouts
+try {
+    setServers(["1.1.1.1", "8.8.8.8"]);
+} catch (error) {
+    console.warn("Failed to set DNS servers:", error);
+}
 
 const MONGODB_URI = process.env.MONGODB_URI;
 

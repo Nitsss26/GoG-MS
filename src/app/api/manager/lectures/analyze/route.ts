@@ -74,12 +74,12 @@ export async function POST(req: Request) {
       modeInstruction = `
         CRITICAL MODIFICATION INSTRUCTIONS (LENIENT REPORT):
         - Focus heavily on strengths.
-        - Mention only 1 or 2 minor improvement areas at most.
-        - ENSURE all scores for all parameters are between 3.5 and 5.0. 
-        - NOTHING should go below 3.5. 
-        - The weights must be applied such that the final Lecture Quality Score is at least 3.5.
+        - Ignore most red flags. If you must include a red flag, make it only "Minor" severity, and only include one rarely (sometimes not always). DO NOT include any Moderate or Severe red flags.
+        - ENSURE all scores for all parameters are between 3.5 and 4.7. 
+        - NOTHING should go below 3.5 or above 4.7. 
+        - The weights must be applied such that the final Lecture Quality Score is between 3.5 and 4.7.
         - Tone should be extremely encouraging and professional, not critical.
-        - Ensure it looks natural and not biased, use nuances between 3.5 and 4.8.
+        - Ensure it looks natural and not biased, use nuances between 3.5 and 4.7.
       `;
     }
 
@@ -207,23 +207,39 @@ export async function POST(req: Request) {
     let lastAnalysisErr: any = null;
 
     for (const modelName of analysisModels) {
-        try {
-            console.log(`[ANALYSIS] Trying model: ${modelName}...`);
-            const analysisModel = genAI.getGenerativeModel({
-                model: modelName,
-                generationConfig: { 
-                    responseMimeType: "application/json",
-                    temperature: 0.1
+        let retries = 3;
+        while (retries > 0 && !analysisResult) {
+            try {
+                console.log(`[ANALYSIS] Trying model: ${modelName} (Retries left: ${retries})...`);
+                const analysisModel = genAI.getGenerativeModel({
+                    model: modelName,
+                    generationConfig: { 
+                        responseMimeType: "application/json",
+                        temperature: 0.1
+                    }
+                });
+                analysisResult = await analysisModel.generateContent(analysisPrompt);
+                console.log(`[ANALYSIS] Model ${modelName} succeeded.`);
+                break; // Success
+            } catch (modelErr: any) {
+                retries--;
+                lastAnalysisErr = modelErr;
+                console.warn(`[ANALYSIS] Model ${modelName} failed: ${modelErr.message}`);
+                
+                if (retries > 0) {
+                    const waitTimeMatch = modelErr.message.match(/retry in (\d+\.\d+)s/i);
+                    let waitMs = 5000;
+                    if (waitTimeMatch) {
+                        waitMs = Math.ceil(parseFloat(waitTimeMatch[1])) * 1000 + 2000;
+                    } else if (modelErr.message.includes('429') || modelErr.message.includes('503')) {
+                        waitMs = 15000;
+                    }
+                    console.log(`[ANALYSIS] Retrying ${modelName} in ${waitMs/1000}s...`);
+                    await new Promise(r => setTimeout(r, waitMs));
                 }
-            });
-            analysisResult = await analysisModel.generateContent(analysisPrompt);
-            console.log(`[ANALYSIS] Model ${modelName} succeeded.`);
-            break; // Success
-        } catch (modelErr: any) {
-            lastAnalysisErr = modelErr;
-            console.warn(`[ANALYSIS] Model ${modelName} failed: ${modelErr.message}. Trying next...`);
-            await new Promise(r => setTimeout(r, 3000));
+            }
         }
+        if (analysisResult) break;
     }
 
     if (!analysisResult) {
