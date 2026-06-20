@@ -5,7 +5,8 @@ import { useAuth } from "@/context/AuthContext";
 import { 
     Users, Plus, CheckCircle, Clock, AlertCircle, Search, 
     Filter, ChevronRight, Check, X, Upload, ExternalLink,
-    Mail, Briefcase, Calendar, ShieldCheck, Info, CreditCard
+    Mail, Briefcase, Calendar, ShieldCheck, Info, CreditCard,
+    Download
 } from "lucide-react";
 import type { Employee, Role } from "@/context/AuthContext";
 
@@ -75,6 +76,51 @@ export default function OnboardingHRPage() {
         setSelectedEmployee(null);
     };
 
+    const handleExportCSV = () => {
+        const headers = [
+            "Employee ID", "Name", "Email", "Role", "Department", "Designation", 
+            "Onboarding Status", "Mobile", "Father/Mother Name", "College", 
+            "Qualification", "Account Name", "Account Number", "IFSC", "UPI", 
+            "Resume Link", "Aadhar Link", "PAN Link", "10th Marksheet", 
+            "12th Marksheet", "HR Meeting SS"
+        ];
+
+        const rows = employees.map(emp => [
+            `"${(emp.id || '').replace(/"/g, '""')}"`,
+            `"${(emp.name || '').replace(/"/g, '""')}"`,
+            `"${(emp.email || '').replace(/"/g, '""')}"`,
+            `"${(emp.role || '').replace(/"/g, '""')}"`,
+            `"${(emp.dept || '').replace(/"/g, '""')}"`,
+            `"${(emp.designation || '').replace(/"/g, '""')}"`,
+            `"${(emp.onboardingStatus || emp.status || '').replace(/"/g, '""')}"`,
+            `"${(emp.phone_no_ || '').replace(/"/g, '""')}"`,
+            `"${(emp.father_name_or_mother_name || '').replace(/"/g, '""')}"`,
+            `"${(emp.which_college_are_you_from_ || '').replace(/"/g, '""')}"`,
+            `"${(emp.bachelor_s_qualification || '').replace(/"/g, '""')}"`,
+            `"${(emp.account_holder_name || '').replace(/"/g, '""')}"`,
+            `"${(emp.bank_account_number || '').replace(/"/g, '""')}"`,
+            `"${(emp.ifsc_code || '').replace(/"/g, '""')}"`,
+            `"${(emp.upi_id || '').replace(/"/g, '""')}"`,
+            `"${(emp.upload_your_resume || '').replace(/"/g, '""')}"`,
+            `"${(emp.aadhar_card || '').replace(/"/g, '""')}"`,
+            `"${(emp.pan_card || '').replace(/"/g, '""')}"`,
+            `"${(emp.ten_marksheet || '').replace(/"/g, '""')}"`,
+            `"${(emp.twelve_marksheet || '').replace(/"/g, '""')}"`,
+            `"${(emp.onboardingChecklist?.hrMeetingScreenshot || '').replace(/"/g, '""')}"`
+        ]);
+
+        const csvContent = headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Onboarding_Details.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
     return (
         <div className="p-8 space-y-8 max-w-7xl mx-auto">
             {/* Header */}
@@ -83,12 +129,20 @@ export default function OnboardingHRPage() {
                     <h1 className="text-3xl font-bold text-white tracking-tight">Onboarding Hub</h1>
                     <p className="text-zinc-500 mt-1">Manage new joinees and verification pipeline</p>
                 </div>
-                <button 
-                    onClick={() => setShowCreateModal(true)}
-                    className="bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-primary/20"
-                >
-                    <Plus size={18} /> Create New Employee
-                </button>
+                <div className="flex items-center gap-3">
+                    <button 
+                        onClick={handleExportCSV}
+                        className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all border border-zinc-700/50"
+                    >
+                        <Download size={18} /> Export CSV
+                    </button>
+                    <button 
+                        onClick={() => setShowCreateModal(true)}
+                        className="bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-primary/20"
+                    >
+                        <Plus size={18} /> Create New Employee
+                    </button>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

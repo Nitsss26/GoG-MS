@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { ReimbursementClaim, Employee } from '@/models/Schemas';
 
-const N8N_WEBHOOK_URL = "https://gog.app.n8n.cloud/webhook/reimbursement";
-
+// const N8N_WEBHOOK_URL = "https://gog.app.n8n.cloud/webhook/reimbursement";
+const N8N_WEBHOOK_URL = "https://n8n.geeksofgurukul.com/webhook/reimbursement";
 async function triggerN8n(claim: any, action: string) {
     try {
         await dbConnect();

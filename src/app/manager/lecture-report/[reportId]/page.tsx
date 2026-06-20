@@ -259,6 +259,72 @@ export default function LQRPage() {
                 <div className="flex items-center gap-4">
                     {/* Simplified header with no visible toggles */}
 
+                    {!showModified ? (
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => {
+                                    if (data?.report?.modifiedPedagogicalAnalysis?.summary) {
+                                        setShowModified(true);
+                                    } else {
+                                        triggerFullAnalysis("modified");
+                                    }
+                                }}
+                                disabled={isAnalyzing || isGeneratingModified}
+                                className={cn(
+                                    "flex items-center gap-2 px-6 py-2.5 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-xl active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed",
+                                    isGeneratingModified ? "bg-indigo-400 animate-pulse" : "bg-indigo-600 hover:bg-indigo-700"
+                                )}
+                            >
+                                {isGeneratingModified ? <RefreshCw size={14} className="animate-spin" /> : <ShieldAlert size={14} />}
+                                {data?.report?.modifiedPedagogicalAnalysis?.summary ? "Show Modified Report" : "Generate Modified Report"}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if(confirm("Are you sure you want to regenerate the ORIGINAL report? This will overwrite the current original data.")) {
+                                        triggerFullAnalysis("standard");
+                                    }
+                                }}
+                                disabled={isAnalyzing || isGeneratingModified}
+                                className="flex items-center justify-center w-10 h-10 bg-zinc-100 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200 transition-all rounded-xl shadow-sm disabled:opacity-50 active:scale-95"
+                                title="Regenerate Original Report"
+                            >
+                                <RefreshCw size={14} className={cn(isAnalyzing && "animate-spin")} />
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => {
+                                    if (data?.report?.pedagogicalAnalysis?.summary) {
+                                        setShowModified(false);
+                                    } else {
+                                        triggerFullAnalysis("standard");
+                                    }
+                                }}
+                                disabled={isAnalyzing || isGeneratingModified}
+                                className={cn(
+                                    "flex items-center gap-2 px-6 py-2.5 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-xl active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed",
+                                    isAnalyzing ? "bg-emerald-400 animate-pulse" : "bg-emerald-600 hover:bg-emerald-700"
+                                )}
+                            >
+                                {isAnalyzing ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                                {data?.report?.pedagogicalAnalysis?.summary ? "Show Original Report" : "Generate Original Report"}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if(confirm("Are you sure you want to regenerate the MODIFIED report? This will overwrite the current modified data.")) {
+                                        triggerFullAnalysis("modified");
+                                    }
+                                }}
+                                disabled={isAnalyzing || isGeneratingModified}
+                                className="flex items-center justify-center w-10 h-10 bg-zinc-100 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200 transition-all rounded-xl shadow-sm disabled:opacity-50 active:scale-95"
+                                title="Regenerate Modified Report"
+                            >
+                                <RefreshCw size={14} className={cn(isGeneratingModified && "animate-spin")} />
+                            </button>
+                        </div>
+                    )}
+
                     <button
                         onClick={downloadPDF}
                         disabled={isDownloading}
@@ -270,8 +336,6 @@ export default function LQRPage() {
                         {isDownloading ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
                         {isDownloading ? "Generating..." : "Download PDF"}
                     </button>
-
-                    {/* Re-analyze button removed as per user request */}
 
                     <div className="text-right border-l border-zinc-200 pl-4">
                         <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Document Ref</p>

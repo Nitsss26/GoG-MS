@@ -120,8 +120,7 @@ export async function processLectureWithAI(recordingUrl: string) {
         }, 5 * 60 * 1000, "File Processing Wait");
 
         // 3. Generate Audit Report via Gemini (Analysis + Transcription)
-        const prompt = `
-            You are an expert Academic Auditor for a premier educational institute. I am providing a lecture recording as audio.
+        const prompt = `\n            You are an expert Academic Auditor for a premier educational institute. I am providing a lecture recording as audio.
             
             TASK: 
             Perform a high-fidelity, industry-standard audit of this session.
@@ -158,7 +157,7 @@ export async function processLectureWithAI(recordingUrl: string) {
         `;
 
         console.log("[AI] Dispatching unified Gemini analysis request (via SDK)...");
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
         
         // Retry the Generation Request up to 3 times with 10-minute timeout
         const result = await withRetry(

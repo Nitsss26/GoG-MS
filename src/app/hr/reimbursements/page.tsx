@@ -159,30 +159,30 @@ export default function HRReimbursementsPage() {
                         onClick={() => {
                             const headers = ["Employee", "ID", "Email", "Amount", "Type", "Status", "Date", "Month", "Description", "HR Remarks", "Proof Links"];
                             const rows = filtered.map(r => [
-                                r.employeeName,
-                                r.employeeId,
-                                r.email,
+                                `"${(r.employeeName || '').replace(/"/g, '""')}"`,
+                                `"${(r.employeeId || '').replace(/"/g, '""')}"`,
+                                `"${(r.email || '').replace(/"/g, '""')}"`,
                                 r.amount,
-                                r.type,
-                                r.status,
-                                r.date,
-                                r.monthYear,
-                                `"${r.description?.replace(/"/g, '""')}"`,
-                                `"${r.hrRemarks?.replace(/"/g, '""') || ''}"`,
+                                `"${(r.type || '').replace(/"/g, '""')}"`,
+                                `"${(r.status || '').replace(/"/g, '""')}"`,
+                                `"${(r.date || '').replace(/"/g, '""')}"`,
+                                `"${(r.monthYear || '').replace(/"/g, '""')}"`,
+                                `"${(r.description || '').replace(/"/g, '""')}"`,
+                                `"${(r.hrRemarks || '').replace(/"/g, '""')}"`,
                                 `"${(r.proofUrls || []).join(', ')}"`
                             ]);
                             
-                            const csvContent = "data:text/csv;charset=utf-8," 
-                                + headers.join(",") + "\n"
-                                + rows.map(e => e.join(",")).join("\n");
+                            const csvContent = headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
+                            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                            const url = URL.createObjectURL(blob);
                             
-                            const encodedUri = encodeURI(csvContent);
                             const link = document.createElement("a");
-                            link.setAttribute("href", encodedUri);
+                            link.setAttribute("href", url);
                             link.setAttribute("download", `Reimbursements_${filterMonth === "All" ? "Global" : filterMonth}.csv`);
                             document.body.appendChild(link);
                             link.click();
                             document.body.removeChild(link);
+                            URL.revokeObjectURL(url);
                         }}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 text-zinc-400 text-[10px] font-bold uppercase tracking-widest rounded-lg border border-zinc-700/50 hover:bg-zinc-700 hover:text-white transition-all shadow-sm"
                     >

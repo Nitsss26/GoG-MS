@@ -138,7 +138,7 @@ export async function POST(req: Request) {
         Format accurately as a clean text stream. If the audio is long, provide the full transcript without truncation.`;
 
         // --- MODEL FAILOVER CHAIN ---
-        const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"];
+        const modelsToTry = ["gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.0-flash-lite"];
 
         // --- STRATEGY: Inline Base64 (for files < 20MB — bypasses File API entirely) ---
         const transcribeInline = async (filePath: string): Promise<string> => {

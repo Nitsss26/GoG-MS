@@ -75,11 +75,11 @@ export async function POST(req: Request) {
         CRITICAL MODIFICATION INSTRUCTIONS (LENIENT REPORT):
         - Focus heavily on strengths.
         - Ignore most red flags. If you must include a red flag, make it only "Minor" severity, and only include one rarely (sometimes not always). DO NOT include any Moderate or Severe red flags.
-        - ENSURE all scores for all parameters are between 3.5 and 4.7. 
-        - NOTHING should go below 3.5 or above 4.7. 
-        - The weights must be applied such that the final Lecture Quality Score is between 3.5 and 4.7.
+        - ENSURE all scores for all parameters are between 3.5 and 4.8. 
+        - NOTHING should go below 3.5 or above 4.8. 
+        - The weights must be applied such that the final Lecture Quality Score is between 3.5 and 4.8.
         - Tone should be extremely encouraging and professional, not critical.
-        - Ensure it looks natural and not biased, use nuances between 3.5 and 4.7.
+        - Ensure it looks natural and not biased, use nuances between 3.5 and 4.8.
       `;
     }
 
@@ -168,8 +168,8 @@ export async function POST(req: Request) {
                   "name": "string",
                   "score": number, 
                   "anchor": "Unacceptable | Below Expectations | Meets Expectations | Strong | Exemplary",
-                  "whatWorked": ["observation with [MM:SS]"],
-                  "scopeForImprovement": ["observation with [MM:SS]"],
+                  "whatWorked": ["<actual specific observation text extracted from the lecture with a [MM:SS] timestamp appended>"],
+                  "scopeForImprovement": ["<actual specific observation text extracted from the lecture with a [MM:SS] timestamp appended>"],
                   "actionItems": [{ "task": "string", "example": "direct rewrite quote" }]
                 }
               ]
@@ -202,7 +202,7 @@ export async function POST(req: Request) {
     }
 
     // --- MODEL FAILOVER CHAIN FOR ANALYSIS ---
-    const analysisModels = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"];
+    const analysisModels = ["gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash"];
     let analysisResult: any = null;
     let lastAnalysisErr: any = null;
 
