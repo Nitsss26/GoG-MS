@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const MONGODB_URI = "mongodb+srv://mlrd:mlrdtestdb@cluster0.yzhly.mongodb.net/GoG-MS";
+const MONGODB_URI = "mongoDB_URI";
 
 const employeeSchema = new mongoose.Schema({
     id: String,

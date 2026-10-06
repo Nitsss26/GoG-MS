@@ -1,7 +1,7 @@
 const { MongoClient } = require('mongodb');
 
 // Constants
-const MONGODB_URI = 'mongodb+srv://mlrd:mlrdtestdb@cluster0.yzhly.mongodb.net/GoG-MS';
+const MONGODB_URI = 'mongoDB_URI';
 const DB_NAME = 'GoG-MS';
 
 const vinayData = {

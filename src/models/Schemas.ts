@@ -131,7 +131,8 @@ const AttendanceSchema = new Schema({
         dressCode: { type: Boolean, default: false },
         meetingAbsent: { type: Boolean, default: false },
         performance: { type: Boolean, default: false },
-        overridden: { type: Boolean, default: false }
+        overridden: { type: Boolean, default: false },
+        shortLeave: { type: Boolean, default: false }
     },
     isApprovedByHR: { type: Boolean, default: false },
     dressCodeImageUrl: { type: String },
@@ -319,6 +320,12 @@ const SprintPlanSchema = new Schema({
     year: { type: String },
     isLocked: { type: Boolean, default: false },
     lockedAt: { type: String },
+    lockedBy: { type: String },
+    isVerifiedByCL: { type: Boolean, default: false },
+    verifiedBy: { type: String },
+    verifiedByName: { type: String },
+    verifiedAt: { type: String },
+    clRemarks: { type: String },
     entries: [{
         day: { type: String, required: true },
         date: { type: String, required: true },
@@ -378,6 +385,50 @@ const LectureReportSchema = new Schema({
     reasonForLessAttendance: { type: String },
     recordingUrl: { type: String },
     recordingDurationSeconds: { type: Number },
+
+    // OM Tracking: Actual In / Out and Late Remarks
+    actualInTime: { type: String },
+    actualOutTime: { type: String },
+    isLate: { type: Boolean, default: false },
+    remarksWhyLate: { type: String },
+
+    // Lecture Notes
+    lectureNotes: {
+        notesUrl: { type: String },
+        notesContent: { type: String },
+        isSharedWithStudents: { type: Boolean, default: false },
+        sharedWithStudentsTickedBy: { type: String },
+        notSharedRemarks: { type: String },
+        verificationStatus: { type: String, default: "Pending", enum: ["Pending", "Approved", "Flagged", "Rejected"] },
+        verifiedBy: { type: String },
+        verifiedByName: { type: String },
+        verifiedAt: { type: String },
+        leadRemarks: { type: String }
+    },
+
+    // Assignment Tracking
+    assignment: {
+        hasAssignment: { type: Boolean, default: false },
+        title: { type: String },
+        description: { type: String },
+        assignmentUrl: { type: String },
+        deadline: { type: String },
+        studentsCompletedCount: { type: Number, default: 0 },
+        totalStudentsExpected: { type: Number, default: 0 },
+        verificationStatus: { type: String, default: "Pending", enum: ["Pending", "Approved", "Flagged", "Rejected"] },
+        verifiedBy: { type: String },
+        verifiedByName: { type: String },
+        verifiedAt: { type: String },
+        leadRemarks: { type: String },
+        isSharedInProfGroup: { type: Boolean, default: false },
+        sharedInProfGroupAt: { type: String },
+        sharedInProfGroupBy: { type: String }
+    },
+
+    // Overall Curriculum Lead Good-to-Go Status (Turns Green)
+    clVerificationStatus: { type: String, default: "Pending", enum: ["Pending", "Verified", "Needs Revision"] },
+    clRemarks: { type: String },
+
     transcription: { type: String },
     summary: { type: String },
     aiAnalysisAt: { type: String },
@@ -411,6 +462,60 @@ const LectureReportSchema = new Schema({
     warnings: [{ type: String }]
 }, { timestamps: true });
 
+// Curriculum Task Schema — Tasks assigned by Curriculum Lead / Head to Professors
+const CurriculumTaskSchema = new Schema({
+    id: { type: String, unique: true },
+    title: { type: String, required: true },
+    description: { type: String, required: true },
+    assignedBy: { type: String, required: true }, // CL or CH employee ID
+    assignedByName: { type: String, required: true },
+    assignedTo: { type: String, required: true }, // Faculty employee ID
+    assignedToName: { type: String, required: true },
+    campus: { type: String },
+    priority: { type: String, default: "Medium", enum: ["High", "Medium", "Low"] },
+    deadline: { type: String },
+    status: { type: String, default: "Pending", enum: ["Pending", "In Progress", "Completed", "Verified"] },
+    facultyResponse: { type: String },
+    facultyAttachmentUrl: { type: String },
+    completedAt: { type: String },
+    clFeedback: { type: String },
+    createdAt: { type: String, required: true }
+}, { timestamps: true });
+
+// Campus Daily MoM Schema — Campus-wise Daily Meeting Minutes (updated by Faculties, HOI, OM, CL, CH)
+const CampusDailyMoMSchema = new Schema({
+    id: { type: String, unique: true },
+    campus: { type: String, required: true }, // e.g. "SAGE Bhopal" or location id
+    date: { type: String, required: true }, // YYYY-MM-DD
+    title: { type: String, default: "Campus Daily Sync & MoM" },
+    agenda: { type: String },
+    discussionPoints: { type: String },
+    keyDecisions: { type: String },
+    actionItems: [{
+        task: String,
+        owner: String,
+        deadline: String,
+        status: { type: String, default: "Pending", enum: ["Pending", "In Progress", "Completed"] }
+    }],
+    blockers: { type: String },
+    attendees: [{
+        id: String,
+        name: String,
+        role: String,
+        present: { type: Boolean, default: true }
+    }],
+    updates: [{
+        updatedBy: String,
+        updatedByName: String,
+        role: String,
+        updatedAt: String,
+        note: String
+    }],
+    lastUpdatedBy: { type: String },
+    lastUpdatedByName: { type: String },
+    lastUpdatedAt: { type: String }
+}, { timestamps: true });
+
 // Location Schema for Campus / University Geo-Coordinates
 const LocationSchema = new Schema({
     id: { type: String, required: true, unique: true },
@@ -442,3 +547,5 @@ export const SprintPlan = mongoose.models.SprintPlan || mongoose.model('SprintPl
 export const LectureReport = mongoose.models.LectureReport || mongoose.model('LectureReport', LectureReportSchema);
 export const MeetingRequest = mongoose.models.MeetingRequest || mongoose.model('MeetingRequest', MeetingRequestSchema);
 export const FacultyPreference = mongoose.models.FacultyPreference || mongoose.model('FacultyPreference', FacultyPreferenceSchema);
+export const CurriculumTask = mongoose.models.CurriculumTask || mongoose.model('CurriculumTask', CurriculumTaskSchema);
+export const CampusDailyMoM = mongoose.models.CampusDailyMoM || mongoose.model('CampusDailyMoM', CampusDailyMoMSchema);

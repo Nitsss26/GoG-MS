@@ -16,6 +16,7 @@ import type { Role } from "@/context/AuthContext";
 const coreMenu = [
     { label: "Dashboard", icon: LayoutDashboard, path: "/" },
     { label: "Attendance", icon: Clock, path: "/attendance" },
+    { label: "Campus MoM", icon: Video, path: "/curriculum/mom" },
     { label: "Leave", icon: Calendar, path: "/leave" },
     { label: "Meetings", icon: Video, path: "/meetings" },
     { label: "Org Chart", icon: Network, path: "/hierarchy" },
@@ -34,6 +35,7 @@ const personalMenu = [
 
 const managerMenu = [
     { label: "Manager Hub", icon: Briefcase, path: "/manager" },
+    { label: "Daily Lecture Timings", icon: Clock, path: "/manager/daily-lectures" },
     { label: "Academic Monitoring", icon: BookOpen, path: "/manager/reportees/academic-data" },
     { label: "Leave Approval", icon: CalendarCheck, path: "/manager/leave-approval" },
     { label: "Report Misbehaviour", icon: AlertTriangle, path: "/manager/misbehaviour" },
@@ -48,6 +50,7 @@ const managerMenu = [
 const hrMenu = [
     { label: "HR Hub", icon: UserCog, path: "/hr" },
     { label: "Workforce", icon: Users, path: "/employees" },
+    { label: "Employee Setup", icon: UserCog, path: "/hr/employee-setup" },
     { label: "Holiday Approval", icon: CalendarCheck, path: "/hr/holiday-approval" },
     { label: "Attendance Override", icon: ClipboardList, path: "/hr/attendance-override" },
     { label: "Dress Code", icon: Shirt, path: "/hr/dress-code" },
@@ -79,8 +82,18 @@ const facultyMenu = [
     { label: "Lecture Report", icon: Mic, path: "/faculty/lecture-report" },
 ];
 
+const curriculumMenu = [
+    { label: "Curriculum Portal", icon: GraduationCap, path: "/curriculum" },
+    { label: "Sprint Plan Grid", icon: CalendarCheck, path: "/curriculum/sprint-plans" },
+    { label: "Lecture Quality Hub", icon: Mic, path: "/curriculum/lectures" },
+    { label: "Assign Faculty Tasks", icon: ClipboardList, path: "/curriculum/tasks" },
+    { label: "Campus Daily MoM", icon: Video, path: "/curriculum/mom" },
+];
+
 // Roles that can see Manager Suite
 const MANAGER_ROLES: Role[] = ["FOUNDER", "AD", "HOI", "OM"];
+// Roles that can see Curriculum Suite
+const CURRICULUM_ROLES: Role[] = ["CURRICULUM_HEAD", "CURRICULUM_LEAD", "FOUNDER", "AD"];
 // Roles that can see HR Administration
 const HR_ROLES: Role[] = ["FOUNDER", "HR"];
 // Roles that can see Faculty Suite
@@ -123,6 +136,8 @@ const ROLE_COLORS: Record<Role, { bg: string; text: string; label: string }> = {
     TECH_TEAM: { bg: "bg-rose-500/20", text: "text-rose-400", label: "Tech Team" },
     FACULTY: { bg: "bg-pink-500/20", text: "text-pink-400", label: "Faculty" },
     PROFESSOR: { bg: "bg-pink-500/20", text: "text-pink-400", label: "Professor" },
+    CURRICULUM_HEAD: { bg: "bg-teal-500/20", text: "text-teal-400", label: "Curriculum Head" },
+    CURRICULUM_LEAD: { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "Curriculum Lead" },
 };
 
 export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
@@ -179,6 +194,11 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
                 {/* Faculty Suite: Visible to FACULTY, PROFESSOR */}
                 {role && FACULTY_ROLES.includes(role) && (
                     <NavSection title="Faculty Suite" items={facultyMenu} pathname={pathname} />
+                )}
+
+                {/* Curriculum Suite: Visible to CURRICULUM_HEAD, CURRICULUM_LEAD, FOUNDER, AD */}
+                {role && CURRICULUM_ROLES.includes(role) && (
+                    <NavSection title="Curriculum Suite" items={curriculumMenu} pathname={pathname} />
                 )}
 
                 {/* Founder Console: Visible to FOUNDER only */}

@@ -8,7 +8,7 @@ import { COLLEGES } from '@/lib/colleges';
 export async function POST(req: Request) {
     try {
         await dbConnect();
-        const { employeeId, lat, lng, dressCodeImageUrl, isOverride, date: overrideDate } = await req.json();
+        const { employeeId, lat, lng, dressCodeImageUrl, isOverride, date: overrideDate, isShortLeave } = await req.json();
 
         // 1. Fetch Employee
         const employee = await Employee.findOne({ id: employeeId });
@@ -113,6 +113,9 @@ export async function POST(req: Request) {
             dressCodeStatus: isOverride ? "Approved" : "Pending",
             ...(isOverride ? {} : (isLate ? { "flags.late": true } : {}))
         };
+        if (isShortLeave) {
+            updateData["flags.shortLeave"] = true;
+        }
 
         const attendance = await Attendance.findOneAndUpdate(
             { employeeId, date: today },

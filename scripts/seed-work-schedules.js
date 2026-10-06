@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 // MongoDB Connection
-const MONGODB_URI = "mongodb+srv://mlrd:mlrdtestdb@cluster0.yzhly.mongodb.net/GoG-MS";
+const MONGODB_URI = "mongoDB_URI";
 
 const WorkScheduleSchema = new mongoose.Schema({
     employeeId: { type: String, required: true },

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { 
     Users, Plus, CheckCircle, Clock, AlertCircle, Search, 
@@ -15,6 +15,16 @@ export default function OnboardingHRPage() {
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
+    const [locations, setLocations] = useState<any[]>([]);
+
+    useEffect(() => {
+        fetch("/api/locations")
+            .then(res => res.json())
+            .then(data => {
+                if (Array.isArray(data)) setLocations(data);
+            })
+            .catch(console.error);
+    }, []);
 
     // Filter onboarding employees (those not fully onboarded)
     const onboardingEmployees = employees.filter(emp => 
@@ -34,6 +44,8 @@ export default function OnboardingHRPage() {
             password: formData.get("password") as string || "GoG@2026",
             dept: formData.get("dept") as string,
             designation: formData.get("designation") as string,
+            location: formData.get("location") as string,
+            reportsTo: formData.getAll("reportsTo") as string[],
         };
 
         await addEmployee(newEmp);
@@ -76,49 +88,24 @@ export default function OnboardingHRPage() {
         setSelectedEmployee(null);
     };
 
-    const handleExportCSV = () => {
-        const headers = [
-            "Employee ID", "Name", "Email", "Role", "Department", "Designation", 
-            "Onboarding Status", "Mobile", "Father/Mother Name", "College", 
-            "Qualification", "Account Name", "Account Number", "IFSC", "UPI", 
-            "Resume Link", "Aadhar Link", "PAN Link", "10th Marksheet", 
-            "12th Marksheet", "HR Meeting SS"
-        ];
-
-        const rows = employees.map(emp => [
-            `"${(emp.id || '').replace(/"/g, '""')}"`,
-            `"${(emp.name || '').replace(/"/g, '""')}"`,
-            `"${(emp.email || '').replace(/"/g, '""')}"`,
-            `"${(emp.role || '').replace(/"/g, '""')}"`,
-            `"${(emp.dept || '').replace(/"/g, '""')}"`,
-            `"${(emp.designation || '').replace(/"/g, '""')}"`,
-            `"${(emp.onboardingStatus || emp.status || '').replace(/"/g, '""')}"`,
-            `"${(emp.phone_no_ || '').replace(/"/g, '""')}"`,
-            `"${(emp.father_name_or_mother_name || '').replace(/"/g, '""')}"`,
-            `"${(emp.which_college_are_you_from_ || '').replace(/"/g, '""')}"`,
-            `"${(emp.bachelor_s_qualification || '').replace(/"/g, '""')}"`,
-            `"${(emp.account_holder_name || '').replace(/"/g, '""')}"`,
-            `"${(emp.bank_account_number || '').replace(/"/g, '""')}"`,
-            `"${(emp.ifsc_code || '').replace(/"/g, '""')}"`,
-            `"${(emp.upi_id || '').replace(/"/g, '""')}"`,
-            `"${(emp.upload_your_resume || '').replace(/"/g, '""')}"`,
-            `"${(emp.aadhar_card || '').replace(/"/g, '""')}"`,
-            `"${(emp.pan_card || '').replace(/"/g, '""')}"`,
-            `"${(emp.ten_marksheet || '').replace(/"/g, '""')}"`,
-            `"${(emp.twelve_marksheet || '').replace(/"/g, '""')}"`,
-            `"${(emp.onboardingChecklist?.hrMeetingScreenshot || '').replace(/"/g, '""')}"`
-        ]);
-
-        const csvContent = headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", `Onboarding_Details.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+    const handleExportCSV = async () => {
+        try {
+            const response = await fetch('/api/hr/export-employees');
+            if (!response.ok) throw new Error("Failed to export data");
+            
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `Full_Onboarding_Details.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            alert("Error exporting CSV data from server");
+            console.error(error);
+        }
     };
 
     return (
@@ -372,6 +359,35 @@ export default function OnboardingHRPage() {
                             <CreationInput label="Department" name="dept" placeholder="IIT / NIT / Management" />
                             <CreationInput label="Designation" name="designation" placeholder="e.g. Senior Professor" />
                             
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block mb-1.5">Work Location</label>
+                                    <select 
+                                        name="location" 
+                                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary/50 transition-all appearance-none"
+                                    >
+                                        <option value="">Select Location...</option>
+                                        {locations.map(loc => (
+                                            <option key={loc.id} value={loc.name}>{loc.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block mb-1.5">Reporting Manager(s)</label>
+                                    <select 
+                                        name="reportsTo" 
+                                        multiple
+                                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary/50 transition-all min-h-[80px] custom-scrollbar"
+                                    >
+                                        {employees.map(emp => (
+                                            <option key={emp.id} value={emp.id}>
+                                                {emp.name} ({emp.id})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
                             <button type="submit" className="w-full bg-primary hover:bg-primary/90 text-white font-bold py-3 rounded-xl shadow-lg shadow-primary/20 transition-all mt-6">
                                 Create Account & Trigger Onboarding
                             </button>

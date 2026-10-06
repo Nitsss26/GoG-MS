@@ -1,7 +1,8 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import SprintPlanTimetableGrid from "@/components/academic/SprintPlanTimetableGrid";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     CalendarDays, Plus, Trash2, Lock, Unlock, Save, AlertTriangle,
@@ -123,6 +124,8 @@ export default function SprintPlanPage() {
     const [invalidIndices, setInvalidIndices] = useState<number[]>([]);
     const [copying, setCopying] = useState(false);
     const [activeTimePicker, setActiveTimePicker] = useState<{ idx: number; field: "timeStart" | "timeStop" } | null>(null);
+    const [viewMode, setViewMode] = useState<"GRID" | "EDITOR">("GRID");
+    const [allCampusEntries, setAllCampusEntries] = useState<any[]>([]);
 
     // Dynamic Dropdowns
     const [facultySubjects, setFacultySubjects] = useState<Record<string, string>>(SUBJECTS);
@@ -193,12 +196,35 @@ export default function SprintPlanPage() {
                 setPlan(null);
                 setEntries([]);
             }
+
+            try {
+                const campusRes = await fetch(`/api/curriculum/sprint-plan?weekStartDate=${weekInfo.start}`);
+                const campusData = await campusRes.json();
+                if (campusData.allEntries) {
+                    setAllCampusEntries(campusData.allEntries);
+                }
+            } catch (err) {
+                console.error("Failed to fetch campus entries", err);
+            }
         } catch (e) {
             console.error(e);
         } finally {
             setLoading(false);
         }
     };
+
+    const displayGridEntries = useMemo(() => {
+        if (allCampusEntries.length > 0) return allCampusEntries;
+        return entries.map(e => ({
+            ...e,
+            facultyId: user?.id || "",
+            facultyName: user?.name || "Professor",
+            college: plan?.college || user?.location || "Main Campus",
+            location: plan?.college || user?.location || "Main Campus",
+            isLocked: plan?.isLocked,
+            isVerifiedByCL: plan?.isVerifiedByCL
+        }));
+    }, [allCampusEntries, entries, user, plan]);
 
     const copyFromPreviousWeek = async () => {
         setCopying(true);
@@ -560,10 +586,48 @@ export default function SprintPlanPage() {
                 </div>
             )}
 
-            {/* Weekly Grid */}
+            {/* View Mode Switcher */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-zinc-900/60 p-2.5 rounded-2xl border border-zinc-800 shadow-lg">
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setViewMode("GRID")}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                            viewMode === "GRID"
+                                ? "bg-amber-400 text-zinc-950 shadow-lg shadow-amber-400/20"
+                                : "text-zinc-400 hover:text-white hover:bg-zinc-800/60"
+                        }`}
+                    >
+                        <CalendarDays size={14} /> Campus Timetable Grid (Sheet View)
+                    </button>
+                    <button
+                        onClick={() => setViewMode("EDITOR")}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                            viewMode === "EDITOR"
+                                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
+                                : "text-zinc-400 hover:text-white hover:bg-zinc-800/60"
+                        }`}
+                    >
+                        <Edit2 size={14} /> Day-by-Day Slot Editor
+                    </button>
+                </div>
+                <div className="text-[11px] text-zinc-500 font-medium px-3 hidden sm:block">
+                    {viewMode === "GRID" ? "Synchronized across all faculty at your campus" : "Customize your individual teaching slots"}
+                </div>
+            </div>
+
+            {/* Weekly Content */}
             {loading ? (
                 <div className="flex items-center justify-center py-16">
                     <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+            ) : viewMode === "GRID" ? (
+                <div className="space-y-4">
+                    <SprintPlanTimetableGrid
+                        entries={displayGridEntries}
+                        weekStartDate={weekInfo.start}
+                        weekEndDate={weekInfo.end}
+                        defaultCampus={plan?.college || user?.location || "SAGE Bhopal"}
+                    />
                 </div>
             ) : (
                 <div className="space-y-4">

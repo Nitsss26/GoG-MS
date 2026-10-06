@@ -2,15 +2,10 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { LectureReport } from '@/models/Schemas';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import ffmpeg from 'fluent-ffmpeg';
-import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-
-// Setup ffmpeg
-ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 export const maxDuration = 300; // 5 minutes timeout
 

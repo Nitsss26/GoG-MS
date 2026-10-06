@@ -249,4 +249,5 @@ export const FLAG_CONFIG: Record<string, { label: string; emoji: string; color: 
     meetingAbsent: { label: "Meeting Absent", emoji: "⚫", color: "text-zinc-300 bg-zinc-700/50 border-zinc-600/30", dotColor: "bg-zinc-800 border border-zinc-700" },
     performance: { label: "Performance", emoji: "🔵", color: "text-blue-400 bg-blue-500/10 border-blue-500/20", dotColor: "bg-blue-400" },
     absent: { label: "Absent", emoji: "❌", color: "text-red-500 bg-red-500/10 border-red-500/20", dotColor: "bg-red-500" },
+    shortLeave: { label: "Short Leave", emoji: "⏱️", color: "text-blue-400 bg-blue-500/10 border-blue-500/20", dotColor: "bg-blue-400" },
 };

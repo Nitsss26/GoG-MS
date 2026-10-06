@@ -123,6 +123,11 @@ export default function LQRPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ reportId, mode, force: true })
             });
+            
+            if (!analRes.headers.get("content-type")?.includes("application/json")) {
+                throw new Error(`Server returned an invalid response (Status ${analRes.status}). This might be a timeout or server crash.`);
+            }
+            
             const analData = await analRes.json();
             if (!analData.success) throw new Error(analData.error || "Analysis failed");
 

@@ -29,7 +29,7 @@ import {
 import { CUSTOM_SCHEDULE_RULES, FALLBACK_TIMINGS, isThirdSaturday } from '@/lib/attendance-config';
 
 // ─── TYPES ───
-export type Role = "FOUNDER" | "HR" | "AD" | "TL" | "HOI" | "OM" | "FACULTY" | "PROFESSOR" | "MARKETING_TEAM" | "TECH_TEAM";
+export type Role = "FOUNDER" | "HR" | "AD" | "TL" | "HOI" | "OM" | "FACULTY" | "PROFESSOR" | "MARKETING_TEAM" | "TECH_TEAM" | "CURRICULUM_HEAD" | "CURRICULUM_LEAD";
 
 export interface PortalNotification {
     id: string; from: string; fromName: string; to: string; toName: string;
@@ -282,7 +282,7 @@ export interface AdditionalResponsibility {
     points: number;
 }
 export interface OrgNode {
-    id: string; name: string; designation: string; level: "C-Suite" | "Management" | "Leadership" | "OM" | "Faculty";
+    id: string; name: string; designation: string; level: "C-Suite" | "Management" | "Leadership" | "OM" | "Faculty" | "CurriculumHead" | "CurriculumLead";
     parentId?: string; photoInitial: string; dept: string;
 }
 // ─── LEGACY INTERFACES (for backward compat) ───
@@ -958,8 +958,8 @@ interface AuthContextType {
     editNotice: (id: string, data: { title?: string; content?: string; category?: Notice["category"] }) => Promise<void>;
     markAnnouncementRead: (noticeId: string) => void;
     updateProfile: (data: Partial<Employee>) => void; // Added updateProfile
-    clockIn: (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number) => Promise<void>;
-    clockOut: (time: string) => Promise<void>;
+    clockIn: (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number, isShortLeave?: boolean) => Promise<void>;
+    clockOut: (time: string, isShortLeave?: boolean) => Promise<void>;
     raiseTicket: (targetCategory: string, subject: string, content: string, routeTo?: string, cc?: string[], proofUrls?: string[], targetEmployeeId?: string, targetDate?: string) => Promise<void>;
     resolveTicket: (id: string, notes: string) => Promise<void>;
     addADRemarks: (id: string, remarks: string) => Promise<void>;
@@ -1064,6 +1064,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .map(emp => {
                 let level: OrgNode["level"] = "Faculty"; // Default
                 if (emp.role === "FOUNDER") level = "C-Suite";
+                else if (emp.role === "CURRICULUM_HEAD") level = "CurriculumHead";
+                else if (emp.role === "CURRICULUM_LEAD") level = "CurriculumLead";
                 else if (emp.role === "AD" || emp.role === "HR" || emp.role === "TL") level = "Management";
                 else if (emp.role === "HOI") level = "Leadership";
                 else if (emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM") level = "OM";
@@ -1423,11 +1425,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             const isReportee = e.reportsTo && (Array.isArray(e.reportsTo) ? e.reportsTo.includes(managerId) : e.reportsTo === managerId);
 
+            if (manager.role === "CURRICULUM_HEAD") {
+                return ["CURRICULUM_LEAD", "FACULTY", "PROFESSOR"].includes(e.role);
+            }
+            if (manager.role === "CURRICULUM_LEAD") {
+                return ["FACULTY", "PROFESSOR"].includes(e.role);
+            }
             if (manager.role === "HR") {
-                return ["AD", "HOI", "FACULTY", "PROFESSOR", "OM"].includes(e.role);
+                return ["AD", "HOI", "FACULTY", "PROFESSOR", "OM", "CURRICULUM_HEAD", "CURRICULUM_LEAD"].includes(e.role);
             }
             if (manager.role === "AD") {
-                return ["HOI", "FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(e.role) && isReportee;
+                return ["HOI", "FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM", "CURRICULUM_HEAD", "CURRICULUM_LEAD"].includes(e.role) && isReportee;
             }
             if (manager.role === "HOI") {
                 const isLocationMatch = manager.location && e.location === manager.location;
@@ -1572,7 +1580,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // ─── ATTENDANCE ───
     // ─── ATTENDANCE ───
-    const clockIn = async (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number) => {
+    const clockIn = async (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number, isShortLeave?: boolean) => {
         if (!user) return;
 
         // Founders skip all restrictions
@@ -1619,7 +1627,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const res = await fetch("/api/attendance/clock-in", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ employeeId: user.id, location, time, dressCodeImageUrl, role: user.role, lat, lng })
+                body: JSON.stringify({ employeeId: user.id, location, time, dressCodeImageUrl, role: user.role, lat, lng, isShortLeave })
             });
             const data = await res.json();
             if (data.record) {
@@ -1632,13 +1640,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
-    const clockOut = async (time: string) => {
+    const clockOut = async (time: string, isShortLeave?: boolean) => {
         if (!user) return;
         try {
             await fetch("/api/attendance/clock-out", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ employeeId: user.id, time })
+                body: JSON.stringify({ employeeId: user.id, time, isShortLeave })
             });
             const today = new Date().toISOString().split("T")[0];
             setAttendanceRecords(prev => prev.map(r =>

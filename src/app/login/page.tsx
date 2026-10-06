@@ -14,6 +14,8 @@ const ROLE_OPTIONS = [
     { key: "OM", label: "Operations Manager / Growth Manager" },
     { key: "MARKETING_TEAM", label: "Marketing Team" },
     { key: "TECH_TEAM", label: "Tech Team" },
+    { key: "CURRICULUM_HEAD", label: "Curriculum Head" },
+    { key: "CURRICULUM_LEAD", label: "Curriculum Lead" },
     { key: "PROFESSOR", label: "Academic Faculty / Professor" },
 ];
 

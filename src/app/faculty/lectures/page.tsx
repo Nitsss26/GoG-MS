@@ -38,6 +38,32 @@ interface Lecture {
         keywords?: string;
         aiAnalysisAt?: string;
         status?: string;
+        actualInTime?: string;
+        actualOutTime?: string;
+        isLate?: boolean;
+        remarksWhyLate?: string;
+        lectureNotes?: {
+            notesUrl?: string;
+            notesContent?: string;
+            isSharedWithStudents?: boolean;
+            notSharedRemarks?: string;
+            verificationStatus?: string;
+            leadRemarks?: string;
+        };
+        assignment?: {
+            hasAssignment?: boolean;
+            title?: string;
+            description?: string;
+            assignmentUrl?: string;
+            deadline?: string;
+            studentsCompletedCount?: number;
+            totalStudentsExpected?: number;
+            verificationStatus?: string;
+            leadRemarks?: string;
+            isSharedInProfGroup?: boolean;
+        };
+        clVerificationStatus?: string;
+        clRemarks?: string;
     } | null;
 }
 
@@ -58,9 +84,24 @@ export default function LecturesPage() {
         reasonForLessAttendance: "",
         topicsCovered: "",
         courseName: "",
+        // Notes
+        notesUrl: "",
+        notesContent: "",
+        isNotesSharedWithStudents: true,
+        notesNotSharedRemarks: "",
+        // Assignment
+        hasAssignment: false,
+        assignmentTitle: "",
+        assignmentDescription: "",
+        assignmentUrl: "",
+        assignmentDeadline: "",
+        studentsCompletedCount: "",
+        totalStudentsExpected: ""
     });
     const [recordingFile, setRecordingFile] = useState<File | null>(null);
     const [photoFile, setPhotoFile] = useState<File | null>(null);
+    const [notesFile, setNotesFile] = useState<File | null>(null);
+    const [assignmentFile, setAssignmentFile] = useState<File | null>(null);
     const [recordingDuration, setRecordingDuration] = useState(0);
     const [uploading, setUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
@@ -114,6 +155,9 @@ export default function LecturesPage() {
         try {
             let recordingUrl = "";
             let classPhotoUrl = "";
+            let notesUrl = reportData.notesUrl;
+            let assignmentUrl = reportData.assignmentUrl;
+
             if (recordingFile) {
                 setUploadLabel("Uploading Recording...");
                 const result = await uploadToCloudinary(recordingFile, (p) => setUploadProgress(p));
@@ -125,6 +169,19 @@ export default function LecturesPage() {
                 const result = await uploadToCloudinary(photoFile, (p) => setUploadProgress(p));
                 classPhotoUrl = result.secure_url;
             }
+            if (notesFile) {
+                setUploadLabel("Uploading Lecture Notes...");
+                setUploadProgress(0);
+                const result = await uploadToCloudinary(notesFile, (p) => setUploadProgress(p));
+                notesUrl = result.secure_url;
+            }
+            if (assignmentFile && reportData.hasAssignment) {
+                setUploadLabel("Uploading Assignment Doc...");
+                setUploadProgress(0);
+                const result = await uploadToCloudinary(assignmentFile, (p) => setUploadProgress(p));
+                assignmentUrl = result.secure_url;
+            }
+
             setUploadLabel("Finalizing Report...");
             setUploadProgress(100);
             const res = await fetch("/api/faculty/lectures", {
@@ -150,13 +207,29 @@ export default function LecturesPage() {
                     recordingDurationSeconds: recordingDuration,
                     sprintPlanId: lec.sprintPlanId,
                     scheduledDuration: lec.scheduledDuration,
+                    // Lecture Notes
+                    notesUrl,
+                    notesContent: reportData.notesContent,
+                    isNotesSharedWithStudents: reportData.isNotesSharedWithStudents,
+                    notesNotSharedRemarks: reportData.notesNotSharedRemarks,
+                    // Assignment
+                    hasAssignment: reportData.hasAssignment,
+                    assignmentTitle: reportData.assignmentTitle,
+                    assignmentDescription: reportData.assignmentDescription,
+                    assignmentUrl,
+                    assignmentDeadline: reportData.assignmentDeadline,
+                    studentsCompletedCount: parseInt(reportData.studentsCompletedCount) || 0,
+                    totalStudentsExpected: parseInt(reportData.totalStudentsExpected) || parseInt(reportData.totalStudents) || 40,
                 })
             });
             if (res.ok) {
-                setMessage({ type: "success", text: "Report submitted successfully!" });
+                setMessage({ type: "success", text: "Report submitted successfully! Sent for Curriculum Lead verification." });
                 setShowReport(null);
                 resetReportForm();
                 fetchLectures();
+            } else {
+                const errData = await res.json();
+                throw new Error(errData.error || "Failed to submit report to database");
             }
         } catch (e: any) {
             setMessage({ type: "error", text: e.message });
@@ -168,9 +241,30 @@ export default function LecturesPage() {
     };
 
     const resetReportForm = () => {
-        setReportData({ numberOfAttendees: "", totalStudents: "", semester: "", issuesFaced: "", reasonForLessAttendance: "", topicsCovered: "", courseName: "" });
+        setReportData({
+            numberOfAttendees: "",
+            totalStudents: "",
+            semester: "",
+            issuesFaced: "",
+            reasonForLessAttendance: "",
+            topicsCovered: "",
+            courseName: "",
+            notesUrl: "",
+            notesContent: "",
+            isNotesSharedWithStudents: true,
+            notesNotSharedRemarks: "",
+            hasAssignment: false,
+            assignmentTitle: "",
+            assignmentDescription: "",
+            assignmentUrl: "",
+            assignmentDeadline: "",
+            studentsCompletedCount: "",
+            totalStudentsExpected: ""
+        });
         setRecordingFile(null);
         setPhotoFile(null);
+        setNotesFile(null);
+        setAssignmentFile(null);
         setRecordingDuration(0);
         setPhotoCoords(null);
     };
@@ -324,13 +418,13 @@ export default function LecturesPage() {
             </div>
 
             {message && (
-                <div className={`flex items-center gap-4 rounded-3xl px-8 py-5 text-sm font-bold backdrop-blur-xl shadow-2xl animate-in fade-in slide-in-from-top-6 duration-500 border-l-4 ${message.type === "success" ? "bg-emerald-500/5 border-emerald-500/50 text-emerald-400" :
-                    message.type === "warning" ? "bg-amber-500/5 border-amber-500/50 text-amber-400" :
-                        "bg-red-500/5 border-red-500/50 text-red-400"
+                <div className={`fixed top-10 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-4 rounded-3xl px-8 py-5 text-sm font-bold backdrop-blur-xl shadow-2xl animate-in fade-in slide-in-from-top-6 duration-500 border-l-4 min-w-[320px] max-w-lg ${message.type === "success" ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-400" :
+                    message.type === "warning" ? "bg-amber-950/80 border-amber-500/50 text-amber-400" :
+                        "bg-red-950/80 border-red-500/50 text-red-400"
                     }`}>
-                    {message.type === "success" ? <CheckCircle2 size={24} /> : <AlertTriangle size={24} />}
-                    <span className="flex-1 tracking-tight">{message.text}</span>
-                    <button onClick={() => setMessage(null)} className="p-2 hover:bg-white/10 rounded-full transition-all">✕</button>
+                    {message.type === "success" ? <CheckCircle2 size={24} className="flex-shrink-0" /> : <AlertTriangle size={24} className="flex-shrink-0" />}
+                    <span className="flex-1 tracking-tight leading-relaxed">{message.text}</span>
+                    <button onClick={() => setMessage(null)} className="p-2 hover:bg-white/10 rounded-full transition-all flex-shrink-0">✕</button>
                 </div>
             )}
 
@@ -425,11 +519,50 @@ export default function LecturesPage() {
                                                 )}
                                             </td>
                                             <td className="py-6 px-6 text-center uppercase tracking-widest text-[10px] font-black">
-                                                <div className={`mx-auto w-fit px-3 py-1.5 rounded-lg border transition-all ${lec.status === "Completed" ? "bg-zinc-800/40 border-zinc-800 text-zinc-600" :
-                                                    "bg-zinc-900 border-zinc-800/50 text-zinc-500"
-                                                    }`}>
-                                                    {lec.status}
-                                                </div>
+                                                {lec.status === "Completed" ? (
+                                                    <div className="flex flex-col items-center gap-1.5">
+                                                        {lec.report?.clVerificationStatus === "Verified" ? (
+                                                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 font-black shadow-[0_0_15px_rgba(16,185,129,0.3)] animate-pulse">
+                                                                <CheckCircle2 size={13} className="text-emerald-400" />
+                                                                <span>Good to Go (CL Verified)</span>
+                                                            </div>
+                                                        ) : lec.report?.clVerificationStatus === "Needs Revision" ? (
+                                                            <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 font-black">
+                                                                <AlertTriangle size={13} />
+                                                                <span>CL Revision Required</span>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 font-bold">
+                                                                <Clock size={13} />
+                                                                <span>Pending CL Check</span>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Notes & Assignment Badges */}
+                                                        <div className="flex items-center gap-1 flex-wrap justify-center text-[8px] font-bold mt-0.5">
+                                                            {lec.report?.lectureNotes?.isSharedWithStudents ? (
+                                                                <span className="text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">Notes Shared</span>
+                                                            ) : (
+                                                                <span className="text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">Notes Not Shared</span>
+                                                            )}
+                                                            {lec.report?.assignment?.hasAssignment && (
+                                                                <span className="text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20">
+                                                                    Assign ({lec.report?.assignment?.studentsCompletedCount || 0} done)
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        {lec.report?.clRemarks && (
+                                                            <div className="text-[8px] text-zinc-400 italic max-w-[150px] truncate" title={lec.report.clRemarks}>
+                                                                CL: {lec.report.clRemarks}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <div className="mx-auto w-fit px-3 py-1.5 rounded-lg border bg-zinc-900 border-zinc-800/50 text-zinc-500 font-bold">
+                                                        {lec.status}
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="py-6 px-6 text-right">
                                                 <div className="flex items-center justify-end gap-2">
@@ -577,44 +710,175 @@ export default function LecturesPage() {
                                                     placeholder="Reason for low attendance..." />
                                             </div>
                                         )}
-                                </div>
+                                                                 {/* Media Validation Grid */}
+                                 <div className="grid grid-cols-2 gap-4">
+                                     <div className="space-y-2">
+                                         <label className="text-[8px] text-zinc-600 font-bold uppercase tracking-widest pl-0.5 flex items-center gap-1.5">
+                                             <Camera size={12} className="text-zinc-500" /> Photo
+                                         </label>
+                                         <div className="relative group/photo">
+                                             <input type="file" accept="image/*"
+                                                 onChange={e => e.target.files?.[0] && handlePhotoSelect(e.target.files[0])}
+                                                 className="hidden" id="photo-upload" />
+                                             <label htmlFor="photo-upload" className="flex items-center gap-3 px-4 py-3 bg-zinc-800/20 border-2 border-dashed border-zinc-800 rounded-xl cursor-pointer hover:border-emerald-500/30 transition-all">
+                                                 {photoFile ? <CheckCircle2 className="text-emerald-500" size={18} /> : <Upload className="text-zinc-700" size={18} />}
+                                                 <span className="text-[9px] font-bold text-zinc-500 uppercase">{photoFile ? "Attached" : "Attach Photo"}</span>
+                                             </label>
+                                             {photoCoords && (
+                                                 <div className="absolute top-1/2 -translate-y-1/2 right-2 flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-full">
+                                                     <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
+                                                 </div>
+                                             )}
+                                         </div>
+                                     </div>
+                                     <div className="space-y-2">
+                                         <label className="text-[8px] text-zinc-600 font-bold uppercase tracking-widest pl-0.5 flex items-center gap-1.5">
+                                             <Mic size={12} className="text-zinc-500" /> Recording
+                                         </label>
+                                         <div className="relative group/audio">
+                                             <input type="file" accept="audio/*,video/*"
+                                                 onChange={e => e.target.files?.[0] && handleRecordingSelect(e.target.files[0])}
+                                                 className="hidden" id="audio-upload" />
+                                             <label htmlFor="audio-upload" className="flex items-center gap-3 px-4 py-3 bg-zinc-800/20 border-2 border-dashed border-zinc-800 rounded-xl cursor-pointer hover:border-emerald-500/30 transition-all">
+                                                 {recordingFile ? <CheckCircle2 className="text-emerald-500" size={18} /> : <Mic className="text-zinc-700" size={18} />}
+                                                 <span className="text-[9px] font-bold text-zinc-500 uppercase">{recordingFile ? "Ready" : "Upload File"}</span>
+                                             </label>
+                                         </div>
+                                     </div>
+                                 </div>
 
-                                {/* Media Validation Grid */}
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-[8px] text-zinc-600 font-bold uppercase tracking-widest pl-0.5 flex items-center gap-1.5">
-                                            <Camera size={12} className="text-zinc-500" /> Photo
-                                        </label>
-                                        <div className="relative group/photo">
-                                            <input type="file" accept="image/*"
-                                                onChange={e => e.target.files?.[0] && handlePhotoSelect(e.target.files[0])}
-                                                className="hidden" id="photo-upload" />
-                                            <label htmlFor="photo-upload" className="flex items-center gap-3 px-4 py-3 bg-zinc-800/20 border-2 border-dashed border-zinc-800 rounded-xl cursor-pointer hover:border-emerald-500/30 transition-all">
-                                                {photoFile ? <CheckCircle2 className="text-emerald-500" size={18} /> : <Upload className="text-zinc-700" size={18} />}
-                                                <span className="text-[9px] font-bold text-zinc-500 uppercase">{photoFile ? "Attached" : "Attach Photo"}</span>
-                                            </label>
-                                            {photoCoords && (
-                                                <div className="absolute top-1/2 -translate-y-1/2 right-2 flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-full">
-                                                    <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[8px] text-zinc-600 font-bold uppercase tracking-widest pl-0.5 flex items-center gap-1.5">
-                                            <Mic size={12} className="text-zinc-500" /> Recording
-                                        </label>
-                                        <div className="relative group/audio">
-                                            <input type="file" accept="audio/*,video/*"
-                                                onChange={e => e.target.files?.[0] && handleRecordingSelect(e.target.files[0])}
-                                                className="hidden" id="audio-upload" />
-                                            <label htmlFor="audio-upload" className="flex items-center gap-3 px-4 py-3 bg-zinc-800/20 border-2 border-dashed border-zinc-800 rounded-xl cursor-pointer hover:border-emerald-500/30 transition-all">
-                                                {recordingFile ? <CheckCircle2 className="text-emerald-500" size={18} /> : <Mic className="text-zinc-700" size={18} />}
-                                                <span className="text-[9px] font-bold text-zinc-500 uppercase">{recordingFile ? "Ready" : "Upload File"}</span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
+                                 {/* NEW: Lecture Notes & Sharing */}
+                                 <div className="bg-zinc-950/40 rounded-2xl p-5 border border-zinc-800/80 space-y-4">
+                                     <div className="flex items-center justify-between">
+                                         <h4 className="text-[9px] font-black text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
+                                             <BookOpen size={12} className="text-teal-400" /> Lecture Notes (Checked by CL)
+                                         </h4>
+                                     </div>
+
+                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                         <div className="space-y-1">
+                                             <label className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Attach Notes File</label>
+                                             <input
+                                                 type="file"
+                                                 onChange={e => setNotesFile(e.target.files?.[0] || null)}
+                                                 className="text-[10px] text-zinc-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[9px] file:font-black file:bg-teal-500/20 file:text-teal-300 hover:file:bg-teal-500/30 cursor-pointer"
+                                             />
+                                         </div>
+                                         <div className="space-y-1">
+                                             <label className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Or Notes Link / URL</label>
+                                             <input
+                                                 type="url"
+                                                 value={reportData.notesUrl}
+                                                 onChange={e => setReportData(p => ({ ...p, notesUrl: e.target.value }))}
+                                                 placeholder="https://drive.google.com/..."
+                                                 className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-white outline-none focus:border-teal-500/50"
+                                             />
+                                         </div>
+                                     </div>
+
+                                     {/* Notes Sharing Tick Mark */}
+                                     <div className="pt-2 border-t border-zinc-800/50 space-y-2">
+                                         <label className="flex items-center gap-2 cursor-pointer">
+                                             <input
+                                                 type="checkbox"
+                                                 checked={reportData.isNotesSharedWithStudents}
+                                                 onChange={e => setReportData(p => ({ ...p, isNotesSharedWithStudents: e.target.checked }))}
+                                                 className="w-4 h-4 rounded text-teal-500 focus:ring-0 cursor-pointer"
+                                             />
+                                             <span className="text-xs font-bold text-zinc-200">
+                                                 Lecture notes have been shared to the students
+                                             </span>
+                                         </label>
+
+                                         {!reportData.isNotesSharedWithStudents && (
+                                             <div className="animate-in slide-in-from-top-2 duration-300">
+                                                 <label className="text-[8px] text-amber-500 font-black uppercase tracking-widest">Reason why notes were not shared (Required for CL/OM check):</label>
+                                                 <textarea
+                                                     value={reportData.notesNotSharedRemarks}
+                                                     onChange={e => setReportData(p => ({ ...p, notesNotSharedRemarks: e.target.value }))}
+                                                     placeholder="Explain why notes were not shared to students today..."
+                                                     className="w-full px-3 py-2 bg-amber-500/[0.04] border border-amber-500/30 rounded-lg text-xs text-zinc-200 placeholder:text-zinc-600 outline-none h-16 resize-none mt-1"
+                                                 />
+                                             </div>
+                                         )}
+                                     </div>
+                                 </div>
+
+                                 {/* NEW: Assignment Section (Optional / Saturday) */}
+                                 <div className="bg-zinc-950/40 rounded-2xl p-5 border border-zinc-800/80 space-y-4">
+                                     <div className="flex items-center justify-between">
+                                         <div className="flex items-center gap-2">
+                                             <input
+                                                 type="checkbox"
+                                                 id="has-assignment-toggle"
+                                                 checked={reportData.hasAssignment}
+                                                 onChange={e => setReportData(p => ({ ...p, hasAssignment: e.target.checked }))}
+                                                 className="w-4 h-4 rounded text-purple-500 cursor-pointer"
+                                             />
+                                             <label htmlFor="has-assignment-toggle" className="text-xs font-black text-purple-300 uppercase tracking-wider cursor-pointer">
+                                                 Add Assignment to this Lecture (Optional / Saturday)
+                                             </label>
+                                         </div>
+                                         <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Verified by CL</span>
+                                     </div>
+
+                                     {reportData.hasAssignment && (
+                                         <div className="space-y-3 pt-2 border-t border-purple-500/20 animate-in slide-in-from-top-2 duration-300">
+                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                 <div className="space-y-1">
+                                                     <label className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Assignment Title</label>
+                                                     <input
+                                                         type="text"
+                                                         value={reportData.assignmentTitle}
+                                                         onChange={e => setReportData(p => ({ ...p, assignmentTitle: e.target.value }))}
+                                                         placeholder="e.g. Implement Doubly Linked List"
+                                                         className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-white outline-none focus:border-purple-500/50"
+                                                     />
+                                                 </div>
+                                                 <div className="space-y-1">
+                                                     <label className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Submission Deadline</label>
+                                                     <input
+                                                         type="date"
+                                                         value={reportData.assignmentDeadline}
+                                                         onChange={e => setReportData(p => ({ ...p, assignmentDeadline: e.target.value }))}
+                                                         className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-white outline-none focus:border-purple-500/50"
+                                                     />
+                                                 </div>
+                                             </div>
+
+                                             <div className="space-y-1">
+                                                 <label className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Assignment Details / Instructions</label>
+                                                 <textarea
+                                                     value={reportData.assignmentDescription}
+                                                     onChange={e => setReportData(p => ({ ...p, assignmentDescription: e.target.value }))}
+                                                     placeholder="Specific instructions or problem statements..."
+                                                     className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-white outline-none h-16 resize-none"
+                                                 />
+                                             </div>
+
+                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                 <div className="space-y-1">
+                                                     <label className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Attach Assignment File</label>
+                                                     <input
+                                                         type="file"
+                                                         onChange={e => setAssignmentFile(e.target.files?.[0] || null)}
+                                                         className="text-[10px] text-zinc-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[9px] file:font-black file:bg-purple-500/20 file:text-purple-300 hover:file:bg-purple-500/30 cursor-pointer"
+                                                     />
+                                                 </div>
+                                                 <div className="space-y-1">
+                                                     <label className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Students Completed / Responded</label>
+                                                     <input
+                                                         type="number"
+                                                         value={reportData.studentsCompletedCount}
+                                                         onChange={e => setReportData(p => ({ ...p, studentsCompletedCount: e.target.value }))}
+                                                         placeholder="Count of students completed"
+                                                         className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs font-bold text-white outline-none focus:border-purple-500/50"
+                                                     />
+                                                 </div>
+                                             </div>
+                                         </div>
+                                     )}
+                                 </div>    </div>
                             </div>
                         </div>
 

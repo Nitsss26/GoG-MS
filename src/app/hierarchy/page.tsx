@@ -199,6 +199,8 @@ function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: Or
     if (overrideRoot && node.id === overrideRoot[0].id) {
         const leadershipNodes = allNodes.filter(n => n.level === "Management");
         const hoiNodes = allNodes.filter(n => n.level === "Leadership");
+        const curriculumHeadNodes = allNodes.filter(n => n.level === "CurriculumHead");
+        const curriculumLeadNodes = allNodes.filter(n => n.level === "CurriculumLead");
 
         // --- MATRIX AGGREGATION ---
         // All OMs and Faculty report to ALL HOIs now
@@ -323,6 +325,44 @@ function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: Or
                         })}
                     </div>
                 )}
+                {/* Curriculum Academic Leadership: Curriculum Head -> Curriculum Lead -> Faculties */}
+                <div className="flex flex-col items-center gap-6 pt-6 border-t border-zinc-800/60 w-full relative">
+                    <div className="px-4 py-1.5 rounded-full bg-teal-500/10 border border-teal-500/30 text-teal-400 text-[9px] font-black uppercase tracking-[0.25em] shadow-[0_0_15px_rgba(20,184,166,0.3)]">
+                        Curriculum Academic Wing (Head → Lead → Faculty & Professors)
+                    </div>
+                    <div className="flex flex-wrap gap-8 items-start justify-center">
+                        {(curriculumHeadNodes.length > 0 ? curriculumHeadNodes : [{ id: "CH-HEAD", name: "Curriculum Head", designation: "Head of Curriculum", level: "CurriculumHead", dept: "Academic" } as OrgNode]).map(ch => {
+                            const leads = curriculumLeadNodes.length > 0 ? curriculumLeadNodes : [{ id: "CL-LEAD", name: "Curriculum Lead", designation: "Lead Curriculum Specialist", level: "CurriculumLead", dept: "Academic" } as OrgNode];
+                            return (
+                                <div key={ch.id} className="flex flex-col items-center gap-6">
+                                    <NodeCard node={ch} />
+                                    <div className="w-[3px] h-8 bg-teal-500/50" />
+                                    <div className="flex flex-wrap gap-6 items-start justify-center">
+                                        {leads.map(lead => {
+                                            const faculties = allNodes.filter(f => f.level === "Faculty");
+                                            return (
+                                                <div key={lead.id} className="flex flex-col items-center gap-4">
+                                                    <NodeCard node={lead} />
+                                                    <div className="w-[3px] h-6 bg-emerald-500/40" />
+                                                    <div className="border border-emerald-500/20 bg-emerald-500/5 rounded-2xl p-3 pt-6 relative flex flex-col items-center min-w-[150px]">
+                                                        <div className="absolute -top-2 px-2 py-0.5 bg-zinc-950 border border-emerald-500/30 text-emerald-400 text-[8px] font-black uppercase tracking-widest rounded-lg">
+                                                            Faculty & Professors
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
+                                                            {faculties.slice(0, 6).map(f => (
+                                                                <NodeCard key={f.id} node={f} isCompact />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
             </div>
         );
     }
@@ -345,12 +385,16 @@ function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
         "Management": "from-blue-400/30 to-blue-600/30 border-blue-500/40 text-blue-400",
         "Leadership": "from-purple-400/30 to-purple-600/30 border-purple-500/40 text-purple-400",
         "GrowthManager": "from-orange-400/40 to-orange-600/40 border-orange-500/60 text-orange-400 shadow-[0_0_20px_rgba(249,115,22,0.4)]",
+        "CurriculumHead": "from-teal-400/30 to-teal-600/30 border-teal-500/50 text-teal-400",
+        "CurriculumLead": "from-emerald-400/30 to-emerald-600/30 border-emerald-500/50 text-emerald-400",
         "OM": "from-indigo-400/30 to-indigo-600/30 border-indigo-500/40 text-indigo-400",
         "Faculty": "from-rose-400/30 to-pink-600/30 border-rose-500/40 text-rose-400"
     };
 
     const levelIcon = {
         "C-Suite": <Star size={10} />,
+        "CurriculumHead": <GraduationCap size={10} />,
+        "CurriculumLead": <BookOpen size={10} />,
         "Management": <Shield size={10} />,
         "Leadership": <Briefcase size={10} />,
         "OM": <Network size={10} />,
@@ -365,8 +409,10 @@ function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
                 isCompact ? "p-1 sm:p-2 border-zinc-800" : "p-2 sm:p-3 border-zinc-800/80 hover:border-primary/50",
                 node.level === "C-Suite" ? "animate-[pulse_3s_infinite] border-amber-500/60 shadow-[0_0_30px_rgba(245,158,11,0.6)] ring-1 ring-amber-500/30" :
                     node.designation === "Growth Manager" ? "border-orange-500/60 shadow-[0_0_30px_rgba(249,115,22,0.6)] ring-1 ring-orange-500/30 font-black" :
-                        node.level === "Management" ? "border-blue-500/50 shadow-[0_0_30px_rgba(59,130,246,0.6)] ring-1 ring-blue-500/20" :
-                            node.level === "Leadership" ? "border-purple-500/50 shadow-[0_0_30px_rgba(139,92,246,0.6)] ring-1 ring-purple-500/20" : ""
+                        node.level === "CurriculumHead" ? "border-teal-500/60 shadow-[0_0_25px_rgba(20,184,166,0.5)] ring-1 ring-teal-500/30" :
+                            node.level === "CurriculumLead" ? "border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.4)] ring-1 ring-emerald-500/20" :
+                                node.level === "Management" ? "border-blue-500/50 shadow-[0_0_30px_rgba(59,130,246,0.6)] ring-1 ring-blue-500/20" :
+                                    node.level === "Leadership" ? "border-purple-500/50 shadow-[0_0_30px_rgba(139,92,246,0.6)] ring-1 ring-purple-500/20" : ""
             )}
         >
             <div className={cn(

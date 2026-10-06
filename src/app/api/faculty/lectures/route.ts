@@ -148,17 +148,31 @@ export async function POST(req: Request) {
     try {
         await dbConnect();
         const body = await req.json();
-        const { facultyId, date, lectureNumber, courseName, topicsCovered, stream, year, semester,
+        let { facultyId, date, lectureNumber, courseName, topicsCovered, stream, year, semester,
             numberOfAttendees, totalStudents, issuesFaced, reasonForLessAttendance,
             classPhotoUrl, classPhotoLat, classPhotoLng,
-            recordingUrl, recordingDurationSeconds, sprintPlanId, scheduledDuration } = body;
+            recordingUrl, recordingDurationSeconds, sprintPlanId, scheduledDuration,
+            // Notes & Assignment additions
+            notesUrl, notesContent, isNotesSharedWithStudents, notesNotSharedRemarks,
+            hasAssignment, assignmentTitle, assignmentDescription, assignmentUrl, assignmentDeadline,
+            studentsCompletedCount, totalStudentsExpected } = body;
 
-        if (!facultyId || !courseName || !topicsCovered) {
-            return NextResponse.json({ error: "facultyId, courseName, topicsCovered required" }, { status: 400 });
+        if (!facultyId) {
+            return NextResponse.json({ error: "facultyId is required" }, { status: 400 });
         }
 
-        const faculty = await Employee.findOne({ id: facultyId });
-        if (!faculty) return NextResponse.json({ error: "Faculty not found" }, { status: 404 });
+        // Provide defaults if missing
+        courseName = courseName || "Unknown Subject";
+        topicsCovered = topicsCovered || "General Topics";
+
+        let faculty = await Employee.findOne({ id: facultyId });
+        if (!faculty) {
+            // Also accept if they passed _id instead of id
+            faculty = await Employee.findById(facultyId).catch(() => null);
+            if (!faculty) {
+                return NextResponse.json({ error: "Faculty not found in database" }, { status: 404 });
+            }
+        }
 
         // Use provided date or default to today IST
         const now = new Date();
@@ -219,6 +233,28 @@ export async function POST(req: Request) {
                     recordingDurationSeconds,
                     actualDurationMinutes: Math.round((recordingDurationSeconds || 0) / 60),
                     sprintPlanId: sprintPlanId || "",
+                    // Lecture Notes
+                    lectureNotes: {
+                        notesUrl: notesUrl || "",
+                        notesContent: notesContent || "",
+                        isSharedWithStudents: Boolean(isNotesSharedWithStudents),
+                        sharedWithStudentsTickedBy: faculty.name,
+                        notSharedRemarks: notesNotSharedRemarks || "",
+                        verificationStatus: "Pending"
+                    },
+                    // Assignment (Optional)
+                    assignment: {
+                        hasAssignment: Boolean(hasAssignment),
+                        title: assignmentTitle || "",
+                        description: assignmentDescription || "",
+                        assignmentUrl: assignmentUrl || "",
+                        deadline: assignmentDeadline || "",
+                        studentsCompletedCount: parseInt(studentsCompletedCount) || 0,
+                        totalStudentsExpected: parseInt(totalStudentsExpected) || totalCount,
+                        verificationStatus: hasAssignment ? "Pending" : "Approved",
+                        isSharedInProfGroup: false
+                    },
+                    clVerificationStatus: "Pending",
                     status: "Completed",
                     auditStatus: "Pending",
                     warnings

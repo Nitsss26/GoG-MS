@@ -6,7 +6,7 @@ import { getExpectedTimingInternal } from '@/lib/attendance-utils';
 export async function POST(req: Request) {
     try {
         await dbConnect();
-        const { employeeId, time, date: overrideDate } = await req.json();
+        const { employeeId, time, date: overrideDate, isShortLeave } = await req.json();
         const now = new Date();
         const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
         const istTime = new Date(istString);
@@ -51,14 +51,17 @@ export async function POST(req: Request) {
         const isEarly = outTotalMins < schedTotalMins;
         const points = isEarly ? -5 : 2;
 
+        let updateFields: any = {
+            clockOut: time,
+            "flags.earlyOut": overrideDate ? false : isEarly
+        };
+        if (isShortLeave) {
+            updateFields["flags.shortLeave"] = true;
+        }
+
         const record = await Attendance.findOneAndUpdate(
             { employeeId, date: today },
-            {
-                $set: {
-                    clockOut: time,
-                    "flags.earlyOut": overrideDate ? false : isEarly
-                }
-            },
+            { $set: updateFields },
             { new: true }
         );
 

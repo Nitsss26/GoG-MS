@@ -1,6 +1,6 @@
 const { MongoClient } = require('mongodb');
 
-const uri = 'mongodb+srv://mlrd:mlrdtestdb@cluster0.yzhly.mongodb.net/GoG-MS';
+const uri = 'mongoDB_URI';
 const client = new MongoClient(uri);
 
 async function run() {

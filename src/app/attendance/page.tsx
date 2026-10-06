@@ -370,7 +370,25 @@ export default function AttendancePage() {
         if (!withinRadius) { setClockInError(`Out of range (${distanceKm} km).`); return; }
         if (!dressCodeUrl) { setClockInError("Upload dress code photo first."); return; }
         const timeNow = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
-        clockIn(activeLocation || displayLocation, timeNow, dressCodeUrl, userLat ?? undefined, userLng ?? undefined);
+        
+        let isShortLeave = false;
+        const locLower = (activeLocation || displayLocation || "").toLowerCase();
+        const isTargetLoc = locLower.includes("kokta") || locLower.includes("indore") || locLower.includes("mandideep") || locLower.includes("sdbc");
+        
+        if (isTargetLoc) {
+            const timeToMins = (t: string) => {
+                const [h, m] = t.split(':').map(Number);
+                return h * 60 + m;
+            };
+            const nowMins = timeToMins(timeNow);
+            const startMins = timeToMins(assignedClockIn);
+            if (nowMins > startMins) {
+                const confirmed = window.confirm("You are clocking in late. Are you on short leave?");
+                isShortLeave = confirmed;
+            }
+        }
+        
+        clockIn(activeLocation || displayLocation, timeNow, dressCodeUrl, userLat ?? undefined, userLng ?? undefined, isShortLeave);
     };
 
     const handleMarkAsPresent = () => {
@@ -396,7 +414,24 @@ export default function AttendancePage() {
     const handleCheckOut = () => {
         if (hasCheckedIn && !hasCheckedOut) {
             const timeNow = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
-            clockOut(timeNow);
+            let isShortLeave = false;
+            const locLower = (activeLocation || displayLocation || todaysRecord?.location || "").toLowerCase();
+            const isTargetLoc = locLower.includes("kokta") || locLower.includes("indore") || locLower.includes("mandideep") || locLower.includes("sdbc");
+            
+            if (isTargetLoc) {
+                const timeToMins = (t: string) => {
+                    const [h, m] = t.split(':').map(Number);
+                    return h * 60 + m;
+                };
+                const nowMins = timeToMins(timeNow);
+                const outMins = timeToMins(assignedClockOut);
+                if (nowMins < outMins) {
+                    const confirmed = window.confirm("You are clocking out early. Are you on short leave?");
+                    isShortLeave = confirmed;
+                }
+            }
+
+            clockOut(timeNow, isShortLeave);
         }
     };
 

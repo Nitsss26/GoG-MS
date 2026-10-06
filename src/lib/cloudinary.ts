@@ -81,17 +81,24 @@ export async function uploadToCloudinary(
     formData.append("file", file);
     formData.append("upload_preset", UPLOAD_PRESET);
 
-    const res = await axios.post(CLOUDINARY_UPLOAD_URL, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        onUploadProgress: (progressEvent) => {
-            if (onProgress && progressEvent.total) {
-                const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-                onProgress(percentCompleted);
-            }
-        },
-    });
-
-    return res.data;
+    try {
+        const res = await axios.post(CLOUDINARY_UPLOAD_URL, formData, {
+            headers: { "Content-Type": "multipart/form-data" },
+            onUploadProgress: (progressEvent) => {
+                if (onProgress && progressEvent.total) {
+                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                    onProgress(percentCompleted);
+                }
+            },
+        });
+        return res.data;
+    } catch (cloudinaryError: any) {
+        let errorMsg = cloudinaryError.message;
+        if (cloudinaryError.response?.data?.error?.message) {
+            errorMsg = cloudinaryError.response.data.error.message;
+        }
+        throw new Error(`Upload to AWS failed (CORS/Permissions). Fallback to Cloudinary also failed: ${errorMsg}`);
+    }
 }
 
 /**

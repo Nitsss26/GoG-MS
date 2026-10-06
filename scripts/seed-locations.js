@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 // MongoDB Connection
-const MONGODB_URI = "mongodb+srv://mlrd:mlrdtestdb@cluster0.yzhly.mongodb.net/GoG-MS";
+const MONGODB_URI = "mongoDB_URI";
 
 const locationSchema = new mongoose.Schema({
     id: String,
