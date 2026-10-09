@@ -5,6 +5,7 @@ import { useAuth, Role } from "@/context/AuthContext";
 import type { Employee } from "@/context/AuthContext";
 import RemoveEmployeeDialog from "@/components/RemoveEmployeeDialog";
 import ResetPasswordDialog from "@/components/ResetPasswordDialog";
+import EmployeeProfileDialog, { EmployeeMailDialog } from "@/components/EmployeeProfileDialog";
 import { Search, Mail, Phone, MapPin, Download, Plus, ShieldAlert, FileText, Filter, X, ShieldCheck, UserX, KeyRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -20,6 +21,8 @@ export default function EmployeesPage() {
     const [showModal, setShowModal] = useState(false);
     const [employeeToRemove, setEmployeeToRemove] = useState<Employee | null>(null);
     const [employeeToReset, setEmployeeToReset] = useState<Employee | null>(null);
+    const [mailFor, setMailFor] = useState<Employee | null>(null);
+    const [profileFor, setProfileFor] = useState<Employee | null>(null);
     // College names for the Location column (employees store the location id)
     const [locationNames, setLocationNames] = useState<Record<string, string>>({});
     useEffect(() => {
@@ -186,8 +189,8 @@ export default function EmployeesPage() {
                                         </td>
                                         <td className="px-3 py-3.5 text-right sticky right-0 bg-surface group-hover:bg-surface-light transition-colors">
                                             <div className="flex items-center justify-end gap-1.5">
-                                                <button className="h-8 w-7 flex items-center justify-center bg-surface-light border border-border rounded-lg hover:text-primary transition-colors"><Mail size={12} /></button>
-                                                <button className="h-8 w-7 flex items-center justify-center bg-surface-light border border-border rounded-lg hover:text-primary transition-colors"><FileText size={12} /></button>
+                                                <button onClick={() => setMailFor(emp)} title="Show email" data-testid="emp-mail" className="h-8 w-7 flex items-center justify-center bg-surface-light border border-border rounded-lg hover:text-primary transition-colors"><Mail size={12} /></button>
+                                                <button onClick={() => setProfileFor(emp)} title="View full profile" data-testid="emp-profile" className="h-8 w-7 flex items-center justify-center bg-surface-light border border-border rounded-lg hover:text-primary transition-colors"><FileText size={12} /></button>
                                                 {(user.role === "HR" || user.role === "FOUNDER") && emp.id !== user.id && (emp.role !== "FOUNDER" || user.role === "FOUNDER") && (
                                                     <button onClick={() => setEmployeeToReset(emp)} title="Reset Password" className="h-8 px-2 flex items-center justify-center gap-1 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 hover:bg-amber-500/20 transition-colors text-[10px] font-bold whitespace-nowrap"><KeyRound size={12} /> Reset</button>
                                                 )}
@@ -264,6 +267,8 @@ export default function EmployeesPage() {
 
             {/* HR: Reset Password (hash saved on the server, temporary password shown once) */}
             {employeeToReset && <ResetPasswordDialog employee={employeeToReset} onClose={() => setEmployeeToReset(null)} />}
+            {mailFor && <EmployeeMailDialog emp={mailFor} onClose={() => setMailFor(null)} />}
+            {profileFor && <EmployeeProfileDialog emp={profileFor} employees={employees} locName={locName} viewerRole={user.role} onClose={() => setProfileFor(null)} />}
         </div>
     );
 }

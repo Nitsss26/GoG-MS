@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
-import { LectureReport, Employee } from '@/models/Schemas';
+import { LectureReport } from '@/models/Schemas';
+import { resolveManager, academicReportees } from '@/lib/manager-reportees';
 
 export async function GET(req: Request) {
     try {
@@ -10,26 +11,14 @@ export async function GET(req: Request) {
         const startDate = searchParams.get('startDate');
         const endDate = searchParams.get('endDate');
 
-        if (!managerId) return NextResponse.json({ error: "managerId required" }, { status: 400 });
 
-        // 1. Find the manager
-        const manager = await Employee.findOne({ id: managerId });
-        if (!manager) return NextResponse.json({ error: "Manager not found" }, { status: 404 });
+        // The logged-in manager (see src/lib/manager-reportees.ts)
+        const who = await resolveManager(managerId);
+        if ('error' in who) return NextResponse.json({ error: who.error }, { status: who.status });
+        const manager = who.manager;
 
         // 2. Find reportees (Same logic as academic-data/route.ts)
-        let reportees;
-        if (["AD", "FOUNDER"].includes(manager.role)) {
-            reportees = await Employee.find({ role: { $in: ["FACULTY", "PROFESSOR"] } });
-        } else {
-            const matchingConditions: any[] = [
-                { reportsTo: managerId },
-                { reportsTo: { $in: [managerId] } }
-            ];
-            if (manager.role === "HOI" && manager.location) {
-                matchingConditions.push({ location: manager.location });
-            }
-            reportees = await Employee.find({ $or: matchingConditions });
-        }
+        const reportees: any[] = await academicReportees(manager);
         const reporteeIds = reportees.map(r => r.id);
 
         if (reporteeIds.length === 0) {

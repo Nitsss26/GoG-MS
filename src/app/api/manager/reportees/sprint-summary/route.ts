@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
-import { SprintPlan, Employee } from '@/models/Schemas';
+import { SprintPlan } from '@/models/Schemas';
+import { resolveManager, academicReportees } from '@/lib/manager-reportees';
 
 export async function GET(req: Request) {
     try {
@@ -8,7 +9,6 @@ export async function GET(req: Request) {
         const { searchParams } = new URL(req.url);
         const managerId = searchParams.get('managerId');
 
-        if (!managerId) return NextResponse.json({ error: "managerId required" }, { status: 400 });
 
         const now = new Date();
         const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
@@ -32,23 +32,12 @@ export async function GET(req: Request) {
         const currentMondayStr = formatDate(currentMonday);
         const nextMondayStr = formatDate(nextMonday);
 
-        // Get reportees
-        const manager = await Employee.findOne({ id: managerId });
-        if (!manager) return NextResponse.json({ error: "Manager not found" }, { status: 404 });
+        // The logged-in manager (see src/lib/manager-reportees.ts)
+        const who = await resolveManager(managerId);
+        if ('error' in who) return NextResponse.json({ error: who.error }, { status: who.status });
+        const manager = who.manager;
 
-        let reportees;
-        if (["AD", "FOUNDER"].includes(manager.role)) {
-            reportees = await Employee.find({ role: { $in: ["FACULTY", "PROFESSOR"] } });
-        } else {
-            const matchingConditions: any[] = [
-                { reportsTo: managerId },
-                { reportsTo: { $in: [managerId] } }
-            ];
-            if (manager.role === "HOI" && manager.location) {
-                matchingConditions.push({ location: manager.location });
-            }
-            reportees = await Employee.find({ $or: matchingConditions });
-        }
+        const reportees: any[] = await academicReportees(manager);
         const reporteeIds = reportees.map(r => r.id);
 
         // Find plans for current and next week

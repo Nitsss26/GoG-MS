@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
-import { SprintPlan, LectureReport, Employee } from '@/models/Schemas';
+import { SprintPlan, LectureReport } from '@/models/Schemas';
+import { resolveManager, academicReportees } from '@/lib/manager-reportees';
 
 export async function GET(req: Request) {
     try {
@@ -9,33 +10,17 @@ export async function GET(req: Request) {
         const managerId = searchParams.get('managerId');
         const weekStartDate = searchParams.get('weekStartDate');
 
-        if (!managerId) return NextResponse.json({ error: "managerId required" }, { status: 400 });
 
-        // 1. Find the manager to check their role and location
-        const manager = await Employee.findOne({ id: managerId });
-        if (!manager) return NextResponse.json({ error: "Manager not found" }, { status: 404 });
+        // The logged-in manager (see src/lib/manager-reportees.ts)
+        const who = await resolveManager(managerId);
+        if ('error' in who) return NextResponse.json({ error: who.error }, { status: who.status });
+        const manager = who.manager;
 
         // 2. Find all reportees for this manager
         // Logic: Anyone pointing to them in reportsTo (string or array)
         // AND (if HOI) anyone at their same location
         // AND (if AD/FOUNDER) EVERYONE with role FACULTY or PROFESSOR
-        let reportees;
-
-        if (["AD", "FOUNDER"].includes(manager.role)) {
-            reportees = await Employee.find({ role: { $in: ["FACULTY", "PROFESSOR"] } });
-        } else {
-            const matchingConditions: any[] = [
-                { reportsTo: managerId },
-                { reportsTo: { $in: [managerId] } }
-            ];
-
-            // If manager is an HOI, OM or Team Lead, also include everyone at their location
-            if (["HOI", "OM"].includes(manager.role) && manager.location) {
-                matchingConditions.push({ location: manager.location });
-            }
-
-            reportees = await Employee.find({ $or: matchingConditions });
-        }
+        const reportees: any[] = await academicReportees(manager);
         const reporteeIds = reportees.map(r => r.id);
 
         if (reporteeIds.length === 0) {
