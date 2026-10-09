@@ -9,6 +9,24 @@ const SECRET = process.env.JWT_SECRET || process.env.MONGODB_URI || 'gog-oms-fal
 const COOKIE_NAME = 'gog_session';
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+// Sessions of employees removed from the portal. A signed token cannot be recalled, so the server
+// keeps the removed accounts here and rejects their tokens on every request.
+// Filled when the database connects (primeRevokedSessions) and when HR removes someone (revokeSessionsFor).
+const revokedEmails: Set<string> = ((globalThis as any).__gogRevokedEmails ||= new Set<string>());
+
+export function revokeSessionsFor(email?: string | null) {
+    if (email) revokedEmails.add(String(email).trim().toLowerCase());
+}
+
+export async function primeRevokedSessions(db: any) {
+    try {
+        const removed = await db.collection('employees').find({ isRemoved: true }, { projection: { email: 1 } }).toArray();
+        removed.forEach((e: any) => revokeSessionsFor(e.email));
+    } catch (err) {
+        console.warn("[SESSION] Could not load removed accounts:", err);
+    }
+}
+
 export interface SessionPayload {
     userId: string;
     email: string;
@@ -54,6 +72,9 @@ export function verifySessionToken(token: string): SessionPayload | null {
 
         // Check expiration
         if (payload.exp < Date.now()) return null;
+
+        // Account removed from the portal: the session is no longer valid
+        if (payload.email && revokedEmails.has(String(payload.email).trim().toLowerCase())) return null;
 
         return payload;
     } catch {

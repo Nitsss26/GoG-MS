@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth, Role } from "@/context/AuthContext";
-import { Search, Mail, Phone, MapPin, Download, Plus, ShieldAlert, FileText, Filter, X, ShieldCheck } from "lucide-react";
+import type { Employee } from "@/context/AuthContext";
+import RemoveEmployeeDialog from "@/components/RemoveEmployeeDialog";
+import ResetPasswordDialog from "@/components/ResetPasswordDialog";
+import { Search, Mail, Phone, MapPin, Download, Plus, ShieldAlert, FileText, Filter, X, ShieldCheck, UserX, KeyRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
@@ -15,6 +18,18 @@ export default function EmployeesPage() {
     const [statusFilter, setStatusFilter] = useState("All");
     const [roleFilter, setRoleFilter] = useState("All");
     const [showModal, setShowModal] = useState(false);
+    const [employeeToRemove, setEmployeeToRemove] = useState<Employee | null>(null);
+    const [employeeToReset, setEmployeeToReset] = useState<Employee | null>(null);
+    // College names for the Location column (employees store the location id)
+    const [locationNames, setLocationNames] = useState<Record<string, string>>({});
+    useEffect(() => {
+        fetch("/api/locations").then(r => r.ok ? r.json() : []).then((list: any[]) => {
+            const map: Record<string, string> = {};
+            (Array.isArray(list) ? list : []).forEach(l => { if (l?.id) map[l.id] = l.name || l.id; });
+            setLocationNames(map);
+        }).catch(() => { });
+    }, []);
+    const locName = (v?: string) => (v ? locationNames[v] || v : "—");
     const [formData, setFormData] = useState({
         name: "",
         email: "",
@@ -54,15 +69,19 @@ export default function EmployeesPage() {
         );
     }
 
-    const viewableEmployees = getReportees(user.id);
+    // HR manages the whole workforce (needed to remove any ex-employee from the portal); other roles see their reportees
+    const canRemoveEmployees = user.role === "HR" || user.role === "FOUNDER";
+    const viewableEmployees = user.role === "HR" ? employees : getReportees(user.id);
 
     const categories = ["All", ...new Set(viewableEmployees.map(e => e.dept))];
     const locations = ["All", ...new Set(viewableEmployees.map(e => e.location))];
     const statuses = ["All", "Active", "On Leave", "On Site", "Resigned"];
-    const roleLevels = ["All", "HR", "AD", "HOI", "OM", "TL", "Faculty"];
+    const roleLevels = ["All", "Founder", "HR", "AD", "HOI", "OM", "TL", "CH", "CL", "Marketing", "Tech", "Faculty"];
 
+    // Role shown in the table: the account's real role (older records may carry a managerLevel)
+    const ROLE_LEVEL: Record<string, string> = { FOUNDER: "Founder", HR: "HR", AD: "AD", HOI: "HOI", OM: "OM", TL: "TL", CURRICULUM_HEAD: "CH", CURRICULUM_LEAD: "CL", MARKETING_TEAM: "Marketing", TECH_TEAM: "Tech" };
     const getRoleLevel = (emp: any): string => {
-        if (emp.role === "HR") return "HR";
+        if (ROLE_LEVEL[emp.role]) return ROLE_LEVEL[emp.role];
         if (emp.managerLevel) return emp.managerLevel;
         return "Faculty";
     };
@@ -79,7 +98,7 @@ export default function EmployeesPage() {
     });
 
     return (
-        <div className="p-6 space-y-6 max-w-6xl mx-auto w-full">
+        <div className="p-6 space-y-6 max-w-7xl mx-auto w-full [contain:inline-size]">
             <header className="flex justify-between items-center">
                 <div>
                     <h1 className="text-lg font-bold text-white">Workforce Registry</h1>
@@ -99,12 +118,12 @@ export default function EmployeesPage() {
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
                     <Filter size={12} className="text-muted mr-1" />
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                         <select className="bg-surface-light border border-border rounded-lg px-3 py-1.5 text-[10px] text-white outline-none font-bold" value={activeTab} onChange={e => setActiveTab(e.target.value)}>
                             {categories.map(c => <option key={c} value={c}>Dept: {c}</option>)}
                         </select>
                         <select className="bg-surface-light border border-border rounded-lg px-3 py-1.5 text-[10px] text-white outline-none font-bold" value={locationFilter} onChange={e => setLocationFilter(e.target.value)}>
-                            {locations.map(l => <option key={l} value={l}>Node: {l}</option>)}
+                            {locations.map(l => <option key={l} value={l}>Node: {l === "All" ? "All" : locName(l)}</option>)}
                         </select>
                         <select className="bg-surface-light border border-border rounded-lg px-3 py-1.5 text-[10px] text-white outline-none font-bold" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                             {statuses.map(s => <option key={s} value={s}>State: {s}</option>)}
@@ -122,13 +141,12 @@ export default function EmployeesPage() {
                     <table className="w-full text-left text-xs">
                         <thead>
                             <tr className="border-b border-border text-[9px] text-muted font-bold uppercase tracking-widest">
-                                <th className="px-5 py-4">Employee Node</th>
-                                <th className="px-5 py-4">Contractual ID</th>
-                                <th className="px-5 py-4">Department</th>
-                                <th className="px-5 py-4">Role Level</th>
-                                <th className="px-5 py-4">Location</th>
-                                <th className="px-5 py-4">Operational Status</th>
-                                <th className="px-5 py-4 text-right">Reference</th>
+                                <th className="px-3 py-4">Employee</th>
+                                <th className="px-3 py-4">Department</th>
+                                <th className="px-3 py-4">Role</th>
+                                <th className="px-3 py-4">Location</th>
+                                <th className="px-3 py-4">Status</th>
+                                <th className="px-3 py-4 text-right sticky right-0 bg-surface">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
@@ -137,39 +155,45 @@ export default function EmployeesPage() {
                             ) : (
                                 filteredEmployees.map(emp => (
                                     <tr key={emp.id} className="hover:bg-surface-light transition-colors group">
-                                        <td className="px-5 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-9 h-9 rounded bg-surface-light border border-border flex items-center justify-center text-primary text-xs font-bold">{emp.name[0]}</div>
-                                                <div>
+                                        <td className="px-3 py-3.5">
+                                            <div className="flex items-center gap-3 min-w-[11rem]">
+                                                <div className="w-9 h-9 rounded bg-surface-light border border-border flex items-center justify-center text-primary text-xs font-bold shrink-0">{emp.name[0]}</div>
+                                                <div className="min-w-0">
                                                     <span className="font-bold text-white block">{emp.name}</span>
-                                                    <span className="text-[10px] text-muted">{emp.designation}</span>
+                                                    <span className="text-[10px] text-muted block">{emp.designation}</span>
+                                                    <span className="font-mono text-[9px] text-zinc-600">GOG-2024-{emp.id.padStart(3, '0')}</span>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="px-5 py-4 font-mono text-[10px] text-muted">GOG-2024-{emp.id.padStart(3, '0')}</td>
-                                        <td className="px-5 py-4"><span className="badge badge-zinc">{emp.dept}</span></td>
-                                        <td className="px-5 py-4">
+                                        <td className="px-3 py-3.5"><span className="badge badge-zinc whitespace-nowrap">{emp.dept}</span></td>
+                                        <td className="px-3 py-3.5">
                                             {(() => {
                                                 const rl = getRoleLevel(emp);
-                                                const colors: Record<string, string> = { HR: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", AD: "text-purple-400 bg-purple-500/10 border-purple-500/20", HOI: "text-blue-400 bg-blue-500/10 border-blue-500/20", OM: "text-amber-400 bg-amber-500/10 border-amber-500/20", TL: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20", Faculty: "text-zinc-400 bg-zinc-800 border-zinc-700" };
-                                                return <span className={cn("text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border tracking-wider", colors[rl] || colors.Faculty)}>{rl}</span>;
+                                                const colors: Record<string, string> = { Founder: "text-yellow-300 bg-yellow-500/10 border-yellow-500/20", CH: "text-teal-300 bg-teal-500/10 border-teal-500/20", CL: "text-teal-300 bg-teal-500/10 border-teal-500/20", Marketing: "text-pink-300 bg-pink-500/10 border-pink-500/20", Tech: "text-sky-300 bg-sky-500/10 border-sky-500/20", HR: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", AD: "text-purple-400 bg-purple-500/10 border-purple-500/20", HOI: "text-blue-400 bg-blue-500/10 border-blue-500/20", OM: "text-amber-400 bg-amber-500/10 border-amber-500/20", TL: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20", Faculty: "text-zinc-400 bg-zinc-800 border-zinc-700" };
+                                                return <span className={cn("text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border tracking-wider whitespace-nowrap", colors[rl] || colors.Faculty)}>{rl}</span>;
                                             })()}
                                         </td>
-                                        <td className="px-5 py-4">
-                                            <div className="flex items-center gap-1.5 text-muted">
-                                                <MapPin size={11} className="text-primary" /> {emp.location}
+                                        <td className="px-3 py-3.5">
+                                            <div className="flex items-center gap-1.5 text-muted whitespace-nowrap">
+                                                <MapPin size={11} className="text-primary shrink-0" /> {locName(emp.location)}
                                             </div>
                                         </td>
-                                        <td className="px-5 py-4">
+                                        <td className="px-3 py-3.5">
                                             <span className={cn("badge",
                                                 emp.status === "Active" ? "badge-green" :
                                                     emp.status === "On Leave" ? "badge-amber" : "badge-zinc"
                                             )}>{emp.status}</span>
                                         </td>
-                                        <td className="px-5 py-4 text-right">
-                                            <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button className="h-8 w-8 flex items-center justify-center bg-surface-light border border-border rounded-lg hover:text-primary transition-colors"><Mail size={12} /></button>
-                                                <button className="h-8 w-8 flex items-center justify-center bg-surface-light border border-border rounded-lg hover:text-primary transition-colors"><FileText size={12} /></button>
+                                        <td className="px-3 py-3.5 text-right sticky right-0 bg-surface group-hover:bg-surface-light transition-colors">
+                                            <div className="flex items-center justify-end gap-1.5">
+                                                <button className="h-8 w-7 flex items-center justify-center bg-surface-light border border-border rounded-lg hover:text-primary transition-colors"><Mail size={12} /></button>
+                                                <button className="h-8 w-7 flex items-center justify-center bg-surface-light border border-border rounded-lg hover:text-primary transition-colors"><FileText size={12} /></button>
+                                                {(user.role === "HR" || user.role === "FOUNDER") && emp.id !== user.id && (emp.role !== "FOUNDER" || user.role === "FOUNDER") && (
+                                                    <button onClick={() => setEmployeeToReset(emp)} title="Reset Password" className="h-8 px-2 flex items-center justify-center gap-1 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 hover:bg-amber-500/20 transition-colors text-[10px] font-bold whitespace-nowrap"><KeyRound size={12} /> Reset</button>
+                                                )}
+                                                {canRemoveEmployees && emp.id !== user.id && (
+                                                    <button onClick={() => setEmployeeToRemove(emp)} title="Remove from Portal" className="h-8 px-2 flex items-center justify-center gap-1 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 hover:bg-red-500/20 transition-colors text-[10px] font-bold whitespace-nowrap"><UserX size={12} /> Remove</button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -234,6 +258,12 @@ export default function EmployeesPage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            {/* Remove from Portal (confirmation first) */}
+            {employeeToRemove && <RemoveEmployeeDialog employee={employeeToRemove} onClose={() => setEmployeeToRemove(null)} />}
+
+            {/* HR: Reset Password (hash saved on the server, temporary password shown once) */}
+            {employeeToReset && <ResetPasswordDialog employee={employeeToReset} onClose={() => setEmployeeToReset(null)} />}
         </div>
     );
 }

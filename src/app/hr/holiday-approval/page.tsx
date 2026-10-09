@@ -1,12 +1,13 @@
 "use client";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { Calendar, CheckCircle2, Clock, Building2, Globe, MessageSquare, Plus } from "lucide-react";
+import { Calendar, CheckCircle2, Clock, Building2, Globe, MessageSquare, Plus, XCircle, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function HolidayApprovalPage() {
-    const { user, holidays, approveHoliday, proposeHoliday, colleges } = useAuth();
+    const { user, holidays, approveHoliday, rejectHoliday, proposeHoliday, colleges } = useAuth();
+    const [busyId, setBusyId] = useState<string | null>(null);
     const [approveMessages, setApproveMessages] = useState<Record<string, string>>({});
     const [showCreate, setShowCreate] = useState(false);
     const [createForm, setCreateForm] = useState({ name: "", date: "", collegeIds: [] as string[], forAll: true, customMessage: "" });
@@ -15,14 +16,37 @@ export default function HolidayApprovalPage() {
 
     const pendingHolidays = holidays.filter(h => h.status === "Proposed");
     const approvedHolidays = holidays.filter(h => h.status === "Approved");
+    const rejectedHolidays = holidays.filter(h => h.status === "Rejected");
     const getCollegeNames = (ids?: string[]) => {
         if (!ids || ids.length === 0) return null;
         return ids.map(id => colleges.find(c => c.id === id)?.shortName || id).join(", ");
     };
+    const getCollegeFullNames = (h: { collegeIds?: string[]; forAll?: boolean }) =>
+        h.forAll ? "All Colleges" : ((h.collegeIds || []).map(id => colleges.find(c => c.id === id)?.name || id).join(", ") || "—");
+    const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
+    // Result of the college-wise email that goes out once, when HR approves
+    const emailLine = (h: any) => {
+        if (!h.emailStatus) return null;
+        if (h.emailStatus === "Sent") return `Emailed ${h.emailRecipients?.length || 0} teacher(s) of this college`;
+        if (h.emailStatus === "No Recipients") return "No active teachers with an email are mapped to this college";
+        return `Email could not be sent to ${h.emailRecipients?.length || 0} teacher(s)${h.emailError ? ` (${h.emailError})` : ""}`;
+    };
 
-    const handleApprove = (id: string) => {
-        approveHoliday(id, approveMessages[id] || undefined);
+    const handleApprove = async (id: string) => {
+        if (busyId) return;
+        setBusyId(id);
+        await approveHoliday(id, approveMessages[id] || undefined);
         setApproveMessages(prev => { const next = { ...prev }; delete next[id]; return next; });
+        setBusyId(null);
+    };
+
+    const handleReject = async (id: string) => {
+        if (busyId) return;
+        const reason = window.prompt("Reason for rejection (optional):");
+        if (reason === null) return;
+        setBusyId(id);
+        await rejectHoliday(id, reason || undefined);
+        setBusyId(null);
     };
 
     const handleCreate = (e: React.FormEvent) => {
@@ -70,6 +94,14 @@ export default function HolidayApprovalPage() {
                                             {h.proofUrl && <a href={h.proofUrl} target="_blank" rel="noopener" className="text-[10px] text-primary hover:underline">Proof ↗</a>}
                                         </div>
                                     </div>
+                                    <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border text-amber-400 bg-amber-500/10 border-amber-500/20 whitespace-nowrap"><Clock size={10} className="inline mr-0.5" /> Pending</span>
+                                </div>
+                                {/* Request details */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">
+                                    <div className="bg-zinc-800/40 border border-zinc-800 rounded-lg p-2"><p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">College / Campus</p><p className="text-zinc-200 mt-0.5 break-words">{getCollegeFullNames(h)}</p></div>
+                                    <div className="bg-zinc-800/40 border border-zinc-800 rounded-lg p-2"><p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Requested By</p><p className="text-zinc-200 mt-0.5 break-words">{h.proposedByName || h.proposedBy}</p></div>
+                                    <div className="bg-zinc-800/40 border border-zinc-800 rounded-lg p-2"><p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Holiday Date</p><p className="text-zinc-200 mt-0.5">{h.date}</p></div>
+                                    <div className="bg-zinc-800/40 border border-zinc-800 rounded-lg p-2"><p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Request Date</p><p className="text-zinc-200 mt-0.5">{fmt(h.proposedAt)}</p></div>
                                 </div>
                                 {/* Custom message input */}
                                 <div className="flex items-center gap-2">
@@ -78,8 +110,11 @@ export default function HolidayApprovalPage() {
                                             onChange={e => setApproveMessages(prev => ({ ...prev, [h.id]: e.target.value }))}
                                             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2 text-[10px] text-white placeholder:text-zinc-600" />
                                     </div>
-                                    <button onClick={() => handleApprove(h.id)} className="px-4 py-2 text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 rounded-lg hover:bg-green-500/20 whitespace-nowrap flex items-center gap-1">
-                                        <CheckCircle2 size={12} /> Approve & Announce
+                                    <button onClick={() => handleApprove(h.id)} disabled={busyId === h.id} className="px-4 py-2 text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 rounded-lg hover:bg-green-500/20 whitespace-nowrap flex items-center gap-1 disabled:opacity-50">
+                                        <CheckCircle2 size={12} /> {busyId === h.id ? "Working..." : "Approve & Announce"}
+                                    </button>
+                                    <button onClick={() => handleReject(h.id)} disabled={busyId === h.id} className="px-4 py-2 text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/20 whitespace-nowrap flex items-center gap-1 disabled:opacity-50">
+                                        <XCircle size={12} /> Reject
                                     </button>
                                 </div>
                             </div>
@@ -103,12 +138,31 @@ export default function HolidayApprovalPage() {
                                         {h.forAll && <span className="text-[8px] font-bold text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full border border-green-500/20"><Globe size={8} className="inline" /> All</span>}
                                         {h.customMessage && <span className="text-[9px] text-zinc-600 italic truncate max-w-[250px]">"{h.customMessage}"</span>}
                                     </div>
+                                    {emailLine(h) && <p className={cn("text-[9px] mt-1 flex items-center gap-1", h.emailStatus === "Sent" ? "text-green-400/80" : "text-amber-500/80")}><Mail size={9} /> {emailLine(h)}</p>}
                                 </div>
                                 <CheckCircle2 size={14} className="text-green-500" />
                             </div>
                         ))}
                 </div>
             </div>
+
+            {rejectedHolidays.length > 0 && (
+                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl overflow-hidden">
+                    <div className="p-4 border-b border-zinc-800/50"><h3 className="text-sm font-semibold text-red-400 flex items-center gap-2"><XCircle size={14} /> Rejected Requests ({rejectedHolidays.length})</h3></div>
+                    <div className="divide-y divide-zinc-800/50">
+                        {rejectedHolidays.map(h => (
+                            <div key={h.id} className="p-4 flex items-center gap-3 hover:bg-zinc-800/20 transition-colors">
+                                <Calendar size={14} className="text-red-400" />
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-bold text-white">{h.name}</p>
+                                    <p className="text-[10px] text-zinc-500 break-words">{h.date} · {getCollegeFullNames(h)} · by {h.proposedByName || h.proposedBy}{h.rejectionReason ? ` · Reason: ${h.rejectionReason}` : ""}</p>
+                                </div>
+                                <XCircle size={14} className="text-red-500" />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Create Holiday Modal */}
             <AnimatePresence>

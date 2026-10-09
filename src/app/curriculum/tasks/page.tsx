@@ -30,7 +30,7 @@ export default function CurriculumTasksPage() {
     const [reviewModalOpen, setReviewModalOpen] = useState(false);
     const [feedback, setFeedback] = useState("");
 
-    const isLeadOrHead = user?.role === "CURRICULUM_HEAD" || user?.role === "CURRICULUM_LEAD" || user?.role === "SUPERADMIN";
+    const isLeadOrHead = user?.role === "CURRICULUM_HEAD" || user?.role === "CURRICULUM_LEAD" || (user?.role as string) === "SUPERADMIN";
 
     useEffect(() => {
         fetchTasks();

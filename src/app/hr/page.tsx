@@ -5,7 +5,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 export default function HRHub() {
-    const { user, holidays, tickets, reimbursements, employees, workSchedules, pipRecords, attendanceRecords } = useAuth();
+    const { user, holidays, tickets, reimbursements, employees, workSchedules, pipRecords, attendanceRecords, leaves } = useAuth();
     if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return null;
 
     const pendingHolidays = holidays.filter(h => h.status === "Proposed").length;
@@ -14,6 +14,7 @@ export default function HRHub() {
     const pendingSchedules = workSchedules.filter(s => !s.approvedByHR).length;
     const activePIPs = pipRecords.filter(p => p.status === "Active").length;
     const totalEmployees = employees.length;
+    const pendingLeaves = leaves.filter(l => l.employeeId !== user.id && (l.status === "Pending" || l.status === "Pending HOI Approval")).length;
 
     const stats = [
         { label: "Total Staff", value: totalEmployees, color: "text-white" },
@@ -27,8 +28,10 @@ export default function HRHub() {
         { label: "Attendance Override", desc: "Review overrides", icon: ClipboardList, path: "/hr/attendance-override", color: "text-green-400" },
         { label: "SOP Management", desc: "Update policies", icon: FileText, path: "/hr/sop", color: "text-purple-400" },
         { label: "Reimbursements", desc: `${pendingReimbursements} pending`, icon: Receipt, path: "/hr/reimbursements", color: "text-amber-400" },
-        { label: "Schedule Approval", desc: `${pendingSchedules} pending`, icon: MapPin, path: "/hr/schedule-approval", color: "text-teal-400" },
+        { label: "Schedule Changes", desc: `${pendingSchedules} unread`, icon: MapPin, path: "/hr/schedule-approval", color: "text-teal-400" },
+        { label: "Work Location", desc: "Assign daily location & timings", icon: MapPin, path: "/hr/work-location", color: "text-blue-400" },
         { label: "Workforce", desc: `${totalEmployees} employees`, icon: Users, path: "/employees", color: "text-cyan-400" },
+        { label: "Leave Management", desc: `${pendingLeaves} pending`, icon: Calendar, path: "/hr/leave-management", color: "text-pink-400" },
         { label: "PIP Management", desc: "Manage active PIPs", icon: ShieldAlert, path: "/hr/pip", color: "text-red-400" },
         { label: "Report Misbehaviour", desc: "Report issues", icon: AlertTriangle, path: "/manager/misbehaviour", color: "text-orange-400" },
     ];

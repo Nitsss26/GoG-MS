@@ -181,6 +181,15 @@ export interface LeaveRequest {
     hrApproverId?: string;
     hoiApprovedAt?: string;
     hrApprovedAt?: string;
+    // HR direct approval / rejection audit trail
+    approvedBy?: string;
+    approvedByName?: string;
+    approvedByRole?: string;
+    approvedAt?: string;
+    rejectedBy?: string;
+    rejectedByName?: string;
+    rejectedByRole?: string;
+    rejectedAt?: string;
 }
 export interface MeetingRequest {
     id: string; employeeId: string; employeeName: string; targetName: string;
@@ -241,8 +250,12 @@ export interface Ticket {
 }
 export interface Holiday {
     id: string; name: string; date: string; collegeIds?: string[];
-    status: "Proposed" | "Approved"; proposedBy: string; proposedByName?: string;
+    status: "Proposed" | "Approved" | "Rejected"; proposedBy: string; proposedByName?: string;
     proofUrl?: string; customMessage?: string; forAll?: boolean;
+    proposedAt?: string;
+    approvedBy?: string; approvedByName?: string; approvedAt?: string;
+    rejectedBy?: string; rejectedByName?: string; rejectedAt?: string; rejectionReason?: string;
+    emailSentAt?: string; emailStatus?: string; emailRecipients?: string[]; emailError?: string;
 }
 export interface PIPRecord {
     id: string; employeeId: string; employeeName: string; reason: string;
@@ -260,8 +273,9 @@ export interface ReimbursementClaim {
     approvedAmount?: number;
 }
 export interface WorkSchedule {
-    employeeId: string; employeeName?: string; approvedByHR?: boolean;
+    employeeId: string; employeeName?: string; approvedByHR?: boolean; // approvedByHR = read / acknowledged by HR
     assignedBy?: string; assignedByName?: string; reason?: string;
+    changedAt?: string; hrReadBy?: string; hrReadByName?: string; hrReadAt?: string;
     dayWise: { [key: string]: { location: string; clockInTime: string; clockOutTime: string; }; };
 }
 export interface MisbehaviourReport {
@@ -280,6 +294,8 @@ export interface AdditionalResponsibility {
     description: string; date: string;
     status: "Pending" | "Approved" | "Rejected";
     points: number;
+    addedByName?: string; addedByRole?: string; submittedAt?: string;
+    approvedBy?: string; approvedByName?: string; approvedAt?: string; rejectionReason?: string;
 }
 export interface OrgNode {
     id: string; name: string; designation: string; level: "C-Suite" | "Management" | "Leadership" | "OM" | "Faculty" | "CurriculumHead" | "CurriculumLead";
@@ -967,10 +983,14 @@ interface AuthContextType {
     addLeaveRequest: (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName" | "hoiApproval" | "hrApproval">) => Promise<void>;
     approveLeave: (id: string, reason?: string, forceHOI?: boolean) => Promise<void>;
     rejectLeave: (id: string, applyLOP?: boolean, reason?: string) => Promise<void>;
+    hrProcessLeave: (id: string, action: "approve" | "reject", remarks?: string) => Promise<{ success: boolean; msg?: string }>;
+    hrAssignEmployee: (employeeId: string, assignment: { location?: string; hoiId?: string }) => Promise<{ success: boolean; msg?: string }>;
     addReimbursement: (claim: Omit<ReimbursementClaim, "id" | "status" | "date" | "employeeId" | "employeeName">) => Promise<void>;
     updateReimbursementStatus: (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string, approvedAmount?: number) => Promise<void>;
     proposeHoliday: (h: Omit<Holiday, "id" | "proposedBy" | "status" | "proposedByName">) => void;
-    approveHoliday: (id: string, customMessage?: string) => void;
+    approveHoliday: (id: string, customMessage?: string) => Promise<any>;
+    rejectHoliday: (id: string, reason?: string) => Promise<any>;
+    removeEmployee: (employeeId: string) => Promise<{ success: boolean; msg?: string }>;
     updateSOP: (sop: Omit<SOP, "id" | "lastUpdated">) => void;
     deleteSOP: (id: string) => void;
     sopNotifications: SOPNotification[];
@@ -991,8 +1011,8 @@ interface AuthContextType {
     addCollege: (college: Omit<College, "id">) => Promise<void>;
     updateCollege: (id: string, updates: Partial<College>) => Promise<void>;
     deleteCollege: (id: string) => Promise<void>;
-    addAdditionalResponsibility: (employeeId: string, description: string, points: number) => Promise<void>;
-    approveAdditionalResponsibility: (id: string, status: "Approved" | "Rejected") => Promise<void>;
+    addAdditionalResponsibility: (employeeId: string, description: string, points: number) => Promise<boolean>;
+    approveAdditionalResponsibility: (id: string, status: "Approved" | "Rejected", rejectionReason?: string) => Promise<void>;
     addMarkAsPresentRequest: (req: Omit<MarkAsPresentRequest, "id" | "status" | "appliedAt" | "employeeName">) => Promise<void>;
     resolveMarkAsPresentRequest: (id: string, status: "Approved" | "Rejected") => void;
     resolveDressCodeCheck: (recordId: string, status: "Approved" | "Rejected") => Promise<void>;
@@ -1059,6 +1079,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .filter(emp => {
                 // Remove specific HOI duplicates if they exist without restricting to specific IDs
                 if (emp.id === "HOI" || emp.name === "HOI") return false;
+                // Org Chart correction: the management entry for "Kalpana" is not shown in the chart.
+                // Display only — the employee record itself is untouched and keeps working everywhere else.
+                if (/kalpana/i.test(emp.name || "") && (emp.role === "AD" || emp.role === "HR" || emp.role === "TL")) return false;
                 return true;
             })
             .map(emp => {
@@ -1085,7 +1108,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
 
                 const finalName = emp.id === "FND003" ? "Neeraj Sahu" : emp.name;
-                const finalDesignation = emp.id === "FND003" ? "COO" : designation;
+                const finalDesignation = emp.id === "FND003" ? "COO"
+                    : /^\s*aastha\s+chaurasia\s*$/i.test(emp.name || "") ? "HR Executive" // Org Chart correction
+                    : designation;
 
                 return {
                     id: emp.id,
@@ -1293,9 +1318,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                                 approvedByHR: curr.status === "Approved",
                                 assignedBy: curr.assignedBy,
                                 assignedByName: curr.assignedByName,
+                                changedAt: curr.changedAt,
+                                hrReadBy: curr.hrReadBy,
+                                hrReadByName: curr.hrReadByName,
+                                hrReadAt: curr.hrReadAt,
                                 dayWise: {}
                             };
                         }
+                        // Keep the latest change / read details across the daily entries
+                        const g = acc[curr.employeeId];
+                        if (curr.changedAt && (!g.changedAt || curr.changedAt > g.changedAt)) {
+                            g.changedAt = curr.changedAt;
+                            g.assignedBy = curr.assignedBy;
+                            g.assignedByName = curr.assignedByName;
+                        }
+                        if (curr.hrReadAt && (!g.hrReadAt || curr.hrReadAt > g.hrReadAt)) {
+                            g.hrReadAt = curr.hrReadAt;
+                            g.hrReadBy = curr.hrReadBy;
+                            g.hrReadByName = curr.hrReadByName;
+                        }
+                        if (!g.employeeName && curr.employeeName) g.employeeName = curr.employeeName;
                         acc[curr.employeeId].dayWise[curr.date] = {
                             location: curr.location,
                             clockInTime: curr.clockInTime,
@@ -1439,7 +1481,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
             if (manager.role === "HOI") {
                 const isLocationMatch = manager.location && e.location === manager.location;
-                return ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(e.role) && (isReportee || isLocationMatch);
+                // If an HOI has been explicitly assigned (e.g. by HR), that assignment decides the HOI.
+                // The location-based match stays as the fallback for employees with no HOI assigned.
+                const assignedIds = Array.isArray(e.reportsTo) ? e.reportsTo : (e.reportsTo ? [e.reportsTo] : []);
+                const hasAssignedHOI = employees.some(m => m.role === "HOI" && assignedIds.includes(m.id));
+                return ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(e.role) && (isReportee || (!hasAssignedHOI && isLocationMatch));
             }
             if (["OM", "MARKETING_TEAM", "TECH_TEAM"].includes(manager.role)) {
                 return ["FACULTY", "PROFESSOR"].includes(e.role) && isReportee;
@@ -2440,6 +2486,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const { subject: mailSub, html: mailHtml } = getHolidayTemplate(saved, saved.status);
                 const hr = employees.find(e => e.role === "HR");
                 if (hr?.email) sendMail({ to: hr.email, cc: ccEmails, subject: mailSub, html: mailHtml });
+            } else if (saved?.error) {
+                alert(saved.error);
             }
         } catch (err) { console.error(err); }
     };
@@ -2451,6 +2499,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 body: JSON.stringify({ id, status: "Approved", customMessage })
             });
             const updated = await res.json();
+            if (!res.ok || !updated.id) {
+                if (updated?.error) alert(updated.error);
+                return updated;
+            }
+            // Already decided earlier (double click / refresh): just sync the state, nothing is announced again
+            if (updated.alreadyProcessed) {
+                setHolidays(prev => prev.map(h => h.id === id ? updated : h));
+                return updated;
+            }
             if (updated.id) {
                 setHolidays(prev => prev.map(h => h.id === id ? updated : h));
 
@@ -2464,6 +2521,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     title: `Holiday: ${updated.name}`, content: msg, category: "General"
                 });
             }
+            return updated;
+        } catch (err) { console.error(err); }
+    };
+
+    // HR rejects a holiday request. No email / announcement goes out for a rejected holiday.
+    const rejectHoliday = async (id: string, reason?: string) => {
+        try {
+            const res = await fetch("/api/holidays", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, status: "Rejected", rejectionReason: reason })
+            });
+            const updated = await res.json();
+            if (!res.ok || !updated.id) {
+                if (updated?.error) alert(updated.error);
+                return updated;
+            }
+            setHolidays(prev => prev.map(h => h.id === id ? updated : h));
+            return updated;
         } catch (err) { console.error(err); }
     };
 
@@ -2733,7 +2809,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // ─── WORK SCHEDULE ───
     const assignWorkSchedule = async (schedule: WorkSchedule) => {
-        const enriched = { ...schedule, assignedBy: user?.id, assignedByName: user?.name, approvedByHR: false };
+        const enriched = { ...schedule, assignedBy: user?.id, assignedByName: user?.name, approvedByHR: false, changedAt: new Date().toISOString(), hrReadBy: undefined, hrReadByName: undefined, hrReadAt: undefined };
         setWorkSchedules(prev => {
             const existing = prev.findIndex(s => s.employeeId === schedule.employeeId);
             if (existing >= 0) { const nw = [...prev]; nw[existing] = enriched; return nw; }
@@ -2811,6 +2887,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         const next = [...prev];
                         next[existingIdx] = {
                             ...next[existingIdx],
+                            ...((user.role === "HR" || user.role === "FOUNDER") ? {} : { approvedByHR: false, assignedBy: user.id, assignedByName: user.name, changedAt: new Date().toISOString(), hrReadBy: undefined, hrReadByName: undefined, hrReadAt: undefined }),
                             dayWise: {
                                 ...next[existingIdx].dayWise,
                                 [date]: newSchedule
@@ -2846,7 +2923,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const approveWorkSchedule = async (employeeId: string) => {
-        setWorkSchedules(prev => prev.map(s => s.employeeId === employeeId ? { ...s, approvedByHR: true } : s));
+        // HR does not approve / reject a work schedule: this only records that HR has read the change
+        setWorkSchedules(prev => prev.map(s => s.employeeId === employeeId ? { ...s, approvedByHR: true, hrReadBy: user?.id, hrReadByName: user?.name, hrReadAt: new Date().toISOString() } : s));
         try {
             await fetch("/api/schedule/approve", {
                 method: "POST",
@@ -2860,10 +2938,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 
     // ─── ADDITIONAL RESPONSIBILITIES ───
-    const addAdditionalResponsibility = async (employeeId: string, description: string, points: number) => {
-        if (!user) return;
+    const addAdditionalResponsibility = async (employeeId: string, description: string, points: number): Promise<boolean> => {
+        if (!user) return false;
         const emp = employees.find(e => e.id === employeeId);
-        if (!emp) return;
+        if (!emp) return false;
         const resp = {
             id: `AR${uid()}`,
             employeeId,
@@ -2882,25 +2960,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 body: JSON.stringify(resp)
             });
             const data = await res.json();
-            if (data.id) {
+            if (res.ok && data.id) {
                 setAdditionalResponsibilities(prev => [...prev, data]);
                 // Notify Founders
                 const founders = employees.filter(e => e.role === "FOUNDER");
                 founders.forEach(f => addNotification(f.id, f.name, `New Responsibility Request from ${user.name} for ${emp.name}`, "general"));
+                // A request from an HOI goes to the ADs for approval
+                if (user.role === "HOI") {
+                    employees.filter(e => e.role === "AD").forEach(a => addNotification(a.id, a.name, `Responsibility pending your approval: ${user.name} added one for ${emp.name}`, "general"));
+                }
+                return true;
             }
-        } catch (err) { console.error(err); }
+            if (data?.error) alert(data.error);
+            return false;
+        } catch (err) { console.error(err); return false; }
     };
 
-    const approveAdditionalResponsibility = async (id: string, status: "Approved" | "Rejected") => {
+    const approveAdditionalResponsibility = async (id: string, status: "Approved" | "Rejected", rejectionReason?: string) => {
         try {
             const res = await fetch("/api/responsibilities", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, status })
+                body: JSON.stringify({ id, status, rejectionReason })
             });
             const updated = await res.json();
+            if (!res.ok || !updated.id) {
+                if (updated?.error) alert(updated.error);
+                return;
+            }
             if (updated.id) {
-                setAdditionalResponsibilities(prev => prev.map(r => r.id === id ? updated : r));
+                // Pending requests are not part of the leaderboard sync, so add the record if it is not in state yet
+                setAdditionalResponsibilities(prev => prev.some(r => r.id === id) ? prev.map(r => r.id === id ? updated : r) : [...prev, updated]);
                 if (status === "Approved") {
                     recalculatePerformance(updated.employeeId);
 
@@ -3116,6 +3206,77 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
+    // ─── HR: DIRECT LEAVE APPROVAL / REJECTION ───
+    // Additional HR capability. The existing approveLeave / rejectLeave flow is untouched.
+    const hrProcessLeave = async (id: string, action: "approve" | "reject", remarks?: string) => {
+        if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return { success: false, msg: "Only HR can do this." };
+        try {
+            const res = await fetch("/api/hr/leaves", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, action, remarks })
+            });
+            const updated = await res.json();
+            if (!res.ok || !updated.id) return { success: false, msg: updated.error || "Failed to update leave." };
+
+            setLeaves(prev => prev.map(l => l.id === id ? updated : l));
+            const emp = employees.find(e => e.id === updated.employeeId);
+            const { subject, html } = getLeaveTemplate(updated, updated.status);
+            if (emp?.email) {
+                sendMail({ to: emp.email, cc: getAuthorityEmails(emp, employees), subject, html });
+            }
+            return { success: true };
+        } catch (err) {
+            console.error(err);
+            return { success: false, msg: "Failed to update leave." };
+        }
+    };
+
+    // ─── HR: ASSIGN LOCATION / HOI TO AN EMPLOYEE ───
+    const hrAssignEmployee = async (employeeId: string, assignment: { location?: string; hoiId?: string }) => {
+        if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return { success: false, msg: "Only HR can do this." };
+        try {
+            const res = await fetch("/api/hr/assign", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ employeeId, ...assignment })
+            });
+            const updated = await res.json();
+            if (!res.ok || !updated.id) return { success: false, msg: updated.error || "Failed to save assignment." };
+
+            setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, location: updated.location, reportsTo: updated.reportsTo } : e));
+            return { success: true };
+        } catch (err) {
+            console.error(err);
+            return { success: false, msg: "Failed to save assignment." };
+        }
+    };
+
+    // ─── HR: REMOVE AN EX-EMPLOYEE FROM THE PORTAL ───
+    const removeEmployee = async (employeeId: string) => {
+        if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return { success: false, msg: "Only HR can do this." };
+        try {
+            const res = await fetch("/api/hr/remove-employee", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ employeeId })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) return { success: false, msg: data.error || "Could not remove the employee." };
+
+            // Drop the employee from every active list in this session too
+            setEmployees(prev => prev.filter(e => e.id !== employeeId).map(e => {
+                const managers = Array.isArray(e.reportsTo) ? e.reportsTo : (e.reportsTo ? [e.reportsTo] : []);
+                return managers.includes(employeeId) ? { ...e, reportsTo: managers.filter(m => m !== employeeId) } : e;
+            }));
+            setWorkSchedules(prev => prev.filter(s => s.employeeId !== employeeId));
+            return { success: true, msg: data.message };
+        } catch (err) {
+            console.error(err);
+            return { success: false, msg: "Could not remove the employee." };
+        }
+    };
+
     const addEmployee = async (empData: Partial<Employee>) => {
         if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return;
         const newEmp = {
@@ -3190,7 +3351,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     const getMyNotifications = () => {
         if (!user) return [];
-        return notifications.filter(n => n.to === user.id || n.to === "ALL");
+        const mine = notifications.filter(n => n.to === user.id || n.to === "ALL");
+        // HR is notified of every work schedule change that HR has not marked as read yet.
+        // These come from the saved schedules, so they survive a refresh and reach every HR user.
+        if (user.role === "HR") {
+            const scheduleChanges: PortalNotification[] = workSchedules.filter(s => !s.approvedByHR).map(s => ({
+                id: `WS-${s.employeeId}`,
+                from: s.assignedBy || "", fromName: s.assignedByName || "",
+                to: user.id, toName: user.name,
+                message: `${s.assignedByName || "A manager"} changed the work schedule of ${s.employeeName || employees.find(e => e.id === s.employeeId)?.name || s.employeeId}`,
+                type: "attendance" as const, read: false, createdAt: s.changedAt || ""
+            }));
+            return [...scheduleChanges, ...mine];
+        }
+        return mine;
     };
     const activityLogs = notifications;
 
@@ -3226,8 +3400,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             assets, 
             assetRequests: assetRequests.filter(a => empExists(a.employeeId)),
             login, logout, addNotice, addAnnouncement, editNotice, markAnnouncementRead, updateProfile, clockIn, clockOut, raiseTicket, resolveTicket, addADRemarks, forwardTicket,
-            addLeaveRequest, approveLeave, rejectLeave, addReimbursement, updateReimbursementStatus,
-            proposeHoliday, approveHoliday, updateSOP, deleteSOP, addToPIP, markAttendanceOverride, overrideAttendance,
+            addLeaveRequest, approveLeave, rejectLeave, hrProcessLeave, hrAssignEmployee, addReimbursement, updateReimbursementStatus,
+            proposeHoliday, approveHoliday, rejectHoliday, removeEmployee, updateSOP, deleteSOP, addToPIP, markAttendanceOverride, overrideAttendance,
             sopNotifications, masterSopContent, updateMasterSop, markSOPNotificationRead, markAllSOPNotificationsRead,
             reportMisbehaviour, addRating, assignWorkSchedule, approveWorkSchedule, addCollege,
             updateCollege,

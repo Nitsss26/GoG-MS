@@ -1,6 +1,6 @@
 "use client";
 import { useAuth } from "@/context/AuthContext";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Trophy, Star, Flag, Award, ChevronLeft, Users, Shield, X, TrendingUp, Plus, History, Calendar, CheckCircle2, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -22,6 +22,23 @@ export default function LeaderboardPage() {
     const [respPoints, setRespPoints] = useState<number>(10);
     const [isSubmittingResp, setIsSubmittingResp] = useState(false);
     const isADorFounder = user?.role === "AD" || user?.role === "FOUNDER";
+    // AD / Founder can add for anyone; an HOI can add for their own team. Every request goes for approval first.
+    const myReporteeIds = useMemo(() => (user?.role === "HOI" ? getReportees(user.id).map(r => r.id) : []), [user, employees]);
+    const canAddFor = (emp: any) => isADorFounder || (user?.role === "HOI" && !!emp && myReporteeIds.includes(emp.id));
+
+    // Full responsibility history of the selected person (approved, pending and rejected)
+    const [respHistory, setRespHistory] = useState<any[] | null>(null);
+    const selectedRespEmpId = selectedEmpForResp?.emp?.id;
+    useEffect(() => {
+        setRespHistory(null);
+        if (!selectedRespEmpId) return;
+        let cancelled = false;
+        fetch(`/api/responsibilities?employeeId=${encodeURIComponent(selectedRespEmpId)}`)
+            .then(res => res.json())
+            .then(data => { if (!cancelled && Array.isArray(data)) setRespHistory(data); })
+            .catch(() => { });
+        return () => { cancelled = true; };
+    }, [selectedRespEmpId]);
 
     const stats = useMemo(() => {
         if (!employees || !performanceStars || !user) return [];
@@ -105,7 +122,7 @@ export default function LeaderboardPage() {
 
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
                             {foundersRankings.map((s, i) => (
-                                <LeaderboardBox key={s.employeeId || `founder-${i}`} data={s} rank={i + 1} type="FOUNDER" onRespClick={() => setSelectedEmpForResp(s)} onAuditClick={() => setSelectedEmpForAudit(s)} canAdd={isADorFounder} />
+                                <LeaderboardBox key={s.employeeId || `founder-${i}`} data={s} rank={i + 1} type="FOUNDER" onRespClick={() => setSelectedEmpForResp(s)} onAuditClick={() => setSelectedEmpForAudit(s)} canAdd={canAddFor(s.emp)} />
                             ))}
                         </div>
                     </section>
@@ -125,7 +142,7 @@ export default function LeaderboardPage() {
 
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
                         {omRankings.map((s, i) => (
-                            <LeaderboardBox key={s.employeeId || `om-${i}`} data={s} rank={i + 1} type="OM" onRespClick={() => setSelectedEmpForResp(s)} onAuditClick={() => setSelectedEmpForAudit(s)} canAdd={isADorFounder} />
+                            <LeaderboardBox key={s.employeeId || `om-${i}`} data={s} rank={i + 1} type="OM" onRespClick={() => setSelectedEmpForResp(s)} onAuditClick={() => setSelectedEmpForAudit(s)} canAdd={canAddFor(s.emp)} />
                         ))}
                     </div>
                 </section>
@@ -144,7 +161,7 @@ export default function LeaderboardPage() {
 
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
                         {facultyRankings.map((s, i) => (
-                            <LeaderboardBox key={s.employeeId || `faculty-${i}`} data={s} rank={i + 1} type="FACULTY" onRespClick={() => setSelectedEmpForResp(s)} onAuditClick={() => setSelectedEmpForAudit(s)} canAdd={isADorFounder} />
+                            <LeaderboardBox key={s.employeeId || `faculty-${i}`} data={s} rank={i + 1} type="FACULTY" onRespClick={() => setSelectedEmpForResp(s)} onAuditClick={() => setSelectedEmpForAudit(s)} canAdd={canAddFor(s.emp)} />
                         ))}
                     </div>
                 </section>
@@ -245,13 +262,23 @@ export default function LeaderboardPage() {
                             </div>
 
                             <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                                {selectedEmpForResp.responsibilities.length > 0 ? (
-                                    selectedEmpForResp.responsibilities.map((r: any, idx: number) => (
-                                        <div key={idx} className="bg-white/5 border border-white/5 p-4 rounded-2xl hover:bg-white/[0.08] transition-colors">
+                                {(respHistory || selectedEmpForResp.responsibilities).length > 0 ? (
+                                    (respHistory || selectedEmpForResp.responsibilities).map((r: any, idx: number) => (
+                                        <div key={r.id || idx} className="bg-white/5 border border-white/5 p-4 rounded-2xl hover:bg-white/[0.08] transition-colors">
                                             <div className="flex justify-between items-start gap-4">
-                                                <p className="text-xs font-bold text-white shrink-0 capitalize">{r.description || r.title}</p>
+                                                <p className="text-xs font-bold text-white capitalize min-w-0 break-words">{r.description || r.title}</p>
                                                 <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-full shrink-0">+{r.points} PTS</span>
                                             </div>
+                                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                                                <span className={cn("text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md",
+                                                    r.status === "Approved" ? "text-emerald-400 bg-emerald-400/10" :
+                                                        r.status === "Rejected" ? "text-red-400 bg-red-400/10" :
+                                                            "text-amber-400 bg-amber-400/10"
+                                                )}>{r.status === "Pending" ? "Pending AD Approval" : r.status}</span>
+                                                <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">{r.date}{r.addedByName ? ` · By ${r.addedByName}` : ""}</span>
+                                            </div>
+                                            {r.status === "Rejected" && r.rejectionReason && <p className="text-[9px] text-zinc-500 italic mt-1">Reason: {r.rejectionReason}</p>}
+                                            {r.status !== "Approved" && <p className="text-[8px] text-zinc-600 italic mt-1">Not counted in points</p>}
                                         </div>
                                     ))
                                 ) : (
@@ -261,13 +288,13 @@ export default function LeaderboardPage() {
                                 )}
                             </div>
 
-                            {isADorFounder && (
+                            {canAddFor(selectedEmpForResp.emp) && (
                                 <div className="mt-8 pt-6 border-t border-white/5 space-y-4">
                                     <div className="flex items-center gap-2 mb-2">
                                         <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
                                             <Plus size={14} className="text-primary" />
                                         </div>
-                                        <h4 className="text-xs font-black text-white uppercase tracking-widest">Assign New Responsibility</h4>
+                                        <h4 className="text-xs font-black text-white uppercase tracking-widest">{isADorFounder ? "Assign New Responsibility" : "Add Responsibility"}</h4>
                                     </div>
                                     
                                     <div className="space-y-3">
@@ -298,11 +325,14 @@ export default function LeaderboardPage() {
                                             onClick={async () => {
                                                 setIsSubmittingResp(true);
                                                 try {
-                                                    await addAdditionalResponsibility(selectedEmpForResp.emp.id, respDescription, respPoints);
+                                                    const saved = await addAdditionalResponsibility(selectedEmpForResp.emp.id, respDescription, respPoints);
+                                                    if (!saved) return;
                                                     setRespDescription("");
                                                     setRespPoints(10);
                                                     // Note: Ideally refresh or update local state, but AuthContext handles notification
-                                                    alert("Responsibility assigned successfully and sent for approval.");
+                                                    alert(isADorFounder
+                                                        ? "Responsibility assigned successfully and sent for approval."
+                                                        : "Responsibility submitted. It is pending AD approval and will count in points only after it is approved.");
                                                     setSelectedEmpForResp(null);
                                                 } finally {
                                                     setIsSubmittingResp(false);
@@ -310,7 +340,7 @@ export default function LeaderboardPage() {
                                             }}
                                             className="w-full py-3.5 rounded-xl bg-primary text-primary-foreground text-[10px] font-black uppercase tracking-[0.2em] hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
                                         >
-                                            {isSubmittingResp ? "Assigning..." : "Assign & Submit Request"}
+                                            {isSubmittingResp ? "Submitting..." : isADorFounder ? "Assign & Submit Request" : "Submit for AD Approval"}
                                         </button>
                                     </div>
                                 </div>
@@ -537,10 +567,10 @@ function LeaderboardBox({ data, rank, type, onRespClick, onAuditClick, canAdd }:
 
             {/* Identity Info */}
             <div className="text-center w-full min-w-0 flex flex-col items-center gap-0.5 flex-1">
-                <h3 className="text-[10px] sm:text-[11px] md:text-sm font-black text-white truncate px-2 leading-tight group-hover:text-primary transition-colors">
+                <h3 title={data.emp?.name} className="w-full max-w-full text-[10px] sm:text-[11px] md:text-sm font-black text-white truncate px-2 leading-tight group-hover:text-primary transition-colors">
                     {data.emp?.name}
                 </h3>
-                <p className="text-[6px] sm:text-[7px] text-zinc-500 font-bold uppercase tracking-[0.1em] truncate px-4">
+                <p className="w-full max-w-full text-[6px] sm:text-[7px] text-zinc-500 font-bold uppercase tracking-[0.1em] truncate px-4">
                     {data.emp?.role === "FOUNDER" ? "Founder" : 
                      data.emp?.role === "OM" ? "Operation Manager" : 
                      data.emp?.role === "MARKETING_TEAM" ? "Marketing Team" : 
@@ -554,14 +584,27 @@ function LeaderboardBox({ data, rank, type, onRespClick, onAuditClick, canAdd }:
                     <StarRating stars={data.calculatedStars} />
                 </div>
 
-                {/* Flags Display */}
-                <div className="flex items-center justify-center flex-wrap gap-1 mt-1 mb-1.5 min-h-3" style={{ minHeight: "12px" }}>
-                    {data.flagCounts.red > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.red} Red Flag(s)`}>{Array.from({ length: data.flagCounts.red }).map((_, i) => <Flag key={'r' + i} size={9} className="text-red-500 fill-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]" />)}</div>}
-                    {data.flagCounts.orange > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.orange} Orange Flag(s)`}>{Array.from({ length: data.flagCounts.orange }).map((_, i) => <Flag key={'o' + i} size={9} className="text-orange-500 fill-orange-500 drop-shadow-[0_0_8px_rgba(249,115,22,0.5)]" />)}</div>}
-                    {data.flagCounts.yellow > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.yellow} Yellow Flag(s)`}>{Array.from({ length: data.flagCounts.yellow }).map((_, i) => <Flag key={'y' + i} size={9} className="text-yellow-500 fill-yellow-500 drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" />)}</div>}
-                    {data.flagCounts.blue > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.blue} Blue Flag(s)`}>{Array.from({ length: data.flagCounts.blue }).map((_, i) => <Flag key={'bl' + i} size={9} className="text-blue-500 fill-blue-500 drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]" />)}</div>}
-                    {data.flagCounts.black > 0 && <div className="flex items-center gap-0.5" title={`${data.flagCounts.black} Black Flag(s)`}>{Array.from({ length: data.flagCounts.black }).map((_, i) => <Flag key={'bk' + i} size={9} className="text-zinc-500 fill-black drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]" />)}</div>}
-                </div>
+                {/* Flags Display: at most 5 flags, the rest as +N (full breakdown on hover / in the point history) */}
+                {(() => {
+                    const MAX_FLAGS = 5;
+                    const fc = data.flagCounts || {};
+                    const kinds = [
+                        { key: "red", label: "Red", count: fc.red || 0, cls: "text-red-500 fill-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]" },
+                        { key: "orange", label: "Orange", count: fc.orange || 0, cls: "text-orange-500 fill-orange-500 drop-shadow-[0_0_8px_rgba(249,115,22,0.5)]" },
+                        { key: "yellow", label: "Yellow", count: fc.yellow || 0, cls: "text-yellow-500 fill-yellow-500 drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" },
+                        { key: "blue", label: "Blue", count: fc.blue || 0, cls: "text-blue-500 fill-blue-500 drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]" },
+                        { key: "black", label: "Black", count: fc.black || 0, cls: "text-zinc-500 fill-black drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]" },
+                    ];
+                    const allFlags = kinds.flatMap(k => Array.from({ length: k.count }, (_, i) => ({ id: k.key + i, cls: k.cls })));
+                    const extra = allFlags.length - MAX_FLAGS;
+                    const breakdown = kinds.filter(k => k.count > 0).map(k => `${k.count} ${k.label}`).join(", ");
+                    return (
+                        <div className="flex items-center justify-center flex-nowrap gap-1 mt-1 mb-1.5 min-h-3 w-full overflow-hidden" style={{ minHeight: "12px" }} title={breakdown ? `${allFlags.length} Flag(s): ${breakdown}` : undefined}>
+                            {allFlags.slice(0, MAX_FLAGS).map(f => <Flag key={f.id} size={9} className={cn("shrink-0", f.cls)} />)}
+                            {extra > 0 && <span className="shrink-0 text-[8px] font-black text-zinc-400 leading-none">+{extra}</span>}
+                        </div>
+                    );
+                })()}
             </div>
 
             {/* Performance Stats */}

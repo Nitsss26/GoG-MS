@@ -86,8 +86,14 @@ export default function WorkLocationPage() {
                         <>
                             <div className="flex justify-between items-center">
                                 <h3 className="text-sm font-bold text-white">Weekly Schedule</h3>
-                                {existingSchedule && <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full border", existingSchedule.approvedByHR ? "text-green-400 bg-green-500/10 border-green-500/20" : "text-amber-400 bg-amber-500/10 border-amber-500/20")}>{existingSchedule.approvedByHR ? "HR Approved" : "Pending HR"}</span>}
+                                {existingSchedule && <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full border", existingSchedule.approvedByHR ? "text-green-400 bg-green-500/10 border-green-500/20" : "text-amber-400 bg-amber-500/10 border-amber-500/20")}>{existingSchedule.approvedByHR ? "Read by HR" : "Unread by HR"}</span>}
                             </div>
+                            {existingSchedule && (existingSchedule.assignedByName || existingSchedule.hrReadByName) && (
+                                <p className="text-[9px] text-zinc-500">
+                                    {existingSchedule.assignedByName ? `Last changed by ${existingSchedule.assignedByName}${existingSchedule.changedAt ? ` on ${new Date(existingSchedule.changedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}` : ""}
+                                    {existingSchedule.approvedByHR && existingSchedule.hrReadByName ? ` · Read by ${existingSchedule.hrReadByName} (HR)${existingSchedule.hrReadAt ? ` on ${new Date(existingSchedule.hrReadAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}` : ""}
+                                </p>
+                            )}
                             <div className="space-y-2">
                                 {DAYS.map(day => (
                                     <div key={day} className="grid grid-cols-4 gap-2 items-center bg-zinc-800/30 rounded-xl p-3 border border-zinc-800/50">

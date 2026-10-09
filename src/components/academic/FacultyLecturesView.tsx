@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { CLASS_STATUS_LABEL } from "@/lib/academic-status";
 import {
     Calendar, Clock, CheckCircle2, AlertTriangle,
     Zap, ShieldAlert, FileText, X, Play, Users,
@@ -686,7 +687,9 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                         <div className="p-8 border-t border-zinc-800/50 bg-zinc-950/20">
                             <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
                                 <div className="flex flex-col gap-2 w-full sm:w-auto">
-                                    <p className="text-[8px] text-zinc-500 font-black uppercase tracking-widest pl-1">HOI Audit Decision</p>
+                                    <p className="text-[8px] text-zinc-500 font-black uppercase tracking-widest pl-1">
+                                        Final Verification (CL / CH / HOI) · {CLASS_STATUS_LABEL[(reportData as any).pipelineStatus || ((reportData as any).status === "Completed" ? "PENDING_OM" : "PENDING_PROFESSOR")]}
+                                    </p>
                                     <div className="flex items-center gap-2">
                                         <button onClick={async () => {
                                             const res = await fetch('/api/manager/lectures/audit', {
@@ -694,35 +697,30 @@ export default function FacultyLecturesView({ facultyId, facultyName }: FacultyL
                                                 headers: { 'Content-Type': 'application/json' },
                                                 body: JSON.stringify({ reportId: (reportData as any)._id, status: 'Approved' })
                                             });
-                                            if (res.ok) fetchLectures();
-                                        }} className={cn(
-                                            "flex-1 sm:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shadow-sm",
-                                            (reportData as any).auditStatus === "Approved" ? "bg-emerald-500 text-white border-emerald-500 shadow-emerald-500/20" : "text-emerald-500 bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20"
-                                        )}>Approve</button>
+                                            const d = await res.json().catch(() => ({}));
+                                            if (res.ok) fetchLectures(); else alert(d.error || "Could not verify");
+                                        }} disabled={!["PENDING_CL_CH", "PENDING_HOI"].includes((reportData as any).pipelineStatus)}
+                                            title={!["PENDING_CL_CH", "PENDING_HOI"].includes((reportData as any).pipelineStatus) ? "Available after OM has verified" : ""}
+                                            className={cn(
+                                            "flex-1 sm:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shadow-sm disabled:opacity-40",
+                                            (reportData as any).pipelineStatus === "COMPLETED" ? "bg-emerald-500 text-white border-emerald-500 shadow-emerald-500/20" : "text-emerald-500 bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20"
+                                        )}>{(reportData as any).pipelineStatus === "COMPLETED" ? "Completed" : "Final Verify"}</button>
 
                                         <button onClick={async () => {
+                                            const comment = window.prompt("What must the professor correct? (sent back to the professor)");
+                                            if (!comment) return;
                                             const res = await fetch('/api/manager/lectures/audit', {
                                                 method: 'PATCH',
                                                 headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ reportId: (reportData as any)._id, status: 'Flagged' })
+                                                body: JSON.stringify({ reportId: (reportData as any)._id, status: 'Flagged', comment })
                                             });
-                                            if (res.ok) fetchLectures();
-                                        }} className={cn(
-                                            "flex-1 sm:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shadow-sm",
-                                            (reportData as any).auditStatus === "Flagged" ? "bg-red-500 text-white border-red-500 shadow-red-500/20" : "text-red-500 bg-red-500/10 border-red-500/20 hover:bg-red-500/20"
-                                        )}>Flag</button>
-
-                                        <button onClick={async () => {
-                                            const res = await fetch('/api/manager/lectures/audit', {
-                                                method: 'PATCH',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ reportId: (reportData as any)._id, status: 'Pending' })
-                                            });
-                                            if (res.ok) fetchLectures();
-                                        }} className={cn(
-                                            "flex-1 sm:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shadow-sm",
-                                            (reportData as any).auditStatus === "Pending" ? "bg-amber-500 text-white border-amber-500 shadow-amber-500/20" : "text-amber-500 bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20"
-                                        )}>Reset</button>
+                                            const d = await res.json().catch(() => ({}));
+                                            if (res.ok) fetchLectures(); else alert(d.error || "Could not send back");
+                                        }} disabled={!["PENDING_CL_CH", "PENDING_HOI"].includes((reportData as any).pipelineStatus)}
+                                            className={cn(
+                                            "flex-1 sm:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border shadow-sm disabled:opacity-40",
+                                            "text-red-500 bg-red-500/10 border-red-500/20 hover:bg-red-500/20"
+                                        )}>Revert to Professor</button>
                                     </div>
                                 </div>
                                 <button onClick={() => setShowReport(null)}

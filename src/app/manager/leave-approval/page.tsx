@@ -82,13 +82,13 @@ export default function LeaveApprovalPage() {
                                         <p className="text-[10px] text-zinc-400">{l.startDate} → {l.endDate}</p>
                                         {l.reason && (
                                             <div className="mt-2 p-2 bg-zinc-800/50 rounded-lg border border-zinc-700/50">
-                                                <p className="text-[11px] text-zinc-300 font-medium leading-relaxed">
+                                                <p className="text-[11px] text-zinc-300 font-medium leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                                                     <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-0.5">Reason for absence:</span>
                                                     {l.reason}
                                                 </p>
                                             </div>
                                         )}
-                                        {l.reasonForAction && <p className="text-[10px] text-amber-500/80 italic mt-1 line-clamp-2">Action Note: {l.reasonForAction}</p>}
+                                        {l.reasonForAction && <p className="text-[10px] text-amber-500/80 italic mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">Action Note: {l.reasonForAction}</p>}
                                     </div>
                                     <span className={cn("text-[9px] font-black uppercase tracking-wider px-3 py-1 rounded-full border whitespace-nowrap shrink-0",
                                         l.status === "Pending" || l.status.includes("Pending") ? "text-amber-400 bg-amber-500/10 border-amber-500/20" :

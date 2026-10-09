@@ -6,14 +6,16 @@ import {
     Users, Plus, CheckCircle, Clock, AlertCircle, Search, 
     Filter, ChevronRight, Check, X, Upload, ExternalLink,
     Mail, Briefcase, Calendar, ShieldCheck, Info, CreditCard,
-    Download
+    Download, UserX
 } from "lucide-react";
+import RemoveEmployeeDialog from "@/components/RemoveEmployeeDialog";
 import type { Employee, Role } from "@/context/AuthContext";
 
 export default function OnboardingHRPage() {
     const { employees, addEmployee, updateOnboarding } = useAuth();
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+    const [employeeToRemove, setEmployeeToRemove] = useState<Employee | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
     const [locations, setLocations] = useState<any[]>([]);
 
@@ -207,6 +209,10 @@ export default function OnboardingHRPage() {
                                     <a href={`mailto:${selectedEmployee.email}`} className="p-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-300 transition-all">
                                         <Mail size={18} />
                                     </a>
+                                    <button onClick={() => setEmployeeToRemove(selectedEmployee)} title="Remove from Portal"
+                                        className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap">
+                                        <UserX size={16} /> Remove from Portal
+                                    </button>
                                     <button onClick={() => handleFinalApprove(selectedEmployee.id)} 
                                         className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-lg shadow-emerald-500/20">
                                         <CheckCircle size={16} /> Approve Joinee
@@ -394,6 +400,14 @@ export default function OnboardingHRPage() {
                         </form>
                     </div>
                 </div>
+            )}
+            {/* Remove from Portal (confirmation first) */}
+            {employeeToRemove && (
+                <RemoveEmployeeDialog
+                    employee={employeeToRemove}
+                    onClose={() => setEmployeeToRemove(null)}
+                    onRemoved={(emp) => { if (selectedEmployee?.id === emp.id) setSelectedEmployee(null); }}
+                />
             )}
         </div>
     );

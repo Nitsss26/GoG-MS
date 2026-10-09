@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { LectureReport, SprintPlan, Employee } from '@/models/Schemas';
 import { processLectureWithAI } from '@/lib/gemini';
+import { getSessionUser } from '@/lib/session-user';
+import { getAcademicScope, professorIfInScope, hasClassEnded } from '@/lib/academic';
+import { submitClassRecord, classStrength } from '@/lib/class-record-workflow';
+import { getPlanStatus, getClassStatus, PROFESSOR_ROLES } from '@/lib/academic-status';
 
 // GET — Fetch lectures for a faculty
 export async function GET(req: Request) {
@@ -15,6 +19,15 @@ export async function GET(req: Request) {
         const endDate = searchParams.get('endDate');
 
         if (!facultyId) return NextResponse.json({ error: "facultyId required" }, { status: 400 });
+
+        // Own lectures, or a professor inside the viewer's college scope
+        const actor = await getSessionUser();
+        if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (facultyId !== actor.id) {
+            if (PROFESSOR_ROLES.includes(actor.role) || !(await professorIfInScope(await getAcademicScope(actor), facultyId))) {
+                return NextResponse.json({ error: 'This professor is not in your college.' }, { status: 403 });
+            }
+        }
 
         const now = new Date();
         const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
@@ -56,8 +69,8 @@ export async function GET(req: Request) {
             const dayIdx = new Date(targetDate).getDay();
             const targetDayName = dayNames[dayIdx]?.toUpperCase()?.substring(0, 3) || "MON";
 
-            // Find active sprint plan containing targetDate
-            let activePlan = plans.find(p => targetDate >= p.weekStartDate && targetDate <= p.weekEndDate);
+            // Find active sprint plan containing targetDate (a draft is not a class schedule yet)
+            let activePlan = plans.find(p => targetDate >= p.weekStartDate && targetDate <= p.weekEndDate && getPlanStatus(p) !== 'DRAFT');
 
             // Get entries for target day
             let dayEntries: any[] = [];
@@ -72,12 +85,16 @@ export async function GET(req: Request) {
 
             // Merge sprint plan entries with existing reports
             const assignedReportIds = new Set();
-            const dayLectures = dayEntries.map((entry: any, idx: number) => {
+            const dayLectures = await Promise.all(dayEntries.map(async (entry: any, idx: number) => {
                 const lecNum = idx + 1;
                 
+                // 0. Exact match on the sprint plan entry
+                let existing = existingReports.find((r: any) =>
+                    !assignedReportIds.has(r._id.toString()) && r.sprintEntryId && r.sprintEntryId === entry._id?.toString()
+                );
                 // 1. Primary Match: Sprint Plan ID + Lecture Number OR Date + Lecture Number
-                let existing = existingReports.find((r: any) => 
-                    !assignedReportIds.has(r._id.toString()) && (
+                if (!existing) existing = existingReports.find((r: any) =>
+                    !assignedReportIds.has(r._id.toString()) && !r.sprintEntryId && (
                         (r.sprintPlanId === activePlan?._id?.toString() && r.lectureNumber === lecNum) ||
                         (r.date === targetDate && r.lectureNumber === lecNum)
                     )
@@ -117,13 +134,24 @@ export async function GET(req: Request) {
                     date: targetDate,
                     day: targetDayName,
                     report: existing ? existing.toObject() : null,
-                    status: existing ? existing.status : "Scheduled"
+                    status: existing ? existing.status : "Scheduled",
+                    // Class record pipeline
+                    sprintEntryId: entry._id?.toString(),
+                    planStatus: getPlanStatus(activePlan),
+                    section: entry.section || "",
+                    className: entry.className || "",
+                    lectureType: entry.lectureType || "",
+                    unitNumber: entry.unitNumber || "",
+                    pipelineStatus: existing ? getClassStatus(existing) : "PENDING_PROFESSOR",
+                    classEnded: hasClassEnded(targetDate, entry.timeStop),
+                    defaultTotalStudents: existing?.totalStudents || await classStrength(facultyId, entry)
                 };
-            });
+            }));
             
             const unassignedReports = existingReports
                 .filter(r => !assignedReportIds.has(r._id.toString()))
-                .map(r => r.toObject());
+                .filter(r => r.status === 'Completed' || r.pipelineStatus !== 'PENDING_PROFESSOR')
+                .map(r => ({ ...r.toObject(), report: r.toObject(), pipelineStatus: getClassStatus(r), timeStart: r.timeStart || r.classStartTime, timeStop: r.timeStop || r.classEndTime }));
 
             allLectures.push(...dayLectures, ...unassignedReports);
         }
@@ -143,129 +171,36 @@ export async function GET(req: Request) {
     }
 }
 
-// POST — Submit a completed lecture report
+// POST — Submit (or re-submit after a revert) the class record of a finished class.
+// Validation, attendance, notes / missing-notes reason, pipeline status and notifications: src/lib/class-record-workflow.ts
 export async function POST(req: Request) {
     try {
         await dbConnect();
+        const actor = await getSessionUser();
+        if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         const body = await req.json();
-        let { facultyId, date, lectureNumber, courseName, topicsCovered, stream, year, semester,
-            numberOfAttendees, totalStudents, issuesFaced, reasonForLessAttendance,
-            classPhotoUrl, classPhotoLat, classPhotoLng,
-            recordingUrl, recordingDurationSeconds, sprintPlanId, scheduledDuration,
-            // Notes & Assignment additions
-            notesUrl, notesContent, isNotesSharedWithStudents, notesNotSharedRemarks,
-            hasAssignment, assignmentTitle, assignmentDescription, assignmentUrl, assignmentDeadline,
-            studentsCompletedCount, totalStudentsExpected } = body;
-
-        if (!facultyId) {
-            return NextResponse.json({ error: "facultyId is required" }, { status: 400 });
+        if (body.facultyId && body.facultyId !== actor.id) {
+            return NextResponse.json({ error: 'You can only submit your own class records.' }, { status: 403 });
         }
 
-        // Provide defaults if missing
-        courseName = courseName || "Unknown Subject";
-        topicsCovered = topicsCovered || "General Topics";
-
-        let faculty = await Employee.findOne({ id: facultyId });
-        if (!faculty) {
-            // Also accept if they passed _id instead of id
-            faculty = await Employee.findById(facultyId).catch(() => null);
-            if (!faculty) {
-                return NextResponse.json({ error: "Faculty not found in database" }, { status: 404 });
-            }
-        }
-
-        // Use provided date or default to today IST
-        const now = new Date();
-        const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-        const istTime = new Date(istString);
-        const reportDate = date || (istTime.getFullYear() + "-" +
-            (istTime.getMonth() + 1).toString().padStart(2, '0') + "-" +
-            istTime.getDate().toString().padStart(2, '0'));
-
-        // Strictly use provided lectureNumber or calculate if absolutely missing
-        let lecNum = lectureNumber;
-        if (!lecNum) {
-            const count = await LectureReport.countDocuments({ facultyId, date: reportDate });
-            lecNum = count + 1;
-        }
-
-        // Validate recording duration (must be ≥ 90% of session)
+        // Recording coverage warning (existing rule: recording should cover ≥ 90% of the session)
         const warnings: string[] = [];
-        if (recordingDurationSeconds && scheduledDuration) {
-            const scheduledSeconds = scheduledDuration * 60;
-            const ratio = recordingDurationSeconds / scheduledSeconds;
-            if (ratio < 0.9) {
-                warnings.push(`Recording coverage: ${Math.round(ratio * 100)}% (min 90% required)`);
-            }
+        if (body.recordingDurationSeconds && body.scheduledDuration) {
+            const ratio = body.recordingDurationSeconds / (body.scheduledDuration * 60);
+            if (ratio < 0.9) warnings.push(`Recording coverage: ${Math.round(ratio * 100)}% (min 90% required)`);
         }
 
-        // Attendance Percentage Validation (50% rule)
-        const attendeeCount = parseInt(numberOfAttendees) || 0;
-        const totalCount = parseInt(totalStudents) || 40; // Default to 40 if missing
-        
-        if (totalCount > 0) {
-            const percentage = (attendeeCount / totalCount) * 100;
-            if (percentage < 50 && !reasonForLessAttendance) {
-                warnings.push(`Attendance: ${Math.round(percentage)}% (below 50%) — reason required`);
-            }
-        }
+        const result = await submitClassRecord(actor, body);
+        if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
 
-        const report = await LectureReport.findOneAndUpdate(
-            { facultyId, date: reportDate, lectureNumber: lecNum },
-            {
-                $set: {
-                    facultyName: faculty.name,
-                    college: faculty.location || "",
-                    courseName,
-                    topicsCovered,
-                    scheduledDuration: scheduledDuration || 0,
-                    stream: stream || "",
-                    year: year || "",
-                    semester: semester || "",
-                    numberOfAttendees: attendeeCount,
-                    totalStudents: totalCount,
-                    classPhotoUrl,
-                    classPhotoLat,
-                    classPhotoLng,
-                    issuesFaced: issuesFaced || "",
-                    reasonForLessAttendance: reasonForLessAttendance || "",
-                    recordingUrl,
-                    recordingDurationSeconds,
-                    actualDurationMinutes: Math.round((recordingDurationSeconds || 0) / 60),
-                    sprintPlanId: sprintPlanId || "",
-                    // Lecture Notes
-                    lectureNotes: {
-                        notesUrl: notesUrl || "",
-                        notesContent: notesContent || "",
-                        isSharedWithStudents: Boolean(isNotesSharedWithStudents),
-                        sharedWithStudentsTickedBy: faculty.name,
-                        notSharedRemarks: notesNotSharedRemarks || "",
-                        verificationStatus: "Pending"
-                    },
-                    // Assignment (Optional)
-                    assignment: {
-                        hasAssignment: Boolean(hasAssignment),
-                        title: assignmentTitle || "",
-                        description: assignmentDescription || "",
-                        assignmentUrl: assignmentUrl || "",
-                        deadline: assignmentDeadline || "",
-                        studentsCompletedCount: parseInt(studentsCompletedCount) || 0,
-                        totalStudentsExpected: parseInt(totalStudentsExpected) || totalCount,
-                        verificationStatus: hasAssignment ? "Pending" : "Approved",
-                        isSharedInProfGroup: false
-                    },
-                    clVerificationStatus: "Pending",
-                    status: "Completed",
-                    auditStatus: "Pending",
-                    warnings
-                }
-            },
-            { upsert: true, new: true }
-        );
+        const t = result.record.totalStudents || 0;
+        if (t > 0 && (result.record.numberOfAttendees / t) < 0.5 && !body.reasonForLessAttendance) {
+            warnings.push(`Attendance: ${Math.round((result.record.numberOfAttendees / t) * 100)}% (below 50%) — reason required`);
+        }
+        if (warnings.length) await LectureReport.updateOne({ _id: result.record._id }, { $set: { warnings } });
 
         // AI Analysis will be triggered manually by managers instead of automatically on upload.
-
-        return NextResponse.json({ message: "Lecture report submitted", report, warnings });
+        return NextResponse.json({ message: result.message, report: result.record, warnings });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

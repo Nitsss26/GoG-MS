@@ -4,7 +4,7 @@ import React, { useState, useMemo, useRef } from "react";
 import {
     CalendarDays, Clock, MapPin, Download, Printer, Filter,
     CheckCircle2, Lock, Unlock, ShieldCheck, ChevronLeft, ChevronRight,
-    Users, AlertCircle, Sparkles
+    Users, AlertCircle, Sparkles, X
 } from "lucide-react";
 import { COLLEGES } from "@/lib/colleges";
 
@@ -58,7 +58,7 @@ export const DEFAULT_TIME_SLOTS = [
 const DAYS_OF_WEEK = ["MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
 // Pastel theme colors matching the screenshot
-const FACULTY_CARD_THEMES = [
+export const FACULTY_CARD_THEMES = [
     {
         bg: "bg-[#e8c4d8]/90 dark:bg-[#703b5b]/70",
         border: "border-[#caa1b8] dark:border-[#96547c]",
@@ -107,6 +107,7 @@ export default function SprintPlanTimetableGrid({
     const [selectedSemester, setSelectedSemester] = useState<string>("All");
     const [selectedSection, setSelectedSection] = useState<string>("All");
     const [actionLoading, setActionLoading] = useState(false);
+    const [openEntry, setOpenEntry] = useState<any | null>(null);
 
     // Resolve campus list
     const campusOptions = useMemo(() => {
@@ -363,20 +364,18 @@ export default function SprintPlanTimetableGrid({
                 ref={tableRef}
                 className="overflow-x-auto rounded-2xl border-2 border-zinc-800/80 bg-white dark:bg-[#0c0d10] shadow-2xl p-0.5"
             >
-                <table className="w-full border-collapse text-center select-none min-w-[1100px]">
+                {/* Days across the top, time slots down the left — fits the screen without side scrolling */}
+                <table className="w-full table-fixed border-collapse text-center select-none min-w-[760px]">
                     <thead>
-                        {/* Master Header Row 1: Orange/Gold Box Left + Title Banner Spanning Table */}
+                        {/* Header Row 1: Gold box left + title banner */}
                         <tr className="border-b-2 border-zinc-800">
-                            {/* Left Corner Box: "GoG <> [Campus Name]" */}
-                            <th className="w-32 bg-[#ffcc66] dark:bg-[#b38600] text-zinc-950 font-black text-xs py-3 px-3 border-r-2 border-zinc-800 leading-tight">
-                                <div>GoG &lt;&gt; {selectedCampus}</div>
-                                <div className="text-[10px] font-bold opacity-90 mt-0.5 tracking-tight">[{weekRangeText}]</div>
+                            <th className="w-28 bg-[#ffcc66] dark:bg-[#b38600] text-zinc-950 font-black text-[11px] py-3 px-2 border-r-2 border-zinc-800 leading-tight">
+                                <div className="truncate" title={selectedCampus}>GoG &lt;&gt; {selectedCampus}</div>
+                                <div className="text-[9px] font-bold opacity-90 mt-0.5 tracking-tight">[{weekRangeText}]</div>
                             </th>
-
-                            {/* Main Title Banner: "Sprint Plan - [Campus Name] <> GoG : [Stream / Sem]" */}
                             <th
-                                colSpan={DEFAULT_TIME_SLOTS.length}
-                                className="bg-zinc-100 dark:bg-zinc-900/90 text-zinc-950 dark:text-white font-black text-base md:text-lg py-3.5 tracking-wide text-center"
+                                colSpan={DAYS_OF_WEEK.length}
+                                className="bg-zinc-100 dark:bg-zinc-900/90 text-zinc-950 dark:text-white font-black text-sm md:text-base py-3 tracking-wide text-center"
                             >
                                 Sprint Plan - {selectedCampus} &lt;&gt; GoG : {selectedStream !== "All" ? selectedStream : "All Branches"}
                                 {selectedSemester !== "All" ? ` (${selectedSemester})` : ""}
@@ -384,132 +383,97 @@ export default function SprintPlanTimetableGrid({
                             </th>
                         </tr>
 
-                        {/* Header Row 2: Day label left + Time slots along columns */}
+                        {/* Header Row 2: TIME label left + days along the columns */}
                         <tr className="bg-[#bfe0f7] dark:bg-[#1a3852] text-zinc-950 dark:text-sky-100 font-black text-[11px] border-b-2 border-zinc-800">
-                            <th className="py-2.5 px-3 border-r-2 border-zinc-800 bg-zinc-200 dark:bg-zinc-900/80 text-zinc-800 dark:text-zinc-300">
-                                DAY / TIME
+                            <th className="py-2.5 px-2 border-r-2 border-zinc-800 bg-zinc-200 dark:bg-zinc-900/80 text-zinc-800 dark:text-zinc-300">
+                                TIME / DAY
                             </th>
-                            {DEFAULT_TIME_SLOTS.map((slot, idx) => (
-                                <th
-                                    key={idx}
-                                    className={`py-2 px-2 border-r border-zinc-300 dark:border-zinc-700/60 font-bold whitespace-pre-line leading-tight text-[11px] ${
-                                        slot.isLunch
-                                            ? "bg-[#fed8b1] dark:bg-[#663b14] text-zinc-950 dark:text-amber-100 w-24"
-                                            : "w-36"
-                                    }`}
-                                >
-                                    {slot.label}
-                                </th>
-                            ))}
+                            {DAYS_OF_WEEK.map(dayName => {
+                                const dayDateObj = weekDates.find(d => d.day?.toUpperCase().startsWith(dayName));
+                                const dateLabel = dayDateObj ? dayDateObj.date.split("-").reverse().slice(0, 2).join("/") : "";
+                                return (
+                                    <th key={dayName} className="py-2 px-2 border-r border-zinc-300 dark:border-zinc-700/60 font-black leading-tight">
+                                        <div className="tracking-wider">{dayName}</div>
+                                        {dateLabel && <div className="text-[10px] font-bold opacity-70 mt-0.5">{dateLabel}</div>}
+                                    </th>
+                                );
+                            })}
                         </tr>
                     </thead>
 
                     <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 text-xs">
-                        {DAYS_OF_WEEK.map((dayName, dayIdx) => {
-                            // Find date for this day if provided
-                            const dayDateObj = weekDates.find(d => d.day?.toUpperCase().startsWith(dayName));
-                            const dateLabel = dayDateObj ? dayDateObj.date.split("-").reverse().slice(0, 2).join("/") : "";
+                        {DEFAULT_TIME_SLOTS.map((slot, sIdx) => (
+                            <tr key={sIdx} className={`transition-colors hover:bg-zinc-50/50 dark:hover:bg-zinc-900/30 ${slot.isLunch ? "h-10" : "h-24"}`}>
+                                {/* Left: time slot */}
+                                <td className={`font-black text-[11px] py-2 px-2 border-r-2 border-zinc-800 whitespace-pre-line leading-tight ${
+                                    slot.isLunch
+                                        ? "bg-[#fed8b1] dark:bg-[#663b14] text-zinc-950 dark:text-amber-100"
+                                        : "bg-zinc-100/90 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100"
+                                }`}>
+                                    {slot.isLunch ? "11:50 – 12:20" : slot.label.replace(" To ", " – ")}
+                                    {slot.isLunch && <div className="text-[9px] tracking-widest mt-0.5">LUNCH</div>}
+                                </td>
 
-                            // Check if this day is a holiday (e.g., friday holiday in screenshot or entries note)
-                            const isFridayHoliday = dayName === "FRI" && filteredEntries.filter(e => e.day === "FRI").length === 0;
-
-                            return (
-                                <tr key={dayName} className="h-28 transition-colors hover:bg-zinc-50/50 dark:hover:bg-zinc-900/30">
-                                    {/* Left Row Header: Day name (MON, TUE, WED, ...) */}
-                                    <td className="font-black text-xs md:text-sm py-4 px-3 border-r-2 border-zinc-800 bg-zinc-100/90 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">
-                                        <div className="tracking-wider">{dayName}</div>
-                                        {dateLabel && <div className="text-[10px] font-bold text-zinc-500 mt-0.5">{dateLabel}</div>}
-                                    </td>
-
-                                    {/* If entire day is marked as Holiday */}
-                                    {isFridayHoliday && (
-                                        <td
-                                            colSpan={DEFAULT_TIME_SLOTS.length}
-                                            className="bg-zinc-100/80 dark:bg-zinc-900/40 text-center font-bold text-zinc-500 italic text-sm tracking-widest border-r border-zinc-300 dark:border-zinc-800"
-                                        >
-                                            Holiday / Institutional Off
-                                        </td>
-                                    )}
-
-                                    {!isFridayHoliday && DEFAULT_TIME_SLOTS.map((slot, sIdx) => {
-                                        // Lunch cell
-                                        if (slot.isLunch) {
-                                            // Only render lunch span on first row or each row
-                                            return (
-                                                <td
-                                                    key={sIdx}
-                                                    className="bg-amber-100/70 dark:bg-amber-950/20 text-zinc-800 dark:text-amber-200/80 font-black text-xs border-r border-zinc-300 dark:border-zinc-800/80 text-center uppercase tracking-widest"
-                                                >
-                                                    LUNCH
-                                                </td>
-                                            );
-                                        }
-
-                                        // Regular slot: find entries that fall in this slot
-                                        const slotEntries = getEntriesForSlot(dayName, slot.start, slot.stop);
-
+                                {DAYS_OF_WEEK.map(dayName => {
+                                    // Existing rule: a Friday with no classes is shown as a holiday (one cell for the whole column)
+                                    const isFridayHoliday = dayName === "FRI" && filteredEntries.filter(e => e.day === "FRI").length === 0;
+                                    if (isFridayHoliday) {
+                                        if (sIdx !== 0) return null;
                                         return (
-                                            <td
-                                                key={sIdx}
-                                                className="p-1.5 align-middle border-r border-zinc-200 dark:border-zinc-800 relative min-w-[130px]"
-                                            >
-                                                {slotEntries.length === 0 ? (
-                                                    <div className="h-full flex items-center justify-center text-[10px] text-zinc-300 dark:text-zinc-700 font-medium">
-                                                        —
-                                                    </div>
-                                                ) : (
-                                                    <div className="space-y-1.5">
-                                                        {/* Multiple faculties at the same time in same section handling */}
-                                                        {slotEntries.map((lec, lIdx) => {
-                                                            const themeIdx = facultyThemeMap.get(lec.facultyName) ?? (lIdx % FACULTY_CARD_THEMES.length);
-                                                            const theme = FACULTY_CARD_THEMES[themeIdx];
-
-                                                            return (
-                                                                <div
-                                                                    key={lIdx}
-                                                                    className={`rounded-lg p-2 text-left border shadow-sm transition-all hover:scale-[1.02] ${theme.bg} ${theme.border}`}
-                                                                >
-                                                                    {/* Subject / Topic */}
-                                                                    <div className={`font-black text-[11px] leading-tight line-clamp-2 ${theme.text}`}>
-                                                                        {lec.topics || lec.subjectName || "Academic Lecture"}
-                                                                    </div>
-
-                                                                    {/* Faculty Name */}
-                                                                    <div className={`text-[10px] font-bold mt-1 flex items-center justify-between ${theme.subtext}`}>
-                                                                        <span>{lec.facultyName}</span>
-                                                                        {lec.section && (
-                                                                            <span className="text-[9px] opacity-80">
-                                                                                Sec {lec.section}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-
-                                                                    {/* Timing tag if different from standard slot */}
-                                                                    {(lec.timeStart !== slot.start || lec.timeStop !== slot.stop) && (
-                                                                        <div className="text-[8px] font-semibold opacity-75 mt-0.5">
-                                                                            {lec.timeStart} - {lec.timeStop}
-                                                                        </div>
-                                                                    )}
-
-                                                                    {/* Multi-class badge indicator */}
-                                                                    {slotEntries.length > 1 && (
-                                                                        <div className="mt-1 flex items-center gap-1">
-                                                                            <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded ${theme.badge}`}>
-                                                                                Slot Share {lIdx + 1}/{slotEntries.length}
-                                                                            </span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                )}
+                                            <td key={dayName} rowSpan={DEFAULT_TIME_SLOTS.length}
+                                                className="bg-zinc-100/80 dark:bg-zinc-900/40 text-center font-bold text-zinc-500 italic text-xs tracking-widest border-r border-zinc-300 dark:border-zinc-800 [writing-mode:vertical-rl] rotate-180">
+                                                Holiday / Institutional Off
                                             </td>
                                         );
-                                    })}
-                                </tr>
-                            );
-                        })}
+                                    }
+
+                                    if (slot.isLunch) {
+                                        return (
+                                            <td key={dayName} className="bg-amber-100/70 dark:bg-amber-950/20 text-zinc-800 dark:text-amber-200/80 font-black text-[10px] border-r border-zinc-300 dark:border-zinc-800/80 text-center uppercase tracking-widest">
+                                                Lunch
+                                            </td>
+                                        );
+                                    }
+
+                                    const slotEntries = getEntriesForSlot(dayName, slot.start, slot.stop);
+                                    return (
+                                        <td key={dayName} className="p-1.5 align-top border-r border-zinc-200 dark:border-zinc-800">
+                                            {slotEntries.length === 0 ? (
+                                                <div className="h-full min-h-[3rem] flex items-center justify-center text-[10px] text-zinc-300 dark:text-zinc-700 font-medium">—</div>
+                                            ) : (
+                                                <div className="space-y-1.5">
+                                                    {slotEntries.map((lec, lIdx) => {
+                                                        const themeIdx = facultyThemeMap.get(lec.facultyName) ?? (lIdx % FACULTY_CARD_THEMES.length);
+                                                        const theme = FACULTY_CARD_THEMES[themeIdx];
+                                                        return (
+                                                            <button type="button" key={lIdx} onClick={() => setOpenEntry(lec)} data-testid="timetable-class"
+                                                                className={`block w-full rounded-lg p-1.5 text-left border shadow-sm cursor-pointer hover:brightness-110 hover:ring-1 hover:ring-white/30 transition ${theme.bg} ${theme.border}`}
+                                                                title={`${lec.timeStart}–${lec.timeStop} · ${lec.subjectName || ""} · ${lec.facultyName || ""} — click for details`}>
+                                                                <div className={`font-black text-[10px] leading-tight line-clamp-2 ${theme.text}`}>
+                                                                    {lec.topics || lec.subjectName || "Academic Lecture"}
+                                                                </div>
+                                                                <div className={`text-[9px] font-bold mt-0.5 flex items-center justify-between gap-1 ${theme.subtext}`}>
+                                                                    <span className="truncate">{lec.facultyName}</span>
+                                                                    {lec.section && <span className="shrink-0 opacity-80">Sec {lec.section}</span>}
+                                                                </div>
+                                                                {(lec.timeStart !== slot.start || lec.timeStop !== slot.stop) && (
+                                                                    <div className="text-[8px] font-semibold opacity-75 mt-0.5">{lec.timeStart} - {lec.timeStop}</div>
+                                                                )}
+                                                                {slotEntries.length > 1 && (
+                                                                    <span className={`inline-block mt-1 text-[7px] font-black uppercase px-1.5 py-0.5 rounded ${theme.badge}`}>
+                                                                        Slot Share {lIdx + 1}/{slotEntries.length}
+                                                                    </span>
+                                                                )}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </td>
+                                    );
+                                })}
+                            </tr>
+                        ))}
                     </tbody>
                 </table>
             </div>
@@ -533,6 +497,41 @@ export default function SprintPlanTimetableGrid({
                     * If multiple faculties schedule sessions in the same section slot, they are grouped and displayed side-by-side.
                 </div>
             </div>
+
+            {/* Click a class → its full details */}
+            {openEntry && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[130] flex items-center justify-center p-4 print:hidden" onClick={() => setOpenEntry(null)}>
+                    <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-xl max-h-[88vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()} data-testid="timetable-class-modal">
+                        <div className="p-5 border-b border-zinc-800 flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <h3 className="text-lg font-bold text-white [overflow-wrap:anywhere]">{openEntry.subjectName || "Lecture"}{openEntry.subjectCode ? ` (${openEntry.subjectCode})` : ""}</h3>
+                                <p className="text-xs text-zinc-400 mt-0.5">
+                                    {openEntry.day} {openEntry.date ? openEntry.date.split("-").reverse().join("-") : ""} · {openEntry.timeStart}–{openEntry.timeStop}
+                                </p>
+                            </div>
+                            <button onClick={() => setOpenEntry(null)} className="text-zinc-500 hover:text-white"><X size={18} /></button>
+                        </div>
+                        <div className="p-5 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+                            {([
+                                ["Professor", openEntry.facultyName], ["College", openEntry.college || openEntry.location],
+                                ["Topic", openEntry.topics], ["Content", openEntry.content],
+                                ["Lecture Type", openEntry.lectureType], ["Unit", openEntry.unitNumber],
+                                ["Class", openEntry.className], ["Section", openEntry.section],
+                                ["Stream / Branch", openEntry.stream || openEntry.branch], ["Year / Semester", [openEntry.year, openEntry.semester].filter(Boolean).join(" / ")],
+                                ["Plan", openEntry.isLocked ? "Locked" : (openEntry.isVerifiedByCL ? "Verified" : "Submitted")],
+                            ] as [string, any][]).map(([k, v]) => (
+                                <div key={k} className="min-w-0">
+                                    <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">{k}</p>
+                                    <p className="text-zinc-200 [overflow-wrap:anywhere] whitespace-pre-wrap">{v || "—"}</p>
+                                </div>
+                            ))}
+                            {openEntry.clRemarks && (
+                                <div className="col-span-2"><p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Remarks</p><p className="text-zinc-300 italic">{openEntry.clRemarks}</p></div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

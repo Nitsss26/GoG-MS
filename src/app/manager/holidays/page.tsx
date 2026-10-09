@@ -15,6 +15,11 @@ export default function HolidaysPage() {
     const fileRef = useRef<HTMLInputElement>(null);
     if (!user || !["FOUNDER", "AD", "HOI", "HR", "OM"].includes(user.role)) return null;
 
+    // An HOI is mapped to one college: a holiday request from an HOI always belongs to that college
+    const myCollege = user.role === "HOI" && user.location
+        ? colleges.find(c => c.id === user.location || c.name === user.location || c.shortName === user.location)
+        : undefined;
+
     const handleProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -29,8 +34,8 @@ export default function HolidaysPage() {
             name: form.name,
             date: form.date,
             proofUrl: proofUrl || undefined,
-            collegeIds: form.forAll ? [] : form.collegeIds,
-            forAll: form.forAll || undefined,
+            collegeIds: myCollege ? [myCollege.id] : (form.forAll ? [] : form.collegeIds),
+            forAll: myCollege ? undefined : (form.forAll || undefined),
         });
         setForm({ name: "", date: "", collegeIds: [], forAll: false });
         setProofUrl(null);
@@ -73,11 +78,12 @@ export default function HolidaysPage() {
                                         )}
                                         {h.customMessage && <span className="text-[9px] text-zinc-600 italic truncate max-w-[200px]">"{h.customMessage}"</span>}
                                         {h.proofUrl && <a href={h.proofUrl} target="_blank" rel="noopener" className="text-[10px] text-primary hover:underline">Proof ↗</a>}
+                                        {h.status === "Rejected" && h.rejectionReason && <span className="text-[9px] text-red-400/80 italic">Reason: {h.rejectionReason}</span>}
                                     </div>
                                 </div>
                                 <span className={cn("text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border",
-                                    h.status === "Approved" ? "text-green-400 bg-green-500/10 border-green-500/20" : "text-amber-400 bg-amber-500/10 border-amber-500/20"
-                                )}>{h.status === "Approved" ? <><CheckCircle2 size={10} className="inline mr-0.5" /> Approved</> : <><Clock size={10} className="inline mr-0.5" /> Pending</>}</span>
+                                    h.status === "Approved" ? "text-green-400 bg-green-500/10 border-green-500/20" : h.status === "Rejected" ? "text-red-400 bg-red-500/10 border-red-500/20" : "text-amber-400 bg-amber-500/10 border-amber-500/20"
+                                )}>{h.status === "Approved" ? <><CheckCircle2 size={10} className="inline mr-0.5" /> Approved</> : h.status === "Rejected" ? <><X size={10} className="inline mr-0.5" /> Rejected</> : <><Clock size={10} className="inline mr-0.5" /> Pending</>}</span>
                             </div>
                         ))}
                 </div>
@@ -101,13 +107,20 @@ export default function HolidaysPage() {
                                 {/* College Selection */}
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Applies To</label>
-                                    <div className="flex items-center gap-3">
+                                    {myCollege && (
+                                        <div className="flex items-center gap-2 p-2.5 bg-zinc-800/50 rounded-lg border border-zinc-700/50">
+                                            <Building2 size={12} className="text-blue-400 shrink-0" />
+                                            <span className="text-xs text-white font-medium">{myCollege.name}</span>
+                                            <span className="text-[9px] text-zinc-500 ml-auto">Your college</span>
+                                        </div>
+                                    )}
+                                    {!myCollege && <div className="flex items-center gap-3">
                                         <label className="flex items-center gap-1.5 cursor-pointer">
                                             <input type="checkbox" checked={form.forAll} onChange={e => setForm({ ...form, forAll: e.target.checked, collegeIds: [] })} className="rounded border-zinc-700 bg-zinc-800 text-primary" />
                                             <span className="text-xs text-zinc-300">All Colleges</span>
                                         </label>
-                                    </div>
-                                    {!form.forAll && (
+                                    </div>}
+                                    {!myCollege && !form.forAll && (
                                         <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-2 bg-zinc-800/50 rounded-lg border border-zinc-700/50">
                                             {colleges.map(c => (
                                                 <label key={c.id} className="flex items-center gap-2 cursor-pointer p-1.5 hover:bg-zinc-700/50 rounded transition-colors">

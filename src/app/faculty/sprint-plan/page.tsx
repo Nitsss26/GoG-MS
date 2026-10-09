@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import SprintPlanTimetableGrid from "@/components/academic/SprintPlanTimetableGrid";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -14,6 +14,8 @@ import Link from "next/link";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { validateSprintEntries, isValidTimeFormat } from "@/lib/time-utils";
+import SprintPlanWorkflowPanel from "@/components/academic/SprintPlanWorkflowPanel";
+import { getPlanStatus, LOCKED_PLAN_STATUSES, LECTURE_TYPES, UNIT_NUMBERS } from "@/lib/academic-status";
 
 interface SprintEntry {
     day: string;
@@ -27,6 +29,12 @@ interface SprintEntry {
     subjectName: string;
     topics: string;
     section: string;
+    // Weekly plan details (stream = Branch)
+    lectureType?: string;
+    unitNumber?: string;
+    content?: string;
+    className?: string;
+    _id?: string;
 }
 
 interface SprintPlanData {
@@ -42,6 +50,11 @@ interface SprintPlanData {
     lockedAt?: string;
     entries: SprintEntry[];
     changeRequests?: any[];
+    status?: string;
+    isVerifiedByCL?: boolean;
+    history?: any[];
+    revisions?: any[];
+    version?: number;
 }
 
 const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -118,8 +131,6 @@ export default function SprintPlanPage() {
     const [workSchedules, setWorkSchedules] = useState<any[]>([]); // Added for daily location
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [showChangeRequest, setShowChangeRequest] = useState(false);
-    const [changeReason, setChangeReason] = useState("");
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
     const [invalidIndices, setInvalidIndices] = useState<number[]>([]);
     const [copying, setCopying] = useState(false);
@@ -136,6 +147,23 @@ export default function SprintPlanPage() {
     const [newStream, setNewStream] = useState("");
 
     const weekInfo = getWeekDates(weekOffset);
+    // Lifecycle: a locked plan (or one waiting for an unlock decision) cannot be edited by anyone
+    const planStatus = plan ? getPlanStatus(plan) : "DRAFT";
+    const isFrozen = LOCKED_PLAN_STATUSES.includes(planStatus);
+    const [submitting, setSubmitting] = useState(false);
+
+    // Open a specific week from a link (?week=YYYY-MM-DD), e.g. from a notification email
+    useEffect(() => {
+        try {
+            const w = new URLSearchParams(window.location.search).get("week");
+            if (!w || !/^\d{4}-\d{2}-\d{2}$/.test(w)) return;
+            const base = new Date(getWeekDates(0).start + "T00:00:00Z").getTime();
+            const target = new Date(w + "T00:00:00Z");
+            const dow = target.getUTCDay();
+            target.setUTCDate(target.getUTCDate() + (dow === 0 ? -6 : 1 - dow));
+            setWeekOffset(Math.round((target.getTime() - base) / (7 * 86400000)));
+        } catch { /* ignore */ }
+    }, []);
 
     useEffect(() => {
         if (user?.id) {
@@ -176,11 +204,15 @@ export default function SprintPlanPage() {
         }
     };
 
+    // Only the latest request may update the page (week / date can change while a request is running)
+    const latestRequest = useRef(0);
     const fetchPlan = async () => {
+        const requestNo = ++latestRequest.current;
         setLoading(true);
         try {
             const res = await fetch(`/api/faculty/sprint-plan?facultyId=${user?.id}&weekStartDate=${weekInfo.start}`);
             const data = await res.json();
+            if (requestNo !== latestRequest.current) return;
 
             // New structure: { plans, schedules }
             const fetchedPlans = data.plans || [];
@@ -209,7 +241,7 @@ export default function SprintPlanPage() {
         } catch (e) {
             console.error(e);
         } finally {
-            setLoading(false);
+            if (requestNo === latestRequest.current) setLoading(false);
         }
     };
 
@@ -221,7 +253,7 @@ export default function SprintPlanPage() {
             facultyName: user?.name || "Professor",
             college: plan?.college || user?.location || "Main Campus",
             location: plan?.college || user?.location || "Main Campus",
-            isLocked: plan?.isLocked,
+            isLocked: isFrozen,
             isVerifiedByCL: plan?.isVerifiedByCL
         }));
     }, [allCampusEntries, entries, user, plan]);
@@ -250,7 +282,7 @@ export default function SprintPlanPage() {
                 // Map entries to current week corresponding dates
                 const mappedEntries = prevPlan.entries.map((e: SprintEntry) => {
                     const currentDateForDay = weekInfo.dates.find(d => d.day === e.day)?.date;
-                    return { ...e, date: currentDateForDay || e.date };
+                    return { ...e, _id: undefined, date: currentDateForDay || e.date };
                 });
 
                 // Append to current entries (user can save later)
@@ -277,7 +309,11 @@ export default function SprintPlanPage() {
             subjectCode: "",
             subjectName: "",
             topics: "",
-            section: ""
+            section: "",
+            lectureType: LECTURE_TYPES[0],
+            unitNumber: "1",
+            content: "",
+            className: ""
         }]);
     };
 
@@ -325,8 +361,10 @@ export default function SprintPlanPage() {
             });
             const data = await res.json();
             if (res.ok) {
-                setMessage({ type: "success", text: "Sprint plan saved successfully!" });
+                setMessage({ type: "success", text: data.message || "Sprint plan saved successfully!" });
                 setPlan(data.plan);
+                setEntries(data.plan?.entries || entries);
+                return data.plan;
             } else {
                 setMessage({ type: "error", text: data.error || "Failed to save" });
                 if (data.invalidIndices) setInvalidIndices(data.invalidIndices);
@@ -338,30 +376,35 @@ export default function SprintPlanPage() {
         }
     };
 
-    const submitChangeRequest = async () => {
-        if (!changeReason.trim()) return;
+    // Save the entries, then submit the complete week for locking (first time or after an unlock)
+    const submitWeek = async () => {
+        if (entries.length === 0) {
+            setMessage({ type: "error", text: "Add the classes of the week before submitting." });
+            return;
+        }
+        const missing = entries.findIndex(e => !e.subjectName || !e.topics);
+        if (missing >= 0) {
+            setMessage({ type: "error", text: `Class ${missing + 1} (${entries[missing].day}) needs a Subject and a Topic before submitting.` });
+            setInvalidIndices([missing]);
+            return;
+        }
+        setSubmitting(true);
         try {
-            const res = await fetch("/api/faculty/sprint-plan/change-request", {
+            const saved = await savePlan();
+            if (!saved?._id) return;
+            const res = await fetch("/api/sprint-plan/action", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    facultyId: user?.id,
-                    weekStartDate: weekInfo.start,
-                    reason: changeReason,
-                    changes: { entries }
-                })
+                body: JSON.stringify({ planId: saved._id, action: "submit" })
             });
             const data = await res.json();
-            if (res.ok) {
-                setMessage({ type: "success", text: "Change request submitted for HOI approval" });
-                setShowChangeRequest(false);
-                setChangeReason("");
-                fetchPlan();
-            } else {
-                setMessage({ type: "error", text: data.error });
-            }
+            if (!res.ok) throw new Error(data.error || "Submit failed");
+            setPlan(data.plan);
+            setMessage({ type: "success", text: data.message });
         } catch (e: any) {
             setMessage({ type: "error", text: e.message });
+        } finally {
+            setSubmitting(false);
         }
     };
 
@@ -415,7 +458,7 @@ export default function SprintPlanPage() {
         doc.text(`${user?.name?.toUpperCase() || "N/A"}`, 45, 62);
         doc.text(`${fullWeekRange}`, 45, 68);
         doc.text(`${plan?.college || "Global HQ"}`, 45, 74);
-        doc.text(`${plan?.isLocked ? "FINALIZED & LOCKED" : "ACTIVE DRAFT"}`, 140, 62);
+        doc.text(`${isFrozen ? "FINALIZED & LOCKED" : "ACTIVE DRAFT"}`, 140, 62);
         doc.text(`${new Date().toLocaleString()}`, 140, 68);
 
         const tableData: any[] = [];
@@ -499,33 +542,52 @@ export default function SprintPlanPage() {
     }
 
     return (
-        <div className="max-w-7xl mx-auto pt-10 pb-10 px-4 sm:px-6 space-y-6">
+        <div className="w-full max-w-7xl mx-auto pt-8 pb-10 px-4 sm:px-6 space-y-6 [contain:inline-size]">
             {/* Header */}
             <div className="relative group">
                 <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500/10 to-emerald-500/10 rounded-3xl blur opacity-25 group-hover:opacity-40 transition duration-1000"></div>
-                <div className="relative bg-zinc-900/60 backdrop-blur-xl border border-zinc-800/80 rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-2xl">
-                    <div className="flex items-center gap-4">
+                <div className="relative bg-zinc-900/60 backdrop-blur-xl border border-zinc-800/80 rounded-3xl p-5 sm:p-7 flex flex-col gap-4 shadow-2xl">
+                    {/* Row 1: title + week navigation */}
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 shrink-0">
                         <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20 shadow-inner">
                             <CalendarDays size={24} className="text-indigo-400" />
                         </div>
                         <div>
-                            <h1 className="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400 tracking-tight">
+                            <h1 className="text-2xl sm:text-3xl font-black whitespace-nowrap bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400 tracking-tight">
                                 Sprint Management
                             </h1>
                             <p className="text-[10px] text-zinc-500 font-black uppercase tracking-[0.2em] mt-1 italic">Teaching Schedule</p>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={() => setWeekOffset(prev => prev - 1)}
+                            className="p-3 rounded-xl bg-zinc-800/50 hover:bg-zinc-700 text-zinc-400 border border-zinc-700/50 transition-all hover:scale-110 active:scale-95">
+                            <ArrowLeft size={16} />
+                        </button>
+                        <div className="px-4 py-3 bg-zinc-800/80 border border-zinc-700/50 rounded-xl shrink-0">
+                            <span className="text-xs font-black text-white tabular-nums tracking-widest uppercase whitespace-nowrap">
+                                {formatDateDMY(weekInfo.start)} <span className="text-zinc-600 font-bold mx-2">/</span> {formatDateDMY(weekInfo.end)}
+                            </span>
+                        </div>
+                        <button onClick={() => setWeekOffset(prev => prev + 1)}
+                            className="p-3 rounded-xl bg-zinc-800/50 hover:bg-zinc-700 text-zinc-400 border border-zinc-700/50 transition-all hover:scale-110 active:scale-95">
+                            <ArrowRight size={16} />
+                        </button>
+                    </div>
+                    </div>
+                    {/* Row 2: dropdown settings and copy */}
+                    <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-zinc-800/70">
                         <button
                             onClick={() => { setPrefTab("SUBJECTS"); setShowPrefModal(true); }}
-                            className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-widest rounded-xl border border-indigo-500/10 transition-all active:scale-95"
+                            className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-widest rounded-xl border border-indigo-500/10 transition-all active:scale-95 whitespace-nowrap"
                         >
                             <Plus size={14} /> Add Courses
                         </button>
                         <button
                             onClick={() => { setPrefTab("STREAMS"); setShowPrefModal(true); }}
-                            className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-widest rounded-xl border border-emerald-500/10 transition-all active:scale-95"
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-widest rounded-xl border border-emerald-500/10 transition-all active:scale-95 whitespace-nowrap"
                         >
                             <Plus size={14} /> Add Streams
                         </button>
@@ -536,43 +598,31 @@ export default function SprintPlanPage() {
                         >
                             <Download size={14} /> Download Plan
                         </button> */}
-                        {!plan?.isLocked && (
+                        {!isFrozen && (
                             <button
                                 onClick={copyFromPreviousWeek}
                                 disabled={copying}
-                                className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[10px] font-black uppercase tracking-widest rounded-xl border border-amber-500/10 transition-all active:scale-95 disabled:opacity-50"
+                                className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[10px] font-black uppercase tracking-widest rounded-xl border border-amber-500/10 transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap"
                             >
                                 <Copy size={14} /> {copying ? "Copying..." : "Copy Previous Week"}
                             </button>
                         )}
                     </div>
 
-                    <div className="flex items-center gap-3">
-                        <button onClick={() => setWeekOffset(prev => prev - 1)}
-                            className="p-3 rounded-xl bg-zinc-800/50 hover:bg-zinc-700 text-zinc-400 border border-zinc-700/50 transition-all hover:scale-110 active:scale-95">
-                            <ArrowLeft size={16} />
-                        </button>
-                        <div className="px-5 py-3 bg-zinc-800/80 border border-zinc-700/50 rounded-xl shrink-0">
-                            <span className="text-xs font-black text-white tabular-nums tracking-widest uppercase whitespace-nowrap">
-                                {formatDateDMY(weekInfo.start)} <span className="text-zinc-600 font-bold mx-2">/</span> {formatDateDMY(weekInfo.end)}
-                            </span>
-                        </div>
-                        <button onClick={() => setWeekOffset(prev => prev + 1)}
-                            className="p-3 rounded-xl bg-zinc-800/50 hover:bg-zinc-700 text-zinc-400 border border-zinc-700/50 transition-all hover:scale-110 active:scale-95">
-                            <ArrowRight size={16} />
-                        </button>
-                    </div>
                 </div>
             </div>
 
-            {/* Status Bar */}
-            {plan?.isLocked && (
-                <div className="flex items-center gap-4 bg-amber-500/5 border border-amber-500/10 rounded-2xl px-6 py-4 shadow-lg animate-in slide-in-from-top-2 duration-500">
-                    <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20">
-                        <Lock size={14} className="text-amber-500" />
-                    </div>
-                    <span className="text-xs text-zinc-400 font-medium italic">
-                        Sprint state: <span className="text-amber-500 font-black uppercase tracking-widest">Locked</span>{plan.lockedAt ? ` (Since ${plan.lockedAt})` : ""}. Modification requires administrative change request.
+            {/* Status Bar — lifecycle, history and Request Unlock */}
+            {plan?._id && (
+                <div className="flex flex-col gap-3 bg-zinc-900/60 border border-zinc-800 rounded-2xl px-6 py-4 shadow-lg">
+                    <SprintPlanWorkflowPanel plan={plan} mode="professor" onChanged={(p, msg) => { setPlan(p); setMessage({ type: "success", text: msg }); }} />
+                    <span className="text-xs text-zinc-400 font-medium">
+                        {planStatus === "DRAFT" && "Draft — complete the week, review it and press \"Submit Week for Locking\"."}
+                        {planStatus === "SUBMITTED" && "Submitted — waiting for HOI / CL / CH / AD to lock it. You can still correct it until it is locked."}
+                        {planStatus === "RESUBMITTED" && "Re-submitted — waiting to be locked again."}
+                        {planStatus === "UNLOCKED_FOR_REVISION" && "Unlocked for revision — make your changes and re-submit the week."}
+                        {["LOCKED", "LOCKED_AGAIN"].includes(planStatus) && <>Locked{plan.lockedAt ? ` (since ${new Date(plan.lockedAt).toString() === "Invalid Date" ? plan.lockedAt : new Date(plan.lockedAt).toLocaleString("en-IN")})` : ""}. To change it, use <span className="text-orange-400 font-bold">Request Unlock</span>.</>}
+                        {planStatus === "UNLOCK_REQUESTED" && "Your unlock request is waiting for approval. The plan stays locked."}
                     </span>
                 </div>
             )}
@@ -587,8 +637,8 @@ export default function SprintPlanPage() {
             )}
 
             {/* View Mode Switcher */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-zinc-900/60 p-2.5 rounded-2xl border border-zinc-800 shadow-lg">
-                <div className="flex items-center gap-2">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-zinc-900/60 p-2.5 rounded-2xl border border-zinc-800 shadow-lg">
+                <div className="flex flex-wrap items-center gap-2">
                     <button
                         onClick={() => setViewMode("GRID")}
                         className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
@@ -621,31 +671,45 @@ export default function SprintPlanPage() {
                     <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
                 </div>
             ) : viewMode === "GRID" ? (
-                <div className="space-y-4">
+                <div className="space-y-4 overflow-x-auto [contain:inline-size] rounded-2xl">
                     <SprintPlanTimetableGrid
                         entries={displayGridEntries}
-                        weekStartDate={weekInfo.start}
-                        weekEndDate={weekInfo.end}
-                        defaultCampus={plan?.college || user?.location || "SAGE Bhopal"}
+                        weekRangeText={`${weekInfo.start} to ${weekInfo.end}`}
+
+                        weekDates={weekInfo.dates}
+                        key={plan?.college || user?.location || "All"}
+                        currentCampus={plan?.college || user?.location || "All"}
                     />
                 </div>
             ) : (
                 <div className="space-y-4">
+                    <datalist id="sprint-class-names">
+                        {Array.from(new Set(entries.map(e => e.className).filter(Boolean))).map(c => <option key={c} value={c as string} />)}
+                    </datalist>
+                    <p className="text-[10px] text-zinc-500 px-1">Each class: Time From–Till · Subject · Topic · Branch · Section · Year / Semester, then Lecture Type · Unit · Class · Content.</p>
                     {weekInfo.dates.map(({ day, date }) => {
                         const dayEntries = entries.filter(e => e.date === date || e.day === day);
-                        const dayColors: Record<string, string> = {
-                            MON: "border-blue-500/30", TUE: "border-teal-500/30", WED: "border-amber-500/30",
-                            THU: "border-purple-500/30", FRI: "border-pink-500/30", SAT: "border-orange-500/30",
+                        // A calm accent per weekday: coloured day chip, tinted header, accent bar
+                        const DAY_THEME: Record<string, { name: string; chip: string; header: string; border: string; add: string }> = {
+                            MON: { name: "Monday", chip: "bg-sky-500/15 text-sky-300 border-sky-500/30", header: "from-sky-500/10", border: "border-l-sky-400", add: "text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 border-sky-500/20" },
+                            TUE: { name: "Tuesday", chip: "bg-teal-500/15 text-teal-300 border-teal-500/30", header: "from-teal-500/10", border: "border-l-teal-400", add: "text-teal-300 bg-teal-500/10 hover:bg-teal-500/20 border-teal-500/20" },
+                            WED: { name: "Wednesday", chip: "bg-amber-500/15 text-amber-300 border-amber-500/30", header: "from-amber-500/10", border: "border-l-amber-400", add: "text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20" },
+                            THU: { name: "Thursday", chip: "bg-violet-500/15 text-violet-300 border-violet-500/30", header: "from-violet-500/10", border: "border-l-violet-400", add: "text-violet-300 bg-violet-500/10 hover:bg-violet-500/20 border-violet-500/20" },
+                            FRI: { name: "Friday", chip: "bg-rose-500/15 text-rose-300 border-rose-500/30", header: "from-rose-500/10", border: "border-l-rose-400", add: "text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/20" },
+                            SAT: { name: "Saturday", chip: "bg-orange-500/15 text-orange-300 border-orange-500/30", header: "from-orange-500/10", border: "border-l-orange-400", add: "text-orange-300 bg-orange-500/10 hover:bg-orange-500/20 border-orange-500/20" },
                         };
+                        const theme = DAY_THEME[day] || DAY_THEME.MON;
 
                         return (
-                            <div key={date} className={`rounded-xl bg-zinc-900/50 border ${dayColors[day] || "border-zinc-800"} overflow-hidden`}>
-                                <div className="flex items-center justify-between px-5 py-4 bg-zinc-800/30 border-b border-zinc-800/50">
-                                    <div className="flex items-center gap-4">
-                                        <span className="text-[10px] font-black text-white bg-zinc-800 px-3 py-1.5 rounded-lg border border-zinc-700/50 tracking-[0.2em]">{day}</span>
+                            <div key={date} className={`rounded-xl bg-zinc-900/50 border border-zinc-800 border-l-4 ${theme.border} overflow-hidden`}>
+                                <div className={`flex flex-wrap items-center justify-between gap-3 px-4 sm:px-5 py-3.5 bg-gradient-to-r ${theme.header} to-transparent border-b border-zinc-800/60`}>
+                                    <div className="flex items-center gap-3">
+                                        <span className={`text-[10px] font-black px-3 py-1.5 rounded-lg border tracking-[0.2em] ${theme.chip}`}>{day}</span>
+                                        <span className="text-sm font-bold text-white">{theme.name}</span>
                                         <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{formatDateDMY(date)}</span>
+                                        {dayEntries.length > 0 && <span className="text-[10px] font-bold text-zinc-400 bg-zinc-800/70 px-2 py-0.5 rounded-md">{dayEntries.length} class{dayEntries.length > 1 ? "es" : ""}</span>}
                                     </div>
-                                    <div className="flex items-center gap-4">
+                                    <div className="flex flex-wrap items-center gap-3">
                                         {/* Daily Location Tag — Positioned to the left of Add Slot button */}
                                         {(() => {
                                             // Robust matching: Check date, then uppercase/lowercase weekday strings
@@ -673,9 +737,9 @@ export default function SprintPlanPage() {
                                             );
                                         })()}
 
-                                        {!plan?.isLocked && (
+                                        {!isFrozen && (
                                             <button onClick={() => addEntry(day, date)}
-                                                className="flex items-center gap-2 text-[10px] font-black text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 px-4 py-2 rounded-xl transition-all border border-indigo-500/10 active:scale-95 uppercase tracking-widest whitespace-nowrap">
+                                                className={`flex items-center gap-2 text-[10px] font-black px-4 py-2 rounded-xl transition-all border active:scale-95 uppercase tracking-widest whitespace-nowrap ${theme.add}`}>
                                                 <Plus size={14} /> Add Slot
                                             </button>
                                         )}
@@ -689,11 +753,12 @@ export default function SprintPlanPage() {
                                         {entries.map((entry, idx) => {
                                             if (entry.date !== date && entry.day !== day) return null;
                                             return (
-                                                <div key={idx} className="px-4 py-3 grid grid-cols-12 gap-2 items-start">
-                                                    <div className="col-span-2 flex gap-1 items-center">
+                                                <div key={idx} className="px-4 py-3 space-y-2" data-testid="plan-entry">
+                                                <div className="grid grid-cols-12 gap-2 items-start [&>*]:min-w-0">
+                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-2 flex gap-1 items-center">
                                                         <button 
                                                             onClick={() => setActiveTimePicker({ idx, field: "timeStart" })}
-                                                            disabled={plan?.isLocked}
+                                                            disabled={isFrozen}
                                                             className={`flex-1 px-2 py-1.5 bg-zinc-800 border ${invalidIndices.includes(idx) ? 'border-red-500 animate-pulse' : 'border-zinc-700'} rounded text-[11px] text-white text-center focus:border-violet-500 hover:border-zinc-600 transition-colors disabled:opacity-50`}
                                                         >
                                                             {entry.timeStart || "09:20"}
@@ -701,25 +766,25 @@ export default function SprintPlanPage() {
                                                         <span className="text-zinc-600 font-bold">-</span>
                                                         <button 
                                                             onClick={() => setActiveTimePicker({ idx, field: "timeStop" })}
-                                                            disabled={plan?.isLocked}
+                                                            disabled={isFrozen}
                                                             className={`flex-1 px-2 py-1.5 bg-zinc-800 border ${invalidIndices.includes(idx) ? 'border-red-500 animate-pulse' : 'border-zinc-700'} rounded text-[11px] text-white text-center focus:border-violet-500 hover:border-zinc-600 transition-colors disabled:opacity-50`}
                                                         >
                                                             {entry.timeStop || "10:10"}
                                                         </button>
                                                     </div>
-                                                    <div className="col-span-2 flex flex-col gap-1 relative">
+                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-2 flex flex-col gap-1 relative">
                                                         <select value={entry.subjectCode} onChange={e => {
                                                             const code = e.target.value;
                                                             updateEntry(idx, "subjectCode", code);
                                                         }}
-                                                            disabled={plan?.isLocked}
+                                                            disabled={isFrozen}
                                                             className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50 font-medium appearance-none">
                                                             <option value="">-- Select Subject --</option>
                                                             {Object.entries(facultySubjects).map(([code, name]) => (
                                                                 <option key={code} value={code}>{name}</option>
                                                             ))}
                                                         </select>
-                                                        {!plan?.isLocked && (
+                                                        {!isFrozen && (
                                                             <button
                                                                 onClick={() => { setPrefTab("SUBJECTS"); setShowPrefModal(true); }}
                                                                 className="absolute right-2 top-2 text-zinc-500 hover:text-indigo-400 p-0.5">
@@ -727,18 +792,18 @@ export default function SprintPlanPage() {
                                                             </button>
                                                         )}
                                                     </div>
-                                                    <div className="col-span-2">
+                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-2">
                                                         <input value={entry.topics} onChange={e => updateEntry(idx, "topics", e.target.value)}
-                                                            disabled={plan?.isLocked} placeholder="Topics"
+                                                            disabled={isFrozen} placeholder="Topic" title="Topic"
                                                             className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50" />
                                                     </div>
-                                                    <div className="col-span-2 relative group-item">
+                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-2 relative group-item">
                                                         <select value={entry.stream} onChange={e => updateEntry(idx, "stream", e.target.value)}
-                                                            disabled={plan?.isLocked}
+                                                            disabled={isFrozen} title="Branch / Stream"
                                                             className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50 appearance-none">
                                                             {facultyStreams.map(s => <option key={s} value={s}>{s}</option>)}
                                                         </select>
-                                                        {!plan?.isLocked && (
+                                                        {!isFrozen && (
                                                             <button
                                                                 onClick={() => { setPrefTab("STREAMS"); setShowPrefModal(true); }}
                                                                 className="absolute right-2 top-2 text-zinc-500 hover:text-emerald-400 p-0.5">
@@ -746,30 +811,60 @@ export default function SprintPlanPage() {
                                                             </button>
                                                         )}
                                                     </div>
-                                                    <div className="col-span-1">
+                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-1">
                                                         <input value={entry.section} onChange={e => updateEntry(idx, "section", e.target.value)}
-                                                            disabled={plan?.isLocked} placeholder="Section"
+                                                            disabled={isFrozen} placeholder="Section"
                                                             className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50" />
                                                     </div>
-                                                    <div className="col-span-3 flex flex-col gap-1">
+                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-3 flex flex-col gap-1">
                                                         <div className="flex gap-1">
                                                             <select value={entry.year} onChange={e => updateEntry(idx, "year", e.target.value)}
-                                                                disabled={plan?.isLocked}
+                                                                disabled={isFrozen}
                                                                 className="flex-1 px-1 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[9px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50">
                                                                 {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
                                                             </select>
                                                             <select value={entry.semester} onChange={e => updateEntry(idx, "semester", e.target.value)}
-                                                                disabled={plan?.isLocked}
+                                                                disabled={isFrozen}
                                                                 className="flex-1 px-1 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[9px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50">
                                                                 {SEMESTERS.map(s => <option key={s} value={s}>{s}</option>)}
                                                             </select>
-                                                            {!plan?.isLocked && (
+                                                            {!isFrozen && (
                                                                 <button onClick={() => removeEntry(idx)} className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors shrink-0">
                                                                     <Trash2 size={12} />
                                                                 </button>
                                                             )}
                                                         </div>
                                                     </div>
+                                                </div>
+                                                {/* Lecture details: type, unit, class, content */}
+                                                <div className="grid grid-cols-12 gap-2 items-start [&>*]:min-w-0">
+                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-2">
+                                                        <select value={entry.lectureType || ""} onChange={e => updateEntry(idx, "lectureType", e.target.value)}
+                                                            disabled={isFrozen} title="Lecture Type"
+                                                            className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50">
+                                                            <option value="">-- Lecture Type --</option>
+                                                            {LECTURE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-1">
+                                                        <select value={entry.unitNumber || ""} onChange={e => updateEntry(idx, "unitNumber", e.target.value)}
+                                                            disabled={isFrozen} title="Unit Number"
+                                                            className="w-full px-1 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50">
+                                                            <option value="">Unit</option>
+                                                            {UNIT_NUMBERS.map(u => <option key={u} value={u}>Unit {u}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-2">
+                                                        <input value={entry.className || ""} onChange={e => updateEntry(idx, "className", e.target.value)}
+                                                            disabled={isFrozen} placeholder="Class (e.g. B.Tech CSE 2A)" title="Class" list="sprint-class-names"
+                                                            className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50" />
+                                                    </div>
+                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-7">
+                                                        <input value={entry.content || ""} onChange={e => updateEntry(idx, "content", e.target.value)}
+                                                            disabled={isFrozen} placeholder="Content (what will be covered: sub-topics, activities, material)" title="Content"
+                                                            className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50" />
+                                                    </div>
+                                                </div>
                                                 </div>
                                             );
                                         })}
@@ -782,51 +877,26 @@ export default function SprintPlanPage() {
             )}
 
             {/* Actions */}
-            <div className="flex flex-wrap gap-4 sticky bottom-8 bg-zinc-900/40 backdrop-blur-md p-4 rounded-3xl border border-zinc-800/80 shadow-2xl">
-                {!plan?.isLocked ? (
+            <div className="flex flex-wrap gap-3 sticky bottom-6 z-20 bg-zinc-950/80 backdrop-blur-md p-3 sm:p-4 rounded-3xl border border-zinc-800/80 shadow-2xl">
+                {!isFrozen ? (
                     <>
-                        <button onClick={savePlan} disabled={saving}
-                            className="flex-1 sm:flex-none flex items-center justify-center gap-3 px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase tracking-[0.2em] rounded-2xl transition-all shadow-xl shadow-indigo-500/10 active:scale-95 disabled:opacity-50">
-                            <Save size={16} /> {saving ? "Synchronizing..." : "Save Sprint Archive"}
+                        <button onClick={savePlan} disabled={saving || submitting}
+                            className="flex-1 sm:flex-none flex items-center justify-center gap-3 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase tracking-wider rounded-2xl transition-all shadow-xl shadow-indigo-500/10 active:scale-95 disabled:opacity-50">
+                            <Save size={16} /> {saving ? "Synchronizing..." : planStatus === "DRAFT" || planStatus === "UNLOCKED_FOR_REVISION" ? "Save Draft" : "Save Changes"}
                         </button>
+                        {(planStatus === "DRAFT" || planStatus === "UNLOCKED_FOR_REVISION") && (
+                            <button onClick={submitWeek} disabled={saving || submitting || entries.length === 0} data-testid="submit-week"
+                                className="flex-1 sm:flex-none flex items-center justify-center gap-3 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider rounded-2xl transition-all shadow-xl shadow-emerald-500/10 active:scale-95 disabled:opacity-50">
+                                <Send size={16} /> {submitting ? "Submitting..." : planStatus === "UNLOCKED_FOR_REVISION" ? "Re-submit Week for Locking" : "Submit Week for Locking"}
+                            </button>
+                        )}
                     </>
                 ) : (
-                    <button onClick={() => setShowChangeRequest(true)}
-                        className="flex-1 flex items-center justify-center gap-3 px-8 py-4 bg-orange-600/10 hover:bg-orange-600/20 text-orange-400 text-xs font-black uppercase tracking-[0.2em] rounded-2xl border border-orange-500/20 transition-all active:scale-95">
-                        <Send size={16} /> Dispatch Change Request (HOI)
-                    </button>
+                    <div className="flex-1 flex items-center justify-center gap-3 px-6 py-3 bg-amber-500/5 text-amber-400 text-xs font-black uppercase tracking-wider rounded-2xl border border-amber-500/20">
+                        <Lock size={16} /> {planStatus === "UNLOCK_REQUESTED" ? "Unlock request pending" : "Plan locked — use Request Unlock above"}
+                    </div>
                 )}
             </div>
-
-            {/* Change Request Modal */}
-            {showChangeRequest && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-                    onClick={() => setShowChangeRequest(false)}>
-                    <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-full max-w-md"
-                        onClick={e => e.stopPropagation()}>
-                        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                            <Send size={18} className="text-orange-400" />
-                            Request Sprint Plan Change
-                        </h3>
-                        <p className="text-xs text-zinc-400 mb-4">
-                            The sprint plan is locked. Provide a reason for the change — your request will be sent to the Head of Institute (HOI) for approval.
-                        </p>
-                        <textarea value={changeReason} onChange={e => setChangeReason(e.target.value)}
-                            placeholder="Reason for change..."
-                            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder:text-zinc-600 focus:border-orange-500 focus:outline-none resize-none h-24" />
-                        <div className="flex gap-2 mt-4">
-                            <button onClick={submitChangeRequest}
-                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white text-sm font-semibold rounded-xl transition-colors">
-                                <Send size={14} /> Submit Request
-                            </button>
-                            <button onClick={() => setShowChangeRequest(false)}
-                                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm rounded-xl transition-colors">
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Preference Management Modal */}
             {showPrefModal && (

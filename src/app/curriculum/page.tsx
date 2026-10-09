@@ -73,7 +73,7 @@ export default function CurriculumDashboard() {
         }
     };
 
-    const isHead = user?.role === "CURRICULUM_HEAD" || user?.role === "SUPERADMIN";
+    const isHead = user?.role === "CURRICULUM_HEAD" || (user?.role as string) === "SUPERADMIN";
 
     return (
         <div className="max-w-7xl mx-auto pt-8 pb-14 px-4 sm:px-6 space-y-8">

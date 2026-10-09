@@ -1,22 +1,30 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { LectureReport, Employee } from '@/models/Schemas';
+import { getSessionUser } from '@/lib/session-user';
+import { getAcademicScope, professorsInScope } from '@/lib/academic';
+import { performClassAction, recordInScope } from '@/lib/class-record-workflow';
+import { getClassStatus, CL_CH_ROLES, VERIFICATION_ROLES } from '@/lib/academic-status';
 
 export async function GET(req: Request) {
     try {
         await dbConnect();
+        const actor = await getSessionUser();
+        if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!VERIFICATION_ROLES.includes(actor.role)) return NextResponse.json({ error: 'Not allowed' }, { status: 403 });
         const { searchParams } = new URL(req.url);
         const campus = searchParams.get('campus');
         const date = searchParams.get('date');
         const facultyId = searchParams.get('facultyId');
         const status = searchParams.get('status');
 
-        const query: any = {};
+        // Only professors inside the viewer's college scope (Module 24)
+        const scope = await getAcademicScope(actor);
+        const scopedFaculties: any[] = await professorsInScope(scope, campus && campus !== "All" ? campus : null);
+        const allowedIds = scopedFaculties.map((f: any) => f.id);
+
+        const query: any = { facultyId: { $in: facultyId ? allowedIds.filter(id => id === facultyId) : allowedIds } };
         if (date) query.date = date;
-        if (facultyId) query.facultyId = facultyId;
-        if (campus && campus !== "All") {
-            query.college = { $regex: new RegExp(campus.trim(), 'i') };
-        }
         if (status && status !== "All") {
             if (status === "Verified") {
                 query.clVerificationStatus = "Verified";
@@ -29,15 +37,10 @@ export async function GET(req: Request) {
             .sort({ date: -1, lectureNumber: 1 })
             .lean();
 
-        // Also fetch faculties for metadata
-        const faculties = await Employee.find({
-            role: { $in: ["FACULTY", "PROFESSOR"] }
-        }).select('id name location designation').lean();
-
         return NextResponse.json({
             success: true,
-            reports,
-            faculties
+            reports: reports.map((r: any) => ({ ...r, pipelineStatus: getClassStatus(r) })),
+            faculties: scopedFaculties
         });
     } catch (error: any) {
         console.error("Curriculum Lectures GET error:", error);
@@ -45,21 +48,21 @@ export async function GET(req: Request) {
     }
 }
 
+/**
+ * CL / CH checks from the Lecture Quality Hub.
+ * Notes / assignment remarks are kept as before; the overall "Good to Go" and "Reject" are the CL/CH stage of the
+ * verification pipeline (Professor → OM → final verification by CL / CH / HOI), so they work only when OM has verified the record.
+ */
 export async function POST(req: Request) {
     try {
         await dbConnect();
+        const actor = await getSessionUser();
+        if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!CL_CH_ROLES.includes(actor.role)) return NextResponse.json({ error: 'Only CL / CH can verify lectures.' }, { status: 403 });
+
         const body = await req.json();
-        const {
-            reportId,
-            action, // "verify_notes" | "verify_assignment" | "verify_all_good_to_go" | "reject"
-            notesStatus,
-            notesRemarks,
-            assignmentStatus,
-            assignmentRemarks,
-            overallRemarks,
-            verifierId,
-            verifierName
-        } = body;
+        const { reportId, notesStatus, notesRemarks, assignmentStatus, assignmentRemarks, overallRemarks } = body;
+        const act = String(body.action || '').toLowerCase();
 
         if (!reportId) {
             return NextResponse.json({ error: "reportId is required" }, { status: 400 });
@@ -69,75 +72,58 @@ export async function POST(req: Request) {
         if (!report) {
             return NextResponse.json({ error: "Lecture report not found" }, { status: 404 });
         }
+        if (!(await recordInScope(actor, report))) {
+            return NextResponse.json({ error: "This lecture is not in your college." }, { status: 403 });
+        }
 
         const now = new Date().toISOString();
 
-        const act = action?.toLowerCase();
-        if (act === "verify_notes") {
-            report.lectureNotes = report.lectureNotes || {};
-            report.lectureNotes.verificationStatus = notesStatus?.toUpperCase() === "NEEDS_REVISION" ? "Needs Revision" : "Approved";
-            report.lectureNotes.leadRemarks = notesRemarks || "";
-            report.lectureNotes.verifiedBy = verifierId;
-            report.lectureNotes.verifiedByName = verifierName;
-            report.lectureNotes.verifiedAt = now;
-        } else if (act === "verify_assignment") {
-            report.assignment = report.assignment || {};
-            report.assignment.verificationStatus = assignmentStatus?.toUpperCase() === "NEEDS_REVISION" ? "Needs Revision" : "Approved";
-            report.assignment.leadRemarks = assignmentRemarks || "";
-            report.assignment.verifiedBy = verifierId;
-            report.assignment.verifiedByName = verifierName;
-            report.assignment.verifiedAt = now;
-        } else if (act === "verify_all_good_to_go" || act === "verify_good_to_go") {
-            // Notes verified
-            report.lectureNotes = report.lectureNotes || {};
-            report.lectureNotes.verificationStatus = "Approved";
-            if (notesRemarks) report.lectureNotes.leadRemarks = notesRemarks;
-            report.lectureNotes.verifiedBy = verifierId;
-            report.lectureNotes.verifiedByName = verifierName;
-            report.lectureNotes.verifiedAt = now;
-
-            // If assignment present, also verify assignment
-            if (report.assignment && report.assignment.hasAssignment) {
-                report.assignment.verificationStatus = "Approved";
-                if (assignmentRemarks) report.assignment.leadRemarks = assignmentRemarks;
-                report.assignment.verifiedBy = verifierId;
-                report.assignment.verifiedByName = verifierName;
+        if (act === "verify_notes" || act === "verify_assignment") {
+            if (act === "verify_notes") {
+                report.lectureNotes = report.lectureNotes || {};
+                report.lectureNotes.verificationStatus = notesStatus?.toUpperCase() === "NEEDS_REVISION" ? "Needs Revision" : "Approved";
+                report.lectureNotes.leadRemarks = notesRemarks || "";
+                report.lectureNotes.verifiedBy = actor.id;
+                report.lectureNotes.verifiedByName = actor.name;
+                report.lectureNotes.verifiedAt = now;
+            } else {
+                report.assignment = report.assignment || {};
+                report.assignment.verificationStatus = assignmentStatus?.toUpperCase() === "NEEDS_REVISION" ? "Needs Revision" : "Approved";
+                report.assignment.leadRemarks = assignmentRemarks || "";
+                report.assignment.verifiedBy = actor.id;
+                report.assignment.verifiedByName = actor.name;
                 report.assignment.verifiedAt = now;
             }
+            await report.save();
 
-            // Overall good to go (turns green)
-            report.clVerificationStatus = "Verified";
-            report.clRemarks = overallRemarks || "Verified by Curriculum Lead. Good to Go.";
-            report.auditStatus = "Approved";
-        } else if (act === "reject" || act === "request_changes" || act === "request_revision") {
-            report.clVerificationStatus = "Needs Revision";
-            report.clRemarks = overallRemarks || "Revisions required by Curriculum Lead.";
-            if (notesRemarks) {
-                report.lectureNotes = report.lectureNotes || {};
-                report.lectureNotes.verificationStatus = "Needs Revision";
-                report.lectureNotes.leadRemarks = notesRemarks;
+            // Auto-check rule: notes approved AND (no assignment OR assignment approved) → CL/CH verification of the record
+            const notesApproved = ["approved", "verified"].includes(report.lectureNotes?.verificationStatus?.toLowerCase());
+            const assignmentApproved = !report.assignment?.hasAssignment || ["approved", "verified"].includes(report.assignment?.verificationStatus?.toLowerCase());
+            if (notesApproved && assignmentApproved && ["PENDING_CL_CH", "PENDING_HOI"].includes(getClassStatus(report))) {
+                const r = await performClassAction(actor, report, { action: "clch_verify", comment: overallRemarks || notesRemarks || "" });
+                if (r.ok) return NextResponse.json({ success: true, report: r.record, message: r.message });
             }
-            if (assignmentRemarks && report.assignment) {
-                report.assignment.verificationStatus = "Needs Revision";
-                report.assignment.leadRemarks = assignmentRemarks;
-            }
+            return NextResponse.json({ success: true, report, message: "Lecture verification updated successfully" });
         }
 
-        // Auto-check rule: if notes are approved AND (either no assignment OR assignment is approved), turn green!
-        const notesApproved = ["approved", "verified"].includes(report.lectureNotes?.verificationStatus?.toLowerCase());
-        const assignmentApproved = !report.assignment?.hasAssignment || ["approved", "verified"].includes(report.assignment?.verificationStatus?.toLowerCase());
-        if (notesApproved && assignmentApproved && act !== "reject" && act !== "request_changes" && act !== "request_revision") {
-            report.clVerificationStatus = "Verified";
-            report.auditStatus = "Approved";
+        if (act === "verify_all_good_to_go" || act === "verify_good_to_go") {
+            const r = await performClassAction(actor, report, { action: "clch_verify", comment: overallRemarks || "Verified. Good to Go." });
+            if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
+            return NextResponse.json({ success: true, report: r.record, message: r.message });
         }
 
-        await report.save();
+        if (act === "reject" || act === "request_changes" || act === "request_revision") {
+            const comment = overallRemarks || notesRemarks || assignmentRemarks || "Revisions required by Curriculum Lead.";
+            const r = await performClassAction(actor, report, { action: "clch_revert", comment, revertTo: body.revertTo || "PROFESSOR" });
+            if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
+            const fresh: any = await LectureReport.findById(reportId);
+            if (notesRemarks) { fresh.lectureNotes.verificationStatus = "Needs Revision"; fresh.lectureNotes.leadRemarks = notesRemarks; }
+            if (assignmentRemarks && fresh.assignment?.hasAssignment) { fresh.assignment.verificationStatus = "Needs Revision"; fresh.assignment.leadRemarks = assignmentRemarks; }
+            await fresh.save();
+            return NextResponse.json({ success: true, report: fresh, message: r.message });
+        }
 
-        return NextResponse.json({
-            success: true,
-            report,
-            message: "Lecture verification updated successfully"
-        });
+        return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     } catch (error: any) {
         console.error("Curriculum Lectures POST error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });

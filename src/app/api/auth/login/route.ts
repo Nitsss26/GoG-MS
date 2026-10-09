@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import dbConnect from '@/lib/mongodb';
 import { Employee } from '@/models/Schemas';
 import { createSessionToken, getSessionCookieOptions } from '@/lib/session';
+import { verifyPassword, hashPassword } from '@/lib/password';
 
 export async function POST(request: Request) {
     try {
@@ -14,21 +15,40 @@ export async function POST(request: Request) {
 
         await dbConnect();
 
-        const employee = await Employee.findOne({ email: { $regex: new RegExp(`^${email.trim()}$`, 'i') } });
+        // Exact (case-insensitive) email match — typed characters are never treated as a pattern
+        const escapedEmail = String(email).trim().replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
+        const emailPattern = new RegExp('^' + escapedEmail + '$', 'i');
+        const employee = await Employee.findOne({ email: { $regex: emailPattern } });
 
         if (!employee) {
+            // Removed from the portal by HR: the account exists only as a historical record and cannot log in
+            const removed = await Employee.findOne({ email: { $regex: emailPattern }, isRemoved: true });
+            if (removed) {
+                return NextResponse.json({ success: false, error: "This account has been removed from the portal." }, { status: 403 });
+            }
             return NextResponse.json({ success: false, error: "Institutional account not found." }, { status: 404 });
         }
 
-        // Check password against database value (default is "26082001" if not set)
+        // Check password against the stored value: a secure hash, or (older accounts) plain text.
+        // Default is "26082001" if no password was ever set, same as before.
         const storedPassword = employee.password || "26082001";
-        if (password !== storedPassword) {
+        const check = await verifyPassword(String(password), storedPassword);
+        if (!check.ok) {
             return NextResponse.json({ success: false, error: "Incorrect passkey." }, { status: 401 });
         }
 
         // Check role if provided
         if (role && employee.role !== role) {
             return NextResponse.json({ success: false, error: `Institutional role mismatch.` }, { status: 403 });
+        }
+
+        // Older account with a plain-text password: replace it with a hash now that we know it is correct
+        if (check.needsRehash) {
+            try {
+                await Employee.updateOne({ _id: employee._id }, { $set: { password: await hashPassword(String(password)) } });
+            } catch (e) {
+                console.error("Login: could not upgrade stored password to a hash");
+            }
         }
 
         // Create session token and set HTTP-only cookie

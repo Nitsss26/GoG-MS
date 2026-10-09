@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import dbConnect from '@/lib/mongodb';
 import { Employee } from '@/models/Schemas';
 import { verifySessionToken, COOKIE_NAME } from '@/lib/session';
+import { hashPassword } from '@/lib/password';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,6 +60,27 @@ export async function PUT(request: Request) {
         await dbConnect();
         const data = await request.json();
         const { id, ...updates } = data;
+        // Passwords are changed only through Change Password or HR → Reset Password (both store a hash)
+        delete updates.password;
+        delete updates.passwordChangedAt; delete updates.passwordResetAt; delete updates.passwordResetBy; delete updates.passwordResetByName;
+
+        // Who may change what: HR / Founder any employee; everyone else only their own profile
+        // (never role, college, reporting line or status), plus manager ratings of others.
+        const isHrOrFounder = session.role === "HR" || session.role === "FOUNDER";
+        if (!isHrOrFounder) {
+            const actor: any = await Employee.findOne({ $or: [{ email: session.email }, { id: session.userId }] }).select('id').lean();
+            const isSelf = actor?.id === id;
+            const PROTECTED = ["role", "location", "reportsTo", "status", "isRemoved", "removedAt", "removedBy", "removedByName", "removalSnapshot", "email", "salary", "employeeId", "_id"];
+            if (isSelf) {
+                PROTECTED.forEach(k => delete updates[k]);
+            } else {
+                const keys = Object.keys(updates);
+                const RATING_ROLES = ["AD", "HOI", "OM", "TL", "CURRICULUM_LEAD", "CURRICULUM_HEAD"];
+                if (!RATING_ROLES.includes(session.role) || keys.some(k => k !== "monthlyScores")) {
+                    return NextResponse.json({ error: 'You can only update your own profile.' }, { status: 403 });
+                }
+            }
+        }
 
         if (!id) {
             return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 });
@@ -74,7 +96,9 @@ export async function PUT(request: Request) {
             return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
         }
 
-        return NextResponse.json(updatedEmployee);
+        const result = updatedEmployee.toObject();
+        delete result.password;
+        return NextResponse.json(result);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -93,11 +117,23 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        // Only HR / Founder add employees
+        if (session.role !== "HR" && session.role !== "FOUNDER") {
+            return NextResponse.json({ error: 'Only HR can add employees.' }, { status: 403 });
+        }
+
         await dbConnect();
         const data = await request.json();
-        
+        delete data.isRemoved;
+
+        // Never store a plain-text password, and never accept a ready-made hash from the browser
+        if (data.password) {
+            data.password = await hashPassword(String(data.password));
+        }
         const newEmployee = await Employee.create(data);
-        return NextResponse.json(newEmployee);
+        const created = newEmployee.toObject();
+        delete created.password;
+        return NextResponse.json(created);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

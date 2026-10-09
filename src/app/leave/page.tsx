@@ -96,8 +96,11 @@ export default function LeavePage() {
 
     const reportees = getReportees(user.id);
     const reporteeIds = reportees.map(r => r.id);
-    const filteredLeaves = (user.role === "HR" || user.role === "FOUNDER") 
+    // HR: this page is HR's personal leave only. Other employees' leaves are handled in HR Administration → Leave Management.
+    const filteredLeaves = user.role === "FOUNDER"
         ? leaves 
+        : user.role === "HR"
+        ? leaves.filter(l => l.employeeId === user.id)
         : leaves.filter(l => (l.employeeId === user.id) || (user.role === 'HOI' && (l.location || employees.find(e => e.id === l.employeeId)?.location) === user.location && l.status === "Pending HOI Approval") || reporteeIds.includes(l.employeeId));
 
     const currentMonth = new Date().getMonth();
@@ -112,7 +115,7 @@ export default function LeavePage() {
                     <h1 className="text-lg font-bold text-white">Leave Management</h1>
                     <p className="text-xs text-muted">Manage workforce availability and personal leave credits.</p>
                 </div>
-                {!["HR", "FOUNDER"].includes(user.role) && (
+                {user.role !== "FOUNDER" && (
                     <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-1.5 h-9 px-4">
                         <Plus size={14} /> Request
                     </button>
@@ -257,7 +260,7 @@ export default function LeavePage() {
                                                     const canHOIApprove = (isManager || (user.role === 'HOI' && (req.location || employees.find(e => e.id === req.employeeId)?.location) === user.location)) && req.status === "Pending HOI Approval";
                                                     
                                                     // HR Stage: HR can approve anytime if status is Pending OR Pending HOI Approval (Requested)
-                                                    const canHRApprove = isHR && (req.status === "Pending" || req.status === "Pending HOI Approval");
+                                                    const canHRApprove = isHR && req.employeeId !== user.id && (req.status === "Pending" || req.status === "Pending HOI Approval");
 
                                                     if (canHOIApprove || canHRApprove) {
                                                         return (

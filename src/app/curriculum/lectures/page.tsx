@@ -115,7 +115,7 @@ export default function CurriculumLecturesPage() {
         return true;
     });
 
-    const isAuthorized = user?.role === "CURRICULUM_HEAD" || user?.role === "CURRICULUM_LEAD" || user?.role === "SUPERADMIN";
+    const isAuthorized = user?.role === "CURRICULUM_HEAD" || user?.role === "CURRICULUM_LEAD" || (user?.role as string) === "SUPERADMIN";
 
     return (
         <div className="max-w-7xl mx-auto pt-8 pb-14 px-4 sm:px-6 space-y-6">

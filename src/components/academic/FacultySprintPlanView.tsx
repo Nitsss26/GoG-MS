@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import SprintPlanWorkflowPanel from "@/components/academic/SprintPlanWorkflowPanel";
+import { getPlanStatus } from "@/lib/academic-status";
 import {
     CalendarDays, Lock, Clock, BookOpen, ArrowLeft, ArrowRight,
     Check, AlertTriangle, ShieldCheck, CheckCircle2, Download
@@ -27,7 +29,6 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
     const [plan, setPlan] = useState<any>(null);
     const [workSchedules, setWorkSchedules] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [locking, setLocking] = useState(false);
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
     const getWeekDates = (offset = 0) => {
@@ -79,6 +80,11 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
         try {
             const res = await fetch(`/api/faculty/sprint-plan?facultyId=${facultyId}&weekStartDate=${weekInfo.start}`);
             const data = await res.json();
+            if (!res.ok) {
+                setPlan(null);
+                setMessage({ type: "error", text: data.error || "Could not load the sprint plan." });
+                return;
+            }
 
             setWorkSchedules(data.schedules || []);
 
@@ -91,29 +97,6 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
             console.error(e);
         } finally {
             setLoading(false);
-        }
-    };
-
-    const lockPlan = async () => {
-        if (!plan) return;
-        setLocking(true);
-        try {
-            const res = await fetch("/api/faculty/sprint-plan/lock", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ facultyId, weekStartDate: weekInfo.start })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                setMessage({ type: "success", text: "Institute Record Locked Successfully!" });
-                fetchPlan(); // Reload to show locked state
-            } else {
-                setMessage({ type: "error", text: data.error || "Failed to engage lock" });
-            }
-        } catch (e: any) {
-            setMessage({ type: "error", text: e.message });
-        } finally {
-            setLocking(false);
         }
     };
 
@@ -293,25 +276,11 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
                 </div>
             )}
 
-            {plan?.isLocked && (
-                <div className="flex items-center gap-4 bg-emerald-500/5 border border-emerald-500/10 rounded-2xl px-6 py-4 shadow-inner">
-                    <div className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
-                        <ShieldCheck size={14} className="text-emerald-500" />
-                    </div>
-                    <div>
-                        <span className="text-xs text-zinc-400 font-medium italic block">
-                            State: <span className="text-emerald-500 font-black uppercase tracking-widest">Locked & Synchronized</span>.
-                        </span>
-                        <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter mt-0.5">Institute-level approval confirmed • Locked at: {plan.lockedAt}</p>
-                    </div>
-                </div>
-            )}
-
             {loading ? (
                 <div className="flex items-center justify-center py-20">
                     <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
                 </div>
-            ) : !plan ? (
+            ) : (!plan || getPlanStatus(plan) === "DRAFT") ? (
                 <div className="bg-zinc-900/40 border border-zinc-800 border-dashed rounded-3xl p-16 text-center shadow-inner relative overflow-hidden group">
                     <div className="absolute inset-0 bg-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
                     <div className="relative z-10 space-y-4">
@@ -319,33 +288,17 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
                             <BookOpen size={32} className="text-zinc-600" />
                         </div>
                         <h3 className="text-lg font-black text-white italic uppercase tracking-widest">Grid Not Initialized</h3>
-                        <p className="text-xs text-zinc-500 font-bold max-w-xs mx-auto mb-6">The faculty has not yet established an academic archive for this temporal range.</p>
+                        <p className="text-xs text-zinc-500 font-bold max-w-xs mx-auto mb-6">{plan ? "The professor is still preparing this plan (Draft). It appears here once it is submitted." : "The faculty has not yet established an academic archive for this temporal range."}</p>
                     </div>
                 </div>
             ) : (
                 <div className="space-y-4">
-                    {/* Action Bar for HOI */}
-                    {!plan.isLocked && (
-                        <div className="bg-amber-500/5 border border-amber-500/10 rounded-3xl p-6 flex items-center justify-between gap-6 shadow-xl relative overflow-hidden group">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 blur-3xl -mr-16 -mt-16 rounded-full" />
-                            <div className="flex items-center gap-4 relative z-10">
-                                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20">
-                                    <Lock size={18} className="text-amber-500" />
-                                </div>
-                                <div className="space-y-0.5">
-                                    <h4 className="text-sm font-black text-white uppercase tracking-widest italic">Review Pending</h4>
-                                    <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">Plan is active but not yet finalized at the institute level.</p>
-                                </div>
-                            </div>
-                            <button
-                                onClick={lockPlan}
-                                disabled={locking}
-                                className="relative z-10 px-8 py-3 bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50"
-                            >
-                                {locking ? "Engaging lock..." : "Finalize & Lock Schedule"}
-                            </button>
-                        </div>
-                    )}
+                    {/* Lifecycle: lock / unlock / unlock requests (HOI, CL, CH, AD of this college) */}
+                    <div className="bg-zinc-900/60 border border-zinc-800 rounded-3xl p-5 shadow-xl">
+                        <SprintPlanWorkflowPanel plan={plan} mode="reviewer"
+                            onChanged={(p, msg) => { setPlan(p); setMessage({ type: "success", text: msg }); }} />
+                        {!plan.canManage && <p className="text-[10px] text-zinc-500 mt-2">You can view this plan. Locking / unlocking is done by HOI, CL, CH or AD of the professor&apos;s college.</p>}
+                    </div>
 
                     {weekInfo.dates.map(({ day, date }) => {
                         const dayEntries = (plan.entries || []).filter((e: any) => e.date === date || e.day === day);
@@ -373,6 +326,10 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
                                                 </div>
                                                 <div className="md:col-span-4">
                                                     <div className="text-[10px] text-zinc-400 font-medium italic line-clamp-1">{entry.topics || "No topics listed"}</div>
+                                                    {(entry.lectureType || entry.unitNumber || entry.className || entry.section) && (
+                                                        <div className="text-[9px] text-zinc-500 mt-0.5">{[entry.lectureType, entry.unitNumber ? `Unit ${entry.unitNumber}` : "", entry.className, entry.section ? `Sec ${entry.section}` : ""].filter(Boolean).join(" · ")}</div>
+                                                    )}
+                                                    {entry.content && <div className="text-[9px] text-zinc-500 mt-0.5 line-clamp-2">{entry.content}</div>}
                                                 </div>
                                                 <div className="md:col-span-3 flex justify-start md:justify-end">
                                                     <div className="px-3 py-1 bg-zinc-800/50 rounded-lg border border-zinc-700/50 text-[9px] font-black text-zinc-300 uppercase tracking-widest">

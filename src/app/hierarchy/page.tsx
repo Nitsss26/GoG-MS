@@ -2,6 +2,7 @@
 
 import { useAuth, OrgNode } from "@/context/AuthContext";
 import {
+    BookOpen,
     Search,
     ChevronDown,
     ChevronRight,

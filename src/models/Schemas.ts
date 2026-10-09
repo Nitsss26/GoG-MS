@@ -68,7 +68,12 @@ const EmployeeSchema = new Schema({
     bankName: String,
     accountNumber: String,
     ifscCode: String,
-    password: { type: String, default: "26082001" },
+    password: { type: String, default: "26082001" }, // stored as a scrypt hash (older records: plain text, hashed on next login)
+    passwordChangedAt: String,
+    // Last reset done by HR (who and when — never the password itself)
+    passwordResetAt: String,
+    passwordResetBy: String,
+    passwordResetByName: String,
     
     // --- ONBOARDING FIELDS ---
     full_name: String,
@@ -112,7 +117,24 @@ const EmployeeSchema = new Schema({
         adMeetingCompleted: { type: Boolean, default: false }
     },
     onboardingSubmittedAt: Date,
-    onboardingApprovedAt: Date
+    onboardingApprovedAt: Date,
+
+    // --- REMOVED FROM PORTAL (soft delete: the record is kept for history, all access is gone) ---
+    isRemoved: { type: Boolean, default: false },
+    removedAt: { type: String },
+    removedBy: { type: String },
+    removedByName: { type: String },
+    removalSnapshot: { type: Schema.Types.Mixed } // location / reportsTo / status at the time of removal
+});
+
+// An employee removed from the portal is invisible to every normal query: login, session restore,
+// employee lists, HOI / college / team lookups, holiday email targeting, exports, etc.
+// A query sees removed records only when it filters on isRemoved itself.
+EmployeeSchema.pre(/^find/, function (this: any) {
+    const filter = this.getFilter() || {};
+    if (!Object.prototype.hasOwnProperty.call(filter, 'isRemoved')) {
+        this.where({ isRemoved: { $ne: true } });
+    }
 });
 
 // Attendance Schema
@@ -149,7 +171,14 @@ const WorkScheduleSchema = new Schema({
     clockOutTime: { type: String, default: "18:30" },
     assignedBy: { type: String },
     status: { type: String, default: "Approved", enum: ["Pending", "Approved", "Rejected"] },
-    reason: { type: String }
+    reason: { type: String },
+    // Change + HR acknowledgement tracking (status "Pending" = not yet read by HR, "Approved" = read by HR)
+    employeeName: { type: String },
+    assignedByName: { type: String },
+    changedAt: { type: String },
+    hrReadBy: { type: String },
+    hrReadByName: { type: String },
+    hrReadAt: { type: String }
 });
 
 // Mark As Present Request Schema
@@ -217,7 +246,16 @@ const LeaveRequestSchema = new Schema({
     hoiApproverId: { type: String },
     hrApproverId: { type: String },
     hoiApprovedAt: { type: String },
-    hrApprovedAt: { type: String }
+    hrApprovedAt: { type: String },
+    // HR direct approval / rejection audit trail (optional, additive)
+    approvedBy: { type: String },
+    approvedByName: { type: String },
+    approvedByRole: { type: String },
+    approvedAt: { type: String },
+    rejectedBy: { type: String },
+    rejectedByName: { type: String },
+    rejectedByRole: { type: String },
+    rejectedAt: { type: String }
 });
 
 // Ticket Schema
@@ -271,16 +309,32 @@ const HolidaySchema = new Schema({
     name: { type: String, required: true },
     date: { type: String, required: true },
     collegeIds: [String],
-    status: { type: String, default: "Proposed", enum: ["Proposed", "Approved"] },
+    status: { type: String, default: "Proposed", enum: ["Proposed", "Approved", "Rejected"] },
     proposedBy: { type: String },
     proposedByName: { type: String },
     proofUrl: { type: String },
     customMessage: { type: String },
-    forAll: { type: Boolean, default: false }
+    forAll: { type: Boolean, default: false },
+    // Request / decision / college-wise email tracking
+    proposedAt: { type: String },
+    approvedBy: { type: String },
+    approvedByName: { type: String },
+    approvedAt: { type: String },
+    rejectedBy: { type: String },
+    rejectedByName: { type: String },
+    rejectedAt: { type: String },
+    rejectionReason: { type: String },
+    emailSentAt: { type: String },          // set once; guards against sending the same notification twice
+    emailStatus: { type: String },          // "Sent" | "Failed" | "No Recipients"
+    emailRecipients: [String],
+    emailError: { type: String }
 });
 
 const PIPRecordSchema = new Schema({ id: { type: String, unique: true }, employeeId: String, employeeName: String, reason: String, startDate: String, status: String, warnings: Number, disclaimer: String });
-const AdditionalResponsibilitySchema = new Schema({ id: { type: String, unique: true }, employeeId: String, employeeName: String, addedBy: String, description: String, date: String, status: String, points: Number });
+const AdditionalResponsibilitySchema = new Schema({ id: { type: String, unique: true }, employeeId: String, employeeName: String, addedBy: String, description: String, date: String, status: String, points: Number,
+    // Approval workflow (submitted by HOI/AD -> approved or rejected by AD/Founder)
+    addedByName: String, addedByRole: String, submittedAt: String,
+    approvedBy: String, approvedByName: String, approvedAt: String, rejectionReason: String });
 
 // Meeting Request Schema
 const MeetingRequestSchema = new Schema({
@@ -337,7 +391,12 @@ const SprintPlanSchema = new Schema({
         subjectCode: { type: String },
         subjectName: { type: String },
         topics: { type: String },
-        section: { type: String }
+        section: { type: String },
+        // Weekly plan details (stream = Branch)
+        lectureType: { type: String },
+        unitNumber: { type: String },
+        content: { type: String },
+        className: { type: String }
     }],
     changeRequests: [{
         requestedAt: { type: String },
@@ -345,9 +404,59 @@ const SprintPlanSchema = new Schema({
         status: { type: String, default: "Pending", enum: ["Pending", "Approved", "Rejected"] },
         approvedBy: { type: String },
         approvedAt: { type: String },
-        changes: { type: String }
+        changes: { type: String },
+        // Unlock request details
+        requestedBy: { type: String },
+        requestedByName: { type: String },
+        requestedAtISO: { type: String },
+        comment: { type: String },
+        processedBy: { type: String },
+        processedByName: { type: String },
+        processedByRole: { type: String },
+        processedAt: { type: String },
+        decisionNote: { type: String }
+    }],
+
+    // ── Lifecycle (see src/lib/academic-status.ts) ──
+    // DRAFT → SUBMITTED → LOCKED → UNLOCK_REQUESTED → UNLOCKED_FOR_REVISION → RESUBMITTED → LOCKED_AGAIN
+    status: { type: String, enum: ["DRAFT", "SUBMITTED", "LOCKED", "UNLOCK_REQUESTED", "UNLOCKED_FOR_REVISION", "RESUBMITTED", "LOCKED_AGAIN"] },
+    statusBeforeUnlockRequest: { type: String },
+    createdById: { type: String },
+    submittedAt: { type: String },
+    resubmittedAt: { type: String },
+    lockedById: { type: String },
+    lockedByName: { type: String },
+    lockedByRole: { type: String },
+    unlockRequestedAt: { type: String },
+    unlockedAt: { type: String },
+    unlockedBy: { type: String },
+    unlockedByName: { type: String },
+    unlockedByRole: { type: String },
+    version: { type: Number, default: 1 },
+    // Every step, oldest first (never deleted)
+    history: [{
+        action: { type: String },
+        fromStatus: { type: String },
+        toStatus: { type: String },
+        by: { type: String },
+        byName: { type: String },
+        role: { type: String },
+        at: { type: String },
+        note: { type: String }
+    }],
+    // A copy of the entries every time the plan is submitted / re-submitted, so no revision is ever lost
+    revisions: [{
+        version: { type: Number },
+        status: { type: String },
+        entries: { type: Schema.Types.Mixed },
+        savedAt: { type: String },
+        savedBy: { type: String },
+        savedByName: { type: String },
+        note: { type: String }
     }]
 }, { timestamps: true });
+SprintPlanSchema.index({ facultyId: 1, weekStartDate: 1 });
+SprintPlanSchema.index({ college: 1, weekStartDate: 1 });
  
 // Faculty Preference Schema — Professor-specific subjects and courses for dropdowns
 const FacultyPreferenceSchema = new Schema({
@@ -399,7 +508,7 @@ const LectureReportSchema = new Schema({
         isSharedWithStudents: { type: Boolean, default: false },
         sharedWithStudentsTickedBy: { type: String },
         notSharedRemarks: { type: String },
-        verificationStatus: { type: String, default: "Pending", enum: ["Pending", "Approved", "Flagged", "Rejected"] },
+        verificationStatus: { type: String, default: "Pending", enum: ["Pending", "Approved", "Flagged", "Rejected", "Needs Revision"] },
         verifiedBy: { type: String },
         verifiedByName: { type: String },
         verifiedAt: { type: String },
@@ -415,14 +524,19 @@ const LectureReportSchema = new Schema({
         deadline: { type: String },
         studentsCompletedCount: { type: Number, default: 0 },
         totalStudentsExpected: { type: Number, default: 0 },
-        verificationStatus: { type: String, default: "Pending", enum: ["Pending", "Approved", "Flagged", "Rejected"] },
+        verificationStatus: { type: String, default: "Pending", enum: ["Pending", "Approved", "Flagged", "Rejected", "Needs Revision"] },
         verifiedBy: { type: String },
         verifiedByName: { type: String },
         verifiedAt: { type: String },
         leadRemarks: { type: String },
         isSharedInProfGroup: { type: Boolean, default: false },
         sharedInProfGroupAt: { type: String },
-        sharedInProfGroupBy: { type: String }
+        sharedInProfGroupBy: { type: String },
+        // Added later from "Add Assignment" (Module 18)
+        addedAt: { type: String },
+        addedBy: { type: String },
+        addedByName: { type: String },
+        addedLater: { type: Boolean, default: false }
     },
 
     // Overall Curriculum Lead Good-to-Go Status (Turns Green)
@@ -459,8 +573,133 @@ const LectureReportSchema = new Schema({
     keywords: [{ type: String }],
     status: { type: String, default: "Scheduled", enum: ["Scheduled", "In Progress", "Completed"] },
     auditStatus: { type: String, default: "Pending", enum: ["Pending", "Approved", "Flagged"] },
-    warnings: [{ type: String }]
+    warnings: [{ type: String }],
+
+    // ── Class record details copied from the Sprint Plan entry ──
+    sprintEntryId: { type: String },
+    timeStart: { type: String },
+    timeStop: { type: String },
+    section: { type: String },
+    className: { type: String },
+    lectureType: { type: String },
+    unitNumber: { type: String },
+    subjectCode: { type: String },
+    snapshotUrls: [{ type: String }],
+    submittedAt: { type: String },
+    submissionCount: { type: Number, default: 0 },
+
+    // Notes not submitted → reason (verified by OM)
+    notesMissing: { type: Boolean, default: false },
+    notesMissingReason: { type: String },
+    notesReasonStatus: { type: String, enum: ["PENDING", "VERIFIED", "REVERTED"] },
+    notesReasonReviewedBy: { type: String },
+    notesReasonReviewedByName: { type: String },
+    notesReasonReviewedAt: { type: String },
+    notesReasonComment: { type: String },
+
+    // ── Verification pipeline: Professor → OM → final verification by any ONE of CL / CH / HOI (see src/lib/academic-status.ts) ──
+    pipelineStatus: { type: String, enum: ["PENDING_PROFESSOR", "SUBMITTED", "PENDING_OM", "OM_VERIFIED", "OM_REVERTED", "PENDING_CL_CH", "CL_CH_VERIFIED", "CL_CH_REVERTED", "PENDING_HOI", "COMPLETED"] },
+    omVerification: {
+        status: { type: String, enum: ["PENDING", "VERIFIED", "REVERTED"] },
+        by: String, byName: String, role: String, at: String, comment: String
+    },
+    clChVerification: {
+        status: { type: String, enum: ["PENDING", "VERIFIED", "REVERTED", "NOT_REQUIRED"] },
+        by: String, byName: String, role: String, at: String, comment: String,
+        revertTo: { type: String } // PROFESSOR or OM
+    },
+    hoiVerification: {
+        status: { type: String, enum: ["PENDING", "VERIFIED", "REVERTED", "NOT_REQUIRED"] },
+        by: String, byName: String, role: String, at: String, comment: String
+    },
+    // Final verification — done by ANY ONE of CL / CH / HOI (whoever acts first). Set once; never overwritten after COMPLETED.
+    finalVerification: {
+        status: { type: String, enum: ["PENDING", "VERIFIED", "REVERTED"] },
+        by: String, byName: String, role: String, at: String, comment: String,
+        revertTo: { type: String }, // PROFESSOR or OM (when reverted)
+        reference: { type: String } // class / sprint plan reference, e.g. "SP-… · 2026-10-09 · Lecture 2"
+    },
+
+    // OM: notes / material submitted to the student groups
+    submittedToGroup: { type: Boolean, default: false },
+    submittedToGroupBy: { type: String },
+    submittedToGroupByName: { type: String },
+    submittedToGroupAt: { type: String },
+
+    // OM: who recorded the professor's entry / exit time and when
+    omTimesUpdatedBy: { type: String },
+    omTimesUpdatedByName: { type: String },
+    omTimesUpdatedAt: { type: String },
+
+    // HOI / CL / CH: "notes still pending" comments. Resolved flags stay here as history.
+    delayFlags: [{
+        flagId: String,
+        comment: String,
+        by: String, byName: String, role: String, at: String,
+        status: { type: String, enum: ["OPEN", "RESOLVED"], default: "OPEN" },
+        resolvedBy: String, resolvedByName: String, resolvedAt: String, resolutionNote: String
+    }],
+
+    // Every step of the record, oldest first (never deleted)
+    pipelineHistory: [{
+        action: String,
+        fromStatus: String,
+        toStatus: String,
+        by: String, byName: String, role: String, at: String,
+        comment: String
+    }]
 }, { timestamps: true });
+LectureReportSchema.index({ facultyId: 1, date: 1, lectureNumber: 1 });
+LectureReportSchema.index({ college: 1, pipelineStatus: 1 });
+
+// In-app notifications (also emailed). One document per recipient.
+const NotificationSchema = new Schema({
+    id: { type: String, required: true, unique: true },
+    recipientId: { type: String, required: true },
+    recipientName: { type: String },
+    recipientRole: { type: String },
+    title: { type: String, required: true },
+    message: { type: String },
+    type: { type: String },          // e.g. SPRINT_UNLOCK_REQUEST, CLASS_OM_REVERTED
+    link: { type: String },          // page inside the portal
+    entityType: { type: String },    // SprintPlan / LectureReport
+    entityId: { type: String },
+    college: { type: String },
+    actorId: { type: String },
+    actorName: { type: String },
+    read: { type: Boolean, default: false },
+    readAt: { type: String },
+    emailStatus: { type: String },   // SENT / FAILED / SKIPPED
+    emailError: { type: String },
+    createdAt: { type: String }
+});
+NotificationSchema.index({ recipientId: 1, read: 1, createdAt: -1 });
+
+// Automatic reminder log: one row per reminder, so the same reminder is never emailed twice
+const ReminderLogSchema = new Schema({
+    key: { type: String, required: true, unique: true },
+    type: { type: String },          // MISSING_SPRINT_PLAN / MISSING_ASSIGNMENT
+    recipientId: { type: String },
+    recipientEmail: { type: String },
+    weekStartDate: { type: String },
+    details: { type: Schema.Types.Mixed },
+    status: { type: String },        // SENDING / SENT / FAILED
+    error: { type: String },
+    sentAt: { type: String },
+    createdAt: { type: String }
+});
+
+// Scheduled job runs: one row per job per deadline, so a run happens once even with several servers
+const JobRunSchema = new Schema({
+    key: { type: String, required: true, unique: true },
+    job: { type: String },
+    trigger: { type: String },       // scheduler / cron-url
+    startedAt: { type: String },
+    finishedAt: { type: String },
+    status: { type: String },        // RUNNING / DONE / FAILED
+    result: { type: Schema.Types.Mixed },
+    error: { type: String }
+});
 
 // Curriculum Task Schema — Tasks assigned by Curriculum Lead / Head to Professors
 const CurriculumTaskSchema = new Schema({
@@ -526,7 +765,9 @@ const LocationSchema = new Schema({
     radiusKm: { type: Number, default: 2 },
     address: { type: String, required: true },
     city: { type: String, required: true },
-    state: { type: String, required: true }
+    state: { type: String, required: true },
+    // Optional: the HOI who heads this campus. One HOI can head several campuses (their own + these).
+    hoiId: { type: String }
 });
 
 export const Employee = mongoose.models.Employee || mongoose.model('Employee', EmployeeSchema);
@@ -549,3 +790,6 @@ export const MeetingRequest = mongoose.models.MeetingRequest || mongoose.model('
 export const FacultyPreference = mongoose.models.FacultyPreference || mongoose.model('FacultyPreference', FacultyPreferenceSchema);
 export const CurriculumTask = mongoose.models.CurriculumTask || mongoose.model('CurriculumTask', CurriculumTaskSchema);
 export const CampusDailyMoM = mongoose.models.CampusDailyMoM || mongoose.model('CampusDailyMoM', CampusDailyMoMSchema);
+export const Notification = mongoose.models.Notification || mongoose.model('Notification', NotificationSchema);
+export const ReminderLog = mongoose.models.ReminderLog || mongoose.model('ReminderLog', ReminderLogSchema);
+export const JobRun = mongoose.models.JobRun || mongoose.model('JobRun', JobRunSchema);

@@ -449,6 +449,26 @@ export const getHolidayTemplate = (holiday: any, status: 'Proposed' | 'Approved'
     };
 };
 
+/** Holiday notice for the faculty of one college (sent after HR approves the holiday). */
+export const getHolidayFacultyTemplate = (holiday: any, collegeName: string) => {
+    const title = "Holiday Notice";
+    const content = `
+        <p style="margin: 0 0 12px 0;">Dear Faculty Member,</p>
+        <p style="margin: 0 0 12px 0;">This is to inform you that a holiday has been declared for <strong>${collegeName}</strong> on <strong>${formatDate(holiday.date)}</strong>.</p>
+    ` + DataTable([
+        { label: "Holiday", value: holiday.name },
+        { label: "Date", value: formatDate(holiday.date) },
+        { label: "College", value: collegeName }
+    ]) + (holiday.customMessage ? `<div style="background-color: #ecfdf5; padding: 12px; border-radius: 6px; margin-top: 10px; color: #065f46;">${holiday.customMessage}</div>` : '') + `
+        <p style="margin: 15px 0 0 0;">You have a holiday on this day.</p>
+        <p style="margin: 15px 0 0 0;">Regards,<br/>Management / HR</p>
+    `;
+    return {
+        subject: `[HOLIDAY] ${holiday.name} - ${formatDate(holiday.date)} - ${collegeName}`,
+        html: ProfessionalWrapper(title, content, "#10b981")
+    };
+};
+
 export const getDressCodeWarningTemplate = (employee: any, defaults: number) => {
     const title = "Dress Code Violation";
     const content = DataTable([
@@ -633,4 +653,37 @@ export const getMeetingWarningTemplate = (meeting: any, employee: any) => {
             </div>
         `, "#ef4444")
     };
+};
+
+/** Escape user-typed text before it goes into an email */
+export const escapeHtml = (value: any) => String(value ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+/**
+ * Academic workflow email (sprint plan lock / unlock, class record verification, weekly reminders).
+ * rows are shown as a details table; values are escaped here. listItems are shown as a bulleted list.
+ */
+export const getAcademicNotificationTemplate = (opts: {
+    title: string;
+    intro: string;
+    rows?: { label: string; value: any }[];
+    listItems?: string[];
+    note?: string;
+    link?: string;
+    linkLabel?: string;
+    color?: string;
+}) => {
+    const rows = (opts.rows || []).filter(r => r.value !== undefined && r.value !== null && r.value !== "")
+        .map(r => ({ label: escapeHtml(r.label), value: escapeHtml(r.value).replace(/\n/g, "<br/>") }));
+    const list = opts.listItems?.length
+        ? `<ul style="margin: 12px 0; padding-left: 20px;">${opts.listItems.map(i => `<li style="margin: 4px 0;">${escapeHtml(i)}</li>`).join("")}</ul>`
+        : "";
+    const content = `<p style="margin: 0 0 12px 0;">${escapeHtml(opts.intro)}</p>`
+        + list
+        + (rows.length ? DataTable(rows) : "")
+        + (opts.note ? `<p style="margin: 12px 0 0 0;">${escapeHtml(opts.note)}</p>` : "")
+        + (opts.link ? `<p style="margin: 20px 0 0 0;"><a href="${escapeHtml(opts.link)}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 13px;">${escapeHtml(opts.linkLabel || "Open in GoG OMS")}</a></p>` : "")
+        + `<p style="margin: 20px 0 0 0; font-size: 12px; color: #9ca3af;">This is an automatic message from GoG OMS.</p>`;
+    return { subject: opts.title, html: ProfessionalWrapper(escapeHtml(opts.title), content, opts.color || "#6366f1") };
 };

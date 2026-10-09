@@ -7,23 +7,37 @@ import {
     FileText, BookOpen, Share2, Save, ExternalLink, User,
     ShieldAlert, Sparkles, Check, X
 } from "lucide-react";
+import Link from "next/link";
+import { ClassStatusBadge } from "@/components/academic/ClassRecordDetails";
+import { finalVerificationText } from "@/lib/academic-status";
 
-const CAMPUSES = [
-    "All",
-    "SAGE Bhopal",
-    "MANIT Bhopal",
-    "LNCT Bhopal",
-    "Oriental Bhopal",
-    "RKDF Bhopal",
-    "SIRT Bhopal",
-    "Global HQ"
-];
+const fmtAt = (iso?: string) => iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+
+/** One verification stage: who and when (or "Pending") */
+function StageLine({ label, v }: { label: string; v?: any }) {
+    const st = v?.status || "PENDING";
+    const color = st === "VERIFIED" ? "text-emerald-400" : st === "REVERTED" ? "text-red-400" : "text-zinc-500";
+    return (
+        <div className="flex items-start justify-between gap-3 text-[11px]">
+            <span className="text-zinc-400 font-bold uppercase tracking-wider shrink-0">{label}</span>
+            <span className={`text-right ${color}`}>
+                {st === "VERIFIED" ? "Verified" : st === "REVERTED" ? "Reverted" : "Pending"}
+                {v?.byName && <span className="block text-zinc-500">{v.byName} · {fmtAt(v.at)}</span>}
+            </span>
+        </div>
+    );
+}
+
 
 export default function OMDailyLecturesPage() {
     const { user } = useAuth();
+    // Only the OM records timings and notes distribution; HOI / AD / CL / CH see the same page read-only
+    const canEdit = user?.role === "OM";
     const todayStr = new Date().toISOString().split("T")[0];
 
-    const [campus, setCampus] = useState(user?.location || "SAGE Bhopal");
+    // "All" = every college this user may see (the server limits it to the user's own college)
+    const [campus, setCampus] = useState("All");
+    const [colleges, setColleges] = useState<{ id: string; name: string }[]>([]);
     const [date, setDate] = useState(todayStr);
     const [lectures, setLectures] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -50,7 +64,9 @@ export default function OMDailyLecturesPage() {
         try {
             const res = await fetch(`/api/om/lectures?campus=${encodeURIComponent(campus)}&date=${date}`);
             const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Could not load lectures");
             const list = data.lectures || [];
+            setColleges(data.colleges || []);
             setLectures(list);
 
             // Populate initial edit states
@@ -108,8 +124,7 @@ export default function OMDailyLecturesPage() {
                     notesShared: state.notesShared,
                     notesNotSharedRemarks: state.notesNotSharedRemarks,
                     assignmentSharedInProfGroup: state.assignmentSharedInProfGroup,
-                    omId: user?.id,
-                    omName: user?.name
+                    sprintEntryId: lec.sprintEntryId
                 })
             });
 
@@ -131,7 +146,7 @@ export default function OMDailyLecturesPage() {
     const urgentSharesCount = lectures.filter((l) => l.needsOMAssignmentShare).length;
 
     return (
-        <div className="max-w-7xl mx-auto pt-8 pb-14 px-4 sm:px-6 space-y-6">
+        <div className="w-full max-w-7xl mx-auto pt-8 pb-14 px-4 sm:px-6 space-y-6 [contain:inline-size]">
             {/* Header */}
             <div className="relative group bg-zinc-900/60 backdrop-blur-xl border border-zinc-800/80 rounded-3xl p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 shadow-2xl">
                 <div>
@@ -146,6 +161,11 @@ export default function OMDailyLecturesPage() {
                             <p className="text-xs text-zinc-400 mt-0.5">
                                 Log Actual Class Timings &bull; Verify Notes Shared to Students &bull; Share Approved Assignments in Prof Group
                             </p>
+                            {!canEdit && (
+                                <p className="text-[11px] text-sky-300 mt-2 bg-sky-500/10 border border-sky-500/20 rounded-lg px-2.5 py-1.5 inline-block">
+                                    View only — the OM records timings and notes distribution.{user?.role === "HOI" ? " Your final verification is in Class Verification." : ""}
+                                </p>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -158,9 +178,9 @@ export default function OMDailyLecturesPage() {
                             onChange={(e) => setCampus(e.target.value)}
                             className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
                         >
-                            {CAMPUSES.map((c) => (
+                            {[{ id: "All", name: colleges.length === 1 ? colleges[0].name : "All my colleges" }, ...(colleges.length === 1 ? [] : colleges)].map((cl) => ({ key: cl.id, label: cl.name })).map(({ key: c, label }) => (
                                 <option key={c} value={c} className="bg-zinc-900 text-white">
-                                    {c === "All" ? "All Campuses" : c}
+                                    {label}
                                 </option>
                             ))}
                         </select>
@@ -176,7 +196,7 @@ export default function OMDailyLecturesPage() {
             </div>
 
             {/* Urgent Warning Banner if OM needs to share assignments */}
-            {urgentSharesCount > 0 && (
+            {canEdit && urgentSharesCount > 0 && (
                 <div className="p-4 rounded-2xl bg-rose-500/10 border-2 border-rose-500/30 flex items-center gap-3 animate-pulse">
                     <ShieldAlert size={24} className="text-rose-400 shrink-0" />
                     <div className="flex-1">
@@ -251,7 +271,7 @@ export default function OMDailyLecturesPage() {
                                             <span className="text-base font-black text-white">{lec.facultyName}</span>
                                             <span className="text-xs text-zinc-500">&bull;</span>
                                             <span className="text-xs font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-lg border border-amber-500/20">
-                                                {lec.college}
+                                                {colleges.find(c => c.id === lec.college)?.name || lec.college}
                                             </span>
                                             <span className="text-xs text-zinc-400">
                                                 Slot #{lec.lectureNumber}: <strong>{lec.timeStart} - {lec.timeStop}</strong>
@@ -267,6 +287,7 @@ export default function OMDailyLecturesPage() {
                                             {lec.courseName} &bull; <span className="text-zinc-400 font-normal">{lec.topicsCovered}</span>
                                         </p>
 
+                                        <fieldset disabled={!canEdit} className="min-w-0 border-0 p-0 m-0 space-y-3 disabled:opacity-60">
                                         {/* Row of quick controls for In/Out and Late */}
                                         <div className="pt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
                                             <div>
@@ -406,17 +427,40 @@ export default function OMDailyLecturesPage() {
                                                 </div>
                                             </div>
                                         ) : null}
+                                        </fieldset>
                                     </div>
 
-                                    {/* Save Button for this Row */}
-                                    <div className="shrink-0 flex items-center lg:items-end justify-end">
-                                        <button
-                                            onClick={() => handleSaveRow(lec)}
-                                            disabled={savingId === lec.id}
-                                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-amber-500/20 active:scale-95 disabled:opacity-50"
-                                        >
-                                            <Save size={14} /> {savingId === lec.id ? "Saving..." : "Update Lecture"}
-                                        </button>
+                                    {/* Right side: OM save button, or the verification trail for HOI / CL / CH / AD */}
+                                    <div className="shrink-0 w-full lg:w-64 flex flex-col gap-3">
+                                        {canEdit ? (
+                                            <button
+                                                onClick={() => handleSaveRow(lec)}
+                                                disabled={savingId === lec.id}
+                                                className="self-end flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-amber-500/20 active:scale-95 disabled:opacity-50 whitespace-nowrap"
+                                            >
+                                                <Save size={14} /> {savingId === lec.id ? "Saving..." : "Update Lecture"}
+                                            </button>
+                                        ) : (
+                                            <div className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800 space-y-2" data-testid="verification-trail">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Verification</span>
+                                                    <ClassStatusBadge status={lec.pipelineStatus} />
+                                                </div>
+                                                <StageLine label="OM" v={lec.omVerification} />
+                                                <StageLine label="Final (CL/CH/HOI)" v={lec.finalVerification?.status && lec.finalVerification.status !== "PENDING" ? lec.finalVerification : (lec.hoiVerification?.status === "VERIFIED" ? lec.hoiVerification : lec.clChVerification)} />
+                                                {finalVerificationText(lec) && <p className="text-[11px] font-bold text-emerald-400">{finalVerificationText(lec)}</p>}
+                                                <div className="pt-2 border-t border-zinc-800 space-y-1 text-[11px] text-zinc-500">
+                                                    <p>Entry / exit: {lec.omTimesUpdatedByName ? <span className="text-zinc-300">{lec.omTimesUpdatedByName} · {fmtAt(lec.omTimesUpdatedAt)}</span> : "not recorded"}</p>
+                                                    <p>Notes to groups: {lec.submittedToGroup ? <span className="text-emerald-400">{lec.submittedToGroupByName || "OM"}{lec.submittedToGroupAt ? ` · ${fmtAt(lec.submittedToGroupAt)}` : ""}</span> : "not yet"}</p>
+                                                </div>
+                                                {lec.reportId && (
+                                                    <Link href={`/academic/verification?record=${lec.reportId}`}
+                                                        className={`flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider ${user?.role === "HOI" && ["PENDING_CL_CH", "PENDING_HOI"].includes(lec.pipelineStatus) ? "bg-emerald-600 hover:bg-emerald-500 text-white" : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"}`}>
+                                                        {user?.role === "HOI" && ["PENDING_CL_CH", "PENDING_HOI"].includes(lec.pipelineStatus) ? "Final Verify" : "Open Record"} <ExternalLink size={11} />
+                                                    </Link>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>

@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import dbConnect from '@/lib/mongodb';
 import mongoose from 'mongoose';
+import { verifySessionToken, COOKIE_NAME } from '@/lib/session';
+import { verifyPassword, hashPassword } from '@/lib/password';
 
 export async function POST(request: Request) {
     try {
@@ -12,6 +15,14 @@ export async function POST(request: Request) {
 
         if (newPassword.length < 8) {
             return NextResponse.json({ success: false, error: "New password must be at least 8 characters/digits" }, { status: 400 });
+        }
+
+        // Only the logged-in user can change their own password
+        const cookieStore = await cookies();
+        const sessionCookie = cookieStore.get(COOKIE_NAME);
+        const session = sessionCookie?.value ? verifySessionToken(sessionCookie.value) : null;
+        if (!session) {
+            return NextResponse.json({ success: false, error: "Please log in again." }, { status: 401 });
         }
 
         await dbConnect();
@@ -32,32 +43,34 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: false, error: "Employee not found in database" }, { status: 404 });
         }
 
-        // Compare entered current password with ACTUAL stored value in MongoDB
-        const storedPassword = employee.password;
-
-        if (!storedPassword) {
-            // No password field — just set the new one
-            await collection.updateOne({ _id: employee._id }, { $set: { password: newPassword } });
-            return NextResponse.json({ success: true, message: "Password set successfully" });
+        const sessionMatches =
+            String(employee._id) === String(session.userId) ||
+            employee.id === session.userId ||
+            String(employee.email || '').toLowerCase() === String(session.email || '').toLowerCase();
+        if (!sessionMatches) {
+            return NextResponse.json({ success: false, error: "You can only change your own password." }, { status: 403 });
         }
 
-        if (currentPassword !== storedPassword) {
+        // Compare the entered current password with the stored value (hash, or plain text for older accounts).
+        // No password field means the old default "26082001" applies, same as login.
+        const check = await verifyPassword(String(currentPassword), employee.password || "26082001");
+        if (!check.ok) {
             return NextResponse.json({ success: false, error: "Current password is incorrect" }, { status: 401 });
         }
 
-        // Update the password field in MongoDB
+        // Only the hash is stored
         const result = await collection.updateOne(
             { _id: employee._id },
-            { $set: { password: newPassword } }
+            { $set: { password: await hashPassword(String(newPassword)), passwordChangedAt: new Date().toISOString() } }
         );
 
-        if (result.modifiedCount === 0) {
+        if (result.matchedCount === 0) {
             return NextResponse.json({ success: false, error: "Database update failed" }, { status: 500 });
         }
 
         return NextResponse.json({ success: true, message: "Password changed successfully" });
     } catch (error: any) {
-        console.error("Change Password Error:", error);
-        return NextResponse.json({ success: false, error: "Server error: " + error.message }, { status: 500 });
+        console.error("Change Password Error:", error?.message);
+        return NextResponse.json({ success: false, error: "Server error. Please try again." }, { status: 500 });
     }
 }

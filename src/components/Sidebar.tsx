@@ -6,9 +6,10 @@ import {
     Briefcase, Award, Network, Megaphone, Ticket, Receipt,
     FileText, CalendarCheck, AlertTriangle, UserCog, Star, MapPin, ClipboardList,
     Crown, Bell, Activity, Flag, ShieldAlert, Trophy, TrendingUp, Shirt,
-    BookOpen, Timer, Mic, GraduationCap, Video, Download
+    BookOpen, Timer, Mic, GraduationCap, Video, Download, CalendarDays, BadgeCheck, CalendarRange
 } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { Role } from "@/context/AuthContext";
@@ -31,13 +32,18 @@ const personalMenu = [
     { label: "SOP", icon: FileText, path: "/sop" },
     { label: "Flag Calendar", icon: Flag, path: "/flag-calendar" },
     { label: "Change Password", icon: ShieldCheck, path: "/change-password" },
+    { label: "Notifications", icon: Bell, path: "/notifications" },
 ];
 
 const managerMenu = [
     { label: "Manager Hub", icon: Briefcase, path: "/manager" },
-    { label: "Daily Lecture Timings", icon: Clock, path: "/manager/daily-lectures" },
     { label: "Academic Monitoring", icon: BookOpen, path: "/manager/reportees/academic-data" },
+    { label: "Weekly Calendar", icon: CalendarDays, path: "/academic/weekly-calendar", roles: ["OM", "HOI", "AD", "FOUNDER"] as Role[] },
+    { label: "Class Verification", icon: BadgeCheck, path: "/academic/verification", roles: ["OM", "HOI", "AD", "FOUNDER"] as Role[] },
+    { label: "Sprint Plan Approvals", icon: CalendarCheck, path: "/curriculum/sprint-plans", roles: ["HOI"] as Role[] },
     { label: "Leave Approval", icon: CalendarCheck, path: "/manager/leave-approval" },
+    { label: "Leave Summary", icon: CalendarRange, path: "/leave-summary", roles: ["HOI", "AD"] as Role[] },
+    { label: "Responsibility Approvals", icon: Award, path: "/manager/responsibility-approvals", roles: ["AD", "FOUNDER"] as Role[] },
     { label: "Report Misbehaviour", icon: AlertTriangle, path: "/manager/misbehaviour" },
     { label: "Ratings", icon: Star, path: "/manager/ratings" },
     { label: "Work Location", icon: MapPin, path: "/manager/work-location" },
@@ -50,7 +56,9 @@ const managerMenu = [
 const hrMenu = [
     { label: "HR Hub", icon: UserCog, path: "/hr" },
     { label: "Workforce", icon: Users, path: "/employees" },
-    { label: "Employee Setup", icon: UserCog, path: "/hr/employee-setup" },
+    { label: "Leave Management", icon: CalendarCheck, path: "/hr/leave-management" },
+    { label: "Leave Summary", icon: CalendarRange, path: "/leave-summary" },
+    { label: "Work Location", icon: MapPin, path: "/hr/work-location" },
     { label: "Holiday Approval", icon: CalendarCheck, path: "/hr/holiday-approval" },
     { label: "Attendance Override", icon: ClipboardList, path: "/hr/attendance-override" },
     { label: "Dress Code", icon: Shirt, path: "/hr/dress-code" },
@@ -59,7 +67,7 @@ const hrMenu = [
     { label: "PIP Management", icon: ShieldAlert, path: "/hr/pip" },
     { label: "Report Misbehaviour", icon: AlertTriangle, path: "/manager/misbehaviour" },
     { label: "Locations", icon: MapPin, path: "/locations" },
-    { label: "Schedule Approval", icon: MapPin, path: "/hr/schedule-approval" },
+    { label: "Schedule Changes", icon: MapPin, path: "/hr/schedule-approval" },
     { label: "Engagement", icon: Award, path: "/engagement" },
     { label: "Onboarding", icon: UserCog, path: "/hr/onboarding" },
 ];
@@ -78,6 +86,7 @@ const techLeadMenu = [
 const facultyMenu = [
     { label: "Faculty Dashboard", icon: GraduationCap, path: "/faculty" },
     { label: "Sprint Plan", icon: CalendarCheck, path: "/faculty/sprint-plan" },
+    { label: "Weekly Calendar", icon: CalendarDays, path: "/academic/weekly-calendar" },
     { label: "My Lectures", icon: Timer, path: "/faculty/lectures" },
     { label: "Lecture Report", icon: Mic, path: "/faculty/lecture-report" },
 ];
@@ -86,6 +95,8 @@ const curriculumMenu = [
     { label: "Curriculum Portal", icon: GraduationCap, path: "/curriculum" },
     { label: "Sprint Plan Grid", icon: CalendarCheck, path: "/curriculum/sprint-plans" },
     { label: "Lecture Quality Hub", icon: Mic, path: "/curriculum/lectures" },
+    { label: "Weekly Calendar", icon: CalendarDays, path: "/academic/weekly-calendar", roles: ["CURRICULUM_HEAD", "CURRICULUM_LEAD"] as Role[] },
+    { label: "Class Verification", icon: BadgeCheck, path: "/academic/verification", roles: ["CURRICULUM_HEAD", "CURRICULUM_LEAD"] as Role[] },
     { label: "Assign Faculty Tasks", icon: ClipboardList, path: "/curriculum/tasks" },
     { label: "Campus Daily MoM", icon: Video, path: "/curriculum/mom" },
 ];
@@ -101,7 +112,9 @@ const FACULTY_ROLES: Role[] = ["FACULTY", "PROFESSOR"];
 // Roles that can see Tech Support
 const TECH_LEAD_ROLES: Role[] = ["TL", "FOUNDER"];
 
-function NavSection({ title, items, pathname }: { title: string; items: typeof coreMenu; pathname: string }) {
+type NavItem = { label: string; icon: typeof LayoutDashboard; path: string; roles?: Role[]; badge?: number };
+
+function NavSection({ title, items, pathname }: { title: string; items: NavItem[]; pathname: string }) {
     return (
         <div>
             {title && title !== "Personal" && <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-3 px-3">{title}</p>}
@@ -116,6 +129,7 @@ function NavSection({ title, items, pathname }: { title: string; items: typeof c
                             )}>
                             <item.icon size={14} className={cn(isActive ? "text-primary" : "text-zinc-600 group-hover:text-white")} />
                             <span>{item.label}</span>
+                            {!!item.badge && <span className="ml-auto bg-primary/20 text-primary text-[9px] font-bold px-1.5 py-0.5 rounded-full">{item.badge}</span>}
                         </Link>
                     );
                 })}
@@ -141,10 +155,23 @@ const ROLE_COLORS: Record<Role, { bg: string; text: string; label: string }> = {
 };
 
 export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
-    const { user, logout, getMyNotifications } = useAuth();
+    const { user, logout, getMyNotifications, workSchedules } = useAuth();
     const pathname = usePathname();
     const role = user?.role as Role;
     const unreadCount = getMyNotifications().filter(n => !n.read).length;
+    // HR notification: work schedule changes that HR has not marked as read yet
+    const unreadScheduleChanges = (workSchedules || []).filter(s => !s.approvedByHR).length;
+
+    // Unread academic notifications (stored on the server); refreshed every minute and on navigation
+    const [unreadNotifications, setUnreadNotifications] = useState(0);
+    useEffect(() => {
+        if (!user) return;
+        let alive = true;
+        const loadCount = () => fetch("/api/notifications?unread=1").then(r => r.ok ? r.json() : null).then(d => { if (alive && d) setUnreadNotifications(d.unreadCount || 0); }).catch(() => { });
+        loadCount();
+        const t = setInterval(loadCount, 60000);
+        return () => { alive = false; clearInterval(t); };
+    }, [user?.id, pathname]);
 
     const roleStyle = role ? ROLE_COLORS[role] : { bg: "bg-zinc-800", text: "text-zinc-400", label: "Guest" };
     const RoleIcon = role === "FOUNDER" ? Crown : role === "HR" ? ShieldCheck : role === "AD" || role === "HOI" ? Briefcase : User;
@@ -179,16 +206,16 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
 
             <nav className="flex-1 overflow-y-auto space-y-6 custom-scrollbar">
                 <NavSection title="Core" items={coreMenu} pathname={pathname} />
-                <NavSection title="Personal" items={personalMenu} pathname={pathname} />
+                <NavSection title="Personal" items={personalMenu.map(i => i.path === "/notifications" ? { ...i, badge: unreadNotifications } : i)} pathname={pathname} />
 
                 {/* Manager Suite: Visible to FOUNDER, AD, HOI */}
                 {role && MANAGER_ROLES.includes(role) && (
-                    <NavSection title="Manager Suite" items={managerMenu} pathname={pathname} />
+                    <NavSection title="Manager Suite" items={managerMenu.filter(i => !i.roles || i.roles.includes(role))} pathname={pathname} />
                 )}
 
                 {/* HR Administration: Visible to FOUNDER, HR */}
                 {role && HR_ROLES.includes(role) && (
-                    <NavSection title="HR Administration" items={hrMenu} pathname={pathname} />
+                    <NavSection title="HR Administration" items={hrMenu.map(i => i.path === "/hr/schedule-approval" ? { ...i, badge: unreadScheduleChanges } : i)} pathname={pathname} />
                 )}
 
                 {/* Faculty Suite: Visible to FACULTY, PROFESSOR */}
@@ -198,7 +225,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
 
                 {/* Curriculum Suite: Visible to CURRICULUM_HEAD, CURRICULUM_LEAD, FOUNDER, AD */}
                 {role && CURRICULUM_ROLES.includes(role) && (
-                    <NavSection title="Curriculum Suite" items={curriculumMenu} pathname={pathname} />
+                    <NavSection title="Curriculum Suite" items={curriculumMenu.filter(i => !i.roles || i.roles.includes(role))} pathname={pathname} />
                 )}
 
                 {/* Founder Console: Visible to FOUNDER only */}
