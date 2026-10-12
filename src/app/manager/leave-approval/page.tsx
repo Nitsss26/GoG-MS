@@ -1,129 +1,29 @@
 "use client";
-import { useAuth } from "@/context/AuthContext";
-import { Calendar, CheckCircle2, XCircle, Clock, ChevronDown } from "lucide-react";
-import { cn } from "@/lib/utils";
+
 import { useState } from "react";
+import { CalendarCheck, Home } from "lucide-react";
+import LeaveApprovalBoard from "@/components/leave/LeaveApprovalBoard";
+import WfhApprovalBoard from "@/components/wfh/WfhApprovalBoard";
+import { cn } from "@/lib/utils";
 
+/**
+ * Manager Suite → Leave Approval. Same board as HR Leave Management; the server limits the data to the
+ * manager's reporting hierarchy and only allows the HOI step. Own leave is applied for on Core → Leave.
+ * Work From Home requests of the reporting hierarchy are decided in their own tab.
+ */
 export default function LeaveApprovalPage() {
-    const { user, leaves, approveLeave, rejectLeave, getReportees } = useAuth();
-    const [tab, setTab] = useState<"reportees" | "self">("reportees");
-    if (!user || !["FOUNDER", "AD", "HOI", "HR", "OM"].includes(user.role)) return null;
-
-    const reportees = getReportees(user.id) || [];
-    const reporteeIds = reportees.map(r => r.id);
-    const isSystemAdmin = ["HR", "FOUNDER"].includes(user.role);
-
-    const reporteeLeaves = leaves.filter(l => isSystemAdmin || reporteeIds.includes(l.employeeId)).sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
-    const selfLeaves = leaves.filter(l => l.employeeId === user.id).sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
-
-    const displayed = tab === "reportees" ? reporteeLeaves : selfLeaves;
-    const today = new Date().toISOString().split("T")[0];
-    const currentlyOnLeave = reportees.filter(r => {
-        const activeLeave = leaves.find(l => l.employeeId === r.id && l.status === "Approved" && today >= l.startDate && today <= l.endDate);
-        return !!activeLeave;
-    });
-
+    const [tab, setTab] = useState<"leave" | "wfh">("leave");
     return (
-        <div className="p-6 space-y-6 max-w-5xl mx-auto w-full">
-            <header>
-                <h1 className="text-xl font-bold text-white tracking-tight">Leave Management</h1>
-                <p className="text-xs text-zinc-400 mt-1">{isSystemAdmin ? "Manage all employee leave requests across the organization." : "Approve or reject leave requests from your reportees."}</p>
-            </header>
-
-            <div className="flex gap-2 bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-1 w-fit">
-                <button onClick={() => setTab("reportees")} className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all", tab === "reportees" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}>
-                    {isSystemAdmin ? "Organization Leaves" : "Reportee Leaves"} ({reporteeLeaves.filter(l => l.status === "Pending").length} pending)
-                </button>
-                <button onClick={() => setTab("self")} className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all", tab === "self" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}>
-                    My Leaves ({selfLeaves.length})
-                </button>
-            </div>
-
-            {tab === "reportees" && currentlyOnLeave.length > 0 && (
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 space-y-3">
-                    <h3 className="text-xs font-bold text-blue-400 uppercase tracking-widest flex items-center gap-2">
-                        <Calendar size={14} /> Currently On Leave Today ({currentlyOnLeave.length})
-                    </h3>
-                    <div className="flex flex-wrap gap-2">
-                        {currentlyOnLeave.map(r => (
-                            <div key={r.id} className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-[10px] font-bold">
-                                    {r.name[0]}
-                                </div>
-                                <span className="text-xs text-white font-medium">{r.name}</span>
-                                <span className="text-[10px] text-zinc-500">{r.designation}</span>
-                            </div>
-                        ))}
-                    </div>
+        <div>
+            <div className="px-4 sm:px-6 pt-6 max-w-7xl mx-auto w-full">
+                <div className="flex gap-1 bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-1 w-fit" data-testid="leave-mgmt-tabs">
+                    <button onClick={() => setTab("leave")} data-testid="tab-leave" className={cn("px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all", tab === "leave" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}><CalendarCheck size={12} /> Leave Applications</button>
+                    <button onClick={() => setTab("wfh")} data-testid="tab-wfh" className={cn("px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all", tab === "wfh" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}><Home size={12} /> Work From Home Applications</button>
                 </div>
+            </div>
+            {tab === "leave" ? <LeaveApprovalBoard mode="MANAGER" /> : (
+                <div className="p-4 sm:p-6 max-w-7xl mx-auto w-full"><WfhApprovalBoard /></div>
             )}
-
-            <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl overflow-hidden">
-                <div className="p-4 border-b border-zinc-800/50 flex justify-between items-center">
-                    <h3 className="text-sm font-semibold text-white">
-                        {tab === "reportees" ? (isSystemAdmin ? "All Requests & History" : "Reportee Requests & History") : "My Leave History"}
-                    </h3>
-                </div>
-                <div className="divide-y divide-zinc-800/50">
-                    {displayed.length === 0 ? (
-                        <div className="p-12 text-center text-xs text-zinc-500 italic">No leave requests found.</div>
-                    ) : displayed.map(l => (
-                        <div key={l.id} className="p-5 flex items-start gap-4 hover:bg-zinc-800/20 transition-colors">
-                            <div className="mt-0.5">
-                                {l.status === "Pending" ? <Clock size={16} className="text-amber-500" /> :
-                                    l.status === "Approved" ? <CheckCircle2 size={16} className="text-green-500" /> :
-                                        <XCircle size={16} className="text-red-500" />}
-                            </div>
-                            <div className="flex-1 min-w-0 space-y-2">
-                                <div className="flex justify-between items-start gap-4">
-                                    <div className="min-w-0 flex-1">
-                                        <h4 className="text-xs font-bold text-white">{l.employeeName}</h4>
-                                        <p className="text-[10px] text-zinc-500">{l.type} · {l.leaveType} · {l.days} day(s)</p>
-                                        <p className="text-[10px] text-zinc-400">{l.startDate} → {l.endDate}</p>
-                                        {l.reason && (
-                                            <div className="mt-2 p-2 bg-zinc-800/50 rounded-lg border border-zinc-700/50">
-                                                <p className="text-[11px] text-zinc-300 font-medium leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                                                    <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-0.5">Reason for absence:</span>
-                                                    {l.reason}
-                                                </p>
-                                            </div>
-                                        )}
-                                        {l.reasonForAction && <p className="text-[10px] text-amber-500/80 italic mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">Action Note: {l.reasonForAction}</p>}
-                                    </div>
-                                    <span className={cn("text-[9px] font-black uppercase tracking-wider px-3 py-1 rounded-full border whitespace-nowrap shrink-0",
-                                        l.status === "Pending" || l.status.includes("Pending") ? "text-amber-400 bg-amber-500/10 border-amber-500/20" :
-                                            l.status === "Approved" ? "text-green-400 bg-green-500/10 border-green-500/20" :
-                                                "text-red-400 bg-red-500/10 border-red-500/20"
-                                    )}>{l.status}</span>
-                                </div>
-                                {l.proofUrls && l.proofUrls.length > 0 && (
-                                    <div className="flex flex-wrap gap-2 mt-2">
-                                        {l.proofUrls.map((url, idx) => (
-                                            <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-zinc-300 hover:text-white transition-colors">
-                                                <Calendar size={12} /> View Document {idx + 1}
-                                            </a>
-                                        ))}
-                                    </div>
-                                )}
-                                {tab === "reportees" && l.status === "Pending" && (
-                                    <div className="flex flex-wrap gap-2 mt-2">
-                                        <button onClick={() => { const reason = window.prompt("Reason for approval (Optional):"); approveLeave(l.id, reason || undefined); }} className="px-4 py-1.5 text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 rounded-lg hover:bg-green-500/20 transition-colors">Approve</button>
-                                        <button onClick={() => { const reason = window.prompt("Reason for rejection:"); rejectLeave(l.id, false, reason || undefined); }} className="px-4 py-1.5 text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/20 transition-colors">Reject</button>
-                                        {l.leaveType === "Emergency" && (
-                                            <button
-                                                onClick={() => { const reason = window.prompt("Reason for invalid proof / LOP:"); if (confirm("Are you sure you want to reject this emergency request and apply a 2-Day LOP penalty for invalid proof?")) rejectLeave(l.id, true, reason || undefined); }}
-                                                className="px-4 py-1.5 text-[10px] font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-lg hover:bg-orange-500/20 transition-colors"
-                                            >
-                                                Reject (Invalid Proof - 2 Day LOP)
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
         </div>
     );
 }

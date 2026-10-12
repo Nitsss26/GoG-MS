@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import { SprintPlan, LectureReport } from '@/models/Schemas';
-import { resolveManager, academicReportees } from '@/lib/manager-reportees';
+import { resolveManager, reporteesOf } from '@/lib/manager-reportees';
 
 export async function GET(req: Request) {
     try {
@@ -20,7 +20,7 @@ export async function GET(req: Request) {
         // Logic: Anyone pointing to them in reportsTo (string or array)
         // AND (if HOI) anyone at their same location
         // AND (if AD/FOUNDER) EVERYONE with role FACULTY or PROFESSOR
-        const reportees: any[] = await academicReportees(manager);
+        const reportees: any[] = await reporteesOf(who as any);
         const reporteeIds = reportees.map(r => r.id);
 
         if (reporteeIds.length === 0) {

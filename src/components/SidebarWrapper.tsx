@@ -3,13 +3,13 @@
 import { useAuth } from "@/context/AuthContext";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Layers } from "lucide-react";
 import Sidebar from "./Sidebar";
 import OnboardingModal from "./OnboardingModal";
 
 export default function SidebarWrapper({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
-    const { user, authLoading } = useAuth();
+    const { user, authLoading, exitHub } = useAuth();
     const router = useRouter();
     const [isMobileOpen, setIsMobileOpen] = useState(false);
 
@@ -72,6 +72,14 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
                     </header>
                 )}
 
+                {/* Working inside a delegated hub (Give Access) */}
+                {showSidebar && (user as any)?.delegation && (
+                    <div className="flex items-center gap-3 px-4 py-2 border-b border-amber-500/20 bg-amber-500/[0.06] text-[11px]" data-testid="hub-banner">
+                        <Layers size={13} className="text-amber-400 shrink-0" />
+                        <span className="text-amber-200 truncate">Working with <b>{(user as any).delegation.label}</b> access · {(user as any).delegation.sourceName}</span>
+                        <button onClick={() => { exitHub?.(); router.push("/"); }} className="ml-auto shrink-0 px-2.5 py-1 rounded-md border border-amber-500/30 text-amber-300 hover:bg-amber-500/10 font-bold">Exit hub</button>
+                    </div>
+                )}
                 <main className="flex-1 overflow-y-auto overflow-x-hidden relative">
                     <div className="flex flex-col min-h-full desktop-zoom">
                         {children}

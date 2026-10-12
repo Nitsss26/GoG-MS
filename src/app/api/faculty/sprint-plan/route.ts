@@ -26,7 +26,7 @@ export async function GET(req: Request) {
             }
             const scope = await getAcademicScope(actor);
             if (!(await professorIfInScope(scope, facultyId))) {
-                return NextResponse.json({ error: 'This professor is not in your college.' }, { status: 403 });
+                return NextResponse.json({ error: 'This professor is not in your campus or reporting hierarchy.' }, { status: 403 });
             }
         }
 

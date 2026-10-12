@@ -232,7 +232,7 @@ export async function POST(req: Request) {
 
         // College check before anything is created or changed
         if (!(await recordInScope(actor, report || { facultyId, college: '' }))) {
-            return NextResponse.json({ error: 'This professor is not in your college.' }, { status: 403 });
+            return NextResponse.json({ error: 'This professor is not in your campus or reporting hierarchy.' }, { status: 403 });
         }
 
         if (!report && facultyId && date) {

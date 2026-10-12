@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { CalendarDays, Calendar, ArrowLeft, ArrowRight, RefreshCw, X, Filter, LayoutGrid, List, ExternalLink, AlertTriangle, Building2, Network, ChevronDown, Users, BookOpen, GraduationCap, GitBranch, Layers, SlidersHorizontal, RotateCcw, Download } from "lucide-react";
+import { CalendarDays, Calendar, ArrowLeft, ArrowRight, RefreshCw, X, Filter, LayoutGrid, List, ExternalLink, AlertTriangle, Building2, Network, ChevronDown, Users, BookOpen, GraduationCap, GitBranch, Layers, SlidersHorizontal, RotateCcw, Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { CALENDAR_ROLES, PROFESSOR_ROLES, PLAN_STATUS_LABEL, PROFESSOR_EDITABLE_CLASS_STATUSES, CLASS_STATUS_LABEL, CLASS_STATUS_STYLE } from "@/lib/academic-status";
 import { DEFAULT_TIME_SLOTS, FACULTY_CARD_THEMES } from "@/components/academic/SprintPlanTimetableGrid";
@@ -50,6 +50,8 @@ export default function WeeklyCalendarPage() {
     const [layout, setLayout] = useState<"grid" | "list">("grid");
     const [selected, setSelected] = useState<any | null>(null);
     const [notice, setNotice] = useState("");
+    const [dlOpen, setDlOpen] = useState(false);
+    const [pdfBusy, setPdfBusy] = useState(false);
 
     useEffect(() => {
         const w = new URLSearchParams(window.location.search).get("week");
@@ -131,6 +133,10 @@ export default function WeeklyCalendarPage() {
             const v = String(c.college || "");
             if (v && !list.some((x: any) => x.keys.includes(v))) list.push({ id: v, name: v, keys: [v] });
         });
+        // professors appointed under the HOI whose campus HR has not set yet — never hide their classes
+        if (classes.some(c => !c.college) || (data?.professors || []).some((p: any) => !p.location)) {
+            list.push({ id: "__none__", name: "Campus not assigned", keys: [""] });
+        }
         return list;
     }, [data?.colleges, classes]);
     const campusOf = (c: any) => campusList.find(x => x.keys.includes(String(c.college || "")))?.id || String(c.college || "");
@@ -178,6 +184,104 @@ export default function WeeklyCalendarPage() {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Weekly Calendar");
         XLSX.writeFile(wb, `Weekly_Calendar_${campus === "ALL" ? "All_Campuses" : campusName(campus).replace(/\s+/g, "_")}_${data?.weekStart}.xlsx`);
+    };
+
+    /** Colourful PDF of the calendar (same professor colours as the timetable) — one landscape page per campus */
+    const downloadPdf = async () => {
+        setDlOpen(false);
+        const sections = multiCampusView && campus === "ALL"
+            ? campusList.map(cp => ({ name: cp.name, list: shown.filter(c => campusOf(c) === cp.id) })).filter(x => x.list.length)
+            : [{ name: view === "mine" ? `My Weekly Schedule — ${user.name}` : (multiCampusView && campus !== "ALL" ? campusName(campus) : collegeTitle), list: shownCampus }];
+        if (!sections.length || !sections.some(x => x.list.length)) { setNotice("No classes to download for these filters."); setTimeout(() => setNotice(""), 3000); return; }
+        setPdfBusy(true);
+        try {
+            const { jsPDF } = await import("jspdf");
+            const autoTable = (await import("jspdf-autotable")).default;
+            const hex = (h: string): [number, number, number] => [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+            // light-mode colours of FACULTY_CARD_THEMES, e.g. "bg-[#e8c4d8]/90"
+            const palette = FACULTY_CARD_THEMES.map(t => ({
+                fill: hex((t.bg.match(/bg-\[#([0-9a-f]{6})\]/i) || [, "e4e4e7"])[1] as string),
+                line: hex((t.border.match(/border-\[#([0-9a-f]{6})\]/i) || [, "a1a1aa"])[1] as string),
+            }));
+            const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+            const W = doc.internal.pageSize.getWidth(), M = 28;
+            sections.forEach((sec, si) => {
+                if (si > 0) doc.addPage();
+                // Title band
+                doc.setFillColor(179, 134, 0); doc.roundedRect(M, M, 150, 40, 4, 4, "F");
+                doc.setTextColor(20, 20, 20); doc.setFont("helvetica", "bold"); doc.setFontSize(10);
+                doc.text("GoG Weekly Calendar", M + 75, M + 17, { align: "center" });
+                doc.setFontSize(8); doc.setFont("helvetica", "normal");
+                doc.text(`${dmy(data.weekStart)} to ${dmy(data.weekEnd)}`, M + 75, M + 31, { align: "center" });
+                doc.setFillColor(24, 24, 27); doc.roundedRect(M + 156, M, W - 2 * M - 156, 40, 4, 4, "F");
+                doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(14);
+                doc.text(sec.name, M + 170, M + 25, { maxWidth: W - 2 * M - 300 });
+                doc.setFontSize(9); doc.setTextColor(161, 161, 170);
+                doc.text(`${sec.list.length} class${sec.list.length === 1 ? "" : "es"}`, W - M - 14, M + 25, { align: "right" });
+
+                const rows = rowsFor(sec.list);
+                const cellClasses: any[][][] = rows.map(r => dates.map(d => r.isLunch ? [] : r.classesFor(d.date)));
+                const body = rows.map((r, ri) => [
+                    r.isLunch ? `${r.label}\nLUNCH` : r.other ? `${r.label}\n(outside slots)` : r.label,
+                    ...dates.map((d, di) => r.isLunch ? "LUNCH" : cellClasses[ri][di].map(c =>
+                        `${c.subjectName || c.topics || "Lecture"}\n${view === "college" ? c.facultyName : (c.className || c.branch || "")}${c.section ? ` · Sec ${c.section}` : ""}\n${c.timeStart}–${c.timeStop}`).join("\n\n") || "—"),
+                ]);
+                autoTable(doc, {
+                    startY: M + 50,
+                    margin: { left: M, right: M },
+                    head: [["TIME / DAY", ...dates.map(d => `${d.code}\n${d.date.split("-").reverse().slice(0, 2).join("/")}`)]],
+                    body,
+                    theme: "grid",
+                    styles: { font: "helvetica", fontSize: 7.5, cellPadding: 4, valign: "middle", halign: "center", lineColor: [212, 212, 216], lineWidth: 0.6, textColor: [39, 39, 42], overflow: "linebreak" },
+                    headStyles: { fillColor: [26, 56, 82], textColor: [224, 242, 254], fontStyle: "bold", fontSize: 8.5, halign: "center" },
+                    columnStyles: { 0: { cellWidth: 74, fontStyle: "bold", fillColor: [244, 244, 245], textColor: [24, 24, 27] } },
+                    didParseCell: (h: any) => {
+                        if (h.section !== "body") return;
+                        const r = rows[h.row.index];
+                        if (r.isLunch) { h.cell.styles.fillColor = h.column.index === 0 ? [102, 59, 20] : [254, 243, 199]; h.cell.styles.textColor = h.column.index === 0 ? [254, 243, 199] : [146, 64, 14]; h.cell.styles.fontStyle = "bold"; return; }
+                        if (h.column.index === 0) return;
+                        const list = cellClasses[h.row.index][h.column.index - 1];
+                        if (!list.length) { h.cell.styles.textColor = [161, 161, 170]; return; }
+                        h.cell.styles.fillColor = palette[profTheme(list[0].facultyId)].fill;
+                        h.cell.styles.textColor = [24, 24, 27];
+                    },
+                    didDrawCell: (h: any) => {
+                        if (h.section !== "body" || h.column.index === 0 || rows[h.row.index].isLunch) return;
+                        const list = cellClasses[h.row.index][h.column.index - 1];
+                        if (!list.length) return;
+                        // coloured left edge = professor colour
+                        doc.setFillColor(...palette[profTheme(list[0].facultyId)].line);
+                        doc.rect(h.cell.x, h.cell.y, 3, h.cell.height, "F");
+                    },
+                });
+                // Professor colour legend
+                const profs = Array.from(new Map(sec.list.map(c => [c.facultyId, c.facultyName])).entries());
+                let y = (doc as any).lastAutoTable.finalY + 14, x = M;
+                if (view === "college" && profs.length) {
+                    doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(82, 82, 91);
+                    doc.text("PROFESSORS:", x, y + 7); x += 64;
+                    doc.setFont("helvetica", "normal");
+                    profs.forEach(([id, name]) => {
+                        const w = doc.getTextWidth(String(name)) + 22;
+                        if (x + w > W - M) { x = M + 64; y += 14; }
+                        const p = palette[profTheme(id)];
+                        doc.setFillColor(...p.fill); doc.setDrawColor(...p.line); doc.roundedRect(x, y, 10, 10, 2, 2, "FD");
+                        doc.setTextColor(39, 39, 42); doc.text(String(name), x + 14, y + 8);
+                        x += w;
+                    });
+                }
+            });
+            const pages = doc.getNumberOfPages();
+            for (let i = 1; i <= pages; i++) {
+                doc.setPage(i); doc.setFontSize(7); doc.setTextColor(161, 161, 170);
+                doc.text(`Generated ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} · Page ${i} of ${pages}`, W - M, doc.internal.pageSize.getHeight() - 14, { align: "right" });
+            }
+            doc.save(`Weekly_Calendar_${campus === "ALL" || !multiCampusView ? (multiCampusView ? "All_Campuses" : "My_Schedule") : campusName(campus).replace(/\s+/g, "_")}_${data?.weekStart}.pdf`);
+        } catch (e: any) {
+            setNotice(`Could not create the PDF: ${e.message}`); setTimeout(() => setNotice(""), 4000);
+        } finally {
+            setPdfBusy(false);
+        }
     };
 
     // ── Timetable (same look and colours as the Sprint Plan timetable). compact = all-campuses overview ──
@@ -352,7 +456,26 @@ export default function WeeklyCalendarPage() {
                 <div className="flex flex-wrap justify-end gap-2 mt-4">
                     <button onClick={applyFilters} data-testid="apply-filters" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black active:scale-95"><SlidersHorizontal size={14} /> Apply Filters{pendingChanges ? " •" : ""}</button>
                     <button onClick={resetFilters} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-black active:scale-95"><RotateCcw size={14} /> Reset</button>
-                    <button onClick={downloadReport} data-testid="download-report" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-black active:scale-95"><Download size={14} /> Download Report</button>
+                    <div className="relative">
+                        <button onClick={() => setDlOpen(o => !o)} disabled={pdfBusy} data-testid="download-report" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-black active:scale-95 disabled:opacity-60">
+                            {pdfBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Download <ChevronDown size={13} className={`transition-transform ${dlOpen ? "rotate-180" : ""}`} />
+                        </button>
+                        {dlOpen && (
+                            <>
+                                <div className="fixed inset-0 z-30" onClick={() => setDlOpen(false)} />
+                                <div className="absolute right-0 mt-2 z-40 w-60 rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-1.5" data-testid="download-menu">
+                                    <button onClick={downloadPdf} data-testid="download-pdf" className="w-full flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-zinc-800 text-left">
+                                        <FileText size={15} className="text-rose-300 mt-0.5 shrink-0" />
+                                        <span><span className="block text-xs font-bold text-white">Download PDF</span><span className="block text-[10px] text-zinc-500">Colourful calendar, one page per campus</span></span>
+                                    </button>
+                                    <button onClick={() => { setDlOpen(false); downloadReport(); }} data-testid="download-excel" className="w-full flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-zinc-800 text-left">
+                                        <FileSpreadsheet size={15} className="text-emerald-300 mt-0.5 shrink-0" />
+                                        <span><span className="block text-xs font-bold text-white">Download Excel</span><span className="block text-[10px] text-zinc-500">All classes as rows (.xlsx)</span></span>
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
                 </div>
             </div>
 

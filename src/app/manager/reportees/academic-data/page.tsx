@@ -111,7 +111,7 @@ export default function AcademicMonitoring() {
         }
     };
 
-    if (!user || !["FOUNDER", "AD", "HOI", "HR", "OM"].includes(user.role)) {
+    if (!user || !["FOUNDER", "AD", "HOI", "HR", "OM", "FACULTY_VIEWER"].includes(user.role)) {
         return <div className="p-20 text-center text-zinc-500">Access Restricted</div>;
     }
 

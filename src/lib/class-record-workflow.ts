@@ -12,13 +12,13 @@
  * A class record is a LectureReport document (existing model), linked to the sprint plan entry it came from.
  * Every role check is made here on the server, together with the college scope (Module 24).
  */
-import { LectureReport, SprintPlan, Employee, JobRun } from '@/models/Schemas';
+import { LectureReport, SprintPlan, Employee, JobRun, Attendance } from '@/models/Schemas';
 import {
     getClassStatus, getPlanStatus, PROFESSOR_ROLES, CL_CH_ROLES, PROFESSOR_EDITABLE_CLASS_STATUSES,
     CLASS_STATUS_LABEL, DEFAULT_CLASS_STRENGTH, roleShort,
 } from '@/lib/academic-status';
 import {
-    getAcademicScope, scopeAllows, collegeRecipients, employeesByIds, notifySafe, nowISO, newId,
+    getAcademicScope, scopeAllowsProfessor, collegeRecipients, employeesByIds, notifySafe, nowISO, newId,
     hasClassEnded, dayCodeOf, collegeName, AcademicScope,
 } from '@/lib/academic';
 
@@ -138,7 +138,7 @@ export async function recordInScope(actor: Actor, record: any) {
     const scope = await scopeFor(actor);
     if (scope.orgWide) return true;
     const prof: any = await Employee.findOne({ id: record.facultyId }).select('location').lean();
-    return scopeAllows(scope, prof?.location || record.college);
+    return scopeAllowsProfessor(scope, record.facultyId, prof?.location || record.college);
 }
 
 async function classLabel(r: any) {
@@ -153,9 +153,46 @@ async function classLabel(r: any) {
 }
 const shortClass = (r: any) => `${r.courseName} · ${r.date}${r.timeStart ? ' ' + r.timeStart : ''}${r.section ? ' · Sec ' + r.section : ''}`;
 
+/**
+ * OM entry / exit details from the request merged with what is already saved. The professor's own submitted
+ * times (classStartTime / classEndTime) are never touched. Delay = actual start (or entry) − scheduled start.
+ */
+function omCheckFrom(record: any, input: any, actor: Actor): { error: string } | { set: any; entry: string; exit: string; summary: string } {
+    const prev = record.omCheck?.toObject ? record.omCheck.toObject() : (record.omCheck || {});
+    const pick = (k: string, legacy?: string) => (input[k] !== undefined ? String(input[k] || '').trim() : String(prev[k] || (legacy ? record[legacy] : '') || ''));
+    const entry = input.actualInTime !== undefined ? String(input.actualInTime || '').trim() : pick('entryTime', 'actualInTime');
+    const exit = input.actualOutTime !== undefined ? String(input.actualOutTime || '').trim() : pick('exitTime', 'actualOutTime');
+    const actualStart = pick('actualStart'); const actualEnd = pick('actualEnd');
+    for (const [label, v] of [['Entry time', entry], ['Exit time', exit], ['Actual start', actualStart], ['Actual end', actualEnd]] as [string, string][]) {
+        if (v && !TIME_RE.test(v)) return { error: `${label} must be HH:MM.` };
+    }
+    const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    if (entry && exit && toMin(exit) <= toMin(entry)) return { error: 'Exit time must be after entry time.' };
+    if (actualStart && actualEnd && toMin(actualEnd) <= toMin(actualStart)) return { error: 'Actual end must be after actual start.' };
+    const scheduledStart = record.timeStart || record.classStartTime || '';
+    const scheduledEnd = record.timeStop || record.classEndTime || '';
+    const startUsed = actualStart || entry;
+    const delayMinutes = scheduledStart && startUsed && TIME_RE.test(scheduledStart) ? Math.max(0, toMin(startUsed) - toMin(scheduledStart)) : 0;
+    const isDelayed = input.isLate !== undefined ? Boolean(input.isLate) || delayMinutes > 0 : delayMinutes > 0;
+    const delayReason = input.delayReason !== undefined ? String(input.delayReason || '').trim() : input.remarksWhyLate !== undefined ? String(input.remarksWhyLate || '').trim() : String(prev.delayReason || record.remarksWhyLate || '');
+    const remarks = input.omRemarks !== undefined ? String(input.omRemarks || '').trim() : String(prev.remarks || '');
+    const now = nowISO();
+    const set: any = {
+        'omCheck.entryTime': entry, 'omCheck.exitTime': exit, 'omCheck.actualStart': actualStart, 'omCheck.actualEnd': actualEnd,
+        'omCheck.scheduledStart': scheduledStart, 'omCheck.scheduledEnd': scheduledEnd, 'omCheck.delayMinutes': delayMinutes,
+        'omCheck.isDelayed': isDelayed, 'omCheck.delayReason': delayReason, 'omCheck.remarks': remarks,
+        'omCheck.by': actor.id, 'omCheck.byName': actor.name, 'omCheck.at': now,
+        // existing fields used by Daily Lecture Timings and the reports (OM-entered, not the professor's)
+        actualInTime: entry, actualOutTime: exit, isLate: isDelayed, remarksWhyLate: delayReason,
+        omTimesUpdatedBy: actor.id, omTimesUpdatedByName: actor.name, omTimesUpdatedAt: now,
+    };
+    const summary = `Entry/exit recorded (${entry || '—'} / ${exit || '—'})${isDelayed ? ` · delayed ${delayMinutes} min${delayReason ? ': ' + delayReason : ''}` : ''}`;
+    return { set, entry, exit, summary };
+}
+
 async function omsOf(record: any) {
     const prof: any = await Employee.findOne({ id: record.facultyId }).select('location').lean();
-    return collegeRecipients(prof?.location || record.college, ['OM']);
+    return collegeRecipients(prof?.location || record.college, ['OM'], record.facultyId);
 }
 async function professorOf(record: any) {
     const [p] = await employeesByIds([record.facultyId]);
@@ -368,6 +405,8 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
     const isOM = actor.role === 'OM';
     const isClCh = CL_CH_ROLES.includes(actor.role);
     const isHOI = actor.role === 'HOI';
+    // AD: organisation-wide academic authority — same final-stage actions as HOI and CL/CH
+    const isAD = actor.role === 'AD';
     const id = record._id;
     const atomic = async (from: string[], ops: any) => LectureReport.findOneAndUpdate({ _id: id, pipelineStatus: { $in: from } }, ops, { new: true });
     const changed = () => fail(409, 'The record was changed by someone else. Refresh and try again.');
@@ -406,21 +445,28 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
             if (!isOM) return fail(403, 'Only the OM can verify at this stage.');
             if (status !== 'PENDING_OM') return fail(409, `This record is not waiting for OM (${CLASS_STATUS_LABEL[status]}).`);
             if (record.notesMissing && record.notesReasonStatus !== 'VERIFIED') return fail(409, 'Verify the missing-notes reason first (or revert it).');
+            // Verify & Forward: the entry / exit details may come with this request; both times are required
+            const c = omCheckFrom(record, input, actor);
+            if ('error' in c) return fail(400, c.error);
+            if (!c.entry || !c.exit) return fail(400, 'Record the professor\'s entry and exit time before verifying.');
             const r = await atomic(['PENDING_OM'], {
-                $set: { pipelineStatus: 'PENDING_CL_CH', omVerification: stamp(actor, 'VERIFIED', comment), clChVerification: { status: 'PENDING' }, hoiVerification: { status: 'PENDING' }, finalVerification: { status: 'PENDING' } },
+                $set: { ...c.set, pipelineStatus: 'PENDING_CL_CH', omVerification: stamp(actor, 'VERIFIED', comment || c.set['omCheck.remarks'] || ''), clChVerification: { status: 'PENDING' }, hoiVerification: { status: 'PENDING' }, finalVerification: { status: 'PENDING' } },
                 $push: { pipelineHistory: { $each: [historyItem(actor, 'Verified by OM', status, 'OM_VERIFIED', comment), { ...historyItem(actor, 'Sent for final verification (CL / CH / HOI)', 'OM_VERIFIED', 'PENDING_CL_CH'), comment: '' }] } },
             });
             if (!r) return changed();
             const prof: any = await Employee.findOne({ id: r.facultyId }).select('location').lean();
             await notifySafe({
-                recipients: await collegeRecipients(prof?.location || r.college, ['CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'HOI']),
+                recipients: await collegeRecipients(prof?.location || r.college, ['CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'HOI'], r.facultyId),
                 title: `Class Record Ready for Final Verification — ${r.facultyName}`,
                 message: `${actor.name} (OM) verified this class record. Any one of CL, CH or HOI can now do the final verification.`,
                 type: 'CLASS_OM_VERIFIED', link: `/academic/verification?record=${r._id}`,
                 entityType: 'LectureReport', entityId: String(r._id), college: r.college, actor,
                 rows: [...(await classLabel(r)), { label: 'Attendance', value: `${r.numberOfAttendees}/${r.totalStudents}` },
                 { label: 'Notes', value: r.notesMissing ? `Not submitted (reason verified): ${r.notesMissingReason}` : 'Submitted' },
-                { label: 'Submitted to Groups', value: r.submittedToGroup ? 'Yes' : 'No' }, { label: 'OM Comment', value: comment }],
+                { label: 'Submitted to Groups', value: r.submittedToGroup ? 'Yes' : 'No' },
+                { label: 'OM Entry / Exit', value: `${r.omCheck?.entryTime || r.actualInTime || '—'} / ${r.omCheck?.exitTime || r.actualOutTime || '—'}` },
+                { label: 'Delay', value: r.omCheck?.isDelayed ? `${r.omCheck.delayMinutes} min — ${r.omCheck.delayReason || 'no reason given'}` : 'On time' },
+                { label: 'OM Comment', value: comment || r.omCheck?.remarks || '' }],
             });
             return { ok: true, record: r, message: 'Verified. Sent for final verification (CL / CH / HOI).' };
         }
@@ -439,22 +485,14 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
             }, { new: true });
             return { ok: true, record: r, message: value ? 'Marked as submitted to groups.' : 'Unmarked.' };
         }
-        // ── OM: professor entry / exit time (Module 13) ──
+        // ── OM: entry / exit time, actual start / end, delay (Module 13) ──
         case 'om_times': {
             if (!isOM) return fail(403, 'Only the OM can record entry / exit times.');
             if (status === 'COMPLETED') return fail(409, 'This class record is already completed.');
-            const inT = String(input.actualInTime || '').trim(); const outT = String(input.actualOutTime || '').trim();
-            if (inT && !TIME_RE.test(inT)) return fail(400, 'Entry time must be HH:MM.');
-            if (outT && !TIME_RE.test(outT)) return fail(400, 'Exit time must be HH:MM.');
-            const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
-            if (inT && outT && toMin(outT) <= toMin(inT)) return fail(400, 'Exit time must be after entry time.');
-            const set: any = { omTimesUpdatedBy: actor.id, omTimesUpdatedByName: actor.name, omTimesUpdatedAt: nowISO() };
-            if (input.actualInTime !== undefined) set.actualInTime = inT;
-            if (input.actualOutTime !== undefined) set.actualOutTime = outT;
-            if (input.isLate !== undefined) set.isLate = Boolean(input.isLate);
-            if (input.remarksWhyLate !== undefined) set.remarksWhyLate = input.remarksWhyLate;
-            const r = await LectureReport.findOneAndUpdate({ _id: id }, { $set: set, $push: { pipelineHistory: historyItem(actor, `Entry/exit time recorded (${inT || '—'} / ${outT || '—'})`, status, status) } }, { new: true });
-            return { ok: true, record: r, message: 'Entry / exit time saved.' };
+            const c = omCheckFrom(record, input, actor);
+            if ('error' in c) return fail(400, c.error);
+            const r = await LectureReport.findOneAndUpdate({ _id: id }, { $set: c.set, $push: { pipelineHistory: historyItem(actor, c.summary, status, status, c.set['omCheck.remarks'] || '') } }, { new: true });
+            return { ok: true, record: r, message: 'Entry / exit details saved.' };
         }
 
         // ── Final verification: ANY ONE of CL / CH / HOI (whoever acts first) ──
@@ -462,7 +500,7 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
         case 'final_verify':
         case 'clch_verify':
         case 'hoi_verify': {
-            if (!isClCh && !isHOI) return fail(403, 'Only CL, CH or HOI can do the final verification.');
+            if (!isClCh && !isHOI && !isAD) return fail(403, 'Only CL, CH, HOI or AD can do the final verification.');
             if (status === 'COMPLETED') return fail(409, alreadyFinal(record));
             if (!FINAL_PENDING.includes(status)) return fail(409, `This record is not waiting for final verification (${CLASS_STATUS_LABEL[status]}).`);
             if (record.omVerification?.status !== 'VERIFIED') return fail(409, 'OM verification must be complete first.');
@@ -477,7 +515,11 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
                 'lectureNotes.verificationStatus': record.notesMissing ? 'Pending' : 'Approved',
                 'lectureNotes.verifiedBy': actor.id, 'lectureNotes.verifiedByName': actor.name, 'lectureNotes.verifiedAt': now,
             };
-            if (isHOI) {
+            if (isAD) {
+                // AD's verification is the final one; the HOI and CL/CH steps are no longer needed
+                if (record.clChVerification?.status !== 'VERIFIED') set.clChVerification = { status: 'NOT_REQUIRED' };
+                if (record.hoiVerification?.status !== 'VERIFIED') set.hoiVerification = { status: 'NOT_REQUIRED' };
+            } else if (isHOI) {
                 set.hoiVerification = stamp(actor, 'VERIFIED', comment);
                 // a legacy record already verified by CL/CH keeps that stamp; otherwise CL/CH is no longer needed
                 if (record.clChVerification?.status !== 'VERIFIED') set.clChVerification = { status: 'NOT_REQUIRED' };
@@ -509,7 +551,7 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
             });
             // The other final verifiers are told in-app that nothing is pending for them any more
             const prof: any = await Employee.findOne({ id: r.facultyId }).select('location').lean();
-            const others = (await collegeRecipients(prof?.location || r.college, ['CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'HOI'])).filter((e: any) => e.id !== actor.id);
+            const others = (await collegeRecipients(prof?.location || r.college, ['CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'HOI'], r.facultyId)).filter((e: any) => e.id !== actor.id);
             await notifySafe({
                 recipients: [...others, ...(await omsOf(r))], email: false,
                 title: `Final verification done by ${who} — ${r.facultyName}`,
@@ -523,7 +565,7 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
         case 'final_revert':
         case 'clch_revert':
         case 'hoi_revert': {
-            if (!isClCh && !isHOI) return fail(403, 'Only CL, CH or HOI can revert at this stage.');
+            if (!isClCh && !isHOI && !isAD) return fail(403, 'Only CL, CH, HOI or AD can revert at this stage.');
             if (status === 'COMPLETED') return fail(409, alreadyFinal(record));
             if (!FINAL_PENDING.includes(status)) return fail(409, `This record is not waiting for final verification (${CLASS_STATUS_LABEL[status]}).`);
             if (comment.length < 5) return fail(400, 'Please write what must be corrected (at least 5 characters).');
@@ -532,7 +574,8 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
             const to = toOM ? 'PENDING_OM' : 'CL_CH_REVERTED';
             const revertStamp = { ...stamp(actor, 'REVERTED', comment), revertTo: toOM ? 'OM' : 'PROFESSOR' };
             const set: any = { pipelineStatus: to, finalVerification: revertStamp, clVerificationStatus: 'Needs Revision', clRemarks: comment, auditStatus: 'Flagged' };
-            if (isHOI) { set.hoiVerification = stamp(actor, 'REVERTED', comment); set.clChVerification = { status: 'PENDING' }; }
+            if (isAD) { set.clChVerification = { status: 'PENDING' }; set.hoiVerification = { status: 'PENDING' }; }
+            else if (isHOI) { set.hoiVerification = stamp(actor, 'REVERTED', comment); set.clChVerification = { status: 'PENDING' }; }
             else { set.clChVerification = revertStamp; set.hoiVerification = { status: 'PENDING' }; }
             if (toOM) set.omVerification = { status: 'PENDING' };
             if (!(await claimFinalStep(record, actor, 'final_revert'))) {
@@ -568,7 +611,7 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
 
         // ── HOI / CL / CH: notes delay flag (Module 20) ──
         case 'flag_delay': {
-            if (!isHOI && !isClCh) return fail(403, 'Only HOI, CL or CH can add a notes-pending comment.');
+            if (!isHOI && !isClCh && !isAD) return fail(403, 'Only HOI, CL, CH or AD can add a notes-pending comment.');
             if (comment.length < 5) return fail(400, 'Please write the comment (at least 5 characters).');
             if (status === 'COMPLETED') return fail(409, 'This class record is already completed.');
             const flag = { flagId: newId('FLG'), comment, by: actor.id, byName: actor.name, role: actor.role, at: nowISO(), status: 'OPEN' };
@@ -588,7 +631,7 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
             const flag = (record.delayFlags || []).find((f: any) => f.flagId === input.flagId);
             if (!flag) return fail(404, 'Comment not found.');
             if (flag.status !== 'OPEN') return fail(409, 'This comment is already resolved.');
-            if (!isOwner && !isHOI && !isClCh) return fail(403, 'Only the professor, HOI, CL or CH can resolve this comment.');
+            if (!isOwner && !isHOI && !isClCh && !isAD) return fail(403, 'Only the professor, HOI, CL, CH or AD can resolve this comment.');
             const i = record.delayFlags.indexOf(flag);
             const r = await LectureReport.findOneAndUpdate({ _id: id, [`delayFlags.${i}.status`]: 'OPEN' }, {
                 $set: { [`delayFlags.${i}.status`]: 'RESOLVED', [`delayFlags.${i}.resolvedBy`]: actor.id, [`delayFlags.${i}.resolvedByName`]: actor.name, [`delayFlags.${i}.resolvedAt`]: nowISO(), [`delayFlags.${i}.resolutionNote`]: comment },
@@ -683,6 +726,12 @@ export async function buildClassList(professors: any[], from: string, to: string
         }
     }
     reports.filter(r => !used.has(String(r._id))).forEach(r => items.push(decorate(r, profMap)));
+    // The professor's own clock-in / clock-out of that day (attendance), shown next to the OM's entry / exit
+    if (items.length) {
+        const att: any[] = await Attendance.find({ employeeId: { $in: ids }, date: { $gte: from, $lte: to } }).select('employeeId date clockIn clockOut status').lean().catch(() => []);
+        const byKey = new Map(att.map(a => [`${a.employeeId}|${a.date}`, a]));
+        items.forEach(it => { const a: any = byKey.get(`${it.facultyId}|${it.date}`); if (a) { it.profClockIn = a.clockIn || ''; it.profClockOut = a.clockOut || ''; it.profAttendance = a.status || ''; } });
+    }
     return items.sort((a, b) => (a.date + (a.timeStart || '')).localeCompare(b.date + (b.timeStart || '')));
 }
 

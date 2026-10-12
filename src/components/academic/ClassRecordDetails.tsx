@@ -95,6 +95,26 @@ function AttendanceRing({ present, total }: { present: number; total: number }) 
     );
 }
 
+/** Entry / exit time marked by the OM — time always stays on one line */
+function TimeTile({ kind, value }: { kind: "Entry" | "Exit"; value?: string }) {
+    const isIn = kind === "Entry";
+    const t = to12h(value);
+    const [hm, ap] = t ? t.split(" ") : ["", ""];
+    return (
+        <div className="min-w-0 flex items-center gap-2.5 rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2.5" data-testid={`time-${kind.toLowerCase()}`}>
+            <span className={`w-8 h-8 shrink-0 rounded-lg border flex items-center justify-center ${isIn ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-red-500/10 border-red-500/30 text-red-400"}`}>
+                {isIn ? <LogIn size={14} /> : <LogOut size={14} />}
+            </span>
+            <div className="min-w-0">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 whitespace-nowrap">{kind} · OM</p>
+                {hm
+                    ? <p className="text-sm font-black text-white whitespace-nowrap tabular-nums leading-tight">{hm}<span className="ml-1 text-[10px] font-bold text-zinc-400">{ap}</span></p>
+                    : <p className="text-sm font-bold text-zinc-600 leading-tight">Not marked</p>}
+            </div>
+        </div>
+    );
+}
+
 function CheckItem({ ok, children }: { ok: boolean; children: React.ReactNode }) {
     return (
         <div className="flex items-center gap-2.5 text-xs text-zinc-200">
@@ -155,10 +175,10 @@ export function ClassRecordDetails({ record }: { record: any }) {
     const showClChStep = !!clCh?.status && clCh.status !== "PENDING"; // older records had a separate CL/CH step
 
     return (
-        <div className="space-y-4" data-testid="class-record-details">
+        <div className="@container space-y-4" data-testid="class-record-details">
             {/* Details */}
             <Card className="p-5">
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-5">
+                <div className="grid grid-cols-2 @2xl:grid-cols-4 gap-x-6 gap-y-5">
                     <Field label="Professor" icon={<Users size={14} />}>{record.facultyName}</Field>
                     <Field label="College" icon={<Building2 size={14} />}>{record.collegeName || record.college}</Field>
                     <Field label="Subject" icon={<BookOpen size={14} />}>{record.courseName}{record.subjectCode ? ` (${record.subjectCode})` : ""}</Field>
@@ -175,28 +195,27 @@ export function ClassRecordDetails({ record }: { record: any }) {
             </Card>
 
             {/* Attendance / Notes / Snapshots */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <Card>
+            <div className="grid grid-cols-1 @2xl:grid-cols-2 @4xl:grid-cols-3 gap-4">
+                <Card className="@2xl:col-span-2 @4xl:col-span-1">
                     <CardHead icon={<Users size={14} />} title="Attendance" tone="bg-emerald-500/10 border-emerald-500/30 text-emerald-400" />
                     <div className="flex items-center gap-4">
                         <AttendanceRing present={present} total={total} />
                         <div className="min-w-0">
                             <p className="text-sm font-black text-white">{total ? `${present} present out of ${total}` : "Not entered"}</p>
                             {pct && <p className="text-[11px] text-zinc-400 mt-0.5">{pct}% Attendance</p>}
-                            <div className="grid grid-cols-2 gap-2 mt-3">
-                                <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-2 flex items-center gap-2">
-                                    <span className="w-6 h-6 shrink-0 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center"><LogIn size={12} /></span>
-                                    <div className="min-w-0"><p className="text-[9px] text-zinc-500 font-bold">Entry (OM)</p><p className="text-[11px] font-bold text-white">{to12h(record.actualInTime) || "—"}</p></div>
-                                </div>
-                                <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-2 flex items-center gap-2">
-                                    <span className="w-6 h-6 shrink-0 rounded-md bg-red-500/10 border border-red-500/30 text-red-400 flex items-center justify-center"><LogOut size={12} /></span>
-                                    <div className="min-w-0"><p className="text-[9px] text-zinc-500 font-bold">Exit (OM)</p><p className="text-[11px] font-bold text-white">{to12h(record.actualOutTime) || "—"}</p></div>
-                                </div>
-                            </div>
                         </div>
                     </div>
+                    <div className="grid grid-cols-2 gap-2 mt-4">
+                        <TimeTile kind="Entry" value={record.actualInTime} />
+                        <TimeTile kind="Exit" value={record.actualOutTime} />
+                    </div>
                     {record.reasonForLessAttendance && <p className="text-[11px] text-zinc-400 mt-3">Low attendance reason: {record.reasonForLessAttendance}</p>}
-                    {record.isLate && <p className="text-[11px] text-amber-400 mt-1">Late{record.remarksWhyLate ? `: ${record.remarksWhyLate}` : ""}</p>}
+                    {(record.omCheck?.actualStart || record.omCheck?.actualEnd) && (
+                        <p className="text-[11px] text-zinc-300 mt-3" data-testid="om-actual">Actual class: <span className="font-bold tabular-nums">{to12h(record.omCheck.actualStart) || "—"} – {to12h(record.omCheck.actualEnd) || "—"}</span></p>
+                    )}
+                    {record.profClockIn && <p className="text-[11px] text-zinc-400 mt-1">Professor clock-in / out: <span className="tabular-nums">{to12h(record.profClockIn)} – {to12h(record.profClockOut) || "—"}</span></p>}
+                    {record.isLate && <p className="text-[11px] text-amber-400 mt-1" data-testid="om-delay-info">{record.omCheck?.delayMinutes ? `Delayed ${record.omCheck.delayMinutes} min` : "Late"}{record.remarksWhyLate ? `: ${record.remarksWhyLate}` : ""}</p>}
+                    {record.omCheck?.remarks && <p className="text-[11px] text-zinc-300 mt-1">OM remarks: {record.omCheck.remarks}</p>}
                     {record.omTimesUpdatedByName && <p className="text-[10px] text-zinc-500 mt-3">Marked by: {record.omTimesUpdatedByName} · {fmtLong(record.omTimesUpdatedAt)}</p>}
                 </Card>
 
@@ -243,9 +262,9 @@ export function ClassRecordDetails({ record }: { record: any }) {
                                     </a>
                                 ))}
                             </div>
-                            <button type="button" onClick={() => setShowAllSnaps(v => !v)} className="mt-3 w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-800 text-xs font-bold text-zinc-200">
-                                <Eye size={13} /> {showAllSnaps ? "Show Fewer" : "View All Snapshots"}
-                            </button>
+                            {snapshots.length > 2 && <button type="button" onClick={() => setShowAllSnaps(v => !v)} className="mt-3 w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-800 text-xs font-bold text-zinc-200">
+                                <Eye size={13} /> {showAllSnaps ? "Show Fewer" : `View All Snapshots (${snapshots.length})`}
+                            </button>}
                         </>
                     ) : <p className="text-xs text-zinc-500">None</p>}
                     {record.recordingUrl && <a href={record.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-sky-300 hover:underline block mt-2">Recording</a>}
@@ -253,7 +272,7 @@ export function ClassRecordDetails({ record }: { record: any }) {
             </div>
 
             {/* Assignment / Checklist */}
-            <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-4">
+            <div className="grid grid-cols-1 @2xl:grid-cols-[2fr_3fr] gap-4">
                 <Card>
                     <CardHead icon={<ClipboardList size={14} />} title="Assignment" tone="bg-amber-500/10 border-amber-500/30 text-amber-400"
                         right={hasAssignment
@@ -278,7 +297,7 @@ export function ClassRecordDetails({ record }: { record: any }) {
 
                 <Card>
                     <CardHead icon={<ShieldCheck size={14} />} title="Verification Checklist" tone="bg-emerald-500/10 border-emerald-500/30 text-emerald-400" />
-                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 grid grid-cols-1 sm:grid-cols-2 sm:grid-flow-col sm:grid-rows-3 gap-x-6 gap-y-3" data-testid="verification-checklist">
+                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 grid grid-cols-1 @md:grid-cols-2 @md:grid-flow-col @md:grid-rows-3 gap-x-6 gap-y-3" data-testid="verification-checklist">
                         <CheckItem ok={total > 0}>Attendance marked</CheckItem>
                         <CheckItem ok={!!record.actualInTime}>Entry time marked <span className="text-emerald-400">(OM)</span></CheckItem>
                         <CheckItem ok={!!record.actualOutTime}>Exit time marked <span className="text-emerald-400">(OM)</span></CheckItem>
@@ -289,7 +308,7 @@ export function ClassRecordDetails({ record }: { record: any }) {
             </div>
 
             {/* Verification status / Audit trail */}
-            <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-4">
+            <div className="grid grid-cols-1 @3xl:grid-cols-[3fr_2fr] gap-4">
                 <Card>
                     <CardHead icon={<ShieldCheck size={14} />} title="Verification Status" tone="bg-emerald-500/10 border-emerald-500/30 text-emerald-400" />
                     {finalVerificationText(record) && (
@@ -297,13 +316,13 @@ export function ClassRecordDetails({ record }: { record: any }) {
                             <ShieldCheck size={14} className="shrink-0" /> {finalVerificationText(record)}
                         </div>
                     )}
-                    <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+                    <div className="flex flex-col @lg:flex-row @lg:items-start gap-4">
                         <StepNode name="OM" v={record.omVerification} pendingTitle="OM Verification" doneTitle="OM Verified" revertedTitle="OM Reverted" />
-                        <div className="hidden sm:block h-px flex-1 min-w-4 bg-zinc-700 mt-4" />
+                        <div className="hidden @lg:block h-px flex-1 min-w-4 bg-zinc-700 mt-4" />
                         {showClChStep && (
                             <>
                                 <StepNode name="CL-CH" v={clCh} pendingTitle="CL/CH Verification" doneTitle="CL/CH Verified" revertedTitle="CL/CH Reverted" />
-                                <div className="hidden sm:block h-px flex-1 min-w-4 bg-zinc-700 mt-4" />
+                                <div className="hidden @lg:block h-px flex-1 min-w-4 bg-zinc-700 mt-4" />
                             </>
                         )}
                         <StepNode name="Final" v={fin}
@@ -338,8 +357,8 @@ export function ClassRecordDetails({ record }: { record: any }) {
             </div>
 
             {flags.length > 0 && (
-                <div>
-                    <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 flex items-center gap-1.5"><Flag size={12} /> Notes-pending comments</p>
+                <Card>
+                    <CardHead icon={<Flag size={14} />} title={`Notes-pending comments (${flags.length})`} tone="bg-amber-500/10 border-amber-500/30 text-amber-400" />
                     <div className="space-y-2">
                         {flags.map((f: any) => (
                             <div key={f.flagId} className={`p-3 rounded-xl border ${f.status === "OPEN" ? "border-amber-500/30 bg-amber-500/5" : "border-zinc-700/50 bg-zinc-800/20"}`} data-testid="delay-flag">
@@ -352,7 +371,7 @@ export function ClassRecordDetails({ record }: { record: any }) {
                             </div>
                         ))}
                     </div>
-                </div>
+                </Card>
             )}
         </div>
     );
@@ -367,11 +386,21 @@ export function ClassRecordActions({ record, role, userId, onDone }: { record: a
     const [comment, setComment] = useState("");
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState("");
-    const [times, setTimes] = useState({ actualInTime: record.actualInTime || "", actualOutTime: record.actualOutTime || "", isLate: !!record.isLate, remarksWhyLate: record.remarksWhyLate || "" });
+    const oc = record.omCheck || {};
+    const [times, setTimes] = useState({
+        actualInTime: oc.entryTime || record.actualInTime || "", actualOutTime: oc.exitTime || record.actualOutTime || "",
+        actualStart: oc.actualStart || "", actualEnd: oc.actualEnd || "", delayReason: oc.delayReason || record.remarksWhyLate || "", omRemarks: oc.remarks || "",
+    });
+    const toMin = (t?: string) => (t && /^\d{1,2}:\d{2}/.test(t) ? Number(t.slice(0, t.indexOf(":"))) * 60 + Number(t.slice(t.indexOf(":") + 1, t.indexOf(":") + 3)) : null);
+    const sched = toMin(record.timeStart);
+    const startUsed = toMin(times.actualStart || times.actualInTime);
+    const delayMin = sched !== null && startUsed !== null ? Math.max(0, startUsed - sched) : 0;
     const [asg, setAsg] = useState({ title: "", assignmentUrl: "" });
     const [notesUrl, setNotesUrl] = useState("");
     const st = record.pipelineStatus || "PENDING_PROFESSOR";
-    const isOM = role === "OM", isClCh = CL_CH_ROLES.includes(role), isHOI = role === "HOI";
+    const isOM = role === "OM", isClCh = CL_CH_ROLES.includes(role);
+    // AD: organisation-wide academic authority — same final-stage actions as HOI
+    const isHOI = role === "HOI" || role === "AD";
     const isOwner = PROFESSOR_ROLES.includes(role) && record.facultyId === userId;
 
     const call = async (action: string, extra: any = {}) => {
@@ -393,7 +422,7 @@ export function ClassRecordActions({ record, role, userId, onDone }: { record: a
     };
 
     const btn = "flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-40";
-    const needsComment = (st === "PENDING_OM" && isOM) || ((isHOI || isClCh) && st !== "COMPLETED");
+    const needsComment = (isHOI || isClCh) && st !== "COMPLETED"; // the OM writes remarks in the OM verification box
     const openFlags = (record.delayFlags || []).filter((f: any) => f.status === "OPEN");
     const reasonPending = record.notesMissing && record.notesReasonStatus === "PENDING";
 
@@ -405,14 +434,7 @@ export function ClassRecordActions({ record, role, userId, onDone }: { record: a
                     className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white placeholder:text-zinc-600 outline-none focus:border-indigo-500/50 resize-none h-16" />
             )}
 
-            {/* OM */}
-            {isOM && st === "PENDING_OM" && (
-                <div className="flex flex-wrap gap-2">
-                    {reasonPending && <button disabled={!!busy} onClick={() => call("om_verify_reason")} className={`${btn} bg-teal-600 hover:bg-teal-500 text-white`}><CheckCircle2 size={12} /> Verify Reason</button>}
-                    <button disabled={!!busy || reasonPending} title={reasonPending ? "Verify the missing-notes reason first" : ""} onClick={() => call("om_verify")} className={`${btn} bg-emerald-600 hover:bg-emerald-500 text-white`}><CheckCircle2 size={12} /> Verify Class Record</button>
-                    <button disabled={!!busy || comment.trim().length < 5} onClick={() => call("om_revert")} className={`${btn} bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20`}><RotateCcw size={12} /> {reasonPending ? "Revert Reason" : "Revert to Professor"}</button>
-                </div>
-            )}
+            {/* OM: entry / exit verification, then Revert to Professor or Verify & Forward */}
             {isOM && !record.virtual && st !== "PENDING_PROFESSOR" && (
                 <label className="flex items-center gap-2 text-xs text-zinc-200 cursor-pointer w-fit">
                     <input type="checkbox" checked={!!record.submittedToGroup} disabled={!!busy} data-testid="submitted-to-groups"
@@ -420,17 +442,53 @@ export function ClassRecordActions({ record, role, userId, onDone }: { record: a
                     Submitted to Groups
                 </label>
             )}
-            {isOM && st !== "COMPLETED" && (
-                <div className="flex flex-wrap items-end gap-2">
-                    <div><p className="text-[9px] text-zinc-500 font-bold uppercase">Entry</p><input type="time" value={times.actualInTime} onChange={e => { const v = e.target.value; setTimes(t => ({ ...t, actualInTime: v, isLate: t.isLate || (!!v && !!record.timeStart && v > record.timeStart) })); }} className="px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-white" /></div>
-                    <div><p className="text-[9px] text-zinc-500 font-bold uppercase">Exit</p><input type="time" value={times.actualOutTime} onChange={e => setTimes(t => ({ ...t, actualOutTime: e.target.value }))} className="px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-white" /></div>
-                    <label className="flex items-center gap-1.5 text-[11px] text-amber-300 font-bold cursor-pointer pb-2">
-                        <input type="checkbox" checked={times.isLate} onChange={e => setTimes(t => ({ ...t, isLate: e.target.checked }))} className="w-3.5 h-3.5" /> Class Late
-                    </label>
-                    {times.isLate && (
-                        <div className="flex-1 min-w-[12rem]"><p className="text-[9px] text-zinc-500 font-bold uppercase">Why late</p><input value={times.remarksWhyLate} onChange={e => setTimes(t => ({ ...t, remarksWhyLate: e.target.value }))} placeholder="Remarks why late..." className="w-full px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-white" /></div>
+            {isOM && st !== "COMPLETED" && !record.virtual && st !== "PENDING_PROFESSOR" && (
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4 space-y-3" data-testid="om-times">
+                    <p className="text-sm font-bold text-white flex items-center gap-2">
+                        <span className="w-7 h-7 shrink-0 rounded-lg border bg-emerald-500/10 border-emerald-500/30 text-emerald-400 flex items-center justify-center"><Clock size={14} /></span>
+                        OM Verification — Entry / Exit
+                    </p>
+                    {/* Scheduled vs professor's own times (read-only) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]" data-testid="om-compare">
+                        <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2"><p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Scheduled</p><p className="text-zinc-200 font-bold tabular-nums">{to12h(record.timeStart) || "—"} – {to12h(record.timeStop) || "—"}</p></div>
+                        <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2"><p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Professor clock-in / out</p><p className="text-zinc-200 font-bold tabular-nums">{record.profClockIn ? `${to12h(record.profClockIn)} – ${to12h(record.profClockOut) || "—"}` : "No attendance"}</p></div>
+                        <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2"><p className="text-[9px] font-black uppercase tracking-wider text-zinc-500">Professor reported class time</p><p className="text-zinc-200 font-bold tabular-nums">{record.classStartTime ? `${to12h(record.classStartTime)} – ${to12h(record.classEndTime) || "—"}` : "—"}</p></div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                        {([["actualInTime", "OM Entry", LogIn, "text-emerald-400"], ["actualOutTime", "OM Exit", LogOut, "text-red-400"], ["actualStart", "Actual Start", Clock, "text-sky-400"], ["actualEnd", "Actual End", Clock, "text-violet-400"]] as [keyof typeof times, string, any, string][]).map(([k, label, Icon, tone]) => (
+                            <label key={k} className="block min-w-0">
+                                <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1"><Icon size={11} className={tone} /> {label}{(k === "actualInTime" || k === "actualOutTime") && <span className="text-red-400">*</span>}</span>
+                                <input type="time" value={times[k]} onChange={e => setTimes(t => ({ ...t, [k]: e.target.value }))} data-testid={`om-${k}`}
+                                    className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-white tabular-nums [color-scheme:dark] outline-none focus:border-emerald-500/50" />
+                            </label>
+                        ))}
+                    </div>
+                    <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold border ${delayMin > 0 ? "border-amber-500/30 bg-amber-500/10 text-amber-300" : "border-emerald-500/20 bg-emerald-500/5 text-emerald-300"}`} data-testid="om-delay">
+                        <Clock size={13} /> {sched === null ? "No scheduled start time" : startUsed === null ? "Enter the entry / actual start time to calculate the delay" : delayMin > 0 ? `Delayed by ${delayMin} min (from scheduled ${to12h(record.timeStart)})` : "On time"}
+                    </div>
+                    {delayMin > 0 && (
+                        <input value={times.delayReason} onChange={e => setTimes(t => ({ ...t, delayReason: e.target.value }))} placeholder="Delay reason (e.g. Professor arrived late)" data-testid="om-delay-reason"
+                            className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-white placeholder:text-zinc-600 outline-none focus:border-amber-500/50" />
                     )}
-                    <button disabled={!!busy || (!times.actualInTime && !times.actualOutTime)} onClick={() => call("om_times", times)} className={`${btn} bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700`}><Clock size={12} /> Save Entry / Exit</button>
+                    <textarea value={times.omRemarks} onChange={e => setTimes(t => ({ ...t, omRemarks: e.target.value }))} placeholder="Verification remarks (required to revert)" data-testid="om-remarks"
+                        className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white placeholder:text-zinc-600 outline-none focus:border-emerald-500/50 resize-none h-16" />
+                    <div className="flex flex-wrap justify-end gap-2">
+                        {st !== "PENDING_OM" && (
+                            <button disabled={!!busy || (!times.actualInTime && !times.actualOutTime)} onClick={() => call("om_times", times)} className={`${btn} bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700`}><Clock size={12} /> Save Entry / Exit</button>
+                        )}
+                        {st === "PENDING_OM" && (
+                            <>
+                                {reasonPending && <button disabled={!!busy} onClick={() => call("om_verify_reason")} className={`${btn} bg-teal-600 hover:bg-teal-500 text-white`}><CheckCircle2 size={12} /> Verify Reason</button>}
+                                <button disabled={!!busy || times.omRemarks.trim().length < 5} title="Write remarks (at least 5 characters) to revert"
+                                    onClick={() => call("om_revert", { comment: times.omRemarks })} data-testid="om-revert"
+                                    className={`${btn} bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20`}><RotateCcw size={12} /> {reasonPending ? "Revert Reason" : "Revert to Professor"}</button>
+                                <button disabled={!!busy || reasonPending || !times.actualInTime || !times.actualOutTime}
+                                    title={reasonPending ? "Verify the missing-notes reason first" : !times.actualInTime || !times.actualOutTime ? "Enter the OM entry and exit time" : ""}
+                                    onClick={() => call("om_verify", { ...times, comment: times.omRemarks })} data-testid="om-verify-forward"
+                                    className={`${btn} bg-emerald-600 hover:bg-emerald-500 text-white`}><Send size={12} /> Verify &amp; Forward</button>
+                            </>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -442,7 +500,7 @@ export function ClassRecordActions({ record, role, userId, onDone }: { record: a
                         <button disabled={!!busy || comment.trim().length < 5} onClick={() => call("final_revert", { revertTo: "PROFESSOR" })} className={`${btn} bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20`}><RotateCcw size={12} /> Revert to Professor</button>
                         <button disabled={!!busy || comment.trim().length < 5} onClick={() => call("final_revert", { revertTo: "OM" })} className={`${btn} bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20`}><RotateCcw size={12} /> Revert to OM</button>
                     </div>
-                    <p className="text-[10px] text-zinc-500">Any one of CL, CH or HOI can do the final verification. Once done, it is no longer pending for the others.</p>
+                    <p className="text-[10px] text-zinc-500">Any one of CL, CH, HOI or AD can do the final verification. Once done, it is no longer pending for the others.</p>
                 </div>
             )}
 

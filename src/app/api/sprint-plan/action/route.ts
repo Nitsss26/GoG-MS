@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Sprint plan lifecycle actions.
- * Body: { planId, action: "submit" | "lock" | "request_unlock" | "unlock" | "reject_unlock", reason?, comment?, note? }
+ * Body: { planId, action: "submit" | "lock" | "return" | "request_unlock" | "unlock" | "reject_unlock", reason?, comment?, note? }
  * Role and college checks are done in performPlanAction (src/lib/sprint-plan-workflow.ts).
  */
 export async function POST(req: Request) {

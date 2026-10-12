@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import PostOnboardingChecklist from "@/components/onboarding/PostOnboardingChecklist";
 import {
     X, Mail, Phone, MapPin, Briefcase, Building2, Calendar, User as UserIcon, Users, ShieldCheck,
     Copy, Check, ExternalLink, FileText, Landmark, GraduationCap, Link2, Award, AlertTriangle,
@@ -157,6 +158,9 @@ export default function EmployeeProfileDialog({ emp, employees, locName, viewerR
                         <Item icon={ShieldCheck} label="Chances Remaining" value={emp.chancesRemaining} />
                         {e.fines?.total ? <Item icon={AlertTriangle} label="Fines" value={`₹${e.fines.total} (${e.fines.records?.length || 0} record${(e.fines.records?.length || 0) === 1 ? "" : "s"})`} /> : null}
                     </Section>
+
+                    {/* Post-onboarding checklist: HR manages it here too; others only see it */}
+                    <PostOnboardingChecklist employeeId={emp.id} mode={isHR ? "hr" : "employee"} compact />
 
                     <Section title="Personal">
                         <Item icon={Calendar} label="Date of Birth" value={fmtDate(e.dateOfBirth)} />

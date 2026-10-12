@@ -65,7 +65,7 @@ export default function PayrollPage() {
                 <p className="text-xs text-muted">Manage payroll operations and view personal compensation logs.</p>
             </header>
 
-            {user.role === "HR" ? (
+            {(user.role === "HR" || user.role === "FOUNDER") ? (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <div className="lg:col-span-1 space-y-6">
                         <div className="card p-5 space-y-4">

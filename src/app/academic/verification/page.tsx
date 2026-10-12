@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { ShieldCheck, RefreshCw, ChevronDown, ChevronUp, Flag, AlertTriangle, CheckCircle2, Filter, BookOpen } from "lucide-react";
-import { ClassRecordDetails, ClassRecordActions, ClassStatusBadge, to12h } from "@/components/academic/ClassRecordDetails";
+import { ShieldCheck, RefreshCw, ChevronDown, ChevronUp, Flag, AlertTriangle, CheckCircle2, Filter } from "lucide-react";
+import { ClassRecordDetails, ClassRecordActions, ClassStatusBadge } from "@/components/academic/ClassRecordDetails";
 import { VERIFICATION_ROLES, CLASS_STATUS_LABEL, FINAL_VERIFIER_ROLES, FINAL_PENDING_CLASS_STATUSES } from "@/lib/academic-status";
 
 /**
@@ -23,7 +23,8 @@ export default function ClassVerificationPage() {
 
     const [tab, setTab] = useState<"QUEUE" | "ALL">(queue ? "QUEUE" : "ALL");
     const [from, setFrom] = useState(daysAgo(13));
-    const [to, setTo] = useState(ymd(todayIST()));
+    // up to the end of next week, so classes of submitted plans for the coming week are listed too
+    const [to, setTo] = useState(() => { const d = todayIST(); const dow = d.getDay(); d.setDate(d.getDate() + (dow === 0 ? 7 : 14 - dow)); return ymd(d); });
     const [college, setCollege] = useState("All");
     const [facultyId, setFacultyId] = useState("All");
     const [statusFilter, setStatusFilter] = useState("All");
@@ -169,27 +170,22 @@ export default function ClassVerificationPage() {
                         const isOpen = open === r._id;
                         const openFlags = (r.delayFlags || []).filter((f: any) => f.status === "OPEN").length;
                         return (
-                            <div key={r._id} className={`min-w-0 rounded-2xl border transition-colors ${isOpen ? "border-emerald-500/20 bg-zinc-950/80" : "border-zinc-800/80 bg-zinc-900/40"}`} data-testid="record-row">
+                            <div key={r._id} className={`min-w-0 rounded-2xl border ${isOpen ? "border-emerald-500/30 bg-zinc-900/70" : "border-zinc-800 bg-zinc-900/40"}`} data-testid="record-row">
                                 <button onClick={() => setOpen(isOpen ? null : r._id)} className="w-full text-left p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-                                    <div className="w-11 h-11 shrink-0 rounded-xl bg-teal-500/10 border border-teal-500/30 flex items-center justify-center">
-                                        <BookOpen size={20} className="text-teal-400" />
-                                    </div>
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-base font-bold text-white truncate">{r.facultyName} - {r.courseName}</p>
-                                        <p className="text-[11px] text-zinc-400 truncate mt-0.5">
-                                            {r.date?.split("-").reverse().join("-")} · {to12h(r.timeStart)}{r.timeStop ? ` - ${to12h(r.timeStop)}` : ""} · {[r.className || r.stream, r.section ? `Sec ${r.section}` : ""].filter(Boolean).join(" / ")}
-                                        </p>
+                                        <p className="text-sm font-bold text-white truncate">{r.facultyName} · {r.courseName}</p>
+                                        <p className="text-[11px] text-zinc-400 truncate">{r.date?.split("-").reverse().join("-")} · {r.timeStart}{r.timeStop ? `–${r.timeStop}` : ""} · {[r.className || r.stream, r.section ? `Sec ${r.section}` : ""].filter(Boolean).join(" / ")}</p>
                                     </div>
                                     <div className="flex items-center gap-2 flex-wrap">
                                         {r.notesMissing && <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">Notes missing</span>}
                                         {openFlags > 0 && <span className="text-[10px] font-bold text-amber-400 flex items-center gap-1"><Flag size={10} /> {openFlags}</span>}
                                         {r.virtual && r.classEnded && <span className="text-[10px] font-bold text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded">No record yet</span>}
                                         <ClassStatusBadge status={r.pipelineStatus} />
-                                        {isOpen ? <ChevronUp size={14} className="text-zinc-500" /> : <ChevronDown size={14} className="text-zinc-500" />}
+                                        {isOpen ? <ChevronUp size={16} className="text-zinc-500" /> : <ChevronDown size={16} className="text-zinc-500" />}
                                     </div>
                                 </button>
                                 {isOpen && (
-                                    <div className="px-4 pb-5 space-y-4 border-t border-zinc-800/80 pt-4">
+                                    <div className="px-4 pb-5 space-y-5 border-t border-zinc-800 pt-4">
                                         {r.virtual
                                             ? <p className="text-xs text-zinc-400">The professor has not submitted the class record for this class yet{r.classEnded ? "" : " (the class has not ended)"}.</p>
                                             : <ClassRecordDetails record={r} />}

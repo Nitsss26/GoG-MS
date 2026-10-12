@@ -18,11 +18,18 @@ export async function POST(request: Request) {
         // Exact (case-insensitive) email match — typed characters are never treated as a pattern
         const escapedEmail = String(email).trim().replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
         const emailPattern = new RegExp('^' + escapedEmail + '$', 'i');
-        const employee = await Employee.findOne({ email: { $regex: emailPattern } });
+        // One email can hold several designation records: the designation chosen in the login dropdown picks one.
+        // Faculty and Professor are the same designation: "Professor" in the dropdown also opens older FACULTY records.
+        const SAME_ROLE: Record<string, string[]> = { PROFESSOR: ['PROFESSOR', 'FACULTY'], FACULTY: ['FACULTY', 'PROFESSOR'] };
+        const roleSet: string[] | null = role ? (SAME_ROLE[role] || [role]) : null;
+        const employee = roleSet
+            ? (await Employee.findOne({ email: { $regex: emailPattern }, role: { $in: roleSet }, isRemoved: { $ne: true } })) ||
+              (await Employee.findOne({ email: { $regex: emailPattern }, role: { $in: roleSet } })) || (await Employee.findOne({ email: { $regex: emailPattern } }))
+            : await Employee.findOne({ email: { $regex: emailPattern } });
 
         if (!employee) {
             // Removed from the portal by HR: the account exists only as a historical record and cannot log in
-            const removed = await Employee.findOne({ email: { $regex: emailPattern }, isRemoved: true });
+            const removed = await Employee.findOne({ email: { $regex: emailPattern }, isRemoved: true, ...(roleSet ? { role: { $in: roleSet } } : {}) });
             if (removed) {
                 return NextResponse.json({ success: false, error: "This account has been removed from the portal." }, { status: 403 });
             }
@@ -38,7 +45,7 @@ export async function POST(request: Request) {
         }
 
         // Check role if provided
-        if (role && employee.role !== role) {
+        if (roleSet && !roleSet.includes(employee.role)) {
             return NextResponse.json({ success: false, error: `Institutional role mismatch.` }, { status: 403 });
         }
 

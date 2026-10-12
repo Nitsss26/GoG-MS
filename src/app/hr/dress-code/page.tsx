@@ -13,6 +13,17 @@ export default function DressCodeVerificationPage() {
 
     if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return null;
 
+    // Saved timestamps of the record, shown in the application time zone (never "now")
+    const TZ = "Asia/Kolkata";
+    const fmtDate = (ymd?: string) => (ymd ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" }) : "—");
+    const fmtTime = (hms?: string) => {
+        if (!hms) return "—";
+        const [h, m] = hms.split(":").map(Number);
+        if (isNaN(h)) return hms;
+        return `${((h + 11) % 12) + 1}:${String(m || 0).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+    };
+    const fmtTs = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-GB", { timeZone: TZ, day: "2-digit", month: "long", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }) : "—");
+
     // Filter records that have images submitted
     const relevantRecords = attendanceRecords
         .filter(r => r.dressCodeImageUrl)
@@ -140,6 +151,20 @@ export default function DressCodeVerificationPage() {
                                             </span>
                                         )}
                                     </div>
+                                </div>
+
+                                {/* Dress code details — saved record timestamps */}
+                                <div className="p-4 border-t border-zinc-800 grid grid-cols-[6.5rem_1fr] gap-y-1 text-[11px]" data-testid="dress-details">
+                                    <span className="text-zinc-500">Employee</span><span className="text-zinc-200 font-bold truncate">{emp?.name} <span className="text-zinc-500 font-mono font-normal">({emp?.id})</span></span>
+                                    <span className="text-zinc-500">Date</span><span className="text-zinc-200" data-testid="dress-date">{fmtDate(record.date)}</span>
+                                    <span className="text-zinc-500">Time</span><span className="text-zinc-200" data-testid="dress-time">{fmtTime(record.clockIn)}</span>
+                                    <span className="text-zinc-500">Status</span><span className="text-zinc-200">{record.dressCodeStatus}</span>
+                                    <span className="text-zinc-500">Recorded By</span><span className="text-zinc-200">{emp?.name || record.employeeId}</span>
+                                    <span className="text-zinc-500">Created At</span><span className="text-zinc-300" data-testid="dress-created">{((record as any).dressCodeSubmittedAt || (record as any).createdAt) ? fmtTs((record as any).dressCodeSubmittedAt || (record as any).createdAt) : `${fmtDate(record.date)}, ${fmtTime(record.clockIn)}`}</span>
+                                    {(record as any).dressCodeReviewedAt && <>
+                                        <span className="text-zinc-500">Reviewed By</span><span className="text-zinc-300" data-testid="dress-reviewed">{(record as any).dressCodeReviewedByName || "—"} · {fmtTs((record as any).dressCodeReviewedAt)}</span>
+                                    </>}
+                                    <span className="text-zinc-500">Last Updated</span><span className="text-zinc-300" data-testid="dress-updated">{((record as any).dressCodeReviewedAt || (record as any).updatedAt) ? fmtTs((record as any).dressCodeReviewedAt || (record as any).updatedAt) : `${fmtDate(record.date)}, ${fmtTime(record.clockIn)}`}</span>
                                 </div>
 
                                 {record.dressCodeStatus === "Pending" && (

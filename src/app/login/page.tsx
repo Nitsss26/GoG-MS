@@ -8,6 +8,7 @@ import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 const ROLE_OPTIONS = [
     { key: "FOUNDER", label: "Founder" },
     { key: "HR", label: "Human Resources (HR)" },
+    { key: "HR_EXECUTIVE", label: "HR Executive" },
     { key: "AD", label: "Associate Director (AD)" },
     { key: "TL", label: "Tech Lead (TL)" },
     { key: "HOI", label: "Head of Institute (HOI)" },

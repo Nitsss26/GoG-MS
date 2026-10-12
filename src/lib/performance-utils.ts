@@ -183,25 +183,25 @@ export function calculatePerformance(
                 date, 
                 points: val, 
                 type: val > 0 ? 'Rating' : 'Penalty', 
-                reason: `Monthly Progress Rating: ${rating.toFixed(1)}/5 Score` 
+                reason: `Monthly Feedback Rating: ${rating.toFixed(1)}/5 Score` 
             });
         } else if (rating > 0) {
             // Fallback to auto-calculation for legacy records or neutral ratings
             if (rating > 4.2) {
                 const val = Math.round(rating * 10);
                 points += val;
-                auditTrail.push({ date, points: val, type: 'Rating', reason: `Monthly Progress Rating: ${rating.toFixed(1)}/5 Score` });
+                auditTrail.push({ date, points: val, type: 'Rating', reason: `Monthly Feedback Rating: ${rating.toFixed(1)}/5 Score` });
             } else if (rating >= 2.0 && rating <= 3.5) {
                 const val = Math.round((rating - 5) * 10);
                 points += val;
-                auditTrail.push({ date, points: val, type: 'Penalty', reason: `Monthly Progress Rating: ${rating.toFixed(1)}/5 Score` });
+                auditTrail.push({ date, points: val, type: 'Penalty', reason: `Monthly Feedback Rating: ${rating.toFixed(1)}/5 Score` });
             } else if (rating < 2.0) {
                 const val = Math.round((rating - 5) * 20);
                 points += val;
-                auditTrail.push({ date, points: val, type: 'Penalty', reason: `Monthly Progress Rating: ${rating.toFixed(1)}/5 Score` });
+                auditTrail.push({ date, points: val, type: 'Penalty', reason: `Monthly Feedback Rating: ${rating.toFixed(1)}/5 Score` });
             } else {
                 // Neutral rating (3.5 - 4.2)
-                auditTrail.push({ date, points: 0, type: 'Rating', reason: `Monthly Progress Rating: ${rating.toFixed(1)}/5 Score` });
+                auditTrail.push({ date, points: 0, type: 'Rating', reason: `Monthly Feedback Rating: ${rating.toFixed(1)}/5 Score` });
             }
         }
     });
@@ -309,5 +309,3 @@ export function getLeaderboardStats(
         .filter((item): item is any => item !== null)
         .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount);
 }
-
-

@@ -10,6 +10,7 @@ import {
     PartyPopper, AlertCircle, UserPlus, MapPin
 } from "lucide-react";
 import Link from "next/link";
+import PostOnboardingChecklist from "@/components/onboarding/PostOnboardingChecklist";
 import { motion, AnimatePresence } from "framer-motion";
 
 // â”€â”€â”€ ATTENDANCE CALENDAR â”€â”€â”€
@@ -356,7 +357,7 @@ export default function Home() {
             <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3 sm:gap-0">
                 <div>
                     <p className="text-[9px] sm:text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
-                        {role === "HR" ? "HR Administration" : role === "FOUNDER" ? "Founder" : ["AD", "HOI", "TL"].includes(role) ? `${role} · ${emp.designation || ""}` : "Employee"} Dashboard
+                        {role === "HR" ? ((user as any).hrExecutive ? "HR Executive" : "HR Administration") : role === "FOUNDER" ? "Founder" : ["AD", "HOI", "TL"].includes(role) ? `${role} · ${emp.designation || ""}` : "Employee"} Dashboard
                     </p>
                     <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight mt-0.5 sm:mt-1">Welcome back, {user.name}</h1>
                 </div>
@@ -399,6 +400,9 @@ export default function Home() {
                 </div>
             )}
 
+            {/* Post-onboarding checklist (after the onboarding form is submitted; read-only for the employee) */}
+            <PostOnboardingChecklist employeeId={user.id} mode="employee" />
+
             {/* Quick Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {!isManagerRole && role !== "HR" && role !== "FOUNDER" && <>
@@ -417,7 +421,7 @@ export default function Home() {
                     <StatCard label="Pending Leaves" value={leaves.filter(l => l.status === "Pending").length.toString()} color="text-cyan-400" icon={<Calendar size={14} />} />
                     <StatCard label="Open Tickets" value={tickets.filter(t => t.status === "Open").length.toString()} color="text-amber-400" icon={<Ticket size={14} />} />
                     <StatCard label="Pending Holidays" value={holidays.filter(h => h.status === "Proposed").length.toString()} color="text-blue-400" icon={<Calendar size={14} />} />
-                    <StatCard label="Pending Reimb." value={reimbursements.filter(r => r.status === "Pending").length.toString()} color="text-purple-400" icon={<Receipt size={14} />} />
+                    {!(user as any).hrExecutive && <StatCard label="Pending Reimb." value={reimbursements.filter(r => r.status === "Pending").length.toString()} color="text-purple-400" icon={<Receipt size={14} />} />}
                 </>}
             </div>
 

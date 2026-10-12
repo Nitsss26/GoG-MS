@@ -90,9 +90,9 @@ export default function SOPViewerPage() {
     const [showTOC, setShowTOC] = useState(true);
     const [selectedNotif, setSelectedNotif] = useState<SOPNotification | null>(null);
 
+    const toc = useMemo(() => extractTOC(masterSopContent), [masterSopContent]);
     if (!user) return null;
 
-    const toc = useMemo(() => extractTOC(masterSopContent), [masterSopContent]);
     const unreadNotifs = sopNotifications.filter(n => !n.readBy.includes(user.id));
 
     const handleDownloadPDF = () => {

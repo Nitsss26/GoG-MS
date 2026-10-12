@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
-import { Attendance, Employee, WorkSchedule } from '@/models/Schemas';
+import { Attendance, Employee, WorkSchedule, Location } from '@/models/Schemas';
+import { getDistance } from '@/lib/utils';
 import { getExpectedTimingInternal } from '@/lib/attendance-utils';
 
 export async function POST(req: Request) {
     try {
         await dbConnect();
-        const { employeeId, time, date: overrideDate, isShortLeave } = await req.json();
+        const { employeeId, time, date: overrideDate, isShortLeave, lat, lng } = await req.json();
         const now = new Date();
         const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
         const istTime = new Date(istString);
@@ -51,10 +52,31 @@ export async function POST(req: Request) {
         const isEarly = outTotalMins < schedTotalMins;
         const points = isEarly ? -5 : 2;
 
+        // HOI with authorised attendance locations: the clock-out must be inside any one of them (it may differ from
+        // the clock-in college); the actual clock-out location is stored separately. Other roles: unchanged.
+        let clockOutLocation: string | null = null;
+        const hoiAllowed: string[] = employee.role === "HOI" && Array.isArray(employee.attendanceLocations) ? employee.attendanceLocations.filter(Boolean) : [];
+        if (hoiAllowed.length && !overrideDate) {
+            const dayRec: any = await Attendance.findOne({ employeeId, date: today }).select('location workMode').lean();
+            const remote = String(dayRec?.location || '').toLowerCase() === 'wfh';
+            if (!remote) {
+                if (typeof lat !== 'number' || typeof lng !== 'number') {
+                    return NextResponse.json({ error: "Location coordinates missing from request." }, { status: 400 });
+                }
+                const allowed = await Location.find({ id: { $in: hoiAllowed } });
+                const inside = allowed.find((c: any) => getDistance(lat, lng, c.lat, c.lng) <= (c.radiusKm || 2));
+                if (!inside) {
+                    return NextResponse.json({ error: "Not in geofence of any of your authorised attendance locations." }, { status: 403 });
+                }
+                clockOutLocation = inside.id;
+            }
+        }
+
         let updateFields: any = {
             clockOut: time,
             "flags.earlyOut": overrideDate ? false : isEarly
         };
+        if (clockOutLocation) updateFields.clockOutLocation = clockOutLocation;
         if (isShortLeave) {
             updateFields["flags.shortLeave"] = true;
         }

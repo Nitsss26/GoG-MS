@@ -1,69 +1,98 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { uploadToCloudinary } from "@/lib/cloudinary";
 import { 
     X, Upload, CheckCircle, AlertCircle, FileText, CreditCard, User, 
     Briefcase, Phone, MapPin, Building, Calendar, Info
 } from "lucide-react";
 
+const emptyForm = (name = "") => ({
+    full_name: name,
+    phone_no_: "",
+    father_name_or_mother_name: "",
+    parents_phone_no_: "",
+    permanent_address: "",
+    bachelor_s_qualification: "",
+    master_s_qualification: "",
+    you_are_from_: "Other College",
+    current_designation_at_gog: "",
+    upload_your_resume: "",
+    upload_your_bachelor_s_passing_certificate: "",
+    upload_your_master_s_passing_certificate: "",
+    linkedin_id: "",
+    bank_account_number: "",
+    ifsc_code: "",
+    account_holder_name: "",
+    upi_id: "",
+    ten_marksheet: "",
+    twelve_marksheet: "",
+    aadhar_card: "",
+    pan_card: "",
+    passport_size_photo: "",
+    bank_passbook_cancelled_cheque: "",
+    experience_letter: "",
+    which_college_are_you_from_: "",
+    date_of_birth: "",
+    blood_group: "",
+    t_shirt_size: "M",
+    bachelor_marksheet_all: "",
+    master_marksheet_all: ""
+});
+
 export default function OnboardingModal() {
     const { user, updateOnboarding } = useAuth();
+    // All hooks run on every render, before any early return (Rules of Hooks)
     const [step, setStep] = useState(1);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitted, setSubmitted] = useState(false);
+    const [form, setForm] = useState(() => emptyForm(user?.name || ""));
+    const [uploading, setUploading] = useState<string | null>(null);
+    const [error, setError] = useState("");
+    const userId = user?.id || "";
+
+    // A different person logged in (or the user loaded after the first render): start a fresh form for them
+    useEffect(() => {
+        setForm(emptyForm(user?.name || ""));
+        setStep(1);
+        setSubmitted(false);
+        setError("");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [userId]);
+    // The name can arrive after the id (async profile load) — fill it only while the field is still empty
+    useEffect(() => {
+        if (user?.name) setForm(f => (f.full_name ? f : { ...f, full_name: user.name }));
+    }, [user?.name]);
 
     // If user is already onboarded or not logged in, or form is already submitted/pending verification, don't show
-    if (!user || user.isOnboarded || user.onboardingStatus === "Verification Pending" || user.onboardingStatus === "Approved") return null;
-
-    const [form, setForm] = useState({
-        full_name: user.name || "",
-        phone_no_: "",
-        father_name_or_mother_name: "",
-        parents_phone_no_: "",
-        permanent_address: "",
-        bachelor_s_qualification: "",
-        master_s_qualification: "",
-        you_are_from_: "Other College",
-        current_designation_at_gog: "",
-        upload_your_resume: "",
-        upload_your_bachelor_s_passing_certificate: "",
-        upload_your_master_s_passing_certificate: "",
-        linkedin_id: "",
-        bank_account_number: "",
-        ifsc_code: "",
-        account_holder_name: "",
-        upi_id: "",
-        ten_marksheet: "",
-        twelve_marksheet: "",
-        aadhar_card: "",
-        pan_card: "",
-        passport_size_photo: "",
-        bank_passbook_cancelled_cheque: "",
-        experience_letter: "",
-        which_college_are_you_from_: "",
-        date_of_birth: "",
-        blood_group: "",
-        t_shirt_size: "M",
-        bachelor_marksheet_all: "",
-        master_marksheet_all: ""
-    });
+    // (the "submitted" confirmation is still shown once, right after this user submits)
+    if (!user || (!submitted && (user.isOnboarded || user.onboardingStatus === "Verification Pending" || user.onboardingStatus === "Approved"))) return null;
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-        setForm({ ...form, [e.target.name]: e.target.value });
+        const { name, value } = e.target;
+        setForm(f => ({ ...f, [name]: value }));
     };
 
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>, fieldName: string) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
-        // Implementation of file upload (using existing Cloudinary pattern if available)
-        // For now, setting a placeholder URL to simulate upload
-        setForm({ ...form, [fieldName]: `/uploads/simulated/${file.name}` });
+        setError("");
+        setUploading(fieldName);
+        try {
+            const up = await uploadToCloudinary(file);
+            setForm(f => ({ ...f, [fieldName]: up.secure_url }));
+        } catch (err: any) {
+            setError(`Could not upload ${file.name}: ${err?.message || "upload failed"}. Please try again.`);
+        } finally {
+            setUploading(null);
+            e.target.value = "";
+        }
     };
 
     const handleSubmit = async () => {
         setIsSubmitting(true);
+        setError("");
         try {
             await updateOnboarding(user.id, {
                 ...form,
@@ -71,8 +100,8 @@ export default function OnboardingModal() {
                 onboardingSubmittedAt: new Date().toISOString()
             });
             setSubmitted(true);
-        } catch (err) {
-            console.error(err);
+        } catch (err: any) {
+            setError(err?.message || "Could not submit the form. Please try again.");
         } finally {
             setIsSubmitting(false);
         }
@@ -92,6 +121,9 @@ export default function OnboardingModal() {
                     <div className="p-4 bg-zinc-800/50 rounded-xl border border-zinc-700/50 text-sm text-zinc-300">
                         Estimated verification time: <span className="text-white font-semibold">24-48 Hours</span>
                     </div>
+                    <button onClick={() => setSubmitted(false)} className="w-full bg-primary hover:bg-primary/90 text-white py-2.5 rounded-xl text-sm font-bold transition-all">
+                        Continue to Portal
+                    </button>
                 </div>
             </div>
         );
@@ -194,6 +226,11 @@ export default function OnboardingModal() {
                     )}
                 </div>
 
+                {(error || uploading) && (
+                    <p className={`px-8 pb-2 text-xs flex items-center gap-2 ${error ? "text-red-400" : "text-zinc-400"}`} data-testid="onboarding-status">
+                        <AlertCircle size={13} /> {error || "Uploading document..."}
+                    </p>
+                )}
                 {/* Footer Footer Controls */}
                 <div className="p-6 border-t border-zinc-800 flex items-center justify-between">
                     <button 
@@ -214,7 +251,7 @@ export default function OnboardingModal() {
                     ) : (
                         <button 
                             onClick={handleSubmit}
-                            disabled={isSubmitting}
+                            disabled={isSubmitting || !!uploading}
                             className="bg-emerald-500 hover:bg-emerald-600 text-white px-10 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
                         >
                             {isSubmitting ? "Submitting..." : "Submit Registration"}

@@ -1,4 +1,5 @@
 "use client";
+import ReimbursementBlocked, { useIsHrExecutive } from "@/components/hr/ReimbursementBlocked";
 
 import { useAuth, ReimbursementClaim } from "@/context/AuthContext";
 import { Receipt, Clock, CheckCircle2, XCircle, Eye, X, Filter, User, Mail, Phone, FileText, Calendar, ExternalLink, Download } from "lucide-react";
@@ -19,7 +20,7 @@ const ROLE_TAGS: Record<string, { label: string; color: string }> = {
     FOUNDER: { label: "Founder", color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
 };
 
-export default function HRReimbursementsPage() {
+function HRReimbursementsPageInner() {
     const { user, employees, reimbursements, updateReimbursementStatus, getReportees } = useAuth();
     const [reviewClaim, setReviewClaim] = useState<ReimbursementClaim | null>(null);
     const [actionModal, setActionModal] = useState<{ id: string; action: "reject" | "approve-pending" | "approve-done" } | null>(null);
@@ -432,4 +433,10 @@ export default function HRReimbursementsPage() {
 
         </div>
     );
+}
+
+/** HR Executive has no Reimbursements access — direct URL included */
+export default function HRReimbursementsPage() {
+    const blocked = useIsHrExecutive();
+    return blocked ? <ReimbursementBlocked /> : <HRReimbursementsPageInner />;
 }

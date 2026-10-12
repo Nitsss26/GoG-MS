@@ -24,7 +24,7 @@ export default function FounderCommunicationsLog() {
 
     if (!user || user.role !== "FOUNDER") return null;
 
-    const timeline: TimelineItem[] = useMemo(() => {
+    const timeline: TimelineItem[] = (() => {
         const items: TimelineItem[] = [];
 
         // 1. Tickets
@@ -99,7 +99,7 @@ export default function FounderCommunicationsLog() {
         });
 
         return items.sort((a, b) => b.date.getTime() - a.date.getTime());
-    }, [tickets, leaves, markAsPresentRequests, misbehaviourReports, employees]);
+    })();
 
     const filteredTimeline = timeline.filter(item => {
         if (filterType !== "ALL" && item.type !== filterType) return false;

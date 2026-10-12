@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
-import { Employee, Attendance, WorkSchedule, Location } from '@/models/Schemas';
+import { Employee, Attendance, WorkSchedule, Location, WorkFromHome } from '@/models/Schemas';
 import { getDistance } from '@/lib/utils';
 import { getExpectedTimingInternal } from '@/lib/attendance-utils';
 import { COLLEGES } from '@/lib/colleges';
@@ -62,6 +62,11 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: `Too early to clock-in. Window opens at ${Math.floor((schedTime - 30) / 60).toString().padStart(2, '0')}:${((schedTime - 30) % 60).toString().padStart(2, '0')}` }, { status: 403 });
         }
 
+        // Approved Work From Home application for today: remote attendance policy (no office geofence).
+        // The employee's Original Location and schedule are not changed.
+        const approvedWfh: any = await WorkFromHome.findOne({ employeeId, status: 'Approved', startDate: { $lte: today }, endDate: { $gte: today } }).select('id').lean();
+        if (approvedWfh) expectedLocationId = "WFH";
+
         // 5. Geofencing Check (Skip if WFH)
         const isWFH = expectedLocationId.toLowerCase() === "wfh";
         let campus = null;
@@ -70,7 +75,16 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: "Location coordinates missing from request." }, { status: 400 });
             }
 
-            if (employee.role === "HOI" || employee.role === "OM" || employee.role === "MARKETING_TEAM" || employee.role === "TECH_TEAM") {
+            const hoiAllowed: string[] = employee.role === "HOI" && Array.isArray(employee.attendanceLocations) ? employee.attendanceLocations.filter(Boolean) : [];
+            if (hoiAllowed.length) {
+                // HOI with authorised attendance locations (HR → Work Location): inside any ONE of them; nowhere else
+                const allowed = await Location.find({ id: { $in: hoiAllowed } });
+                const inside = allowed.find((c: any) => getDistance(lat, lng, c.lat, c.lng) <= (c.radiusKm || 2));
+                if (!inside) {
+                    return NextResponse.json({ error: "Not in geofence of any of your authorised attendance locations." }, { status: 403 });
+                }
+                campus = inside;
+            } else if (employee.role === "HOI" || employee.role === "OM" || employee.role === "MARKETING_TEAM" || employee.role === "TECH_TEAM") {
                 const dbCampuses = await Location.find({});
                 const map = new Map();
                 for (const c of COLLEGES) map.set(c.id, c);
@@ -111,6 +125,9 @@ export async function POST(req: Request) {
             status: "Present",
             dressCodeImageUrl: dressCodeImageUrl,
             dressCodeStatus: isOverride ? "Approved" : "Pending",
+            ...(dressCodeImageUrl ? { dressCodeSubmittedAt: now.toISOString() } : {}),
+            ...(approvedWfh ? { workMode: "WFH", wfhApplicationId: approvedWfh.id } : {}),
+            ...(isOverride ? {} : { attendanceSource: "SELF_CLOCK_IN" }),
             ...(isOverride ? {} : (isLate ? { "flags.late": true } : {}))
         };
         if (isShortLeave) {

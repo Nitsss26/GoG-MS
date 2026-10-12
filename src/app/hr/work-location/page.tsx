@@ -1,8 +1,9 @@
 "use client";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { MapPin, Save, Search, Briefcase } from "lucide-react";
+import { MapPin, Save, Search, Briefcase, Building2, Navigation } from "lucide-react";
 import { cn } from "@/lib/utils";
+import LocationAssignmentTab from "@/components/hr/LocationAssignmentTab";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // Roles that appear in an HOI's employee/faculty list
@@ -13,11 +14,14 @@ const HOI_ASSIGNABLE_ROLES = ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "T
 // The second tab, "Assign HOI", lets HR put an employee under an HOI.
 export default function HRWorkLocationPage() {
     const { user, employees, workSchedules, assignWorkSchedule, approveWorkSchedule, colleges, getExpectedTiming, hrAssignEmployee } = useAuth();
-    const [tab, setTab] = useState<"location" | "hoi">("location");
+    const [tab, setTab] = useState<"location" | "hoi" | "assignment">("location");
     const [selectedHoi, setSelectedHoi] = useState("");
     const [isSavingHoi, setIsSavingHoi] = useState(false);
     const [selectedEmp, setSelectedEmp] = useState("");
     const [searchTerm, setSearchTerm] = useState("");
+    // HOI only: authorised clock-in locations (any of them is accepted at clock-in / clock-out)
+    const [attSel, setAttSel] = useState<string[]>([]);
+    const [isSavingAtt, setIsSavingAtt] = useState(false);
     const [schedule, setSchedule] = useState<Record<string, { location: string; clockInTime: string; clockOutTime: string }>>(
         DAYS.reduce((acc, d) => ({ ...acc, [d]: { location: (colleges && colleges[0]?.id) || "", clockInTime: "09:00", clockOutTime: "18:00" } }), {})
     );
@@ -43,6 +47,7 @@ export default function HRWorkLocationPage() {
     const handleSelect = (id: string) => {
         setSelectedEmp(id);
         setSelectedHoi(getAssignedHOI(id)?.id || "");
+        setAttSel(((reportees.find(r => r.id === id) as any)?.attendanceLocations as string[]) || []);
         const existing = (workSchedules || []).find(s => s.employeeId === id);
         if (existing) {
             setSchedule(existing.dayWise as any);
@@ -88,6 +93,14 @@ export default function HRWorkLocationPage() {
         alert(result.success ? "HOI assignment saved successfully!" : (result.msg || "Could not save HOI assignment."));
     };
 
+    const handleSaveAtt = async () => {
+        if (!selectedEmp) return;
+        setIsSavingAtt(true);
+        const result = await hrAssignEmployee(selectedEmp, { attendanceLocations: attSel } as any);
+        setIsSavingAtt(false);
+        alert(result.success ? "Clock-in locations saved successfully!" : (result.msg || "Could not save clock-in locations."));
+    };
+
     const selectedEmployee = reportees.find(r => r.id === selectedEmp);
     const currentHoi = selectedEmp ? getAssignedHOI(selectedEmp) : undefined;
     const canAssignHoi = !!selectedEmployee && HOI_ASSIGNABLE_ROLES.includes(selectedEmployee.role);
@@ -109,9 +122,12 @@ export default function HRWorkLocationPage() {
             <div className="flex gap-2 bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-1 w-fit">
                 <button onClick={() => setTab("location")} className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5", tab === "location" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}><MapPin size={12} /> Work Location</button>
                 <button onClick={() => setTab("hoi")} className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5", tab === "hoi" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}><Briefcase size={12} /> Assign HOI</button>
+                <button onClick={() => setTab("assignment")} data-testid="tab-location-assignment" className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5", tab === "assignment" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}><Building2 size={12} /> Location Assignment</button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {tab === "assignment" && <LocationAssignmentTab />}
+
+            {tab !== "assignment" && <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl overflow-hidden">
                     <div className="p-3 border-b border-zinc-800/50"><p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Select Employee</p>
                         <div className="relative mt-2">
@@ -179,6 +195,24 @@ export default function HRWorkLocationPage() {
                                     {existingSchedule.approvedByHR && existingSchedule.hrReadByName ? ` · Read by ${existingSchedule.hrReadByName} (HR)${existingSchedule.hrReadAt ? ` on ${new Date(existingSchedule.hrReadAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}` : ""}
                                 </p>
                             )}
+                            {selectedEmployee?.role === "HOI" && (
+                                <div className="rounded-xl border border-sky-500/20 bg-sky-500/[0.04] p-3 space-y-2" data-testid="wl-hoi-att">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="text-[11px] font-bold text-sky-300 flex items-center gap-1.5"><Navigation size={12} /> HOI Clock-In Locations ({attSel.length} selected)</p>
+                                        <button onClick={handleSaveAtt} disabled={isSavingAtt} data-testid="wl-hoi-att-save" className="bg-sky-500 hover:bg-sky-400 text-zinc-950 text-[10px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 disabled:opacity-50"><Save size={11} /> {isSavingAtt ? "Saving..." : "Save Locations"}</button>
+                                    </div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-40 overflow-y-auto custom-scrollbar">
+                                        {(colleges || []).map(c => (
+                                            <label key={c.id} className="flex items-center gap-2 text-[10px] text-zinc-200 bg-zinc-800/40 border border-zinc-800 rounded-lg px-2 py-1.5 cursor-pointer">
+                                                <input type="checkbox" className="accent-sky-500" checked={attSel.includes(c.id)} data-testid="wl-hoi-att-option" data-id={c.id}
+                                                    onChange={e => setAttSel(prev => e.target.checked ? [...prev, c.id] : prev.filter(x => x !== c.id))} />
+                                                <span className="truncate">{c.shortName || c.name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <p className="text-[9px] text-zinc-500 italic">The HOI can clock in / clock out at any ticked college (geofence checked). Original Location is not changed. None ticked = existing behaviour.</p>
+                                </div>
+                            )}
                             <div className="space-y-2">
                                 {DAYS.map(day => (
                                     <div key={day} className="grid grid-cols-4 gap-2 items-center bg-zinc-800/30 rounded-xl p-3 border border-zinc-800/50">
@@ -197,7 +231,7 @@ export default function HRWorkLocationPage() {
                         </>
                     )}
                 </div>}
-            </div>
+            </div>}
         </div>
     );
 }

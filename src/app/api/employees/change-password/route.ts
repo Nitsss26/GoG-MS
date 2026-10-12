@@ -32,10 +32,10 @@ export async function POST(request: Request) {
         const db = mongoose.connection.db;
         const collection = db!.collection('employees');
 
-        // Find the employee by id or email
-        const query = employeeEmail
-            ? { $or: [{ id: employeeId }, { email: employeeEmail }] }
-            : { id: employeeId };
+        // The logged-in record (this designation); one email may hold several designation records
+        const query = employeeId
+            ? { id: employeeId, isRemoved: { $ne: true } }
+            : { email: employeeEmail, role: session.role, isRemoved: { $ne: true } };
 
         const employee = await collection.findOne(query);
 
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
         const sessionMatches =
             String(employee._id) === String(session.userId) ||
             employee.id === session.userId ||
-            String(employee.email || '').toLowerCase() === String(session.email || '').toLowerCase();
+            (String(employee.email || '').toLowerCase() === String(session.email || '').toLowerCase() && employee.role === session.role);
         if (!sessionMatches) {
             return NextResponse.json({ success: false, error: "You can only change your own password." }, { status: 403 });
         }
@@ -58,9 +58,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: false, error: "Current password is incorrect" }, { status: 401 });
         }
 
-        // Only the hash is stored
-        const result = await collection.updateOne(
-            { _id: employee._id },
+        // Only the hash is stored. One login identity per email: every designation record of this person changes.
+        const escaped = String(employee.email || '').replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
+        const result = await collection.updateMany(
+            { email: { $regex: new RegExp(`^${escaped}$`, 'i') }, isRemoved: { $ne: true } },
             { $set: { password: await hashPassword(String(newPassword)), passwordChangedAt: new Date().toISOString() } }
         );
 

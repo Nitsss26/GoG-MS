@@ -36,6 +36,7 @@ import type { Metadata } from "next";
 import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import { AccessHubProvider } from "@/context/AccessHubContext";
 import SidebarWrapper from "@/components/SidebarWrapper";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -77,9 +78,11 @@ export default function RootLayout({
             </head>
             <body className={`${inter.className} ${outfit.variable} min-h-screen bg-background text-foreground flex overflow-hidden`}>
                 <AuthProvider>
+                    <AccessHubProvider>
                     <SidebarWrapper>
                         {children}
                     </SidebarWrapper>
+                    </AccessHubProvider>
                 </AuthProvider>
             </body>
         </html>

@@ -73,7 +73,8 @@ export default function CurriculumDashboard() {
         }
     };
 
-    const isHead = user?.role === "CURRICULUM_HEAD" || (user?.role as string) === "SUPERADMIN";
+    // CL and CH share one portal; only the designation badge differs
+    const designationBadge = user?.role === "CURRICULUM_HEAD" ? "CH" : user?.role === "CURRICULUM_LEAD" ? "CL" : user?.role === "FOUNDER" ? "Founder" : user?.role === "AD" ? "AD" : "";
 
     return (
         <div className="max-w-7xl mx-auto pt-8 pb-14 px-4 sm:px-6 space-y-8">
@@ -89,19 +90,17 @@ export default function CurriculumDashboard() {
                         </div>
                         <div>
                             <div className="flex items-center gap-3">
-                                <h1 className="text-3xl font-black tracking-tight text-white">
-                                    {isHead ? "Curriculum Head Command" : "Curriculum Lead Portal"}
+                                <h1 className="text-3xl font-black tracking-tight text-white" data-testid="clch-portal-title">
+                                    CL / CH Portal
                                 </h1>
-                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
-                                    isHead
-                                        ? "bg-purple-500/20 text-purple-300 border-purple-500/30 shadow-sm shadow-purple-500/20"
-                                        : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
-                                }`}>
-                                    {isHead ? "Apex Authority" : "Lead Authority"}
-                                </span>
+                                {designationBadge && (
+                                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border bg-teal-500/15 text-teal-300 border-teal-500/30" data-testid="clch-designation">
+                                        {designationBadge}
+                                    </span>
+                                )}
                             </div>
                             <p className="text-sm text-zinc-400 mt-1 max-w-xl">
-                                Campus-wide sprint verification, lecture notes review, assignment compliance, task delegation, and daily minutes of meeting.
+                                Organisation-wide sprint plan approval, class verification, lecture notes review, assignment compliance, task delegation and daily minutes of meeting — every campus, HOI and professor.
                             </p>
                         </div>
                     </div>

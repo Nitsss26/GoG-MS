@@ -64,7 +64,7 @@ export default function InventoryPage() {
             </header>
 
             <div className="flex items-center gap-2">
-                {["My Assets", ...(user.role === "HR" ? ["Full Registry", "Requests queue"] : ["My Requests"])].map(tab => (
+                {["My Assets", ...((user.role === "HR" || user.role === "FOUNDER") ? ["Full Registry", "Requests queue"] : ["My Requests"])].map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -120,7 +120,7 @@ export default function InventoryPage() {
                 </div>
             )}
 
-            {activeTab === "Full Registry" && user.role === "HR" && (
+            {activeTab === "Full Registry" && (user.role === "HR" || user.role === "FOUNDER") && (
                 <div className="space-y-6">
                     <div className="flex gap-4">
                         <div className="relative flex-1">
@@ -188,7 +188,7 @@ export default function InventoryPage() {
                 </div>
             )}
 
-            {activeTab === "Requests queue" && user.role === "HR" && (
+            {activeTab === "Requests queue" && (user.role === "HR" || user.role === "FOUNDER") && (
                 <div className="card overflow-hidden">
                     <table className="w-full text-left text-xs">
                         <thead>

@@ -1,51 +1,79 @@
 "use client";
 
-import { useAuth, OrgNode } from "@/context/AuthContext";
-import {
-    BookOpen,
-    Search,
-    ChevronDown,
-    ChevronRight,
-    User,
-    Building2,
-    Network,
-    MoreHorizontal,
-    Star,
-    Shield,
-    ZoomIn,
-    ZoomOut,
-    RotateCcw,
-    Maximize2,
-    Briefcase,
-    GraduationCap,
-    Users,
-    Heart
-} from "lucide-react";
-import { useState, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
+import { Search, Network, Heart } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import OrgChart, { OrgCanvas, PersonCard } from "@/components/org/OrgChart";
+import { buildOrgChart, toOrgPerson, type OrgPerson } from "@/lib/org-chart";
 
+/**
+ * Organization Chart — generated from the existing Employee records (/api/employees).
+ * Onboarding, designation, department, HOI (reportsTo) or status changes show up automatically:
+ * the list is re-read on open, every 30 s and whenever the tab regains focus. Nothing is stored for the chart.
+ */
 export default function HierarchyPage() {
-    const { orgHierarchy } = useAuth();
+    const { employees, orgHierarchy } = useAuth();
     const [searchQuery, setSearchQuery] = useState("");
-    const [zoomScale, setZoomScale] = useState(0.8);
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [canvasPos, setCanvasPos] = useState({ x: 0, y: 0 });
-    const dragControls = useRef(null);
+    const [live, setLive] = useState<any[] | null>(null);
+    const [open, setOpen] = useState<Set<string>>(() => new Set());
+    const [highlightId, setHighlightId] = useState<string | null>(null);
 
-    const recenter = () => {
-        setCanvasPos({ x: 0, y: 0 });
-        setZoomScale(0.8);
+    const load = useCallback(async () => {
+        try {
+            const r = await fetch("/api/employees", { cache: "no-store" });
+            const d = await r.json();
+            if (r.ok && Array.isArray(d)) setLive(d.filter((e: any) => e?.id && e.id !== "HOI"));
+        } catch { /* keep the last good list */ }
+    }, []);
+    useEffect(() => {
+        load();
+        const t = setInterval(load, 30000);
+        const onFocus = () => load();
+        window.addEventListener("focus", onFocus);
+        return () => { clearInterval(t); window.removeEventListener("focus", onFocus); };
+    }, [load]);
+
+    const data = useMemo(() => {
+        const src: any[] = live || employees || [];
+        // Keep the Org Chart display corrections that already exist in orgHierarchy (name / designation / hidden entries)
+        const nodeById = new Map(orgHierarchy.map(n => [n.id, n]));
+        const knownIds = new Set((employees || []).map((e: any) => e.id));
+        const ctxById = new Map((employees || []).map((e: any) => [e.id, e]));
+        const people = src
+            .filter(e => nodeById.has(e.id) || !knownIds.has(e.id))
+            .map(e => {
+                // apply a correction only where orgHierarchy deliberately differs from the stored record; otherwise live data wins
+                const n = nodeById.get(e.id); const ctx: any = ctxById.get(e.id);
+                const fix: { name?: string; designation?: string } = {};
+                if (n && ctx && n.name !== ctx.name) fix.name = n.name;
+                if (n && ctx && n.designation !== (ctx.designation || ctx.role)) fix.designation = n.designation;
+                return toOrgPerson(e, fix);
+            });
+        const status = new Map(src.map(e => [String(e.id), String(e.status || "Active")]));
+        return buildOrgChart(people, id => status.get(id) || "Active");
+    }, [live, employees, orgHierarchy]);
+
+    const everyone = useMemo(() => {
+        const m = new Map<string, OrgPerson>();
+        [...data.executives, ...data.techLeads, ...data.ads, ...data.hrHeads, ...data.hrExecutives, ...data.techTeam, ...data.marketingTeam,
+            ...data.hois.flatMap(h => [h.person, ...h.members]), ...data.clch, ...data.noHoi].forEach(p => m.set(p.id, p));
+        return [...m.values()];
+    }, [data]);
+
+    const allKeys = useMemo(() => ["grp:tech", "grp:marketing", "grp:hrexec", "grp:clch", ...(data.noHoi.length ? ["grp:nohoi"] : []), ...data.hois.map(h => `hoi:${h.person.id}`)], [data]);
+    const allOpen = allKeys.length > 0 && allKeys.every(k => open.has(k));
+
+    const q = searchQuery.trim().toLowerCase();
+    const filteredNodes = q ? everyone.filter(p => p.name.toLowerCase().includes(q) || p.designation.toLowerCase().includes(q) || p.id.toLowerCase().includes(q)).slice(0, 24) : [];
+
+    const reveal = (id: string) => {
+        const keys = (data.placements[id] || []).filter(k => k !== "root");
+        setOpen(s => new Set([...s, ...keys]));
+        setHighlightId(id);
+        setTimeout(() => document.querySelector(`[data-testid="org-canvas"] [data-person="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" }), 350);
+        setTimeout(() => setHighlightId(h => (h === id ? null : h)), 3500);
     };
-
-    const cSuiteNodes = orgHierarchy.filter(node => node.level === "C-Suite");
-
-    const filteredNodes = searchQuery
-        ? orgHierarchy.filter(n =>
-            (n.name?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
-            (n.designation?.toLowerCase() || "").includes(searchQuery.toLowerCase())
-        )
-        : [];
 
     return (
         <div className="p-4 sm:p-8 space-y-6 sm:space-y-8 w-full min-h-screen">
@@ -62,6 +90,7 @@ export default function HierarchyPage() {
                     <input
                         type="text"
                         placeholder="Search Profile or Role..."
+                        data-testid="org-search"
                         className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2 sm:py-2.5 pl-10 pr-4 text-[11px] sm:text-xs text-white outline-none focus:border-primary/50 transition-all font-medium"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -137,362 +166,25 @@ export default function HierarchyPage() {
             </motion.div>
 
             {searchQuery && (
-                <div className="card p-4 space-y-3">
-                    <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-2">Search Results</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="card p-4 space-y-3" data-testid="org-search-results">
+                    <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-2">Search Results · click to locate in the chart</p>
+                    <div className="flex flex-wrap gap-3">
                         {filteredNodes.length > 0 ? (
-                            filteredNodes.map(node => (
-                                <NodeCard key={node.id} node={node} isCompact />
+                            filteredNodes.map(p => (
+                                <button key={p.id} onClick={() => reveal(p.id)} className="text-left rounded-2xl hover:opacity-90" data-testid="org-search-hit">
+                                    <PersonCard p={p} />
+                                </button>
                             ))
                         ) : (
-                            <p className="text-xs text-zinc-600 italic px-2">No matching nodes found in the registry.</p>
+                            <p className="text-xs text-zinc-600 italic px-2">No matching employees found.</p>
                         )}
                     </div>
                 </div>
             )}
 
-            <div className="flex justify-center pt-8 sm:pt-12 overflow-hidden min-h-[500px] h-[75vh] sm:h-[80vh] pb-20 cursor-grab active:cursor-grabbing touch-none relative bg-zinc-950/30 sm:rounded-3xl border-y sm:border border-zinc-900 -mx-4 sm:mx-0" ref={containerRef}>
-                {/* Floating Canvas Controls */}
-                <div className="fixed bottom-6 right-6 sm:bottom-10 sm:right-10 flex flex-col gap-2 z-[100]">
-                    <button onClick={() => setZoomScale(s => Math.min(s + 0.1, 2))} className="w-9 h-9 sm:w-10 sm:h-10 bg-zinc-900/90 backdrop-blur border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl" title="Zoom In">
-                        <ZoomIn size={16} />
-                    </button>
-                    <button onClick={() => setZoomScale(s => Math.max(s - 0.1, 0.4))} className="w-9 h-9 sm:w-10 sm:h-10 bg-zinc-900/90 backdrop-blur border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl" title="Zoom Out">
-                        <ZoomOut size={16} />
-                    </button>
-                    <button onClick={recenter} className="w-9 h-9 sm:w-10 sm:h-10 bg-zinc-900/90 backdrop-blur border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all shadow-2xl" title="Recenter View">
-                        <RotateCcw size={14} />
-                    </button>
-                </div>
-
-                {cSuiteNodes.length > 0 && (
-                    <motion.div
-                        drag
-                        dragMomentum={false}
-                        initial={false}
-                        animate={{
-                            scale: zoomScale,
-                            x: canvasPos.x,
-                            y: canvasPos.y
-                        }}
-                        onDragEnd={(e, info) => {
-                            setCanvasPos(prev => ({
-                                x: prev.x + info.offset.x,
-                                y: prev.y + info.offset.y
-                            }));
-                        }}
-                        className="flex flex-col items-center origin-top py-20 z-10"
-                        style={{ width: "max-content" }}
-                    >
-                        <OrgTree node={cSuiteNodes[0]} allNodes={orgHierarchy} overrideRoot={cSuiteNodes} />
-                    </motion.div>
-                )}
-            </div>
+            <OrgCanvas allOpen={allOpen} onExpandAll={() => setOpen(new Set(allKeys))} onCollapseAll={() => setOpen(new Set())}>
+                <OrgChart data={data} open={open} setOpen={setOpen} highlightId={highlightId} />
+            </OrgCanvas>
         </div>
-    );
-}
-
-function OrgTree({ node, allNodes, overrideRoot }: { node: OrgNode, allNodes: OrgNode[], overrideRoot?: OrgNode[] }) {
-    const children = allNodes.filter(n => n.parentId === node.id);
-    const [isExpanded, setIsExpanded] = useState(true);
-
-    // Special handling for the very top level (CEO, COO, CTO)
-    if (overrideRoot && node.id === overrideRoot[0].id) {
-        const leadershipNodes = allNodes.filter(n => n.level === "Management");
-        const hoiNodes = allNodes.filter(n => n.level === "Leadership");
-        const curriculumHeadNodes = allNodes.filter(n => n.level === "CurriculumHead");
-        const curriculumLeadNodes = allNodes.filter(n => n.level === "CurriculumLead");
-
-        // --- MATRIX AGGREGATION ---
-        // All OMs and Faculty report to ALL HOIs now
-        const sharedOMs = allNodes.filter(n => n.level === "OM");
-        const sharedFaculty = allNodes.filter(n => n.level === "Faculty");
-
-        return (
-            <div className="flex flex-col items-center gap-8 sm:gap-16 relative">
-
-                {/* Top Level Roots Container */}
-                <div className="flex gap-4 relative">
-                    {/* Horizontal Connector Line for Roots */}
-                    {overrideRoot.length > 1 && (
-                        <div className="absolute -bottom-8 left-0 right-0 h-0.5 bg-zinc-700/40"
-                            style={{ width: `calc(100% - ${100 / overrideRoot.length}%)`, left: `${50 / overrideRoot.length}%` }} />
-                    )}
-
-                    {overrideRoot.map((root, i) => (
-                        <div key={root.id} className="relative flex flex-col items-center">
-                            <NodeCard node={root} hasChildren />
-                            {/* Vertical Line Drop from Root to Connector */}
-                            <div className="w-[3px] h-8 bg-zinc-500/60" />
-                        </div>
-                    ))}
-
-                    {/* Master Vertical Line Dropping To Next Level */}
-                    <div className="absolute -bottom-16 left-1/2 -translate-x-[1.5px] w-[3px] h-8 bg-zinc-500/60" />
-                </div>
-
-                <div className="h-8" /> {/* Spacer for lines */}
-
-                {/* Horizontal line connecting all Leadership nodes */}
-                {(leadershipNodes.length > 0) && (
-                    <div className="relative flex flex-row gap-6 sm:gap-12 relative">
-                        {leadershipNodes.map((ln, i) => (
-                            <div key={ln.id} className="relative flex flex-col items-center">
-                                {/* Horizontal Line segments for Leadership */}
-                                {leadershipNodes.length > 1 && (
-                                    <>
-                                        {i !== 0 && <div className="absolute top-[-32px] sm:top-[-48px] left-0 w-1/2 h-[3px] bg-zinc-500/60" />}
-                                        {i !== leadershipNodes.length - 1 && <div className="absolute top-[-32px] sm:top-[-48px] right-0 w-1/2 h-[3px] bg-zinc-500/60" />}
-                                    </>
-                                )}
-                                <div className="absolute -top-8 sm:-top-12 left-1/2 -translate-x-[1.5px] w-[3px] h-8 sm:h-12 bg-zinc-500/60" />
-                                <NodeCard node={ln} />
-                                <div className="w-[3px] h-6 sm:h-10 bg-zinc-500/60" />
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-
-                {/* HOI Layer and their specific reportees */}
-                {hoiNodes.length > 0 && (
-                    <div className="flex flex-row gap-8 sm:gap-16 items-start justify-center pt-8 relative">
-                        {hoiNodes.map((hn, i) => {
-                            const myOMs = allNodes.filter(n => n.parentId === hn.id && n.level === "OM");
-                            const myFaculty = allNodes.filter(n => n.parentId === hn.id && n.level === "Faculty");
-
-                            return (
-                                <div key={hn.id} className="relative flex flex-col items-center gap-8">
-                                    {/* Horizontal Line segments for HOIs */}
-                                    {hoiNodes.length > 1 && (
-                                        <>
-                                            {i !== 0 && <div className="absolute top-[-32px] left-0 w-1/2 h-[3px] bg-zinc-500/60" />}
-                                            {i !== hoiNodes.length - 1 && <div className="absolute top-[-32px] right-0 w-1/2 h-[3px] bg-zinc-500/60" />}
-                                        </>
-                                    )}
-                                    {/* Vertical line up to top level bridge */}
-                                    <div className="absolute -top-8 left-1/2 -translate-x-[1.5px] w-[3px] h-8 bg-zinc-500/60" />
-
-                                    <div className="flex flex-col items-center group relative pt-4">
-                                        <NodeCard node={hn} />
-                                        {(myOMs.length > 0 || myFaculty.length > 0) && (
-                                            <div className="w-[3px] h-10 bg-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.2)]" />
-                                        )}
-                                    </div>
-
-                                    {/* Specific Reportees for this HOI */}
-                                    {(myOMs.length > 0 || myFaculty.length > 0) && (
-                                        <div className="flex flex-col gap-6 items-center relative">
-                                            {/* Sub-bridge for this HOI's groups */}
-                                            {myOMs.length > 0 && myFaculty.length > 0 && (
-                                                <div className="absolute top-0 left-1/4 right-1/4 h-[2px] bg-amber-500/30" />
-                                            )}
-
-                                            <div className="flex flex-row gap-6 items-start">
-                                                {/* Operation Managers Group for this HOI */}
-                                                {myOMs.length > 0 && (
-                                                    <div className="relative border border-indigo-500/20 bg-indigo-500/5 rounded-2xl p-2.5 sm:p-4 pt-8 flex flex-col items-center shadow-xl w-max min-w-[140px]">
-                                                        <div className="absolute -top-2 px-2 py-0.5 bg-zinc-950 border border-indigo-500/30 text-indigo-400 text-[7px] sm:text-[8px] font-black uppercase tracking-widest rounded-lg z-20 whitespace-nowrap">OMs</div>
-                                                        <div className={cn(
-                                                            "grid gap-1.5 sm:gap-2",
-                                                            myOMs.length > 3 ? "grid-cols-2" : "grid-cols-1"
-                                                        )}>
-                                                            {myOMs.map(child => (
-                                                                <NodeCard key={child.id} node={child} isCompact />
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {/* Faculty Group for this HOI */}
-                                                {myFaculty.length > 0 && (
-                                                    <div className="relative border border-rose-500/20 bg-rose-500/5 rounded-2xl p-2.5 sm:p-4 pt-8 flex flex-col items-center shadow-xl w-max min-w-[140px]">
-                                                        <div className="absolute -top-2 px-2 py-0.5 bg-zinc-950 border border-rose-500/30 text-rose-400 text-[7px] sm:text-[8px] font-black uppercase tracking-widest rounded-lg z-20 whitespace-nowrap">Faculty</div>
-                                                        <div className={cn(
-                                                            "grid gap-1.5 sm:gap-2",
-                                                            myFaculty.length > 4 ? "grid-cols-2 lg:grid-cols-3" : (myFaculty.length > 2 ? "grid-cols-2" : "grid-cols-1")
-                                                        )}>
-                                                            {myFaculty.map(child => (
-                                                                <NodeCard key={child.id} node={child} isCompact />
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-                {/* Curriculum Academic Leadership: Curriculum Head -> Curriculum Lead -> Faculties */}
-                <div className="flex flex-col items-center gap-6 pt-6 border-t border-zinc-800/60 w-full relative">
-                    <div className="px-4 py-1.5 rounded-full bg-teal-500/10 border border-teal-500/30 text-teal-400 text-[9px] font-black uppercase tracking-[0.25em] shadow-[0_0_15px_rgba(20,184,166,0.3)]">
-                        Curriculum Academic Wing (Head → Lead → Faculty & Professors)
-                    </div>
-                    <div className="flex flex-wrap gap-8 items-start justify-center">
-                        {(curriculumHeadNodes.length > 0 ? curriculumHeadNodes : [{ id: "CH-HEAD", name: "Curriculum Head", designation: "Head of Curriculum", level: "CurriculumHead", dept: "Academic" } as OrgNode]).map(ch => {
-                            const leads = curriculumLeadNodes.length > 0 ? curriculumLeadNodes : [{ id: "CL-LEAD", name: "Curriculum Lead", designation: "Lead Curriculum Specialist", level: "CurriculumLead", dept: "Academic" } as OrgNode];
-                            return (
-                                <div key={ch.id} className="flex flex-col items-center gap-6">
-                                    <NodeCard node={ch} />
-                                    <div className="w-[3px] h-8 bg-teal-500/50" />
-                                    <div className="flex flex-wrap gap-6 items-start justify-center">
-                                        {leads.map(lead => {
-                                            const faculties = allNodes.filter(f => f.level === "Faculty");
-                                            return (
-                                                <div key={lead.id} className="flex flex-col items-center gap-4">
-                                                    <NodeCard node={lead} />
-                                                    <div className="w-[3px] h-6 bg-emerald-500/40" />
-                                                    <div className="border border-emerald-500/20 bg-emerald-500/5 rounded-2xl p-3 pt-6 relative flex flex-col items-center min-w-[150px]">
-                                                        <div className="absolute -top-2 px-2 py-0.5 bg-zinc-950 border border-emerald-500/30 text-emerald-400 text-[8px] font-black uppercase tracking-widest rounded-lg">
-                                                            Faculty & Professors
-                                                        </div>
-                                                        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
-                                                            {faculties.slice(0, 6).map(f => (
-                                                                <NodeCard key={f.id} node={f} isCompact />
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    // If it's a leaf node that was already aggregated, return null.
-    // Otherwise, this should not be reached in the new Matrix structure.
-    return null;
-}
-
-function NodeCard({ node, isCompact, hasChildren, isExpanded, onToggle }: {
-    node: OrgNode,
-    isCompact?: boolean,
-    hasChildren?: boolean,
-    isExpanded?: boolean,
-    onToggle?: () => void
-}) {
-    const { user } = useAuth();
-    const colors = {
-        "C-Suite": "from-amber-400/30 to-amber-600/30 border-amber-500/40 text-amber-500",
-        "Management": "from-blue-400/30 to-blue-600/30 border-blue-500/40 text-blue-400",
-        "Leadership": "from-purple-400/30 to-purple-600/30 border-purple-500/40 text-purple-400",
-        "GrowthManager": "from-orange-400/40 to-orange-600/40 border-orange-500/60 text-orange-400 shadow-[0_0_20px_rgba(249,115,22,0.4)]",
-        "CurriculumHead": "from-teal-400/30 to-teal-600/30 border-teal-500/50 text-teal-400",
-        "CurriculumLead": "from-emerald-400/30 to-emerald-600/30 border-emerald-500/50 text-emerald-400",
-        "OM": "from-indigo-400/30 to-indigo-600/30 border-indigo-500/40 text-indigo-400",
-        "Faculty": "from-rose-400/30 to-pink-600/30 border-rose-500/40 text-rose-400"
-    };
-
-    const levelIcon = {
-        "C-Suite": <Star size={10} />,
-        "CurriculumHead": <GraduationCap size={10} />,
-        "CurriculumLead": <BookOpen size={10} />,
-        "Management": <Shield size={10} />,
-        "Leadership": <Briefcase size={10} />,
-        "OM": <Network size={10} />,
-        "Faculty": <GraduationCap size={10} />
-    };
-
-    return (
-        <motion.div
-            layout
-            className={cn(
-                "group relative bg-zinc-950 border rounded-xl transition-all shadow-xl hover:shadow-primary/5 min-w-[130px] sm:min-w-[210px]",
-                isCompact ? "p-1 sm:p-2 border-zinc-800" : "p-2 sm:p-3 border-zinc-800/80 hover:border-primary/50",
-                node.level === "C-Suite" ? "animate-[pulse_3s_infinite] border-amber-500/60 shadow-[0_0_30px_rgba(245,158,11,0.6)] ring-1 ring-amber-500/30" :
-                    node.designation === "Growth Manager" ? "border-orange-500/60 shadow-[0_0_30px_rgba(249,115,22,0.6)] ring-1 ring-orange-500/30 font-black" :
-                        node.level === "CurriculumHead" ? "border-teal-500/60 shadow-[0_0_25px_rgba(20,184,166,0.5)] ring-1 ring-teal-500/30" :
-                            node.level === "CurriculumLead" ? "border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.4)] ring-1 ring-emerald-500/20" :
-                                node.level === "Management" ? "border-blue-500/50 shadow-[0_0_30px_rgba(59,130,246,0.6)] ring-1 ring-blue-500/20" :
-                                    node.level === "Leadership" ? "border-purple-500/50 shadow-[0_0_30px_rgba(139,92,246,0.6)] ring-1 ring-purple-500/20" : ""
-            )}
-        >
-            <div className={cn(
-                "absolute inset-0 bg-gradient-to-br opacity-5 rounded-xl",
-                node.designation === "Growth Manager" ? colors["GrowthManager"] : colors[node.level]
-            )} />
-
-            <div className="relative flex items-center gap-1.5 sm:gap-2">
-                <div className={cn(
-                    "w-6 h-6 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-bold text-xs sm:text-base border shrink-0",
-                    node.level === "C-Suite" ? "bg-amber-500/10 border-amber-500/20 text-amber-500" : "bg-zinc-900 border-zinc-800 text-primary"
-                )}>
-                    {node.photoInitial}
-                </div>
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1 break-all">
-                        <h3 className="text-[8px] sm:text-[10px] font-black text-white uppercase tracking-wider line-clamp-1" style={{ wordSpacing: '0.25em' }}>{node?.name || "Unknown"}</h3>
-                        {/* Mock PIP Indicator */}
-                        {node?.dept === "Sales" && node?.level === "Faculty" && (
-                            <span className="w-1 h-1 rounded-full bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)] animate-pulse" title="Under Performance Improvement Plan (PIP)" />
-                        )}
-                    </div>
-                    <p className="text-[7px] sm:text-[9px] text-zinc-500 font-bold truncate tracking-wide">{node?.designation || "No Designation"}</p>
-                </div>
-
-                {/* Action Menu for Admin/HR */}
-                {user && (user.role === 'HR' || user.role === 'FOUNDER') && node.level !== "C-Suite" && (
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-2 flex flex-col gap-1">
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                const reason = prompt(`Initiate PIP for ${node.name}. Enter reason:`);
-                                if (reason) {
-                                    alert(`${node.name} has been enrolled in PIP for: ${reason}`);
-                                }
-                            }}
-                            className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 p-1 rounded transition-colors"
-                            title="Initiate PIP Protocol"
-                        >
-                            <Shield size={10} />
-                        </button>
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                const confirm = window.confirm(`Initiate Promotion Workflow for ${node.name}? This will escalate their rank in the hierarchy cluster.`);
-                                if (confirm) {
-                                    alert(`${node.name}'s promotion workflow initiated. HR pending formal sign-off.`);
-                                }
-                            }}
-                            className="bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 p-1 rounded transition-colors"
-                            title="Promote Role Segment"
-                        >
-                            <User size={10} />
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            <div className="mt-2 sm:mt-3 flex items-center justify-between">
-                <div className={cn(
-                    "flex items-center gap-1 text-[7px] sm:text-[8px] font-black uppercase tracking-[0.1em] sm:tracking-[0.2em] px-1.5 sm:px-2 py-0.5 rounded-full border",
-                    node.designation === "Growth Manager" ? colors["GrowthManager"] : (node?.level ? colors[node.level] : "text-zinc-500 border-zinc-700")
-                )}>
-                    {node.designation === "Growth Manager" ? <Star size={10} /> : (node?.level ? levelIcon[node.level] : <User size={10} />)}
-                    <span className="truncate max-w-[40px] sm:max-w-none">{node.designation === "Growth Manager" ? "Growth" : (node?.level || "N/A")}</span>
-                </div>
-                <div className="text-[7px] sm:text-[9px] text-zinc-700 font-bold uppercase tracking-tight sm:tracking-widest">
-                    {(node.level === "Management" || node.level === "Leadership") ? "" : (node?.dept || "")}
-                </div>
-            </div>
-
-            {hasChildren && onToggle && (
-                <button
-                    onClick={onToggle}
-                    className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 hover:text-white hover:border-primary transition-all z-20"
-                >
-                    {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                </button>
-            )}
-        </motion.div>
     );
 }

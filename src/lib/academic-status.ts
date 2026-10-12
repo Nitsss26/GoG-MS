@@ -73,7 +73,7 @@ export const CLASS_STATUS_LABEL: Record<string, string> = {
     PENDING_OM: "Pending OM",
     OM_VERIFIED: "OM Verified",
     OM_REVERTED: "Reverted by OM",
-    PENDING_CL_CH: "OM Verified · Pending Final (CL/CH/HOI)",
+    PENDING_CL_CH: "OM Verified · Pending Final (CL/CH/HOI/AD)",
     CL_CH_VERIFIED: "CL/CH Verified",
     CL_CH_REVERTED: "Reverted at Final Verification",
     PENDING_HOI: "CL/CH Verified · Pending Final",
@@ -96,7 +96,7 @@ export const CLASS_STATUS_STYLE: Record<string, string> = {
 /** Records waiting for the final verification — any ONE of CL / CH / HOI can complete them */
 export const FINAL_PENDING_CLASS_STATUSES: string[] = ["PENDING_CL_CH", "PENDING_HOI"];
 /** Roles that can do the final verification */
-export const FINAL_VERIFIER_ROLES = ["CURRICULUM_LEAD", "CURRICULUM_HEAD", "HOI"];
+export const FINAL_VERIFIER_ROLES = ["CURRICULUM_LEAD", "CURRICULUM_HEAD", "HOI", "AD"];
 
 /** "Final Verification Done by CL (Rahul Sharma) on 09 Oct 2026 at 11:30 AM" — from the stored audit fields */
 export function finalVerificationText(record: any, timeZone = "Asia/Kolkata"): string {
@@ -139,6 +139,47 @@ export const ROLE_SHORT: Record<string, string> = {
     PROFESSOR: "Professor",
 };
 export const roleShort = (r?: string) => (r ? ROLE_SHORT[r] || r : "");
+
+// ── Role-specific approval (sprint plan "lock" = approval) ──
+/** Stored approval type for the approving role. CL and CH share one label. */
+export function approvalTypeForRole(role?: string): string {
+    if (role === "CURRICULUM_LEAD" || role === "CURRICULUM_HEAD") return "CL_CH_APPROVED";
+    if (role === "HOI") return "HOI_APPROVED";
+    if (role === "AD") return "AD_APPROVED";
+    if (role === "FOUNDER") return "FOUNDER_APPROVED";
+    return "APPROVED";
+}
+export const APPROVAL_LABEL: Record<string, string> = {
+    CL_CH_APPROVED: "CL/CH Approved",
+    HOI_APPROVED: "HOI Approved",
+    AD_APPROVED: "AD Approved",
+    FOUNDER_APPROVED: "Founder Approved",
+    APPROVED: "Approved",
+};
+export const APPROVAL_STYLE: Record<string, string> = {
+    CL_CH_APPROVED: "bg-teal-500/10 text-teal-300 border-teal-500/30",
+    HOI_APPROVED: "bg-purple-500/10 text-purple-300 border-purple-500/30",
+    AD_APPROVED: "bg-blue-500/10 text-blue-300 border-blue-500/30",
+    FOUNDER_APPROVED: "bg-amber-500/10 text-amber-300 border-amber-500/30",
+    APPROVED: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30",
+};
+/**
+ * The approval behind a locked plan, from the stored approval record (older plans: the lock fields).
+ * Returns null while the plan is not approved (draft, submitted, returned or unlocked for revision).
+ */
+export function planApproval(plan: any): { type: string; label: string; byId?: string; byName?: string; byRole?: string; byDesignation?: string; at?: string; remarks?: string } | null {
+    const st = getPlanStatus(plan);
+    if (!LOCKED_PLAN_STATUSES.includes(st)) return null;
+    const a = plan?.approval;
+    if (a && a.state === "APPROVED" && a.type) {
+        return { type: a.type, label: APPROVAL_LABEL[a.type] || a.label || "Approved", byId: a.byId, byName: a.byName, byRole: a.byRole, byDesignation: a.byDesignation, at: a.at, remarks: a.remarks };
+    }
+    if (plan?.lockedByRole || plan?.lockedByName) {
+        const type = approvalTypeForRole(plan.lockedByRole);
+        return { type, label: APPROVAL_LABEL[type], byId: plan.lockedById, byName: plan.lockedByName || plan.lockedBy, byRole: plan.lockedByRole, at: plan.lockedAt };
+    }
+    return null;
+}
 
 // ── Lecture plan master values (no master collection exists in the project for these) ──
 export const LECTURE_TYPES = ["Theory", "Practical / Lab", "Tutorial", "Revision", "Assessment / Test", "Doubt Session", "Project"];

@@ -1,539 +1,384 @@
 "use client";
 
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { useEffect, useState } from "react";
 import {
-    Video, FileText, CheckCircle2, XCircle, AlertTriangle,
-    Clock, ExternalLink, MessageSquare, Check, X, ShieldCheck,
-    Search, Filter, Building2, User, BookOpen, Layers
+    Video, FileText, CheckCircle2, AlertTriangle, Clock, ExternalLink, Check, RefreshCw, Search, Filter,
+    Building2, Users, BookOpen, ChevronDown, ChevronUp, ShieldCheck, RotateCcw, Hourglass, Layers, Eye, ClipboardList,
 } from "lucide-react";
+import { ClassRecordDetails, ClassRecordActions, ClassStatusBadge, to12h } from "@/components/academic/ClassRecordDetails";
+import { VERIFICATION_ROLES, CL_CH_ROLES, CLASS_STATUS_LABEL, finalVerificationText } from "@/lib/academic-status";
 
-const CAMPUSES = [
-    "ALL",
-    "SAGE Bhopal",
-    "MANIT Bhopal",
-    "LNCT Bhopal",
-    "Oriental Bhopal",
-    "RKDF Bhopal",
-    "SIRT Bhopal",
-    "Global HQ"
+/**
+ * Campus Lecture Quality & Verification Hub.
+ * Every class of every professor in the viewer's scope (Founder / AD: all colleges), from the sprint plan through
+ * Professor → OM → final verification. Data: /api/academic/class-records (scoped on the server).
+ * CL / CH also review notes and assignments here (/api/curriculum/lectures); Founder / AD see everything read-only.
+ */
+const todayIST = () => new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const daysAgo = (n: number) => { const d = todayIST(); d.setDate(d.getDate() - n); return ymd(d); };
+const endOfWeek = () => { const d = todayIST(); d.setDate(d.getDate() + (d.getDay() === 0 ? 0 : 6 - d.getDay())); return ymd(d); };
+const dmy = (s?: string) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s.split("-").reverse().join("-") : s || "");
+const wd = (s?: string) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T00:00:00`).toLocaleDateString("en-US", { weekday: "short" }) : "");
+
+/** Stage groups shown as tiles; each one is also a filter */
+const STAGES: { key: string; label: string; statuses: string[]; icon: any; tone: string }[] = [
+    { key: "ALL", label: "All Classes", statuses: [], icon: Layers, tone: "text-white border-zinc-700" },
+    { key: "PROF", label: "Awaiting Professor", statuses: ["PENDING_PROFESSOR"], icon: Hourglass, tone: "text-zinc-300 border-zinc-600" },
+    { key: "OM", label: "Pending OM", statuses: ["SUBMITTED", "PENDING_OM"], icon: Clock, tone: "text-sky-300 border-sky-500/40" },
+    { key: "FINAL", label: "Pending Final", statuses: ["PENDING_CL_CH", "PENDING_HOI", "OM_VERIFIED", "CL_CH_VERIFIED"], icon: ShieldCheck, tone: "text-indigo-300 border-indigo-500/40" },
+    { key: "DONE", label: "Good to Go", statuses: ["COMPLETED"], icon: CheckCircle2, tone: "text-emerald-300 border-emerald-500/40" },
+    { key: "REV", label: "Reverted", statuses: ["OM_REVERTED", "CL_CH_REVERTED"], icon: RotateCcw, tone: "text-red-300 border-red-500/40" },
 ];
+const stageOf = (st: string) => STAGES.find(s => s.key !== "ALL" && s.statuses.includes(st))?.key || "PROF";
+
+const notesState = (r: any): { label: string; tone: string } => {
+    const v = String(r.lectureNotes?.verificationStatus || "").toLowerCase();
+    const has = !!(r.lectureNotes?.notesUrl || r.lectureNotes?.notesContent);
+    if (r.virtual || r.pipelineStatus === "PENDING_PROFESSOR") return { label: "Not submitted", tone: "text-zinc-500 border-zinc-700 bg-zinc-800/40" };
+    if (!has || r.notesMissing) return { label: "Missing", tone: "text-red-300 border-red-500/30 bg-red-500/10" };
+    if (v === "approved" || v === "verified") return { label: "Approved", tone: "text-emerald-300 border-emerald-500/30 bg-emerald-500/10" };
+    if (v === "needs revision" || v === "flagged" || v === "rejected") return { label: "Needs revision", tone: "text-amber-300 border-amber-500/30 bg-amber-500/10" };
+    return { label: "Uploaded · review pending", tone: "text-sky-300 border-sky-500/30 bg-sky-500/10" };
+};
+const asgState = (r: any): { label: string; tone: string } | null => {
+    if (!r.assignment?.hasAssignment) return null;
+    const v = String(r.assignment?.verificationStatus || "").toLowerCase();
+    if (v === "approved" || v === "verified") return { label: "Approved", tone: "text-emerald-300 border-emerald-500/30 bg-emerald-500/10" };
+    if (v === "needs revision" || v === "flagged" || v === "rejected") return { label: "Needs revision", tone: "text-amber-300 border-amber-500/30 bg-amber-500/10" };
+    return { label: "Review pending", tone: "text-pink-300 border-pink-500/30 bg-pink-500/10" };
+};
+
+function Chip({ icon: Icon, label, value, tone }: { icon: any; label: string; value: string; tone: string }) {
+    return (
+        <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-bold whitespace-nowrap ${tone}`}>
+            <Icon size={11} /> <span className="text-zinc-400 font-semibold">{label}:</span> {value}
+        </span>
+    );
+}
+
+/** CL / CH: approve or send back the notes and the assignment of one class */
+function QualityReview({ record, onDone }: { record: any; onDone: (msg: string) => void }) {
+    const hasAsg = !!record.assignment?.hasAssignment;
+    const [notes, setNotes] = useState<"VERIFIED" | "NEEDS_REVISION">(notesState(record).label === "Needs revision" ? "NEEDS_REVISION" : "VERIFIED");
+    const [notesRemarks, setNotesRemarks] = useState(record.lectureNotes?.leadRemarks || "");
+    const [asg, setAsg] = useState<"VERIFIED" | "NEEDS_REVISION">(asgState(record)?.label === "Needs revision" ? "NEEDS_REVISION" : "VERIFIED");
+    const [asgRemarks, setAsgRemarks] = useState(record.assignment?.leadRemarks || "");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+
+    const post = async (body: any) => {
+        const res = await fetch("/api/curriculum/lectures", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reportId: record._id, ...body }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Could not save the review.");
+        return data;
+    };
+    const save = async () => {
+        if (notes === "NEEDS_REVISION" && notesRemarks.trim().length < 5) return setError("Write what must change in the notes (at least 5 characters).");
+        if (hasAsg && asg === "NEEDS_REVISION" && asgRemarks.trim().length < 5) return setError("Write what must change in the assignment (at least 5 characters).");
+        setBusy(true); setError("");
+        try {
+            let msg = "";
+            if (hasAsg) msg = (await post({ action: "verify_assignment", assignmentStatus: asg, assignmentRemarks: asgRemarks })).message;
+            msg = (await post({ action: "verify_notes", notesStatus: notes, notesRemarks })).message || msg;
+            onDone(msg || "Quality review saved.");
+        } catch (e: any) { setError(e.message); }
+        finally { setBusy(false); }
+    };
+
+    const Toggle = ({ value, set }: { value: string; set: (v: any) => void }) => (
+        <div className="flex gap-1.5">
+            {(["VERIFIED", "NEEDS_REVISION"] as const).map(v => (
+                <button key={v} type="button" onClick={() => set(v)} className={`px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-wider transition-all ${value === v
+                    ? v === "VERIFIED" ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300" : "bg-amber-500/15 border-amber-500/50 text-amber-300"
+                    : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}>
+                    {v === "VERIFIED" ? "Approve" : "Needs Revision"}
+                </button>
+            ))}
+        </div>
+    );
+
+    return (
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.03] p-4 space-y-3" data-testid="quality-review">
+            <p className="text-sm font-bold text-white flex items-center gap-2"><ClipboardList size={15} className="text-emerald-400" /> Quality Review (CL / CH)</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-2 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-zinc-200 flex items-center gap-1.5"><FileText size={13} className="text-teal-400" /> Lecture Notes</span>
+                        <Toggle value={notes} set={setNotes} />
+                    </div>
+                    <textarea value={notesRemarks} onChange={e => setNotesRemarks(e.target.value)} rows={2} placeholder="Remarks on the notes (required for Needs Revision)"
+                        className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white placeholder:text-zinc-600 outline-none resize-none focus:border-emerald-500/40" data-testid="qr-notes-remarks" />
+                </div>
+                {hasAsg ? (
+                    <div className="space-y-2 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-zinc-200 flex items-center gap-1.5"><BookOpen size={13} className="text-pink-400" /> Assignment</span>
+                            <Toggle value={asg} set={setAsg} />
+                        </div>
+                        <textarea value={asgRemarks} onChange={e => setAsgRemarks(e.target.value)} rows={2} placeholder="Remarks on the assignment (required for Needs Revision)"
+                            className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white placeholder:text-zinc-600 outline-none resize-none focus:border-emerald-500/40" />
+                    </div>
+                ) : <p className="text-[11px] text-zinc-500 self-center">No assignment was given in this class.</p>}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[10px] text-zinc-500">When the notes (and the assignment, if any) are approved and OM has verified the class, the class becomes Good to Go automatically.</p>
+                <button onClick={save} disabled={busy} data-testid="qr-save" className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black uppercase tracking-wider disabled:opacity-50">
+                    {busy ? <RefreshCw size={12} className="animate-spin" /> : <Check size={12} />} Save Review
+                </button>
+            </div>
+            {error && <p className="text-xs text-red-400 flex items-center gap-1.5"><AlertTriangle size={12} /> {error}</p>}
+        </div>
+    );
+}
 
 export default function CurriculumLecturesPage() {
     const { user } = useAuth();
-    const [lectures, setLectures] = useState<any[]>([]);
+    const role = user?.role || "";
+    const isClCh = CL_CH_ROLES.includes(role);
+
+    const [from, setFrom] = useState(daysAgo(13));
+    const [to, setTo] = useState(endOfWeek());
+    const [college, setCollege] = useState("All");
+    const [facultyId, setFacultyId] = useState("All");
+    const [stage, setStage] = useState("ALL");
+    const [onlyAssignment, setOnlyAssignment] = useState(false);
+    const [search, setSearch] = useState("");
+    const [records, setRecords] = useState<any[]>([]);
+    const [professors, setProfessors] = useState<any[]>([]);
+    const [colleges, setColleges] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [selectedCampus, setSelectedCampus] = useState("ALL");
-    const [selectedDate, setSelectedDate] = useState("");
-    const [statusFilter, setStatusFilter] = useState("ALL");
-    const [selectedLecture, setSelectedLecture] = useState<any | null>(null);
-    const [reviewModalOpen, setReviewModalOpen] = useState(false);
-    const [actionLoading, setActionLoading] = useState(false);
-    const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    const [error, setError] = useState("");
+    const [message, setMessage] = useState("");
+    const [open, setOpen] = useState<string | null>(null);
 
-    // Form states for CL Review
-    const [notesStatus, setNotesStatus] = useState<"VERIFIED" | "NEEDS_REVISION">("VERIFIED");
-    const [notesRemarks, setNotesRemarks] = useState("");
-    const [assignmentStatus, setAssignmentStatus] = useState<"VERIFIED" | "NEEDS_REVISION">("VERIFIED");
-    const [assignmentRemarks, setAssignmentRemarks] = useState("");
-    const [overallRemarks, setOverallRemarks] = useState("");
-
-    useEffect(() => {
-        fetchLectures();
-    }, [selectedCampus, selectedDate]);
-
-    const fetchLectures = async () => {
-        setLoading(true);
+    const latest = useRef(0);
+    const load = async () => {
+        const n = ++latest.current;
+        setLoading(true); setError("");
         try {
-            let url = `/api/curriculum/lectures?`;
-            if (selectedCampus !== "ALL") url += `campus=${encodeURIComponent(selectedCampus)}&`;
-            if (selectedDate) url += `date=${selectedDate}&`;
-            const res = await fetch(url);
+            const q = new URLSearchParams({ from, to, college, facultyId, planned: "1" });
+            const res = await fetch(`/api/academic/class-records?${q}`);
             const data = await res.json();
-            setLectures(data.lectures || []);
-        } catch (e) {
-            console.error("Failed to fetch lectures", e);
-        } finally {
-            setLoading(false);
-        }
+            if (n !== latest.current) return;
+            if (!res.ok) throw new Error(data.error || "Could not load lectures");
+            setRecords(data.records || []);
+            setProfessors(data.professors || []);
+            setColleges(data.colleges || []);
+        } catch (e: any) { if (n === latest.current) setError(e.message); }
+        finally { if (n === latest.current) setLoading(false); }
+    };
+    useEffect(() => { if (user && VERIFICATION_ROLES.includes(role)) load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [user, from, to, college, facultyId]);
+
+    const collegeName = (v?: string) => {
+        if (!v) return "Campus not assigned";
+        const c = colleges.find((c: any) => c.id === v || (c.keys || []).includes(v));
+        return c?.name || v;
     };
 
-    const openReviewModal = (lec: any) => {
-        setSelectedLecture(lec);
-        setNotesStatus(lec.lectureNotes?.verificationStatus === "NEEDS_REVISION" ? "NEEDS_REVISION" : "VERIFIED");
-        setNotesRemarks(lec.lectureNotes?.leadRemarks || "");
-        setAssignmentStatus(lec.assignment?.verificationStatus === "NEEDS_REVISION" ? "NEEDS_REVISION" : "VERIFIED");
-        setAssignmentRemarks(lec.assignment?.leadRemarks || "");
-        setOverallRemarks(lec.clRemarks || "");
-        setReviewModalOpen(true);
+    const counts = useMemo(() => {
+        const m: Record<string, number> = { ALL: records.length };
+        records.forEach(r => { const k = stageOf(r.pipelineStatus); m[k] = (m[k] || 0) + 1; });
+        return m;
+    }, [records]);
+
+    const quality = useMemo(() => {
+        const delivered = records.filter(r => !r.virtual && r.pipelineStatus !== "PENDING_PROFESSOR");
+        const notes = delivered.filter(r => r.lectureNotes?.notesUrl || r.lectureNotes?.notesContent).length;
+        const notesOk = delivered.filter(r => notesState(r).label === "Approved").length;
+        const rec = delivered.filter(r => r.recordingUrl).length;
+        const asg = delivered.filter(r => r.assignment?.hasAssignment).length;
+        const late = delivered.filter(r => r.isLate).length;
+        const att = delivered.filter(r => r.totalStudents > 0);
+        const avg = att.length ? Math.round(att.reduce((a, r) => a + Math.min(1, (r.numberOfAttendees || 0) / r.totalStudents), 0) / att.length * 100) : null;
+        const overdue = records.filter(r => r.classEnded && r.pipelineStatus === "PENDING_PROFESSOR").length;
+        return { delivered: delivered.length, notes, notesOk, rec, asg, late, avg, overdue };
+    }, [records]);
+
+    const visible = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        return records
+            .filter(r => stage === "ALL" || stageOf(r.pipelineStatus) === stage)
+            .filter(r => !onlyAssignment || r.assignment?.hasAssignment)
+            .filter(r => !q || `${r.facultyName} ${r.courseName || r.subjectName || ""} ${r.subjectCode || ""} ${r.topicsCovered || ""}`.toLowerCase().includes(q))
+            .sort((a, b) => (b.date || "").localeCompare(a.date || "") || (a.timeStart || "").localeCompare(b.timeStart || ""));
+    }, [records, stage, onlyAssignment, search]);
+
+    const afterAction = async (msg: string) => {
+        setMessage(msg);
+        await load();
+        setTimeout(() => setMessage(""), 5000);
     };
 
-    const submitReview = async (overallAction: "VERIFY_GOOD_TO_GO" | "REQUEST_REVISION") => {
-        if (!selectedLecture) return;
-        setActionLoading(true);
-        setMessage(null);
-        try {
-            const res = await fetch("/api/curriculum/lectures", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    lectureId: selectedLecture._id,
-                    action: overallAction,
-                    clRemarks: overallRemarks,
-                    notesStatus,
-                    notesRemarks,
-                    assignmentStatus,
-                    assignmentRemarks
-                })
-            });
+    if (!user) return null;
+    if (!VERIFICATION_ROLES.includes(role)) {
+        return <div className="flex items-center justify-center h-[70vh] text-zinc-400 text-sm">The Lecture Quality Hub is available for Founder, AD, HOI, CL, CH and OM.</div>;
+    }
 
-            const data = await res.json();
-            if (res.ok) {
-                setMessage({
-                    type: "success",
-                    text: overallAction === "VERIFY_GOOD_TO_GO"
-                        ? "Lecture verified and marked Good to Go (Green)!"
-                        : "Revisions requested for this lecture."
-                });
-                setReviewModalOpen(false);
-                fetchLectures();
-            } else {
-                setMessage({ type: "error", text: data.error || "Review submission failed." });
-            }
-        } catch (err: any) {
-            setMessage({ type: "error", text: err.message });
-        } finally {
-            setActionLoading(false);
-        }
-    };
-
-    const filteredLectures = lectures.filter((l) => {
-        if (statusFilter === "VERIFIED" && l.clVerificationStatus !== "VERIFIED") return false;
-        if (statusFilter === "PENDING" && l.clVerificationStatus === "VERIFIED") return false;
-        if (statusFilter === "NEEDS_REVISION" && l.clVerificationStatus !== "NEEDS_REVISION") return false;
-        if (statusFilter === "WITH_ASSIGNMENT" && !l.assignment?.hasAssignment) return false;
-        return true;
-    });
-
-    const isAuthorized = user?.role === "CURRICULUM_HEAD" || user?.role === "CURRICULUM_LEAD" || (user?.role as string) === "SUPERADMIN";
+    const sel = "px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs font-bold text-white outline-none focus:border-emerald-500/40 [color-scheme:dark]";
 
     return (
-        <div className="max-w-7xl mx-auto pt-8 pb-14 px-4 sm:px-6 space-y-6">
+        <div className="max-w-7xl mx-auto pt-6 pb-14 px-4 sm:px-6 space-y-5 w-full [contain:inline-size]">
             {/* Header */}
-            <div className="relative group bg-zinc-900/60 backdrop-blur-xl border border-zinc-800/80 rounded-3xl p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 shadow-2xl">
-                <div>
-                    <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 shadow-inner">
-                            <Video size={24} className="text-emerald-400" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                                Campus Lecture Quality & Verification Hub
-                            </h1>
-                            <p className="text-xs text-zinc-400 mt-0.5">
-                                Inspect Recordings &bull; Validate Notes & Assignments &bull; Authorize &ldquo;Good to Go&rdquo; (Green)
-                            </p>
-                        </div>
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-3xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-12 h-12 shrink-0 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20"><Video size={22} className="text-emerald-400" /></div>
+                    <div className="min-w-0">
+                        <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight" data-testid="lqh-title">Campus Lecture Quality &amp; Verification Hub</h1>
+                        <p className="text-xs text-zinc-400 mt-0.5">Inspect Recordings &bull; Validate Notes &amp; Assignments &bull; Track every class from Professor → OM → Good to Go</p>
                     </div>
                 </div>
-
-                {/* Filters */}
-                <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2 px-3 py-2 bg-zinc-800/80 border border-zinc-700/60 rounded-xl">
-                        <Building2 size={16} className="text-emerald-400 shrink-0" />
-                        <select
-                            value={selectedCampus}
-                            onChange={(e) => setSelectedCampus(e.target.value)}
-                            className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
-                        >
-                            {CAMPUSES.map((c) => (
-                                <option key={c} value={c} className="bg-zinc-900 text-white">
-                                    {c === "ALL" ? "All Campuses" : c}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <input
-                        type="date"
-                        value={selectedDate}
-                        onChange={(e) => setSelectedDate(e.target.value)}
-                        className="px-3 py-2 bg-zinc-800/80 border border-zinc-700/60 rounded-xl text-xs font-bold text-white focus:outline-none"
-                    />
-
-                    <select
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value)}
-                        className="px-3 py-2 bg-zinc-800/80 border border-zinc-700/60 rounded-xl text-xs font-bold text-white focus:outline-none"
-                    >
-                        <option value="ALL">All Statuses</option>
-                        <option value="PENDING">Pending Review</option>
-                        <option value="VERIFIED">Verified (Green)</option>
-                        <option value="NEEDS_REVISION">Needs Revision</option>
-                        <option value="WITH_ASSIGNMENT">Has Assignment</option>
-                    </select>
-                </div>
+                <button onClick={load} className="self-start md:self-auto flex items-center gap-2 px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-bold" title="Refresh">
+                    <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh
+                </button>
             </div>
 
-            {/* Notification message */}
-            {message && (
-                <div
-                    className={`flex items-center gap-2 rounded-xl px-4 py-3 text-xs font-semibold ${
-                        message.type === "success"
-                            ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
-                            : "bg-red-500/10 border border-red-500/20 text-red-400"
-                    }`}
-                >
-                    {message.type === "success" ? <Check size={16} /> : <AlertTriangle size={16} />}
-                    <span>{message.text}</span>
+            {/* Filters */}
+            <div className="flex flex-wrap items-end gap-3 bg-zinc-900/40 border border-zinc-800 rounded-2xl p-4">
+                <Filter size={14} className="text-zinc-500 mb-2.5 hidden sm:block" />
+                <label className="block"><span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1">From</span>
+                    <input type="date" value={from} onChange={e => setFrom(e.target.value)} className={sel} data-testid="lqh-from" /></label>
+                <label className="block"><span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1">To</span>
+                    <input type="date" value={to} onChange={e => setTo(e.target.value)} className={sel} data-testid="lqh-to" /></label>
+                {colleges.length > 1 && (
+                    <label className="block"><span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1">Campus</span>
+                        <span className="relative block">
+                            <Building2 size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400 pointer-events-none" />
+                            <select value={college} onChange={e => { setCollege(e.target.value); setFacultyId("All"); }} className={`${sel} pl-8`} data-testid="lqh-campus">
+                                <option value="All">All Campuses</option>
+                                {colleges.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </span>
+                    </label>
+                )}
+                <label className="block"><span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1">Professor</span>
+                    <select value={facultyId} onChange={e => setFacultyId(e.target.value)} className={`${sel} max-w-[14rem]`} data-testid="lqh-prof">
+                        <option value="All">All Professors ({professors.length})</option>
+                        {professors.map((p: any) => <option key={p.id} value={p.id}>{p.name} · {p.id}</option>)}
+                    </select>
+                </label>
+                <label className="block flex-1 min-w-[12rem]"><span className="block text-[9px] text-zinc-500 font-bold uppercase tracking-wider mb-1">Search</span>
+                    <span className="relative block">
+                        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+                        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Professor, subject or topic…" className={`${sel} w-full pl-8 font-medium`} />
+                    </span>
+                </label>
+                <label className="flex items-center gap-2 h-[34px] px-3 rounded-xl border border-zinc-800 bg-zinc-950 text-xs text-zinc-300 font-bold cursor-pointer whitespace-nowrap">
+                    <input type="checkbox" checked={onlyAssignment} onChange={e => setOnlyAssignment(e.target.checked)} className="w-3.5 h-3.5 accent-pink-500" /> Has Assignment
+                </label>
+            </div>
+
+            {/* Stage tiles (also filters) */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3" data-testid="lqh-stages">
+                {STAGES.map(s => {
+                    const on = stage === s.key;
+                    return (
+                        <button key={s.key} onClick={() => setStage(s.key)} data-testid={`stage-${s.key}`}
+                            className={`text-left p-3.5 rounded-2xl border transition-all ${on ? `bg-zinc-800/80 ${s.tone} shadow-lg` : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"}`}>
+                            <span className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${on ? "" : "text-zinc-500"}`}><s.icon size={12} /> {s.label}</span>
+                            <span className="block mt-1.5 text-2xl font-black text-white tabular-nums">{loading ? "–" : counts[s.key] || 0}</span>
+                        </button>
+                    );
+                })}
+            </div>
+
+            {/* Quality summary */}
+            {!loading && records.length > 0 && (
+                <div className="flex flex-wrap gap-2 text-[11px]" data-testid="lqh-quality">
+                    <Chip icon={Users} label="Delivered" value={`${quality.delivered}`} tone="border-zinc-800 bg-zinc-900/60 text-white" />
+                    <Chip icon={FileText} label="Notes uploaded" value={`${quality.notes}/${quality.delivered}`} tone="border-teal-500/20 bg-teal-500/5 text-teal-300" />
+                    <Chip icon={CheckCircle2} label="Notes approved" value={`${quality.notesOk}`} tone="border-emerald-500/20 bg-emerald-500/5 text-emerald-300" />
+                    <Chip icon={Video} label="Recordings" value={`${quality.rec}/${quality.delivered}`} tone="border-sky-500/20 bg-sky-500/5 text-sky-300" />
+                    <Chip icon={BookOpen} label="Assignments" value={`${quality.asg}`} tone="border-pink-500/20 bg-pink-500/5 text-pink-300" />
+                    {quality.avg !== null && <Chip icon={Users} label="Avg attendance" value={`${quality.avg}%`} tone="border-violet-500/20 bg-violet-500/5 text-violet-300" />}
+                    {quality.late > 0 && <Chip icon={Clock} label="Late classes" value={`${quality.late}`} tone="border-amber-500/20 bg-amber-500/5 text-amber-300" />}
+                    {quality.overdue > 0 && <Chip icon={AlertTriangle} label="Report overdue" value={`${quality.overdue}`} tone="border-red-500/20 bg-red-500/5 text-red-300" />}
                 </div>
             )}
 
-            {/* Lecture Reports Table */}
+            {message && <div className="flex items-center gap-2 rounded-xl px-4 py-3 text-xs font-semibold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400" data-testid="lqh-message"><Check size={15} /> {message}</div>}
+            {error && <div className="flex items-center gap-2 rounded-xl px-4 py-3 text-xs font-semibold bg-red-500/10 border border-red-500/20 text-red-400"><AlertTriangle size={15} /> {error}</div>}
+
+            {/* Lectures */}
             {loading ? (
-                <div className="flex items-center justify-center py-20">
-                    <div className="w-10 h-10 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-                </div>
-            ) : filteredLectures.length === 0 ? (
-                <div className="p-12 text-center rounded-3xl bg-zinc-900/40 border border-zinc-800 text-zinc-500">
+                <div className="flex items-center justify-center py-20"><div className="w-10 h-10 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" /></div>
+            ) : visible.length === 0 ? (
+                <div className="p-12 text-center rounded-3xl bg-zinc-900/40 border border-zinc-800 text-zinc-500" data-testid="lqh-empty">
                     <Video size={40} className="mx-auto mb-3 opacity-30" />
-                    <p className="text-sm font-semibold">No lecture reports found for the selected criteria.</p>
+                    <p className="text-sm font-semibold">No classes found for the selected filters.</p>
+                    <p className="text-xs mt-1">Classes appear here once a professor&apos;s sprint plan is submitted for these dates.</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 gap-4">
-                    {filteredLectures.map((lec) => {
-                        const isVerified = lec.clVerificationStatus === "VERIFIED";
-                        const isRevision = lec.clVerificationStatus === "NEEDS_REVISION";
-                        const hasAssignment = !!lec.assignment?.hasAssignment;
-
+                <div className="space-y-3" data-testid="lqh-list">
+                    {visible.map(r => {
+                        const isOpen = open === r._id;
+                        const st = r.pipelineStatus || "PENDING_PROFESSOR";
+                        const done = st === "COMPLETED";
+                        const reverted = st === "OM_REVERTED" || st === "CL_CH_REVERTED";
+                        const ns = notesState(r);
+                        const as = asgState(r);
+                        const delivered = !r.virtual && st !== "PENDING_PROFESSOR";
+                        const finalText = finalVerificationText(r);
                         return (
-                            <div
-                                key={lec._id}
-                                className={`p-6 rounded-2xl border transition-all ${
-                                    isVerified
-                                        ? "bg-emerald-950/20 border-emerald-500/30 hover:border-emerald-500/50"
-                                        : isRevision
-                                        ? "bg-rose-950/20 border-rose-500/30 hover:border-rose-500/50"
-                                        : "bg-zinc-900/60 border-zinc-800/80 hover:border-zinc-700"
-                                }`}
-                            >
-                                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                                    <div className="space-y-2 flex-1">
+                            <div key={r._id} data-testid="lqh-card"
+                                className={`rounded-2xl border transition-all ${done ? "bg-emerald-950/20 border-emerald-500/30" : reverted ? "bg-rose-950/20 border-rose-500/30" : "bg-zinc-900/60 border-zinc-800 hover:border-zinc-700"}`}>
+                                <button onClick={() => setOpen(isOpen ? null : r._id)} className="w-full text-left p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center gap-3">
+                                    <div className="flex-1 min-w-0 space-y-2">
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <span className="text-base font-black text-white">{lec.facultyName}</span>
-                                            <span className="text-xs text-zinc-500">&bull;</span>
-                                            <span className="text-xs font-bold text-indigo-400 bg-indigo-500/10 px-2.5 py-0.5 rounded-lg border border-indigo-500/20">
-                                                {lec.college || "Campus"}
-                                            </span>
-                                            <span className="text-xs text-zinc-400">
-                                                {lec.date} ({lec.timeSlot})
-                                            </span>
-                                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                                isVerified
-                                                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-sm shadow-emerald-500/20"
-                                                    : isRevision
-                                                    ? "bg-rose-500/20 text-rose-400 border border-rose-500/40"
-                                                    : "bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse"
-                                            }`}>
-                                                {isVerified ? "✓ Good to Go (Verified)" : isRevision ? "⚠ Revision Requested" : "⏳ Pending CL Check"}
-                                            </span>
+                                            <span className="text-sm sm:text-base font-black text-white">{r.facultyName}</span>
+                                            <span className="text-xs font-bold text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-lg border border-indigo-500/20">{collegeName(r.college)}</span>
+                                            <span className="text-xs text-zinc-400">{wd(r.date)} {dmy(r.date)}{r.timeStart ? ` · ${to12h(r.timeStart)}${r.timeStop ? ` – ${to12h(r.timeStop)}` : ""}` : ""}</span>
+                                            <ClassStatusBadge status={st} />
+                                            {done && <span className="text-[10px] font-black uppercase tracking-wider text-emerald-300">✓ Good to Go</span>}
                                         </div>
-
-                                        <p className="text-sm font-semibold text-zinc-200">
-                                            {lec.subject} &bull; <span className="text-zinc-400 font-normal">{lec.topicsCovered}</span>
+                                        <p className="text-sm font-semibold text-zinc-200 truncate">
+                                            {r.courseName || r.subjectName || "—"}{r.subjectCode ? <span className="text-zinc-500 font-normal"> ({r.subjectCode})</span> : null}
+                                            {r.topicsCovered ? <span className="text-zinc-400 font-normal"> &bull; {r.topicsCovered}</span> : null}
                                         </p>
-
-                                        {/* OM Timings & Late info */}
-                                        <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400 pt-1">
-                                            <span>Students: <strong className="text-white">{lec.attendanceCount || 0}</strong></span>
-                                            {lec.actualInTime && (
-                                                <span>Actual In: <strong className="text-white">{lec.actualInTime}</strong></span>
-                                            )}
-                                            {lec.actualOutTime && (
-                                                <span>Actual Out: <strong className="text-white">{lec.actualOutTime}</strong></span>
-                                            )}
-                                            {lec.isLate && (
-                                                <span className="text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                                                    Late: {lec.remarksWhyLate || "Delayed"}
-                                                </span>
-                                            )}
+                                        <div className="flex flex-wrap gap-1.5">
+                                            <Chip icon={FileText} label="Notes" value={ns.label} tone={ns.tone} />
+                                            {as && <Chip icon={BookOpen} label="Assignment" value={as.label} tone={as.tone} />}
+                                            {delivered && <Chip icon={Video} label="Recording" value={r.recordingUrl ? "Yes" : "No"} tone={r.recordingUrl ? "text-sky-300 border-sky-500/30 bg-sky-500/10" : "text-zinc-500 border-zinc-700 bg-zinc-800/40"} />}
+                                            {delivered && <Chip icon={Users} label="Students" value={`${r.numberOfAttendees ?? 0}${r.totalStudents ? `/${r.totalStudents}` : ""}`} tone="text-zinc-200 border-zinc-700 bg-zinc-800/40" />}
+                                            {(r.actualInTime || r.actualOutTime) && <Chip icon={Clock} label="Entry/Exit" value={`${to12h(r.actualInTime) || "—"} – ${to12h(r.actualOutTime) || "—"}`} tone="text-zinc-200 border-zinc-700 bg-zinc-800/40" />}
+                                            {r.isLate && <Chip icon={AlertTriangle} label="Late" value={r.remarksWhyLate || "Yes"} tone="text-amber-300 border-amber-500/30 bg-amber-500/10" />}
+                                            {r.classEnded && st === "PENDING_PROFESSOR" && <Chip icon={AlertTriangle} label="Report" value="Overdue" tone="text-red-300 border-red-500/30 bg-red-500/10" />}
                                         </div>
+                                        {finalText && <p className="text-[11px] text-emerald-400/90">{finalText}</p>}
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0 self-end lg:self-center">
+                                        {r.recordingUrl && (
+                                            <a href={r.recordingUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                                                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-300 text-[11px] font-bold hover:bg-sky-500/20"><Video size={13} /> Recording <ExternalLink size={11} /></a>
+                                        )}
+                                        {r.lectureNotes?.notesUrl && (
+                                            <a href={r.lectureNotes.notesUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                                                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-300 text-[11px] font-bold hover:bg-teal-500/20"><FileText size={13} /> Notes <ExternalLink size={11} /></a>
+                                        )}
+                                        <span className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-200 text-[11px] font-bold" data-testid="lqh-toggle">
+                                            <Eye size={13} /> {isOpen ? "Hide" : "Details"} {isOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                        </span>
+                                    </div>
+                                </button>
 
-                                        {/* Notes & Assignment Badges */}
-                                        <div className="flex flex-wrap items-center gap-3 pt-2">
-                                            {/* Notes Badge */}
-                                            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-zinc-800/80 border border-zinc-700 text-xs">
-                                                <FileText size={14} className="text-indigo-400" />
-                                                <span className="text-zinc-300">Notes:</span>
-                                                <span className={`font-bold ${lec.lectureNotes?.isSharedWithStudents ? "text-emerald-400" : "text-amber-400"}`}>
-                                                    {lec.lectureNotes?.isSharedWithStudents ? "Shared to Students" : "NOT Shared"}
-                                                </span>
-                                                {lec.lectureNotes?.notesUrl && (
-                                                    <a
-                                                        href={lec.lectureNotes.notesUrl}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="text-indigo-400 hover:text-indigo-300 underline text-[11px] ml-1"
-                                                    >
-                                                        View Notes
-                                                    </a>
-                                                )}
-                                                {!lec.lectureNotes?.isSharedWithStudents && lec.lectureNotes?.notSharedRemarks && (
-                                                    <span className="text-[10px] text-zinc-400 italic">
-                                                        ({lec.lectureNotes.notSharedRemarks})
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            {/* Assignment Badge */}
-                                            {hasAssignment ? (
-                                                <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-zinc-800/80 border border-zinc-700 text-xs">
-                                                    <BookOpen size={14} className="text-pink-400" />
-                                                    <span className="text-zinc-300">Assignment:</span>
-                                                    <span className="font-bold text-white">{lec.assignment.title}</span>
-                                                    <span className="text-zinc-500">|</span>
-                                                    <span className="text-zinc-400">
-                                                        Completed: <strong className="text-pink-400">{lec.assignment.studentsCompletedCount || 0}</strong>
-                                                    </span>
-                                                    {lec.assignment?.assignmentUrl && (
-                                                        <a
-                                                            href={lec.assignment.assignmentUrl}
-                                                            target="_blank"
-                                                            rel="noreferrer"
-                                                            className="text-pink-400 hover:text-pink-300 underline text-[11px] ml-1"
-                                                        >
-                                                            View
-                                                        </a>
-                                                    )}
-                                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                                        lec.assignment.isSharedInProfGroup
-                                                            ? "bg-emerald-500/10 text-emerald-400"
-                                                            : "bg-red-500/10 text-red-400 border border-red-500/20"
-                                                    }`}>
-                                                        {lec.assignment.isSharedInProfGroup ? "OM Shared in Prof Group" : "OM Group Share Pending"}
-                                                    </span>
-                                                </div>
-                                            ) : (
-                                                <span className="text-[11px] text-zinc-500 italic">No Assignment attached</span>
-                                            )}
-
-                                            {/* Recording link */}
-                                            {lec.recordingUrl && (
-                                                <a
-                                                    href={lec.recordingUrl}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    className="flex items-center gap-1 px-3 py-1 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700 text-xs text-sky-400"
-                                                >
-                                                    <Video size={13} /> Class Recording <ExternalLink size={11} />
-                                                </a>
-                                            )}
-                                        </div>
-
-                                        {/* CL Remarks if existing */}
-                                        {lec.clRemarks && (
-                                            <p className="text-xs text-amber-300/80 bg-amber-500/5 border border-amber-500/10 p-2.5 rounded-xl">
-                                                <strong>CL/CH Feedback:</strong> {lec.clRemarks}
+                                {isOpen && (
+                                    <div className="px-4 sm:px-5 pb-5 space-y-4 border-t border-zinc-800/80 pt-4" data-testid="lqh-details">
+                                        {isClCh && !r.virtual && delivered && !done && <QualityReview record={r} onDone={afterAction} />}
+                                        {r.virtual ? (
+                                            <p className="text-xs text-zinc-400 rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3">
+                                                Planned in the sprint plan · {CLASS_STATUS_LABEL[st]}. {r.classEnded ? "The class time is over and the professor has not submitted the class record yet." : "The class has not happened yet."}
                                             </p>
+                                        ) : <ClassRecordDetails record={{ ...r, college: collegeName(r.college) }} />}
+                                        <ClassRecordActions record={r} role={role} userId={user.id} onDone={afterAction} />
+                                        {!isClCh && !["OM", "HOI"].includes(role) && (
+                                            <p className="text-[10px] text-zinc-500">View only — verification is done by OM, CL, CH or HOI.</p>
                                         )}
                                     </div>
-
-                                    {/* Action button */}
-                                    <div className="flex sm:flex-col items-center justify-end gap-2 shrink-0">
-                                        <button
-                                            onClick={() => openReviewModal(lec)}
-                                            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-lg active:scale-95 ${
-                                                isVerified
-                                                    ? "bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
-                                                    : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20"
-                                            }`}
-                                        >
-                                            {isVerified ? "Re-evaluate" : "Review & Verify"}
-                                        </button>
-                                    </div>
-                                </div>
+                                )}
                             </div>
                         );
                     })}
-                </div>
-            )}
-
-            {/* Curriculum Review Modal */}
-            {reviewModalOpen && selectedLecture && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-                    <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-2xl shadow-2xl p-6 sm:p-8 space-y-6 max-h-[90vh] overflow-y-auto">
-                        <div className="flex items-center justify-between pb-4 border-b border-zinc-800">
-                            <div>
-                                <h3 className="text-lg font-black text-white flex items-center gap-2">
-                                    <ShieldCheck size={20} className="text-emerald-400" />
-                                    Curriculum Quality Inspection
-                                </h3>
-                                <p className="text-xs text-zinc-400">
-                                    {selectedLecture.facultyName} &bull; {selectedLecture.subject} ({selectedLecture.date})
-                                </p>
-                            </div>
-                            <button
-                                onClick={() => setReviewModalOpen(false)}
-                                className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white"
-                            >
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        {/* Notes Review Section */}
-                        <div className="p-4 rounded-2xl bg-zinc-800/40 border border-zinc-700/60 space-y-3">
-                            <div className="flex items-center justify-between">
-                                <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
-                                    <FileText size={15} className="text-indigo-400" />
-                                    1. Lecture Notes Quality
-                                </h4>
-                                {selectedLecture.lectureNotes?.notesUrl && (
-                                    <a
-                                        href={selectedLecture.lectureNotes.notesUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="text-xs text-indigo-400 hover:underline flex items-center gap-1"
-                                    >
-                                        Open Notes <ExternalLink size={12} />
-                                    </a>
-                                )}
-                            </div>
-
-                            <p className="text-xs text-zinc-400">
-                                Student Distribution: <strong className={selectedLecture.lectureNotes?.isSharedWithStudents ? "text-emerald-400" : "text-amber-400"}>
-                                    {selectedLecture.lectureNotes?.isSharedWithStudents ? "Shared with Students" : "NOT Shared"}
-                                </strong>
-                                {!selectedLecture.lectureNotes?.isSharedWithStudents && selectedLecture.lectureNotes?.notSharedRemarks && (
-                                    <span className="italic ml-1">({selectedLecture.lectureNotes.notSharedRemarks})</span>
-                                )}
-                            </p>
-
-                            <div className="flex items-center gap-3 pt-1">
-                                <button
-                                    onClick={() => setNotesStatus("VERIFIED")}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                        notesStatus === "VERIFIED"
-                                            ? "bg-emerald-600 text-white"
-                                            : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
-                                    }`}
-                                >
-                                    ✓ Notes Approved
-                                </button>
-                                <button
-                                    onClick={() => setNotesStatus("NEEDS_REVISION")}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                        notesStatus === "NEEDS_REVISION"
-                                            ? "bg-rose-600 text-white"
-                                            : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
-                                    }`}
-                                >
-                                    ⚠ Needs Improvement
-                                </button>
-                            </div>
-
-                            <input
-                                type="text"
-                                placeholder="Lead remarks on lecture notes (e.g., diagrams missing, well structured)..."
-                                value={notesRemarks}
-                                onChange={(e) => setNotesRemarks(e.target.value)}
-                                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
-                            />
-                        </div>
-
-                        {/* Assignment Review Section */}
-                        {selectedLecture.assignment?.hasAssignment ? (
-                            <div className="p-4 rounded-2xl bg-zinc-800/40 border border-zinc-700/60 space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
-                                        <BookOpen size={15} className="text-pink-400" />
-                                        2. Assignment Verification
-                                    </h4>
-                                    {selectedLecture.assignment?.assignmentUrl && (
-                                        <a
-                                            href={selectedLecture.assignment.assignmentUrl}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="text-xs text-pink-400 hover:underline flex items-center gap-1"
-                                        >
-                                            Open Assignment <ExternalLink size={12} />
-                                        </a>
-                                    )}
-                                </div>
-
-                                <div className="text-xs text-zinc-400 space-y-1">
-                                    <p><strong>Title:</strong> {selectedLecture.assignment.title}</p>
-                                    <p><strong>Deadline:</strong> {selectedLecture.assignment.deadline || "Not Specified"}</p>
-                                    <p><strong>Student Responses:</strong> <span className="text-pink-400 font-bold">{selectedLecture.assignment.studentsCompletedCount || 0}</span> students completed</p>
-                                </div>
-
-                                <div className="flex items-center gap-3 pt-1">
-                                    <button
-                                        onClick={() => setAssignmentStatus("VERIFIED")}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                            assignmentStatus === "VERIFIED"
-                                                ? "bg-emerald-600 text-white"
-                                                : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
-                                        }`}
-                                    >
-                                        ✓ Assignment Approved for OM Sharing
-                                    </button>
-                                    <button
-                                        onClick={() => setAssignmentStatus("NEEDS_REVISION")}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                            assignmentStatus === "NEEDS_REVISION"
-                                                ? "bg-rose-600 text-white"
-                                                : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
-                                        }`}
-                                    >
-                                        ⚠ Revise Assignment
-                                    </button>
-                                </div>
-
-                                <input
-                                    type="text"
-                                    placeholder="Lead remarks on assignment (e.g., standard question format approved)..."
-                                    value={assignmentRemarks}
-                                    onChange={(e) => setAssignmentRemarks(e.target.value)}
-                                    className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white focus:outline-none focus:border-pink-500"
-                                />
-                            </div>
-                        ) : (
-                            <div className="p-4 rounded-2xl bg-zinc-800/20 border border-zinc-800 text-xs text-zinc-500">
-                                ℹ No assignment was submitted with this lecture (optional for non-Saturday sessions).
-                            </div>
-                        )}
-
-                        {/* Overall CL Feedback */}
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
-                                Overall Curriculum Lead Remarks / Instructions
-                            </label>
-                            <textarea
-                                value={overallRemarks}
-                                onChange={(e) => setOverallRemarks(e.target.value)}
-                                placeholder="General feedback for faculty and institute review..."
-                                className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 resize-none h-20"
-                            />
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-800">
-                            <button
-                                onClick={() => submitReview("REQUEST_REVISION")}
-                                disabled={actionLoading}
-                                className="px-5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-rose-400 text-xs font-bold transition-colors"
-                            >
-                                Request Changes
-                            </button>
-                            <button
-                                onClick={() => submitReview("VERIFY_GOOD_TO_GO")}
-                                disabled={actionLoading}
-                                className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-emerald-600/20 active:scale-95"
-                            >
-                                ✓ Turn Green (Good to Go)
-                            </button>
-                        </div>
-                    </div>
                 </div>
             )}
         </div>

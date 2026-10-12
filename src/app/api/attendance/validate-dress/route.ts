@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import { Attendance, Employee } from '@/models/Schemas';
 import { sendMailInternal } from '@/lib/mail-server';
 import { getDressCodeWarningTemplate } from '@/lib/mail-templates';
+import { getSessionUser } from '@/lib/session-user';
 
 export async function PATCH(req: Request) {
     try {
@@ -13,6 +14,13 @@ export async function PATCH(req: Request) {
         if (!attendance) return NextResponse.json({ error: "Attendance record not found" }, { status: 404 });
 
         attendance.dressCodeStatus = status;
+        // Who reviewed it and when (server time); the submission time and createdAt are never changed
+        const reviewer: any = await getSessionUser().catch(() => null);
+        const reviewerEmp: any = reviewer ? null : (validatorId ? await Employee.findOne({ id: validatorId }).select('id name role').lean() : null);
+        attendance.dressCodeReviewedAt = new Date().toISOString();
+        attendance.dressCodeReviewedBy = reviewer?.id || reviewerEmp?.id || validatorId || '';
+        attendance.dressCodeReviewedByName = reviewer?.name || reviewerEmp?.name || '';
+        attendance.dressCodeReviewedByRole = reviewer ? (reviewer.session?.actualRole || reviewer.role) : (reviewerEmp?.role || '');
         const points = status === "Approved" ? 2 : -5;
         
         if (status === "Rejected") {

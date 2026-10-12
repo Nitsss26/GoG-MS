@@ -199,7 +199,9 @@ export default function LeaveSummaryPage() {
     const approvedDates: string[] = detail?.history ? Array.from(new Set<string>(detail.history.filter((h: any) => h.statusGroup === "APPROVED").flatMap((h: any) => h.datesInPeriod))).sort() : [];
 
     return (
-        <div className="max-w-[1400px] mx-auto pt-6 pb-16 px-4 sm:px-6 space-y-4 w-full [contain:inline-size]">
+        <>
+        {/* Page content is shown at 90% scale (same look as browser zoom 90%) */}
+        <div className="max-w-[1400px] mx-auto pt-6 pb-16 px-4 sm:px-6 space-y-4 w-full [contain:inline-size] [zoom:0.9]">
             {/* Header */}
             <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
@@ -348,6 +350,8 @@ export default function LeaveSummaryPage() {
                 </div>
             )}
 
+        </div>
+
             {/* Employee leave details */}
             {openId && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[120] flex items-center justify-center p-4" onClick={() => setOpenId(null)}>
@@ -489,7 +493,7 @@ export default function LeaveSummaryPage() {
                     </div>
                 </div>
             )}
-        </div>
+        </>
     );
 }
 

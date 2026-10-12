@@ -5,6 +5,7 @@ import { uploadToCloudinary } from "@/lib/cloudinary";
 import { Calendar, Plus, CheckCircle2, Clock, Upload, Loader2, X, MapPin, Building2, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import HoiHolidayAnnouncements from "@/components/holidays/HoiHolidayAnnouncements";
 
 export default function HolidaysPage() {
     const { user, holidays, proposeHoliday, colleges } = useAuth();
@@ -53,6 +54,9 @@ export default function HolidaysPage() {
                 <div><h1 className="text-xl font-bold text-white tracking-tight">Holiday Management</h1><p className="text-xs text-zinc-400 mt-1">Report holidays for your institution. HR approval required for announcement & attendance.</p></div>
                 <button onClick={() => setShowForm(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-2"><Plus size={14} /> Report Holiday</button>
             </header>
+
+            {/* HOI: direct holiday announcement (no HR approval) */}
+            {user.role === "HOI" && <HoiHolidayAnnouncements />}
 
             <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl overflow-hidden">
                 <div className="divide-y divide-zinc-800/50">

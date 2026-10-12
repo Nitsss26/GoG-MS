@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
+import { getSessionUser } from '@/lib/session-user';
 import { 
     Employee, Attendance, LectureReport, LeaveRequest, 
     Ticket, ReimbursementClaim, Holiday, MeetingRequest, Notice 
@@ -8,6 +9,10 @@ import {
 export async function GET() {
     try {
         await dbConnect();
+        // Personal documents (ID proofs, resumes): Tech Lead / Founder only (also via delegated TL access)
+        const actor = await getSessionUser();
+        if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!['TL', 'FOUNDER'].includes(actor.role)) return NextResponse.json({ error: 'Only the Tech Lead or Founder can export assets.' }, { status: 403 });
 
         const assets: any[] = [];
 

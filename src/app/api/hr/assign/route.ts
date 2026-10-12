@@ -34,12 +34,12 @@ export async function PUT(request: Request) {
         }
 
         await dbConnect();
-        const { employeeId, location, hoiId } = await request.json();
+        const { employeeId, location, hoiId, attendanceLocations } = await request.json();
 
         if (!employeeId) {
             return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 });
         }
-        if (location === undefined && hoiId === undefined) {
+        if (location === undefined && hoiId === undefined && attendanceLocations === undefined) {
             return NextResponse.json({ error: 'Nothing to assign' }, { status: 400 });
         }
 
@@ -58,6 +58,23 @@ export async function PUT(request: Request) {
                 }
             }
             updates.location = location;
+        }
+
+        // HOI only: authorised clock-in / clock-out locations (separate from the Original Location above)
+        if (attendanceLocations !== undefined) {
+            if (employee.role !== "HOI") {
+                return NextResponse.json({ error: 'Multiple attendance locations are available for the HOI role only.' }, { status: 400 });
+            }
+            if (!Array.isArray(attendanceLocations) || attendanceLocations.some((v: any) => typeof v !== 'string' || !v)) {
+                return NextResponse.json({ error: 'attendanceLocations must be a list of location ids.' }, { status: 400 });
+            }
+            const ids = Array.from(new Set(attendanceLocations as string[]));
+            const found = await Location.find({ id: { $in: ids } }).select('id');
+            const missing = ids.filter(id => !found.some((l: any) => l.id === id));
+            if (missing.length) {
+                return NextResponse.json({ error: `Unknown location(s): ${missing.join(', ')}` }, { status: 400 });
+            }
+            updates.attendanceLocations = ids;
         }
 
         if (hoiId !== undefined) {

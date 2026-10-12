@@ -10,11 +10,11 @@ export default function AttendanceOverridePage() {
     const [creditModalEmp, setCreditModalEmp] = useState<string | null>(null);
     const [creditReason, setCreditReason] = useState("");
 
-    if (!user || user.role !== "HR") return null;
+    if (!user || !["HR", "FOUNDER"].includes(user.role)) return null;
 
     const todayDate = new Date().toISOString().split("T")[0];
 
-    const mappedEmployees = useMemo(() => {
+    const mappedEmployees = (() => {
         return employees.map(emp => {
             const todayRecord = attendanceRecords.find(r => r.employeeId === emp.id && r.date === todayDate);
             const status = todayRecord ? todayRecord.status : "Absent";
@@ -41,7 +41,7 @@ export default function AttendanceOverridePage() {
             (emp.id || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
             (emp.role || "").toLowerCase().includes(searchQuery.toLowerCase())
         );
-    }, [employees, attendanceRecords, tickets, searchQuery, todayDate]);
+    })();
 
     const handleGiveCredit = (e: React.FormEvent) => {
         e.preventDefault();

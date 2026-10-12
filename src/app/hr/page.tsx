@@ -10,7 +10,8 @@ export default function HRHub() {
 
     const pendingHolidays = holidays.filter(h => h.status === "Proposed").length;
     const openTickets = tickets.filter(t => t.status === "Open" || t.status === "In Progress").length;
-    const pendingReimbursements = reimbursements.filter(r => r.status === "Pending").length;
+    const isHrExecutive = !!(user as any).hrExecutive; // HR Executive: no Reimbursements
+    const pendingReimbursements = isHrExecutive ? 0 : reimbursements.filter(r => r.status === "Pending").length;
     const pendingSchedules = workSchedules.filter(s => !s.approvedByHR).length;
     const activePIPs = pipRecords.filter(p => p.status === "Active").length;
     const totalEmployees = employees.length;
@@ -27,7 +28,7 @@ export default function HRHub() {
         { label: "Holiday Approval", desc: `${pendingHolidays} pending`, icon: Calendar, path: "/hr/holiday-approval", color: "text-blue-400" },
         { label: "Attendance Override", desc: "Review overrides", icon: ClipboardList, path: "/hr/attendance-override", color: "text-green-400" },
         { label: "SOP Management", desc: "Update policies", icon: FileText, path: "/hr/sop", color: "text-purple-400" },
-        { label: "Reimbursements", desc: `${pendingReimbursements} pending`, icon: Receipt, path: "/hr/reimbursements", color: "text-amber-400" },
+        ...(isHrExecutive ? [] : [{ label: "Reimbursements", desc: `${pendingReimbursements} pending`, icon: Receipt, path: "/hr/reimbursements", color: "text-amber-400" }]),
         { label: "Schedule Changes", desc: `${pendingSchedules} unread`, icon: MapPin, path: "/hr/schedule-approval", color: "text-teal-400" },
         { label: "Work Location", desc: "Assign daily location & timings", icon: MapPin, path: "/hr/work-location", color: "text-blue-400" },
         { label: "Workforce", desc: `${totalEmployees} employees`, icon: Users, path: "/employees", color: "text-cyan-400" },
@@ -38,7 +39,7 @@ export default function HRHub() {
 
     return (
         <div className="p-6 space-y-6 max-w-5xl mx-auto w-full">
-            <header><h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2"><Shield size={20} className="text-emerald-400" /> HR Administration Hub</h1><p className="text-xs text-zinc-400 mt-1">Central command for all HR operations.</p></header>
+            <header><h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2"><Shield size={20} className="text-emerald-400" /> {isHrExecutive ? "HR Executive Hub" : "HR Administration Hub"}</h1><p className="text-xs text-zinc-400 mt-1">Central command for all HR operations.</p></header>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {stats.map(s => (

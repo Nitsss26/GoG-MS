@@ -105,45 +105,109 @@ export type AcademicScope = {
     orgWide: boolean;     // may see every college
     colleges: College[];  // the user's own college(s) when not org-wide
     keys: string[];       // all location values that belong to those colleges
+    /** HOI only: professors in the HOI's reporting hierarchy (Employee.reportsTo, direct + indirect).
+     *  HR's "Appoint HOI" stores this mapping; it is valid even when the professor's campus is not one
+     *  the HOI heads, so these professors are in scope wherever they teach. */
+    facultyIds: string[];
 };
+
+/** Ids of everyone below managerId in the reporting hierarchy (Employee.reportsTo, BFS) */
+export async function reporteeTree(managerId: string): Promise<any[]> {
+    const all: any[] = await Employee.find({}).select('id name role location reportsTo status').lean();
+    const children = new Map<string, any[]>();
+    all.forEach(e => (e.reportsTo || []).forEach((m: string) => {
+        if (!children.has(m)) children.set(m, []);
+        children.get(m)!.push(e);
+    }));
+    const seen = new Set<string>([managerId]);
+    const out: any[] = [];
+    const queue = [managerId];
+    while (queue.length) {
+        for (const e of children.get(queue.shift()!) || []) {
+            if (seen.has(e.id)) continue;
+            seen.add(e.id); out.push(e); queue.push(e.id);
+        }
+    }
+    return out;
+}
+
+/** HOIs above an employee in the reporting hierarchy (direct + indirect) */
+export async function hoisAbove(employeeId: string): Promise<any[]> {
+    const out: any[] = [];
+    const seen = new Set<string>([employeeId]);
+    let level: string[] = [employeeId];
+    while (level.length) {
+        const emps: any[] = await Employee.find({ id: { $in: level } }).select('reportsTo').lean();
+        const ups = Array.from(new Set(emps.flatMap(e => e.reportsTo || []).filter((id: string) => !seen.has(id))));
+        if (!ups.length) break;
+        ups.forEach(id => seen.add(id));
+        const mgrs: any[] = await Employee.find({ id: { $in: ups } }).select('id name email role location status').lean();
+        mgrs.filter(m => m.role === 'HOI' && m.status !== 'Inactive').forEach(m => out.push(m));
+        level = ups;
+    }
+    return out;
+}
 
 /**
  * Which colleges a user may see in the academic workflow.
- * - FOUNDER, AD, CURRICULUM_HEAD: cross-college (head-office roles; the existing curriculum pages already
- *   show every campus).
- * - CURRICULUM_LEAD: own college; a CL without a college keeps the existing cross-college access.
+ * - FOUNDER, AD, CURRICULUM_HEAD, CURRICULUM_LEAD: cross-college (CL and CH share the unified CL / CH Portal
+ *   with organisation-wide access).
  * - HOI, OM, FACULTY, PROFESSOR: own college only.
  * - everyone else: nothing.
  */
-export async function getAcademicScope(user: { role: string; employee?: any }): Promise<AcademicScope> {
+export async function getAcademicScope(user: { role: string; employee?: any; delegation?: { category: string; sources: any[] } }): Promise<AcademicScope> {
+    // Give Access: union of the selected source employees' scopes (src/lib/access-control.ts)
+    if (user.delegation) {
+        const { category, sources } = user.delegation;
+        if (category === 'PROFESSOR') {
+            return { orgWide: false, colleges: [], keys: [], facultyIds: sources.map((s: any) => String(s.id)) };
+        }
+        const parts = await Promise.all(sources.map((s: any) => getAcademicScope({ role: s.role, employee: s })));
+        if (parts.some(p => p.orgWide)) return { orgWide: true, colleges: [], keys: [], facultyIds: [] };
+        const colleges: College[] = [];
+        parts.flatMap(p => p.colleges).forEach(c => { if (!colleges.some(x => x.id === c.id)) colleges.push(c); });
+        return {
+            orgWide: false, colleges,
+            keys: Array.from(new Set(parts.flatMap(p => p.keys))),
+            facultyIds: Array.from(new Set(parts.flatMap(p => p.facultyIds || []))),
+        };
+    }
     const role = user.role;
-    if (['FOUNDER', 'AD', 'CURRICULUM_HEAD'].includes(role)) return { orgWide: true, colleges: [], keys: [] };
+    // CL and CH share one portal and the same organisation-wide academic access (every campus, HOI, professor)
+    if (['FOUNDER', 'AD', 'CURRICULUM_HEAD', 'CURRICULUM_LEAD'].includes(role)) return { orgWide: true, colleges: [], keys: [], facultyIds: [] };
 
     const location = user.employee?.location;
-    if (role === 'CURRICULUM_LEAD') {
-        const c = await resolveCollege(location);
-        return c ? { orgWide: false, colleges: [c], keys: c.keys } : { orgWide: true, colleges: [], keys: [] };
-    }
     if (role === 'HOI') {
         // Own campus + every campus this HOI heads (Location.hoiId)
         const own = await resolveCollege(location);
         const headed: any[] = user.employee?.id ? await Location.find({ hoiId: user.employee.id }).lean() : [];
         const colleges: College[] = [];
         [...(own ? [own] : []), ...headed.map(collegeFromLocation)].forEach(c => { if (!colleges.some(x => x.id === c.id)) colleges.push(c); });
-        if (colleges.length) return { orgWide: false, colleges, keys: Array.from(new Set(colleges.flatMap(c => c.keys))) };
-        return { orgWide: false, colleges: [], keys: location ? [location] : [] };
+        // + professors appointed under this HOI (reporting hierarchy), on any campus
+        const facultyIds = user.employee?.id
+            ? (await reporteeTree(user.employee.id)).filter((e: any) => PROFESSOR_ROLES.includes(e.role)).map((e: any) => String(e.id))
+            : [];
+        if (colleges.length) return { orgWide: false, colleges, keys: Array.from(new Set(colleges.flatMap(c => c.keys))), facultyIds };
+        return { orgWide: false, colleges: [], keys: location ? [location] : [], facultyIds };
     }
     if (['OM', ...PROFESSOR_ROLES].includes(role)) {
         const c = await resolveCollege(location);
-        if (c) return { orgWide: false, colleges: [c], keys: c.keys };
-        return { orgWide: false, colleges: [], keys: location ? [location] : [] };
+        if (c) return { orgWide: false, colleges: [c], keys: c.keys, facultyIds: [] };
+        return { orgWide: false, colleges: [], keys: location ? [location] : [], facultyIds: [] };
     }
-    return { orgWide: false, colleges: [], keys: [] };
+    return { orgWide: false, colleges: [], keys: [], facultyIds: [] };
 }
 
 export function scopeAllows(scope: AcademicScope, locationValue?: string | null) {
     if (scope.orgWide) return true;
     return !!locationValue && scope.keys.includes(locationValue);
+}
+
+/** May the scope act on this professor? Campus scope OR the HOI's reporting hierarchy. */
+export function scopeAllowsProfessor(scope: AcademicScope, facultyId: string | null | undefined, locationValue?: string | null) {
+    if (scope.orgWide) return true;
+    if (facultyId && (scope.facultyIds || []).includes(String(facultyId))) return true;
+    return scopeAllows(scope, locationValue);
 }
 
 /**
@@ -153,14 +217,21 @@ export function scopeAllows(scope: AcademicScope, locationValue?: string | null)
 export async function professorsInScope(scope: AcademicScope, collegeFilter?: string | null) {
     const query: any = { role: { $in: PROFESSOR_ROLES } };
     let keys: string[] | null = scope.orgWide ? null : scope.keys;
+    let ids: string[] = scope.orgWide ? [] : (scope.facultyIds || []);
     if (collegeFilter && collegeFilter !== 'All') {
         const filterKeys = await collegeKeysFor(collegeFilter);
-        keys = keys ? keys.filter(k => filterKeys.includes(k)) : filterKeys;
-        if (keys.length === 0 && !scope.orgWide) return [];
+        if (keys) {
+            keys = keys.filter(k => filterKeys.includes(k));
+            // reporting-hierarchy professors only when they are at the filtered campus
+            if (ids.length) query.$and = [{ $or: [{ location: { $in: keys } }, { id: { $in: ids }, location: { $in: filterKeys } }] }];
+        } else keys = filterKeys;
+        if (!scope.orgWide && keys.length === 0 && !ids.length) return [];
     }
     if (keys) {
-        if (keys.length === 0) return [];
-        query.location = { $in: keys };
+        if (!query.$and) {
+            if (keys.length === 0 && !ids.length) return [];
+            query.$or = [{ location: { $in: keys } }, ...(ids.length ? [{ id: { $in: ids } }] : [])];
+        }
     }
     return Employee.find(query).select('id name email location role designation').lean();
 }
@@ -169,12 +240,23 @@ export async function professorsInScope(scope: AcademicScope, collegeFilter?: st
 export async function professorIfInScope(scope: AcademicScope, facultyId: string) {
     const prof: any = await Employee.findOne({ id: facultyId, role: { $in: PROFESSOR_ROLES } }).lean();
     if (!prof) return null;
-    return scopeAllows(scope, prof.location) ? prof : null;
+    return scopeAllowsProfessor(scope, prof.id, prof.location) ? prof : null;
 }
 
 /** Colleges the user can pick in a college filter */
 export async function selectableColleges(scope: AcademicScope): Promise<College[]> {
-    if (!scope.orgWide) return scope.colleges;
+    if (!scope.orgWide) {
+        const out = [...scope.colleges];
+        if (scope.facultyIds?.length) {
+            const profs: any[] = await Employee.find({ id: { $in: scope.facultyIds } }).select('location').lean();
+            for (const v of Array.from(new Set(profs.map(p => p.location).filter(Boolean)))) {
+                if (out.some(c => c.keys.includes(String(v)))) continue;
+                const c = await resolveCollege(String(v));
+                out.push(c || { id: String(v), name: String(v), keys: [String(v)] });
+            }
+        }
+        return out;
+    }
     const locs = await Location.find({}).lean();
     return locs.map(collegeFromLocation);
 }
@@ -182,21 +264,26 @@ export async function selectableColleges(scope: AcademicScope): Promise<College[
 // ─────────────────────────── recipients (Module 25) ───────────────────────────
 /**
  * Users of the given roles who are responsible for a college.
- * HOI / OM / CURRICULUM_LEAD: mapped to that college (a CL without a college covers every college).
- * CURRICULUM_HEAD / AD: head-office roles, always included.
+ * HOI / OM: mapped to that college.
+ * CURRICULUM_LEAD / CURRICULUM_HEAD / AD: organisation-wide, always included.
  */
-export async function collegeRecipients(collegeValue: string | null | undefined, roles: string[]) {
+export async function collegeRecipients(collegeValue: string | null | undefined, roles: string[], facultyId?: string | null) {
     const keys = await collegeKeysFor(collegeValue);
     const or: any[] = [];
-    const local = roles.filter(r => ['HOI', 'OM', 'CURRICULUM_LEAD'].includes(r));
+    const local = roles.filter(r => ['HOI', 'OM'].includes(r));
     if (local.length && keys.length) or.push({ role: { $in: local }, location: { $in: keys } });
     // The HOI who heads this campus (Location.hoiId), even when their own location is another campus
     if (roles.includes('HOI') && collegeValue) {
         const loc: any = await Location.findOne({ $or: [{ id: collegeValue }, { name: collegeValue }, { shortName: collegeValue }] }).select('hoiId').lean();
         if (loc?.hoiId) or.push({ role: 'HOI', id: loc.hoiId });
     }
-    if (roles.includes('CURRICULUM_LEAD')) or.push({ role: 'CURRICULUM_LEAD', $or: [{ location: { $exists: false } }, { location: null }, { location: '' }] });
-    const global = roles.filter(r => ['CURRICULUM_HEAD', 'AD'].includes(r));
+    // The HOI(s) the professor reports to (HR "Appoint HOI"), whatever campus they sit at
+    if (roles.includes('HOI') && facultyId) {
+        const hois = await hoisAbove(facultyId);
+        if (hois.length) or.push({ role: 'HOI', id: { $in: hois.map((h: any) => h.id) } });
+    }
+    // CL / CH / AD are organisation-wide reviewers
+    const global = roles.filter(r => ['CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'AD'].includes(r));
     if (global.length) or.push({ role: { $in: global } });
     if (!or.length) return [];
     const list = await Employee.find({ $or: or, status: { $ne: 'Inactive' } }).select('id name email role location').lean();

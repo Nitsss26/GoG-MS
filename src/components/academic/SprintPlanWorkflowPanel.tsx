@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Lock, Unlock, Send, History, X, AlertTriangle, Check, RefreshCw, MessageSquare } from "lucide-react";
-import { PLAN_STATUS_LABEL, PLAN_STATUS_STYLE, getPlanStatus, roleShort } from "@/lib/academic-status";
+import { Lock, Unlock, Send, History, X, AlertTriangle, Check, RefreshCw, MessageSquare, RotateCcw } from "lucide-react";
+import { PLAN_STATUS_LABEL, PLAN_STATUS_STYLE, getPlanStatus, roleShort, planApproval, APPROVAL_STYLE } from "@/lib/academic-status";
 
 /**
  * Sprint plan status, history and the lock / unlock actions.
@@ -15,6 +15,18 @@ export function PlanStatusBadge({ plan, className = "" }: { plan: any; className
         <span data-testid="plan-status" className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[10px] font-black uppercase tracking-wider ${PLAN_STATUS_STYLE[st] || ""} ${className}`}>
             {["LOCKED", "LOCKED_AGAIN", "UNLOCK_REQUESTED"].includes(st) ? <Lock size={10} /> : st === "UNLOCKED_FOR_REVISION" ? <Unlock size={10} /> : null}
             {PLAN_STATUS_LABEL[st] || st}
+        </span>
+    );
+}
+
+/** "CL/CH Approved" / "HOI Approved" / "AD Approved" — from the stored approval (who locked the plan, as which role) */
+export function PlanApprovalBadge({ plan, className = "" }: { plan: any; className?: string }) {
+    const a = planApproval(plan);
+    if (!a) return null;
+    return (
+        <span data-testid="plan-approval" title={`${a.label} by ${a.byName || ""}`}
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[10px] font-black uppercase tracking-wider ${APPROVAL_STYLE[a.type] || APPROVAL_STYLE.APPROVED} ${className}`}>
+            <Check size={10} /> {a.label}
         </span>
     );
 }
@@ -103,7 +115,7 @@ export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact
     const st = getPlanStatus(plan);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
-    const [dialog, setDialog] = useState<null | "request_unlock" | "unlock" | "reject_unlock" | "history">(null);
+    const [dialog, setDialog] = useState<null | "request_unlock" | "unlock" | "reject_unlock" | "return" | "history">(null);
     const [reason, setReason] = useState("");
     const [comment, setComment] = useState("");
 
@@ -136,8 +148,9 @@ export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact
         <div className={compact ? "space-y-2" : "space-y-3"} data-testid="plan-workflow">
             <div className="flex flex-wrap items-center gap-2">
                 <PlanStatusBadge plan={plan} />
-                {plan.lockedByName && ["LOCKED", "LOCKED_AGAIN", "UNLOCK_REQUESTED"].includes(st) && (
-                    <span className={`text-[10px] text-zinc-500 ${compact ? "basis-full order-last" : ""}`}>Locked by {plan.lockedByName} {plan.lockedByRole ? `(${roleShort(plan.lockedByRole)})` : ""}</span>
+                <PlanApprovalBadge plan={plan} />
+                {planApproval(plan) && (
+                    <span className={`text-[10px] text-zinc-500 ${compact ? "basis-full order-last" : ""}`} data-testid="plan-approved-by">Approved by {planApproval(plan)!.byName} {planApproval(plan)!.byRole ? `(${roleShort(planApproval(plan)!.byRole)})` : ""}{planApproval(plan)!.at ? ` · ${fmt(planApproval(plan)!.at)}` : ""}</span>
                 )}
                 {st === "UNLOCKED_FOR_REVISION" && plan.unlockedByName && <span className={`text-[10px] text-zinc-500 ${compact ? "basis-full order-last" : ""}`}>Unlocked by {plan.unlockedByName} ({roleShort(plan.unlockedByRole)})</span>}
                 <button onClick={() => setDialog("history")} className={`${btn} bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700`}>
@@ -155,6 +168,11 @@ export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact
                         {["SUBMITTED", "RESUBMITTED"].includes(st) && (
                             <button disabled={busy} onClick={() => act("lock")} className={`${btn} bg-emerald-600 hover:bg-emerald-500 text-white`}>
                                 <Lock size={12} /> {st === "RESUBMITTED" ? "Lock Again" : "Lock"}
+                            </button>
+                        )}
+                        {["SUBMITTED", "RESUBMITTED"].includes(st) && (
+                            <button disabled={busy} onClick={() => setDialog("return")} data-testid="return-plan" className={`${btn} bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20`}>
+                                <RotateCcw size={12} /> {compact ? "Return" : "Return for Correction"}
                             </button>
                         )}
                         {["LOCKED", "LOCKED_AGAIN", "UNLOCK_REQUESTED"].includes(st) && (
@@ -179,23 +197,32 @@ export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact
                     {mode === "professor" && <p className="text-[11px] text-zinc-500 mt-1">The plan stays locked until HOI / CL / CH / AD unlocks it.</p>}
                 </div>
             )}
+            {st === "UNLOCKED_FOR_REVISION" && plan.returnNote && (plan.returnedAt || "") >= (plan.submittedAt || "") && (
+                <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20" data-testid="return-note">
+                    <p className="text-[10px] font-black text-amber-300 uppercase tracking-widest flex items-center gap-1.5"><RotateCcw size={11} /> Returned for correction {plan.returnedAt ? `· ${fmt(plan.returnedAt)}` : ""}{plan.unlockedByName ? ` · ${plan.unlockedByName}` : ""}</p>
+                    <p className="text-xs text-white mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{plan.returnNote}</p>
+                    {mode === "professor" && <p className="text-[11px] text-zinc-500 mt-1">Correct the plan and submit it again for locking.</p>}
+                </div>
+            )}
             {error && !dialog && <p className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> {error}</p>}
 
             {dialog === "history" && <PlanHistoryModal plan={plan} onClose={() => setDialog(null)} />}
 
-            {(dialog === "request_unlock" || dialog === "unlock" || dialog === "reject_unlock") && (
+            {(dialog === "request_unlock" || dialog === "unlock" || dialog === "reject_unlock" || dialog === "return") && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[120] flex items-center justify-center p-4" onClick={() => !busy && setDialog(null)}>
                     <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
                         <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
                             {dialog === "request_unlock" ? <><Send size={18} className="text-orange-400" /> Request Unlock</>
                                 : dialog === "unlock" ? <><Unlock size={18} className="text-purple-300" /> Unlock for Revision</>
-                                    : <><X size={18} className="text-red-400" /> Reject Unlock Request</>}
+                                    : dialog === "return" ? <><RotateCcw size={18} className="text-amber-300" /> Return for Correction</>
+                                        : <><X size={18} className="text-red-400" /> Reject Unlock Request</>}
                         </h3>
                         <p className="text-xs text-zinc-400 mb-4">
                             {dialog === "request_unlock"
                                 ? "Your plan stays locked. HOI, CL, CH and AD of your college get an email and can unlock it for you."
                                 : dialog === "unlock" ? `${plan.facultyName} will be notified and can edit the plan, then re-submit it for locking.`
-                                    : "The plan stays locked and the professor is informed."}
+                                    : dialog === "return" ? `The plan is not locked. ${plan.facultyName} is notified with your note, corrects the plan and re-submits it.`
+                                        : "The plan stays locked and the professor is informed."}
                         </p>
                         {dialog === "request_unlock" ? (
                             <div className="space-y-3">
@@ -214,18 +241,18 @@ export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact
                             </div>
                         ) : (
                             <div>
-                                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{dialog === "unlock" ? "Note to the professor (optional)" : "Reason *"}</label>
+                                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{dialog === "unlock" ? "Note to the professor (optional)" : dialog === "return" ? "What should be corrected? *" : "Reason *"}</label>
                                 <textarea value={comment} onChange={e => setComment(e.target.value)} data-testid="decision-note"
                                     className="w-full mt-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder:text-zinc-600 focus:outline-none resize-none h-20" />
                             </div>
                         )}
                         {error && <p className="text-xs text-red-400 mt-3">{error}</p>}
                         <div className="flex gap-2 mt-4">
-                            <button disabled={busy || (dialog === "request_unlock" && reason.trim().length < 5) || (dialog === "reject_unlock" && comment.trim().length < 3)}
+                            <button disabled={busy || (dialog === "request_unlock" && reason.trim().length < 5) || (dialog === "reject_unlock" && comment.trim().length < 3) || (dialog === "return" && comment.trim().length < 5)}
                                 onClick={() => dialog === "request_unlock" ? act("request_unlock", { reason, comment }) : act(dialog, { note: comment })}
                                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-40">
                                 {busy ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
-                                {dialog === "request_unlock" ? "Send Request" : dialog === "unlock" ? "Unlock" : "Reject"}
+                                {dialog === "request_unlock" ? "Send Request" : dialog === "unlock" ? "Unlock" : dialog === "return" ? "Return to Professor" : "Reject"}
                             </button>
                             <button onClick={() => setDialog(null)} disabled={busy} className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm rounded-xl">Cancel</button>
                         </div>

@@ -515,8 +515,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 export default function AnnouncementsPage() {
-    const { user, notices, employees, addAnnouncement, editNotice, markAnnouncementRead } = useAuth();
+    const { user, notices, employees, addAnnouncement, editNotice, markAnnouncementRead, colleges } = useAuth();
     const [showModal, setShowModal] = useState(false);
+    const [section, setSection] = useState<"all" | "holiday">("all"); // All Announcements | Holiday Announcements
+    const [search, setSearch] = useState("");
     const [editingNotice, setEditingNotice] = useState<Notice | null>(null);
     const [filter, setFilter] = useState("All");
     const [form, setForm] = useState({ title: "", content: "", category: "General" as any });
@@ -538,16 +540,24 @@ export default function AnnouncementsPage() {
     const bdayFileRef = useRef<HTMLInputElement>(null);
     const joineeFileRef = useRef<HTMLInputElement>(null);
 
-    if (!user) return null;
-
-    const isHROrFounder = user.role === "HR" || user.role === "FOUNDER";
-    const categories = ["All", "General", "Policy", "Event", "Urgent", "Update", "HR", "Achievement", "Training", "Birthday", "Welcome"];
-    const filteredNotices = notices.filter(n => filter === "All" || n.category === filter);
-
     useEffect(() => {
         if (!user) return;
         notices.forEach(n => { if (!(n.readBy || []).includes(user.id)) markAnnouncementRead(n.id); });
     }, [notices.length]);
+
+    if (!user) return null;
+
+    const isHROrFounder = user.role === "HR" || user.role === "FOUNDER";
+    const categories = ["All", "General", "Policy", "Event", "Urgent", "Update", "HR", "Achievement", "Training", "Birthday", "Welcome", "Holiday"];
+    // Holiday announcements: HOI-announced (category Holiday / linked holiday) and the existing "Holiday: …" announcements
+    const isHoliday = (n: any) => n.category === "Holiday" || !!n.holidayId || /^holiday:/i.test(String(n.title || ""));
+    const collegeNames = (n: any) => ((n.collegeIds || []) as string[]).map(id => colleges.find(c => c.id === id)?.name || id).join(", ");
+    const term = search.trim().toLowerCase();
+    const filteredNotices = notices
+        .filter(n => section === "all" || isHoliday(n))
+        .filter(n => filter === "All" || n.category === filter)
+        .filter(n => !term || `${n.title} ${n.content} ${n.createdBy} ${collegeNames(n)}`.toLowerCase().includes(term))
+        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))); // newest first
 
     // Generic file upload handler
     const handleFileUpload = async (files: FileList | null, setUrls: React.Dispatch<React.SetStateAction<string[]>>, setLoading: React.Dispatch<React.SetStateAction<boolean>>) => {
@@ -681,6 +691,21 @@ export default function AnnouncementsPage() {
                 )}
             </header>
 
+            {/* All Announcements | Holiday Announcements + search */}
+            <div className="flex flex-wrap items-center gap-3">
+                <div className="flex gap-1 p-1 bg-zinc-900 border border-zinc-800 rounded-2xl" data-testid="ann-sections">
+                    {([["all", "All Announcements"], ["holiday", "Holiday Announcements"]] as const).map(([k, l]) => (
+                        <button key={k} onClick={() => setSection(k)} data-testid={`ann-section-${k}`}
+                            className={cn("px-4 py-2 rounded-xl text-[11px] font-bold transition-all", section === k ? "bg-zinc-800 text-primary shadow-inner" : "text-zinc-500 hover:text-zinc-300")}>{l}</button>
+                    ))}
+                </div>
+                <div className="relative flex-1 min-w-[14rem] max-w-md">
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search title, content, author or college…" data-testid="ann-search"
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl pl-8 pr-3 py-2 text-xs text-white outline-none focus:border-primary/50" />
+                </div>
+            </div>
+
             {/* Filter Chips */}
             <div className="flex gap-1.5 p-1 bg-zinc-900 border border-zinc-800 rounded-2xl w-fit flex-wrap">
                 {categories.map(cat => (
@@ -695,7 +720,7 @@ export default function AnnouncementsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <AnimatePresence mode="popLayout">
                     {filteredNotices.map((notice) => (
-                        <motion.div key={notice.id} layout
+                        <motion.div key={notice.id} layout data-testid="ann-card" data-id={notice.id}
                             initial={{ opacity: 0, scale: 0.9 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.9 }}
@@ -732,6 +757,9 @@ export default function AnnouncementsPage() {
 
                                 <div className="space-y-1.5 flex-1">
                                     <h3 className="text-sm font-bold text-white group-hover:text-primary transition-colors leading-tight">{notice.title}</h3>
+                                    {((notice as any).collegeIds?.length || (notice as any).status) ? (
+                                        <p className="text-[10px] text-zinc-500" data-testid="ann-meta">{(notice as any).collegeIds?.length ? `College: ${collegeNames(notice)}` : "All employees"}{(notice as any).status ? ` · ${(notice as any).status}` : ""}</p>
+                                    ) : null}
                                     <p className="text-[11px] text-zinc-400 leading-relaxed line-clamp-3">{notice.content}</p>
                                 </div>
 
@@ -747,7 +775,7 @@ export default function AnnouncementsPage() {
                                 <div className="pt-3 border-t border-zinc-900 flex justify-between items-center">
                                     <div className="flex items-center gap-2">
                                         <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-400">{(notice?.createdBy || "U")[0]}</div>
-                                        <span className="text-[10px] font-bold text-zinc-500">{notice?.createdBy || "Unknown"}</span>
+                                        <span className="text-[10px] font-bold text-zinc-500">{notice?.createdBy || "Unknown"}{(notice as any).createdByRole ? ` · ${(notice as any).createdByRole}` : ""}</span>
                                     </div>
                                     <button onClick={() => setViewNotice(notice)} className="text-[9px] text-primary font-bold hover:underline flex items-center gap-1"><Eye size={10} /> View</button>
                                 </div>
@@ -802,6 +830,12 @@ export default function AnnouncementsPage() {
                                     <button onClick={() => setViewNotice(null)} className="text-zinc-500 hover:text-white transition-colors"><X size={16} /></button>
                                 </div>
                                 <h2 className="text-lg font-bold text-white leading-tight">{viewNotice.title}</h2>
+                                <div className="grid grid-cols-[7rem_1fr] gap-y-1 text-[11px]" data-testid="ann-detail-meta">
+                                    <span className="text-zinc-500">Audience</span><span className="text-zinc-300">{(viewNotice as any).collegeIds?.length ? collegeNames(viewNotice) : "All employees"}</span>
+                                    <span className="text-zinc-500">Published By</span><span className="text-zinc-300">{viewNotice.createdBy || "Unknown"}{(viewNotice as any).createdByRole ? ` (${(viewNotice as any).createdByRole})` : ""}</span>
+                                    <span className="text-zinc-500">Published On</span><span className="text-zinc-300">{viewNotice.createdAt}</span>
+                                    <span className="text-zinc-500">Status</span><span className="text-zinc-300">{(viewNotice as any).status || "Published"}</span>
+                                </div>
                                 <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">{viewNotice.content}</p>
                                 {viewNotice.imageUrls && viewNotice.imageUrls.length > 0 && (
                                     <div className="space-y-2">

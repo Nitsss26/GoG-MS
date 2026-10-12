@@ -30,6 +30,24 @@ export async function GET(req: Request) {
         faculties.forEach((f: any) => facultyMap.set(f.id, f));
 
         const ids = Array.from(facultyMap.keys()).filter(id => !facultyId || id === facultyId);
+
+        // Approval queue: every plan waiting for a reviewer, whatever its week (professors plan ahead)
+        if (searchParams.get('queue') === '1') {
+            const waiting = ['SUBMITTED', 'RESUBMITTED', 'UNLOCK_REQUESTED'];
+            const raw = await SprintPlan.find({ facultyId: { $in: ids } }).select('-revisions').sort({ weekStartDate: 1 }).lean();
+            const queue = await Promise.all(raw.filter((p: any) => waiting.includes(getPlanStatus(p))).map(async (p: any) => {
+                const fac = facultyMap.get(p.facultyId);
+                // full plan (without old revisions): the page shows the plan and Lock / Return / Unlock right in the queue
+                return {
+                    ...p, facultyName: p.facultyName || fac?.name, college: fac?.location || p.college,
+                    status: getPlanStatus(p),
+                    submittedAt: p.resubmittedAt || p.submittedAt || p.unlockRequestedAt || null,
+                    classes: (p.entries || []).length, canManage: await canManagePlan(actor, p),
+                };
+            }));
+            return NextResponse.json({ success: true, queue, colleges: await selectableColleges(scope) });
+        }
+
         const query: any = { facultyId: { $in: ids } };
         if (weekStartDate) query.weekStartDate = weekStartDate;
 

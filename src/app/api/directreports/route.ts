@@ -24,7 +24,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
         const session = verifySessionToken(sessionCookie.value);
-        if (!session || session.role !== "AD") {
+        if (!session || !["AD", "FOUNDER"].includes(session.role)) {
             return NextResponse.json({ error: 'Unauthorized. Only AD can create direct reports.' }, { status: 401 });
         }
 

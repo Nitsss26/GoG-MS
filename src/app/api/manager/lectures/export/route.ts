@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import { LectureReport } from '@/models/Schemas';
-import { resolveManager, academicReportees } from '@/lib/manager-reportees';
+import { resolveManager, reporteesOf } from '@/lib/manager-reportees';
 
 export async function GET(req: Request) {
     try {
@@ -18,7 +18,7 @@ export async function GET(req: Request) {
         const manager = who.manager;
 
         // 2. Find reportees (Same logic as academic-data/route.ts)
-        const reportees: any[] = await academicReportees(manager);
+        const reportees: any[] = await reporteesOf(who as any);
         const reporteeIds = reportees.map(r => r.id);
 
         if (reporteeIds.length === 0) {

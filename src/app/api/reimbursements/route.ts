@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { ReimbursementClaim, Employee } from '@/models/Schemas';
+import { getSessionUser } from '@/lib/session-user';
 
 // const N8N_WEBHOOK_URL = "https://gog.app.n8n.cloud/webhook/reimbursement";
 const N8N_WEBHOOK_URL = "https://n8n.geeksofgurukul.com/webhook/reimbursement";
@@ -73,18 +74,16 @@ async function triggerN8n(claim: any, action: string) {
     }
 }
 
-export async function GET(req: Request) {
+const ADMIN = ['HR', 'FOUNDER'];
+
+/** Claims: HR / Founder see all, everyone else only their own (decided from the session, not the URL) */
+export async function GET() {
     try {
         await dbConnect();
-        const { searchParams } = new URL(req.url);
-        const userId = searchParams.get('userId');
-        const role = searchParams.get('role');
-
-        let query = {};
-        if (role !== 'HR' && role !== 'FOUNDER' && userId) {
-            query = { employeeId: userId };
-        }
-
+        const actor = await getSessionUser();
+        if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if ((actor as any).hrExecutive) return NextResponse.json({ error: 'Reimbursements are not available for the HR Executive role.' }, { status: 403 });
+        const query = ADMIN.includes(actor.role) ? {} : { employeeId: actor.id };
         const claims = await ReimbursementClaim.find(query).sort({ date: -1 });
         return NextResponse.json(claims);
     } catch (error: any) {
@@ -92,33 +91,48 @@ export async function GET(req: Request) {
     }
 }
 
+/** New claim — always for the logged-in employee, always "Pending" */
 export async function POST(req: Request) {
     try {
         await dbConnect();
+        const actor = await getSessionUser();
+        if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if ((actor as any).hrExecutive) return NextResponse.json({ error: 'Reimbursements are not available for the HR Executive role.' }, { status: 403 });
         const body = await req.json();
-        const claim = await ReimbursementClaim.create(body);
-        
+        if (body.employeeId && body.employeeId !== actor.id) return NextResponse.json({ error: 'You can only claim for yourself.' }, { status: 403 });
+        const { approvedAmount, hrRemarks, rejectionReason, ...rest } = body;
+        const claim = await ReimbursementClaim.create({ date: new Date().toISOString().split('T')[0], ...rest, employeeId: actor.id, employeeName: actor.employee?.name || actor.name, status: 'Pending' });
+
         // Trigger n8n on new submission
         await triggerN8n(claim.toObject ? claim.toObject() : claim, "submission");
-        
+
         return NextResponse.json(claim);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
 
+/** Decide a claim — HR / Founder only */
 export async function PUT(req: Request) {
     try {
         await dbConnect();
+        const actor = await getSessionUser();
+        if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if ((actor as any).hrExecutive) return NextResponse.json({ error: 'Reimbursements are not available for the HR Executive role.' }, { status: 403 });
+        if (!ADMIN.includes(actor.role)) return NextResponse.json({ error: 'Only HR can decide reimbursement claims.' }, { status: 403 });
         const body = await req.json();
         const { id, ...updates } = body;
+        delete updates.employeeId; delete updates._id;
+        const existing: any = await ReimbursementClaim.findOne({ id }).lean();
+        if (!existing) return NextResponse.json({ error: 'Claim not found' }, { status: 404 });
+        if (existing.employeeId === actor.id) return NextResponse.json({ error: 'You cannot decide your own claim.' }, { status: 403 });
         const claim = await ReimbursementClaim.findOneAndUpdate({ id }, updates, { new: true });
-        
+
         if (claim) {
             // Trigger n8n on status update (Approved/Rejected)
             await triggerN8n(claim.toObject ? claim.toObject() : claim, claim.status.toLowerCase());
         }
-        
+
         return NextResponse.json(claim);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });

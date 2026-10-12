@@ -9,6 +9,8 @@
  *      │                                                     ▼
  *      └──────────────── (professor edits) ─────────── RESUBMITTED ──lock──▶ LOCKED_AGAIN
  *
+ *   SUBMITTED / RESUBMITTED ──return (reason)──▶ UNLOCKED_FOR_REVISION   (reviewer asks for corrections before locking)
+ *
  * Who: professor (owner) — save draft, submit, request unlock.
  *      HOI / CL / CH / AD (and Founder) in the plan's college scope — lock, unlock, reject an unlock request.
  * Every step is written to plan.history; every submission keeps a copy of the entries in plan.revisions.
@@ -17,9 +19,10 @@
 import { SprintPlan } from '@/models/Schemas';
 import {
     getPlanStatus, PLAN_STATUS_LABEL, PLAN_AUTHORITY_ROLES, PROFESSOR_ROLES, LOCKED_PLAN_STATUSES,
+    approvalTypeForRole, APPROVAL_LABEL,
 } from '@/lib/academic-status';
 import {
-    getAcademicScope, scopeAllows, collegeRecipients, employeesByIds, notifySafe, nowISO, weekLabel, collegeName,
+    getAcademicScope, scopeAllowsProfessor, collegeRecipients, employeesByIds, notifySafe, nowISO, weekLabel, collegeName,
 } from '@/lib/academic';
 import { Employee } from '@/models/Schemas';
 import { validateSprintEntries } from '@/lib/time-utils';
@@ -39,7 +42,7 @@ export async function canManagePlan(actor: Actor, plan: any): Promise<boolean> {
     const scope = await getAcademicScope(actor);
     if (scope.orgWide) return true;
     const prof: any = await Employee.findOne({ id: plan.facultyId }).select('location').lean();
-    return scopeAllows(scope, prof?.location || plan.college);
+    return scopeAllowsProfessor(scope, plan.facultyId, prof?.location || plan.college);
 }
 
 /** Can this actor see this plan? */
@@ -49,7 +52,7 @@ export async function canViewPlan(actor: Actor, plan: any): Promise<boolean> {
     const scope = await getAcademicScope(actor);
     if (scope.orgWide) return true;
     const prof: any = await Employee.findOne({ id: plan.facultyId }).select('location').lean();
-    return scopeAllows(scope, prof?.location || plan.college);
+    return scopeAllowsProfessor(scope, plan.facultyId, prof?.location || plan.college);
 }
 
 /** Atomic status change: only applied while the plan is still in one of `from` */
@@ -105,6 +108,20 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
                 },
             });
             if (!updated) return fail(409, 'The plan was changed by someone else. Refresh and try again.');
+
+            // In-app + email to the reviewers: HOI (campus + reporting hierarchy), CL, CH, AD
+            const subProf: any = await Employee.findOne({ id: plan.facultyId }).select('location').lean();
+            const reviewers = await collegeRecipients(subProf?.location || plan.college, ['HOI', 'CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'AD'], plan.facultyId);
+            await notifySafe({
+                recipients: reviewers,
+                title: `Sprint Plan ${to === 'SUBMITTED' ? 'Submitted' : 'Re-submitted'} — ${plan.facultyName}`,
+                message: `${plan.facultyName} ${to === 'SUBMITTED' ? 'submitted' : 're-submitted'} the sprint plan for the week ${weekLabel(plan.weekStartDate, plan.weekEndDate)}. Please review and lock it.`,
+                type: 'SPRINT_SUBMITTED',
+                link: `/curriculum/sprint-plans?week=${plan.weekStartDate}&plan=${plan._id}`,
+                entityType: 'SprintPlan', entityId: String(plan._id), college: subProf?.location || plan.college,
+                actor,
+                rows: [...(await planDetails(plan)), { label: 'Submitted At', value: new Date(now).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) }],
+            });
             return { ok: true, plan: updated, message: to === 'SUBMITTED' ? 'Sprint plan submitted for locking.' : 'Revised sprint plan re-submitted for locking.' };
         }
 
@@ -114,18 +131,61 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
             if (!['SUBMITTED', 'RESUBMITTED'].includes(status)) {
                 if (status === 'DRAFT') return fail(409, 'The professor has not submitted this plan yet.');
                 if (status === 'UNLOCKED_FOR_REVISION') return fail(409, 'The plan is being revised. Lock it after the professor re-submits.');
-                return fail(409, `This plan is already ${PLAN_STATUS_LABEL[status]}.`);
+                const a = plan.approval?.state === 'APPROVED' ? plan.approval : null;
+                return fail(409, a ? `This plan is already ${a.label || PLAN_STATUS_LABEL[status]} by ${a.byName}.` : `This plan is already ${PLAN_STATUS_LABEL[status]}.`);
             }
             const to = status === 'SUBMITTED' ? 'LOCKED' : 'LOCKED_AGAIN';
+            // Locking is the approval: store who approved it and as which role (one final approval; the atomic
+            // transition below means a second reviewer gets "already Locked" instead of approving twice)
+            const type = approvalTypeForRole(actor.role);
+            const approval = {
+                state: 'APPROVED', type, label: APPROVAL_LABEL[type],
+                byId: actor.id, byName: actor.name, byRole: actor.role,
+                byDesignation: actor.employee?.designation || actor.role, at: now,
+                remarks: String(payload.note || payload.comment || '').trim(),
+            };
             const updated = await transition(plan._id, [status], {
                 $set: {
                     status: to, isLocked: true, lockedAt: now, lockedBy: actor.name, lockedById: actor.id,
-                    lockedByName: actor.name, lockedByRole: actor.role,
+                    lockedByName: actor.name, lockedByRole: actor.role, approval,
                 },
-                $push: { history: historyItem(actor, to === 'LOCKED' ? 'Locked' : 'Re-locked', status, to, payload.note) },
+                // action stays "Locked" / "Re-locked" (existing audit trail); the note names the role-specific approval
+                $push: { history: historyItem(actor, to === 'LOCKED' ? 'Locked' : 'Re-locked', status, to, `${APPROVAL_LABEL[type]}${approval.remarks ? ` — ${approval.remarks}` : ''}`) },
+            });
+            if (!updated) {
+                const fresh: any = await SprintPlan.findById(plan._id).lean();
+                const a = fresh?.approval?.state === 'APPROVED' ? fresh.approval : null;
+                return fail(409, a ? `Already ${a.label} by ${a.byName}.` : 'The plan was changed by someone else. Refresh and try again.');
+            }
+            return { ok: true, plan: updated, message: `${APPROVAL_LABEL[type]} — sprint plan ${to === 'LOCKED' ? 'locked' : 'locked again'}.` };
+        }
+
+        // ── HOI / CL / CH / AD: return a submitted plan for correction (before locking) ──
+        case 'return': {
+            if (!(await canManagePlan(actor, plan))) return fail(403, 'You are not allowed to review this sprint plan.');
+            if (!['SUBMITTED', 'RESUBMITTED'].includes(status)) return fail(409, `Only a submitted plan can be returned (this plan is ${PLAN_STATUS_LABEL[status]}).`);
+            const note = String(payload.note || payload.comment || '').trim();
+            if (note.length < 5) return fail(400, 'Please tell the professor what to correct (at least 5 characters).');
+            const updated = await transition(plan._id, [status], {
+                $set: {
+                    status: 'UNLOCKED_FOR_REVISION', isLocked: false,
+                    unlockedAt: now, unlockedBy: actor.id, unlockedByName: actor.name, unlockedByRole: actor.role,
+                    returnedAt: now, returnNote: note,
+                },
+                $push: { history: historyItem(actor, 'Returned for correction', status, 'UNLOCKED_FOR_REVISION', note) },
             });
             if (!updated) return fail(409, 'The plan was changed by someone else. Refresh and try again.');
-            return { ok: true, plan: updated, message: to === 'LOCKED' ? 'Sprint plan locked.' : 'Sprint plan locked again.' };
+            const [owner] = await employeesByIds([plan.facultyId]);
+            await notifySafe({
+                recipients: owner ? [owner] : [],
+                title: 'Sprint Plan Returned for Correction',
+                message: `${actor.name} returned your sprint plan for the week ${weekLabel(plan.weekStartDate, plan.weekEndDate)} for correction. Please update it and re-submit it for locking.`,
+                type: 'SPRINT_RETURNED',
+                link: `/faculty/sprint-plan?week=${plan.weekStartDate}`,
+                entityType: 'SprintPlan', entityId: String(plan._id), college: plan.college, actor,
+                rows: [...(await planDetails(plan)), { label: 'Returned By', value: `${actor.name} (${actor.role})` }, { label: 'Corrections Needed', value: note }],
+            });
+            return { ok: true, plan: updated, message: 'Sprint plan returned to the professor for correction.' };
         }
 
         // ── Professor: ask to unlock a locked plan (plan stays locked) ──
@@ -152,7 +212,7 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
 
             // Email + in-app: HOI + CL + CH + AD of the professor's college
             const prof: any = await Employee.findOne({ id: plan.facultyId }).select('location').lean();
-            const recipients = await collegeRecipients(prof?.location || plan.college, ['HOI', 'CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'AD']);
+            const recipients = await collegeRecipients(prof?.location || plan.college, ['HOI', 'CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'AD'], plan.facultyId);
             await notifySafe({
                 recipients,
                 title: `Sprint Plan Unlock Request — ${plan.facultyName}`,
@@ -178,6 +238,8 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
             if (!LOCKED_PLAN_STATUSES.includes(status)) return fail(409, `This plan is not locked (${PLAN_STATUS_LABEL[status]}).`);
             const note = String(payload.note || payload.comment || '').trim();
             const set: any = {
+                // the approval record is kept for the audit trail; only its state changes
+                'approval.state': 'UNLOCKED',
                 status: 'UNLOCKED_FOR_REVISION', isLocked: false, lockedAt: null, lockedBy: null,
                 unlockedAt: now, unlockedBy: actor.id, unlockedByName: actor.name, unlockedByRole: actor.role,
             };

@@ -6,6 +6,8 @@ import { uploadToCloudinary } from "@/lib/cloudinary";
 import { motion, AnimatePresence } from "framer-motion";
 import { Calendar, Plus, CheckCircle2, XCircle, X, Clock, HelpCircle, AlertCircle, Upload, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import WorkFromHomeSection from "@/components/wfh/WorkFromHomeSection";
+import { Home } from "lucide-react";
 
 const formatDate = (dateStr: string) => {
     if (!dateStr) return "";
@@ -17,6 +19,7 @@ const formatDate = (dateStr: string) => {
 export default function LeavePage() {
     const { user, leaves, employees, addLeaveRequest, approveLeave, rejectLeave, getReportees } = useAuth();
     const [showModal, setShowModal] = useState(false);
+    const [showWfh, setShowWfh] = useState(false); // Work From Home application form
     const [decisionModal, setDecisionModal] = useState<{ show: boolean, type: 'approve' | 'reject', leaveId: string, leaveName: string } | null>(null);
     const [remarks, setRemarks] = useState("");
     const [isSubmittingDecision, setIsSubmittingDecision] = useState(false);
@@ -97,11 +100,11 @@ export default function LeavePage() {
     const reportees = getReportees(user.id);
     const reporteeIds = reportees.map(r => r.id);
     // HR: this page is HR's personal leave only. Other employees' leaves are handled in HR Administration → Leave Management.
-    const filteredLeaves = user.role === "FOUNDER"
-        ? leaves 
-        : user.role === "HR"
-        ? leaves.filter(l => l.employeeId === user.id)
-        : leaves.filter(l => (l.employeeId === user.id) || (user.role === 'HOI' && (l.location || employees.find(e => e.id === l.employeeId)?.location) === user.location && l.status === "Pending HOI Approval") || reporteeIds.includes(l.employeeId));
+    // Personal leave page: everyone (HOI, AD, OM, TL, HR …) sees only their OWN requests here.
+    // Team requests are decided in Manager Suite → Leave Approval / HR → Leave Management.
+    // The Founder (who does not apply for leave) keeps the organisation-wide register.
+    const isFounderView = user.role === "FOUNDER";
+    const filteredLeaves = isFounderView ? leaves : leaves.filter(l => l.employeeId === user.id);
 
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
@@ -112,14 +115,20 @@ export default function LeavePage() {
         <div className="p-6 space-y-6 max-w-6xl mx-auto w-full">
             <header className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-lg font-bold text-white">Leave Management</h1>
-                    <p className="text-xs text-muted">Manage workforce availability and personal leave credits.</p>
+                    <h1 className="text-lg font-bold text-white">{isFounderView ? "Leave Management" : "My Leave"}</h1>
+                    <p className="text-xs text-muted">{isFounderView ? "Manage workforce availability and personal leave credits." : "Apply for your own leave and track your requests."}</p>
                 </div>
-                {user.role !== "FOUNDER" && (
-                    <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-1.5 h-9 px-4">
-                        <Plus size={14} /> Request
+                <div className="flex flex-wrap items-center gap-2">
+                    {user.role !== "FOUNDER" && (
+                        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-1.5 h-9 px-4" data-testid="apply-leave">
+                            <Plus size={14} /> Apply for Leave
+                        </button>
+                    )}
+                    {/* Work From Home — every role, including Founder, HR, HR Executive, Tech Lead and Tech Team */}
+                    <button onClick={() => setShowWfh(true)} className="btn-outline flex items-center gap-1.5 h-9 px-4 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" data-testid="apply-wfh">
+                        <Home size={14} /> Apply for Work From Home
                     </button>
-                )}
+                </div>
             </header>
 
             {/* Quota Widgets */}
@@ -145,7 +154,7 @@ export default function LeavePage() {
             {/* Leave Register */}
             <div className="card">
                 <div className="p-4 border-b border-border flex justify-between items-center">
-                    <h3 className="text-sm font-semibold text-white">Leave Applications</h3>
+                    <h3 className="text-sm font-semibold text-white">{isFounderView ? "Leave Applications" : "My Leave Applications"}</h3>
                     <div className="flex gap-2">
                         <span className="flex items-center gap-1.5 text-[10px] text-muted"><div className="w-1.5 h-1.5 rounded-full bg-primary" /> Approved</span>
                         <span className="flex items-center gap-1.5 text-[10px] text-muted"><div className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Pending</span>
@@ -293,6 +302,9 @@ export default function LeavePage() {
                     </table>
                 </div>
             </div>
+
+            {/* Work From Home: application form + own history (separate from leave) */}
+            <WorkFromHomeSection open={showWfh} onClose={() => setShowWfh(false)} />
 
             {/* Application Modal */}
             <AnimatePresence>

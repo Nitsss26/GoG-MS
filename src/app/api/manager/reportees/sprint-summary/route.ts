@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { SprintPlan } from '@/models/Schemas';
-import { resolveManager, academicReportees } from '@/lib/manager-reportees';
+import { resolveManager, reporteesOf } from '@/lib/manager-reportees';
 
 export async function GET(req: Request) {
     try {
@@ -37,7 +37,7 @@ export async function GET(req: Request) {
         if ('error' in who) return NextResponse.json({ error: who.error }, { status: who.status });
         const manager = who.manager;
 
-        const reportees: any[] = await academicReportees(manager);
+        const reportees: any[] = await reporteesOf(who as any);
         const reporteeIds = reportees.map(r => r.id);
 
         // Find plans for current and next week

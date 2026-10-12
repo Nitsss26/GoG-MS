@@ -63,8 +63,9 @@ export default function OnboardingPage() {
 
     const handleComplete = () => {
         if (!user) return;
-        updateOnboarding(user.id, form);
-        router.push("/");
+        updateOnboarding(user.id, form)
+            .then(() => router.push("/"))
+            .catch((err: any) => alert(err?.message || "Could not save your details. Please try again."));
     };
 
     const steps = [

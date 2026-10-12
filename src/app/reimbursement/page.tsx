@@ -1,4 +1,5 @@
 "use client";
+import ReimbursementBlocked, { useIsHrExecutive } from "@/components/hr/ReimbursementBlocked";
 
 import { useState, useRef, useEffect } from "react";
 import { useAuth, ReimbursementClaim } from "@/context/AuthContext";
@@ -10,7 +11,7 @@ import { useRouter } from "next/navigation";
 
 const EXPENSE_TYPES = ["Travel", "Food", "Internet", "Equipment", "Medical", "Stationery", "Books & Certification", "Phone & Data", "Fuel", "Accommodation", "Training", "Software", "Other"];
 
-export default function ReimbursementPage() {
+function ReimbursementPageInner() {
     const { user, reimbursements, addReimbursement } = useAuth();
     const router = useRouter();
 
@@ -327,4 +328,10 @@ export default function ReimbursementPage() {
             </AnimatePresence>
         </div>
     );
+}
+
+/** HR Executive has no Reimbursements access — direct URL included */
+export default function ReimbursementPage() {
+    const blocked = useIsHrExecutive();
+    return blocked ? <ReimbursementBlocked /> : <ReimbursementPageInner />;
 }

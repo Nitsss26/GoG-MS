@@ -41,7 +41,7 @@ export default function ResignationPage() {
         setForm({ reason: "", preferredLastDay: "" });
     };
 
-    if (user.role === "HR") {
+    if (user.role === "HR" || user.role === "FOUNDER") {
         return (
             <div className="p-8 space-y-8 max-w-6xl mx-auto">
                 <header>

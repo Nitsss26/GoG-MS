@@ -6,7 +6,7 @@ import {
     Briefcase, Award, Network, Megaphone, Ticket, Receipt,
     FileText, CalendarCheck, AlertTriangle, UserCog, Star, MapPin, ClipboardList,
     Crown, Bell, Activity, Flag, ShieldAlert, Trophy, TrendingUp, Shirt,
-    BookOpen, Timer, Mic, GraduationCap, Video, Download, CalendarDays, BadgeCheck, CalendarRange
+    BookOpen, Timer, Mic, GraduationCap, Video, Download, CalendarDays, BadgeCheck, CalendarRange, KeySquare, Layers
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -47,7 +47,7 @@ const managerMenu = [
     { label: "Report Misbehaviour", icon: AlertTriangle, path: "/manager/misbehaviour" },
     { label: "Ratings", icon: Star, path: "/manager/ratings" },
     { label: "Work Location", icon: MapPin, path: "/manager/work-location" },
-    { label: "Monthly Progress", icon: TrendingUp, path: "/management/monthly" },
+    { label: "Monthly Feedback", icon: TrendingUp, path: "/management/monthly", roles: ["FOUNDER", "AD", "HOI"] as Role[] },
     { label: "Holidays", icon: CalendarCheck, path: "/manager/holidays" },
     { label: "Attendance Override", icon: ClipboardList, path: "/manager/attendance-override" },
     { label: "Locations Map", icon: MapPin, path: "/locations" },
@@ -79,6 +79,7 @@ const founderMenu = [
 ];
 
 const techLeadMenu = [
+    { label: "Leave Approval", icon: CalendarCheck, path: "/manager/leave-approval", roles: ["TL"] as Role[] },
     { label: "Asset Exports", icon: Download, path: "/tech-lead/exports" },
     { label: "System Status", icon: Activity, path: "/tech-lead/status" },
 ];
@@ -92,7 +93,8 @@ const facultyMenu = [
 ];
 
 const curriculumMenu = [
-    { label: "Curriculum Portal", icon: GraduationCap, path: "/curriculum" },
+    { label: "CL / CH Portal", icon: GraduationCap, path: "/curriculum" },
+    { label: "Academic Directory", icon: Network, path: "/academic/directory" },
     { label: "Sprint Plan Grid", icon: CalendarCheck, path: "/curriculum/sprint-plans" },
     { label: "Lecture Quality Hub", icon: Mic, path: "/curriculum/lectures" },
     { label: "Weekly Calendar", icon: CalendarDays, path: "/academic/weekly-calendar", roles: ["CURRICULUM_HEAD", "CURRICULUM_LEAD"] as Role[] },
@@ -114,15 +116,15 @@ const TECH_LEAD_ROLES: Role[] = ["TL", "FOUNDER"];
 
 type NavItem = { label: string; icon: typeof LayoutDashboard; path: string; roles?: Role[]; badge?: number };
 
-function NavSection({ title, items, pathname }: { title: string; items: NavItem[]; pathname: string }) {
+function NavSection({ title, items, pathname, onNavigate, inHub }: { title: string; items: NavItem[]; pathname: string; onNavigate?: () => void; inHub?: boolean }) {
     return (
         <div>
             {title && title !== "Personal" && <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-3 px-3">{title}</p>}
             <div className="space-y-0.5">
                 {items.map((item) => {
-                    const isActive = pathname === item.path || (item.path !== "/" && pathname.startsWith(item.path));
+                    const isActive = !inHub && (pathname === item.path || (item.path !== "/" && pathname.startsWith(item.path)));
                     return (
-                        <Link key={item.path + item.label} href={item.path}
+                        <Link key={item.path + item.label} href={item.path} onClick={onNavigate}
                             className={cn(
                                 "flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all group",
                                 isActive ? "bg-primary/10 text-primary border border-primary/10" : "text-zinc-400 hover:text-white hover:bg-zinc-800/50 border border-transparent"
@@ -152,10 +154,19 @@ const ROLE_COLORS: Record<Role, { bg: string; text: string; label: string }> = {
     PROFESSOR: { bg: "bg-pink-500/20", text: "text-pink-400", label: "Professor" },
     CURRICULUM_HEAD: { bg: "bg-teal-500/20", text: "text-teal-400", label: "Curriculum Head" },
     CURRICULUM_LEAD: { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "Curriculum Lead" },
+    HR_EXECUTIVE: { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "HR Executive" },
 };
+/** HR Executive works in the HR portal without Reimbursements */
+const NO_REIMBURSEMENT = (items: NavItem[], u: any) => (u?.hrExecutive ? items.filter(i => i.path !== "/reimbursement" && i.path !== "/hr/reimbursements") : items);
 
 export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
-    const { user, logout, getMyNotifications, workSchedules } = useAuth();
+    const { user: contextUser, realUser, logout, getMyNotifications, workSchedules, hubs = [], activeHub, enterHub, exitHub, canManageAccess } = useAuth();
+    // The sidebar always belongs to the logged-in designation; delegated hubs are added below it
+    const user = realUser ?? contextUser;
+    const inHub = !!(contextUser as any)?.delegation;
+    const leaveHub = () => { if (activeHub) exitHub?.(); };
+    const [hubSource, setHubSource] = useState<Record<string, string>>({});
+    const sourceOf = (category: string) => hubSource[category] ?? (activeHub?.category === category ? activeHub.source : "*");
     const pathname = usePathname();
     const role = user?.role as Role;
     const unreadCount = getMyNotifications().filter(n => !n.read).length;
@@ -173,7 +184,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
         return () => { alive = false; clearInterval(t); };
     }, [user?.id, pathname]);
 
-    const roleStyle = role ? ROLE_COLORS[role] : { bg: "bg-zinc-800", text: "text-zinc-400", label: "Guest" };
+    const roleStyle = (user as any)?.hrExecutive ? ROLE_COLORS.HR_EXECUTIVE : role ? ROLE_COLORS[role] : { bg: "bg-zinc-800", text: "text-zinc-400", label: "Guest" };
     const RoleIcon = role === "FOUNDER" ? Crown : role === "HR" ? ShieldCheck : role === "AD" || role === "HOI" ? Briefcase : User;
 
     return (
@@ -205,38 +216,82 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
             </div>
 
             <nav className="flex-1 overflow-y-auto space-y-6 custom-scrollbar">
-                <NavSection title="Core" items={coreMenu} pathname={pathname} />
-                <NavSection title="Personal" items={personalMenu.map(i => i.path === "/notifications" ? { ...i, badge: unreadNotifications } : i)} pathname={pathname} />
+                <NavSection title="Core" items={NO_REIMBURSEMENT(coreMenu, user)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
+                <NavSection title="Personal" items={personalMenu.map(i => i.path === "/notifications" ? { ...i, badge: unreadNotifications } : i)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
 
                 {/* Manager Suite: Visible to FOUNDER, AD, HOI */}
                 {role && MANAGER_ROLES.includes(role) && (
-                    <NavSection title="Manager Suite" items={managerMenu.filter(i => !i.roles || i.roles.includes(role))} pathname={pathname} />
+                    <NavSection title="Manager Suite" items={managerMenu.filter(i => !i.roles || i.roles.includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
                 )}
 
                 {/* HR Administration: Visible to FOUNDER, HR */}
                 {role && HR_ROLES.includes(role) && (
-                    <NavSection title="HR Administration" items={hrMenu.map(i => i.path === "/hr/schedule-approval" ? { ...i, badge: unreadScheduleChanges } : i)} pathname={pathname} />
+                    <NavSection title={(user as any)?.hrExecutive ? "HR Executive Portal" : "HR Administration"} items={NO_REIMBURSEMENT(hrMenu.map(i => i.path === "/hr/schedule-approval" ? { ...i, badge: unreadScheduleChanges } : i), user)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
                 )}
 
                 {/* Faculty Suite: Visible to FACULTY, PROFESSOR */}
                 {role && FACULTY_ROLES.includes(role) && (
-                    <NavSection title="Faculty Suite" items={facultyMenu} pathname={pathname} />
+                    <NavSection title="Faculty Suite" items={facultyMenu} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
                 )}
 
-                {/* Curriculum Suite: Visible to CURRICULUM_HEAD, CURRICULUM_LEAD, FOUNDER, AD */}
+                {/* CL / CH Portal: one common section for CURRICULUM_LEAD and CURRICULUM_HEAD (also FOUNDER, AD) */}
                 {role && CURRICULUM_ROLES.includes(role) && (
-                    <NavSection title="Curriculum Suite" items={curriculumMenu.filter(i => !i.roles || i.roles.includes(role))} pathname={pathname} />
+                    <NavSection title={role === "CURRICULUM_LEAD" || role === "CURRICULUM_HEAD" ? "CL / CH Portal" : "CL / CH & Academics"} items={curriculumMenu.filter(i => !i.roles || i.roles.includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
                 )}
 
                 {/* Founder Console: Visible to FOUNDER only */}
                 {role === "FOUNDER" && (
-                    <NavSection title="Founder Console" items={founderMenu} pathname={pathname} />
+                    <NavSection title="Founder Console" items={founderMenu} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
                 )}
 
                 {/* Tech Support: Visible to TL, FOUNDER */}
                 {role && TECH_LEAD_ROLES.includes(role) && (
-                    <NavSection title="Tech Support" items={techLeadMenu} pathname={pathname} />
+                    <NavSection title="Tech Support" items={techLeadMenu.filter(i => !i.roles || i.roles.includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
                 )}
+                {/* Give Access: Founder, and Tech Leads the Founder authorised */}
+                {(role === "FOUNDER" || canManageAccess) && (
+                    <NavSection title="Access Control" items={[{ label: "Give Access", icon: KeySquare, path: "/access" }]} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
+                )}
+
+                {/* Delegated hubs (Give Access) — each hub once, with its source selection */}
+                {hubs.map(h => {
+                    const src = sourceOf(h.category);
+                    const hubActive = inHub && activeHub?.category === h.category;
+                    return (
+                        <div key={h.category} data-testid={`hub-${h.category}`}>
+                            <div className="flex items-center justify-between gap-2 mb-2 px-3">
+                                <p className="text-[9px] font-bold text-amber-400/90 uppercase tracking-widest flex items-center gap-1.5"><Layers size={10} /> {h.label}</p>
+                            </div>
+                            {h.sources.length > 1 || h.mode !== "SELECTED" ? (
+                                <select value={src} data-testid={`hub-source-${h.category}`}
+                                    onChange={e => {
+                                        const v = e.target.value;
+                                        setHubSource(p => ({ ...p, [h.category]: v }));
+                                        if (hubActive) { enterHub?.(h.category, v); setTimeout(() => window.location.reload(), 50); }
+                                    }}
+                                    className="w-full mb-1.5 px-2.5 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-[10px] text-zinc-200 outline-none">
+                                    <option value="*">All assigned ({h.sources.length})</option>
+                                    {h.sources.map(s => <option key={s.id} value={s.id}>{s.name}{s.campus ? ` · ${s.campus}` : ""}</option>)}
+                                </select>
+                            ) : (
+                                <p className="px-3 mb-1.5 text-[10px] text-zinc-500 truncate">For {h.sources[0]?.name}</p>
+                            )}
+                            <div className="space-y-0.5">
+                                {h.items.map(item => {
+                                    const isActive = hubActive && (pathname === item.path || pathname.startsWith(item.path + "/"));
+                                    return (
+                                        <Link key={h.category + item.path} href={item.path} onClick={() => enterHub?.(h.category, src)} data-testid="hub-link"
+                                            className={cn("flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all group border",
+                                                isActive ? "bg-amber-500/10 text-amber-300 border-amber-500/20" : "text-zinc-400 hover:text-white hover:bg-zinc-800/50 border-transparent")}>
+                                            <Layers size={13} className={isActive ? "text-amber-300" : "text-zinc-600 group-hover:text-white"} />
+                                            <span>{item.label}</span>
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    );
+                })}
             </nav>
 
             <div className="mt-auto space-y-2 px-1">

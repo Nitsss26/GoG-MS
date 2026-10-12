@@ -16,7 +16,7 @@ export default function DirectReportsPage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Only AD should access this (the user requested AD only)
-    if (user?.role !== "AD") {
+    if (user?.role !== "AD" && user?.role !== "FOUNDER") {
         return (
             <div className="flex-1 p-8 text-center bg-black min-h-screen text-white">
                 <AlertTriangle className="mx-auto text-red-500 mb-4" size={48} />

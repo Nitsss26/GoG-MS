@@ -86,7 +86,16 @@ export async function reportingTree(managerId: string): Promise<any[]> {
 }
 
 /** Employees this user may see on the Leave Summary (enforced here, never on the page) */
-export async function employeesInLeaveScope(actor: { id: string; role: string }): Promise<any[]> {
+export async function employeesInLeaveScope(actor: { id: string; role: string; delegation?: { sources: any[] } }): Promise<any[]> {
+    // Give Access: union of the selected sources' scopes
+    if (actor.delegation) {
+        const byId = new Map<string, any>();
+        for (const src of actor.delegation.sources) {
+            (await employeesInLeaveScope({ id: src.id, role: src.role })).forEach((e: any) => { if (!byId.has(e.id)) byId.set(e.id, e); });
+        }
+        byId.delete(actor.id);
+        return Array.from(byId.values());
+    }
     if (LEAVE_SUMMARY_ORG_ROLES.includes(actor.role)) {
         return Employee.find({}).select('id name role dept designation location reportsTo status').lean();
     }

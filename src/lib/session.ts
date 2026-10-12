@@ -11,17 +11,22 @@ const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // Sessions of employees removed from the portal. A signed token cannot be recalled, so the server
 // keeps the removed accounts here and rejects their tokens on every request.
+// One email can hold several designation records (HR onboards the same person as Professor, TL, …), so a
+// removal is keyed by email + designation, and only tokens issued before the removal are rejected.
 // Filled when the database connects (primeRevokedSessions) and when HR removes someone (revokeSessionsFor).
-const revokedEmails: Set<string> = ((globalThis as any).__gogRevokedEmails ||= new Set<string>());
+const revokedSessions: Map<string, number> = ((globalThis as any).__gogRevokedSessions ||= new Map<string, number>());
+const revokeKey = (email: string, role: string) => `${String(email).trim().toLowerCase()}|${String(role || '').toUpperCase()}`;
 
-export function revokeSessionsFor(email?: string | null) {
-    if (email) revokedEmails.add(String(email).trim().toLowerCase());
+export function revokeSessionsFor(email?: string | null, role?: string | null, at: number = Date.now()) {
+    if (!email || !role) return;
+    const k = revokeKey(email, role);
+    revokedSessions.set(k, Math.max(revokedSessions.get(k) || 0, at));
 }
 
 export async function primeRevokedSessions(db: any) {
     try {
-        const removed = await db.collection('employees').find({ isRemoved: true }, { projection: { email: 1 } }).toArray();
-        removed.forEach((e: any) => revokeSessionsFor(e.email));
+        const removed = await db.collection('employees').find({ isRemoved: true }, { projection: { email: 1, role: 1, removedAt: 1 } }).toArray();
+        removed.forEach((e: any) => revokeSessionsFor(e.email, e.role, e.removedAt ? new Date(e.removedAt).getTime() : Date.now()));
     } catch (err) {
         console.warn("[SESSION] Could not load removed accounts:", err);
     }
@@ -33,7 +38,14 @@ export interface SessionPayload {
     role: string;
     iat: number;
     exp: number;
+    /** HR Executive: stored role HR_EXECUTIVE; works with the HR permissions except Reimbursements */
+    hrExecutive?: boolean;
+    /** The role stored on the employee record (differs from `role` only for HR Executive) */
+    actualRole?: string;
 }
+
+/** HR Executive designation: an HR-like role without Reimbursements access */
+export const HR_EXECUTIVE_ROLE = 'HR_EXECUTIVE';
 
 /**
  * Create a signed session token from user data.
@@ -73,9 +85,17 @@ export function verifySessionToken(token: string): SessionPayload | null {
         // Check expiration
         if (payload.exp < Date.now()) return null;
 
-        // Account removed from the portal: the session is no longer valid
-        if (payload.email && revokedEmails.has(String(payload.email).trim().toLowerCase())) return null;
+        // Account (this designation) removed from the portal after the token was issued: no longer valid
+        if (payload.email) {
+            const removedAt = revokedSessions.get(revokeKey(payload.email, payload.role));
+            if (removedAt && (payload.iat || 0) <= removedAt) return null;
+        }
 
+        // HR Executive: every existing HR permission check keeps working (role "HR"); the flag lets the
+        // Reimbursement endpoints (and HR-account protections) refuse this designation.
+        if (payload.role === HR_EXECUTIVE_ROLE) {
+            return { ...payload, role: 'HR', hrExecutive: true, actualRole: HR_EXECUTIVE_ROLE };
+        }
         return payload;
     } catch {
         return null;

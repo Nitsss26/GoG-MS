@@ -64,6 +64,8 @@ export default function CurriculumSprintPlansPage() {
     const [actionLoading, setActionLoading] = useState(false);
     const [remarks, setRemarks] = useState("");
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    // Plans waiting for a reviewer in ANY week (professors usually plan the coming week)
+    const [queue, setQueue] = useState<any[]>([]);
 
     const weekInfo = getWeekDates(weekOffset);
 
@@ -84,6 +86,23 @@ export default function CurriculumSprintPlansPage() {
     useEffect(() => {
         fetchCampusSprintData();
     }, [weekOffset, selectedCampus]);
+
+    const fetchQueue = async () => {
+        try {
+            const res = await fetch(`/api/curriculum/sprint-plan?campus=${encodeURIComponent(selectedCampus)}&queue=1`);
+            const data = await res.json();
+            if (res.ok) setQueue(data.queue || []);
+        } catch { /* the weekly view still works */ }
+    };
+    useEffect(() => { fetchQueue(); }, [selectedCampus]);
+    const openQueued = (q: any) => {
+        const base = new Date(getWeekDates(0).start + "T00:00:00Z").getTime();
+        setWeekOffset(Math.round((new Date(q.weekStartDate + "T00:00:00Z").getTime() - base) / (7 * 86400000)));
+        setHighlightPlan(q._id);
+        setTimeout(() => document.querySelector('[data-testid="campus-plan-list"]')?.scrollIntoView({ behavior: "smooth", block: "center" }), 400);
+    };
+    const collegeLabel = (v?: string) => colleges.find(c => c.id === v || c.name === v)?.name || v || "Not assigned";
+    const dmyDate = (ymd?: string) => (ymd ? ymd.split("-").reverse().join("-") : "");
 
     // Only the latest request may update the page (week / date can change while a request is running)
     const latestRequest = useRef(0);
@@ -132,7 +151,7 @@ export default function CurriculumSprintPlansPage() {
                     text: (lock ? `${data.modifiedCount || 0} submitted plan(s) locked.` : `${data.modifiedCount || 0} plan(s) unlocked for revision.`)
                         + ((data.skipped || []).length ? ` Skipped: ${data.skipped.join("; ")}` : "")
                 });
-                fetchCampusSprintData();
+                fetchCampusSprintData(); fetchQueue();
             } else {
                 setMessage({ type: "error", text: data.error || "Action failed." });
             }
@@ -163,7 +182,7 @@ export default function CurriculumSprintPlansPage() {
                     type: "success",
                     text: lock ? "Faculty sprint plan verified & locked." : "Sprint plan unlocked."
                 });
-                fetchCampusSprintData();
+                fetchCampusSprintData(); fetchQueue();
             } else {
                 setMessage({ type: "error", text: data.error || "Action failed." });
             }
@@ -314,6 +333,56 @@ export default function CurriculumSprintPlansPage() {
                 )}
             </div>
 
+            {/* Approval queue — submitted / re-submitted plans and unlock requests of every week */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/80 space-y-3" data-testid="approval-queue">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                        <ShieldCheck size={14} className="text-amber-400" /> Awaiting Review <span className="text-zinc-500">({queue.length})</span>
+                    </h3>
+                    <span className="text-[10px] text-zinc-500">All weeks · {selectedCampus === "All" ? "all your campuses" : collegeLabel(selectedCampus)}</span>
+                </div>
+                {queue.length === 0 ? (
+                    <p className="text-xs text-zinc-500">No sprint plans are waiting for review.</p>
+                ) : (
+                    <div className="overflow-x-auto [contain:inline-size]">
+                        <table className="w-full min-w-[900px] text-xs">
+                            <thead>
+                                <tr className="text-[9px] text-zinc-500 uppercase tracking-widest text-left">
+                                    <th className="py-2 pr-3 font-black">Professor</th><th className="py-2 pr-3 font-black">Employee ID</th><th className="py-2 pr-3 font-black">Campus</th>
+                                    <th className="py-2 pr-3 font-black">Week</th><th className="py-2 pr-3 font-black">Submitted</th><th className="py-2 pr-3 font-black">Status / Action</th><th className="py-2 font-black text-right">Review</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-800/70">
+                                {queue.map(q => (
+                                    <tr key={q._id} data-testid="queue-row" className={highlightPlan === q._id ? "bg-amber-500/5" : ""}>
+                                        <td className="py-2.5 pr-3 font-bold text-white">{q.facultyName}</td>
+                                        <td className="py-2.5 pr-3 font-mono text-zinc-400">{q.facultyId}</td>
+                                        <td className="py-2.5 pr-3 text-zinc-300">{collegeLabel(q.college)}</td>
+                                        <td className="py-2.5 pr-3 text-zinc-300 whitespace-nowrap">{dmyDate(q.weekStartDate)} → {dmyDate(q.weekEndDate)}</td>
+                                        <td className="py-2.5 pr-3 text-zinc-400 whitespace-nowrap">{q.submittedAt ? new Date(q.submittedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                                        {/* Status + Lock / Return for Correction / Unlock — right here, whatever week the plan is for */}
+                                        <td className="py-2.5 pr-3 min-w-[16rem]" data-testid="queue-actions">
+                                            <SprintPlanWorkflowPanel plan={q} mode="reviewer" compact
+                                                onChanged={(_, msg) => { setMessage({ type: "success", text: msg }); fetchQueue(); fetchCampusSprintData(); }} />
+                                        </td>
+                                        <td className="py-2.5 text-right whitespace-nowrap">
+                                            <div className="flex flex-col items-end gap-1.5">
+                                            <button onClick={() => setViewPlan(q)} data-testid="queue-view" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/20">
+                                                <Eye size={12} /> View Plan
+                                            </button>
+                                            <button onClick={() => openQueued(q)} data-testid="queue-open" title="Show this week's timetable" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20">
+                                                <CalendarDays size={12} /> Go to Week
+                                            </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
             {/* Faculty plans summary (top) + campus timetable */}
             {loading ? (
                 <div className="flex items-center justify-center py-20">
@@ -365,7 +434,7 @@ export default function CurriculumSprintPlansPage() {
                                         {/* Status, lock / unlock actions, unlock request */}
                                         <div className="min-w-0">
                                             <SprintPlanWorkflowPanel plan={p} mode="reviewer" compact
-                                                onChanged={(_, msg) => { setMessage({ type: "success", text: msg }); fetchCampusSprintData(); }} />
+                                                onChanged={(_, msg) => { setMessage({ type: "success", text: msg }); fetchCampusSprintData(); fetchQueue(); }} />
                                         </div>
 
                                         {/* View */}

@@ -5,11 +5,17 @@ import { useAuth, Role } from "@/context/AuthContext";
 import type { Employee } from "@/context/AuthContext";
 import RemoveEmployeeDialog from "@/components/RemoveEmployeeDialog";
 import ResetPasswordDialog from "@/components/ResetPasswordDialog";
+import ExportMenu from "@/components/ExportMenu";
+import { fetchReport, tablePdf, tableExcel, fileNames } from "@/lib/report-export";
 import EmployeeProfileDialog, { EmployeeMailDialog } from "@/components/EmployeeProfileDialog";
-import { Search, Mail, Phone, MapPin, Download, Plus, ShieldAlert, FileText, Filter, X, ShieldCheck, UserX, KeyRound } from "lucide-react";
+import { Search, Mail, Phone, MapPin, Download, Plus, ShieldAlert, FileText, Filter, X, ShieldCheck, UserX, KeyRound, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
+
+const AVATAR_TONES = ["bg-violet-500/80 text-white", "bg-teal-500/80 text-white", "bg-sky-500/80 text-white", "bg-pink-400/80 text-white", "bg-amber-400/85 text-zinc-900", "bg-emerald-500/80 text-white", "bg-orange-400/85 text-white", "bg-indigo-400/85 text-white"];
+const avatarTone = (key: string) => AVATAR_TONES[[...String(key)].reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR_TONES.length];
+const initialsOf = (name: string) => String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
 
 export default function EmployeesPage() {
     const { user, employees, addEmployee, getReportees } = useAuth();
@@ -82,7 +88,7 @@ export default function EmployeesPage() {
     const roleLevels = ["All", "Founder", "HR", "AD", "HOI", "OM", "TL", "CH", "CL", "Marketing", "Tech", "Faculty"];
 
     // Role shown in the table: the account's real role (older records may carry a managerLevel)
-    const ROLE_LEVEL: Record<string, string> = { FOUNDER: "Founder", HR: "HR", AD: "AD", HOI: "HOI", OM: "OM", TL: "TL", CURRICULUM_HEAD: "CH", CURRICULUM_LEAD: "CL", MARKETING_TEAM: "Marketing", TECH_TEAM: "Tech" };
+    const ROLE_LEVEL: Record<string, string> = { FOUNDER: "Founder", HR: "HR", AD: "AD", HOI: "HOI", OM: "OM", TL: "TL", CURRICULUM_HEAD: "CH", CURRICULUM_LEAD: "CL", MARKETING_TEAM: "Marketing", TECH_TEAM: "Tech", HR_EXECUTIVE: "HR Executive" };
     const getRoleLevel = (emp: any): string => {
         if (ROLE_LEVEL[emp.role]) return ROLE_LEVEL[emp.role];
         if (emp.managerLevel) return emp.managerLevel;
@@ -100,6 +106,11 @@ export default function EmployeesPage() {
         return matchesSearch && matchesTab && matchesLocation && matchesStatus && matchesRole;
     });
 
+    // Export: the server re-checks who may export what; "filtered" sends the ids matching the current filters
+    const workforceReport = (filtered: boolean) => fetchReport("/api/hr/reports/workforce", {
+        method: "POST", body: JSON.stringify(filtered ? { ids: filteredEmployees.map(e => e.id) } : {}),
+    });
+
     return (
         <div className="p-6 space-y-6 max-w-7xl mx-auto w-full [contain:inline-size]">
             <header className="flex justify-between items-center">
@@ -108,7 +119,15 @@ export default function EmployeesPage() {
                     <p className="text-xs text-muted">Management of institutional human capital and contractual nodes.</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button className="btn-outline flex items-center gap-1.5 h-9 px-4 text-xs font-semibold"><Download size={13} /> Export Data</button>
+                    <ExportMenu label="Export" testid="wf-export" items={[
+                        { heading: `All employees (${viewableEmployees.length})` },
+                        { label: "Download as PDF", kind: "pdf", testid: "wf-all-pdf", run: async () => tablePdf(await workforceReport(false), fileNames.workforce("pdf")) },
+                        { label: "Download as Excel (.xlsx)", kind: "xlsx", testid: "wf-all-xlsx", run: async () => tableExcel(await workforceReport(false), "Employee Records", fileNames.workforce("xlsx")) },
+                        "divider",
+                        { heading: `Filtered employees (${filteredEmployees.length})` },
+                        { label: "Download as PDF", hint: "Uses the current search and filters", kind: "pdf", testid: "wf-flt-pdf", run: async () => tablePdf(await workforceReport(true), fileNames.workforce("pdf")) },
+                        { label: "Download as Excel (.xlsx)", hint: "Uses the current search and filters", kind: "xlsx", testid: "wf-flt-xlsx", run: async () => tableExcel(await workforceReport(true), "Employee Records", fileNames.workforce("xlsx")) },
+                    ]} />
                     <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-1.5 h-9 px-4 text-xs font-semibold"><Plus size={13} /> Add Record</button>
                 </div>
             </header>
@@ -160,7 +179,13 @@ export default function EmployeesPage() {
                                     <tr key={emp.id} className="hover:bg-surface-light transition-colors group">
                                         <td className="px-3 py-3.5">
                                             <div className="flex items-center gap-3 min-w-[11rem]">
-                                                <div className="w-9 h-9 rounded bg-surface-light border border-border flex items-center justify-center text-primary text-xs font-bold shrink-0">{emp.name[0]}</div>
+                                                {(() => {
+                                                    const photo = (emp as any).passportPhotoUrl || (emp as any).photoUrl;
+                                                    return photo
+                                                        // eslint-disable-next-line @next/next/no-img-element
+                                                        ? <img src={photo} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 border border-zinc-700" />
+                                                        : <span className={cn("w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0", avatarTone(emp.id || emp.name))} data-testid="emp-avatar">{initialsOf(emp.name)}</span>;
+                                                })()}
                                                 <div className="min-w-0">
                                                     <span className="font-bold text-white block">{emp.name}</span>
                                                     <span className="text-[10px] text-muted block">{emp.designation}</span>
@@ -194,8 +219,9 @@ export default function EmployeesPage() {
                                                 {(user.role === "HR" || user.role === "FOUNDER") && emp.id !== user.id && (emp.role !== "FOUNDER" || user.role === "FOUNDER") && (
                                                     <button onClick={() => setEmployeeToReset(emp)} title="Reset Password" className="h-8 px-2 flex items-center justify-center gap-1 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 hover:bg-amber-500/20 transition-colors text-[10px] font-bold whitespace-nowrap"><KeyRound size={12} /> Reset</button>
                                                 )}
-                                                {canRemoveEmployees && emp.id !== user.id && (
-                                                    <button onClick={() => setEmployeeToRemove(emp)} title="Remove from Portal" className="h-8 px-2 flex items-center justify-center gap-1 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 hover:bg-red-500/20 transition-colors text-[10px] font-bold whitespace-nowrap"><UserX size={12} /> Remove</button>
+                                                {canRemoveEmployees && emp.id !== user.id && (emp.role !== "FOUNDER" || user.role === "FOUNDER") && (
+                                                    <button onClick={() => setEmployeeToRemove(emp)} title="Remove employee (exit checklist)" data-testid="emp-delete"
+                                                        className="h-8 px-2 flex items-center justify-center gap-1 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 hover:bg-red-500/20 transition-colors text-[10px] font-bold whitespace-nowrap"><Trash2 size={12} /> Remove</button>
                                                 )}
                                             </div>
                                         </td>
@@ -262,7 +288,7 @@ export default function EmployeesPage() {
                 )}
             </AnimatePresence>
 
-            {/* Remove from Portal (confirmation first) */}
+            {/* Delete Employee — mandatory exit checklist first */}
             {employeeToRemove && <RemoveEmployeeDialog employee={employeeToRemove} onClose={() => setEmployeeToRemove(null)} />}
 
             {/* HR: Reset Password (hash saved on the server, temporary password shown once) */}

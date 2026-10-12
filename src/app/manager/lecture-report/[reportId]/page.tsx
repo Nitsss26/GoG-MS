@@ -15,11 +15,15 @@ import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
 export default function LQRPage() {
+    const { user } = useAuth();
+    // Role check first, then the report component (which owns all the hooks) — hooks never run conditionally
+    if (!user || !["FOUNDER", "AD", "HOI", "HR", "OM"].includes(user.role)) return null;
+    return <LQRReport />;
+}
+
+function LQRReport() {
     const params = useParams();
     const searchParams = useSearchParams();
-    const { user } = useAuth();
-    
-    if (!user || !["FOUNDER", "AD", "HOI", "HR", "OM"].includes(user.role)) return null;
 
     const shouldAnalyze = searchParams.get("analyze") === "true";
 

@@ -30,6 +30,8 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
     const [workSchedules, setWorkSchedules] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    const [loadError, setLoadError] = useState("");
+    const [planWeeks, setPlanWeeks] = useState<string[]>([]); // weeks of this professor that have a submitted plan
 
     const getWeekDates = (offset = 0) => {
         const now = new Date();
@@ -74,6 +76,21 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
         }
     }, [facultyId, weekOffset]);
 
+    // Weeks that have a submitted plan, so an empty week can point to them (professors usually plan the coming week)
+    useEffect(() => {
+        if (!facultyId) return;
+        let cancelled = false;
+        fetch(`/api/faculty/sprint-plan?facultyId=${facultyId}`).then(r => r.ok ? r.json() : null).then(d => {
+            if (cancelled || !d) return;
+            setPlanWeeks(Array.from(new Set<string>((d.plans || []).filter((p: any) => getPlanStatus(p) !== "DRAFT").map((p: any) => p.weekStartDate))).sort());
+        }).catch(() => { });
+        return () => { cancelled = true; };
+    }, [facultyId]);
+    const offsetOf = (weekStart: string) => {
+        const base = new Date(`${getWeekDates(0).start}T00:00:00Z`).getTime();
+        return Math.round((new Date(`${weekStart}T00:00:00Z`).getTime() - base) / (7 * 86400000));
+    };
+
     const fetchPlan = async () => {
         setLoading(true);
         setMessage(null);
@@ -82,9 +99,10 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
             const data = await res.json();
             if (!res.ok) {
                 setPlan(null);
-                setMessage({ type: "error", text: data.error || "Could not load the sprint plan." });
+                setLoadError(data.error || "Could not load the sprint plan.");
                 return;
             }
+            setLoadError("");
 
             setWorkSchedules(data.schedules || []);
 
@@ -287,8 +305,21 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
                         <div className="w-16 h-16 bg-zinc-800/50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-zinc-700/50 shadow-2xl transition-transform group-hover:scale-110">
                             <BookOpen size={32} className="text-zinc-600" />
                         </div>
-                        <h3 className="text-lg font-black text-white italic uppercase tracking-widest">Grid Not Initialized</h3>
-                        <p className="text-xs text-zinc-500 font-bold max-w-xs mx-auto mb-6">{plan ? "The professor is still preparing this plan (Draft). It appears here once it is submitted." : "The faculty has not yet established an academic archive for this temporal range."}</p>
+                        <h3 className="text-lg font-black text-white italic uppercase tracking-widest" data-testid="plan-empty-title">{loadError ? "Not Available" : plan ? "Plan In Draft" : "No Sprint Plan"}</h3>
+                        <p className="text-xs text-zinc-500 font-bold max-w-sm mx-auto mb-4" data-testid="plan-empty-text">
+                            {loadError ? loadError : plan ? "The professor is still preparing this plan (Draft). It appears here once it is submitted." : "No Sprint Plan has been created for the selected week."}
+                        </p>
+                        {!loadError && planWeeks.filter(w => w !== weekInfo.start).length > 0 && (
+                            <div className="flex flex-wrap items-center justify-center gap-2" data-testid="plan-other-weeks">
+                                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Submitted plans:</span>
+                                {planWeeks.filter(w => w !== weekInfo.start).slice(-4).map(w => (
+                                    <button key={w} onClick={() => setWeekOffset(offsetOf(w))}
+                                        className="px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-[11px] font-bold hover:bg-indigo-500/20">
+                                        Week of {formatDateDMY(w)}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             ) : (

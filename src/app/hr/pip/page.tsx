@@ -15,7 +15,7 @@ export default function PIPPermanentPortal() {
     const proofInputRef = useRef<HTMLInputElement>(null);
 
     // Only HR can access this control portal
-    if (!user || user.role !== "HR") return null;
+    if (!user || !["HR", "FOUNDER"].includes(user.role)) return null;
 
     const activePIPs = pipRecords.filter(p => p.status === "Active");
     const completedPIPs = pipRecords.filter(p => p.status === "Completed");

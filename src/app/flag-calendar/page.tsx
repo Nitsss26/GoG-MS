@@ -187,7 +187,8 @@ export default function FlagCalendarPage() {
     };
 
     // ─── Monthly KPI Calculations ───
-    const monthlyKPIs = useMemo(() => {
+    // Plain computation (not a hook): it runs after the "no user" early return
+    const monthlyKPIs = (() => {
         let presentDays = 0;
         let absentDays = 0;
         let leaveDays = 0;
@@ -216,7 +217,7 @@ export default function FlagCalendarPage() {
 
         const totalFlags = Object.values(flagCounts).reduce((a, b) => a + b, 0);
         return { presentDays, absentDays, leaveDays, holidayDays, sundayDays, flagCounts, totalFlags };
-    }, [selectedEmployeeId, month, year, records, holidays, leaves]);
+    })();
 
     const prev = () => { if (month === 0) { setMonth(11); setYear(year - 1); } else setMonth(month - 1); setSelectedDay(null); };
     const next = () => { if (month === 11) { setMonth(0); setYear(year + 1); } else setMonth(month + 1); setSelectedDay(null); };

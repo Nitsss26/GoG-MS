@@ -11,15 +11,27 @@ const NoticeSchema = new Schema({
     readBy: [String],
     isEdited: { type: Boolean, default: false },
     editedAt: { type: String },
-    imageUrls: [String]
+    imageUrls: [String],
+    // Optional scope (older announcements have none and stay visible to everyone)
+    collegeIds: [String],
+    holidayId: { type: String },
+    createdById: { type: String },
+    createdByRole: { type: String },
+    status: { type: String }
 });
 
 // Employee Schema
 const EmployeeSchema = new Schema({
     id: { type: String, required: true, unique: true },
     name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
+    // Not unique on its own: one person may hold several designation records with the same email.
+    // Unique per (email, role) among active records — see src/lib/db-startup.ts
+    email: { type: String, required: true },
     role: { type: String, required: true },
+    // HOI: authorised clock-in / clock-out locations (Location ids) — separate from Original Location (`location`)
+    attendanceLocations: [String],
+    // Five mandatory post-onboarding activities (created when the onboarding form is submitted)
+    postOnboardingChecklist: { type: Schema.Types.Mixed },
     photoUrl: { type: String },
     isOnboarded: { type: Boolean, default: false },
     dept: { type: String },
@@ -101,6 +113,12 @@ const EmployeeSchema = new Schema({
     t_shirt_size: String,
     bachelor_marksheet_all: String,
     master_marksheet_all: String,
+    // Filled in the onboarding form (were missing here, so they were silently dropped on save)
+    bank_account_number: String,
+    ifsc_code: String,
+    account_holder_name: String,
+    date_of_birth: String,
+    blood_group: String,
     
     // --- HR VERIFICATION ---
     onboardingStatus: { type: String, default: "Pending Creation", enum: ["Pending Creation", "Form Pending", "Verification Pending", "Approved"] },
@@ -114,12 +132,25 @@ const EmployeeSchema = new Schema({
         hrMeetingCompleted: { type: Boolean, default: false },
         hrMeetingScreenshot: String,
         managerMeetingCompleted: { type: Boolean, default: false },
-        adMeetingCompleted: { type: Boolean, default: false }
+        adMeetingCompleted: { type: Boolean, default: false },
+        accessRoleSetup: { type: Boolean, default: false },
+        welcomeMailSent: { type: Boolean, default: false }
     },
+    // Who changed each checklist item and when: { aadharCheck: { done, by, byName, at } }
+    onboardingChecklistMeta: { type: Schema.Types.Mixed },
+    onboardingRemarks: String,
+    onboardingApprovedBy: String,
+    onboardingApprovedByName: String,
+    // Onboarding activity log (written by the server on every onboarding change)
+    onboardingActivity: [{
+        at: String, by: String, byName: String, role: String, action: String, note: String,
+    }],
     onboardingSubmittedAt: Date,
     onboardingApprovedAt: Date,
 
     // --- REMOVED FROM PORTAL (soft delete: the record is kept for history, all access is gone) ---
+    // Other designation records of the same person (same email), linked when HR onboards an extra designation
+    linkedEmployeeIds: [String],
     isRemoved: { type: Boolean, default: false },
     removedAt: { type: String },
     removedBy: { type: String },
@@ -159,8 +190,33 @@ const AttendanceSchema = new Schema({
     isApprovedByHR: { type: Boolean, default: false },
     dressCodeImageUrl: { type: String },
     dressCodeStatus: { type: String, default: "Pending", enum: ["Pending", "Approved", "Rejected", "N/A"] },
-    mapRequestId: { type: String } // Reference to MarkAsPresentRequest
-});
+    mapRequestId: { type: String }, // Reference to MarkAsPresentRequest
+    // Dress code audit (server time): when the photo was submitted and who reviewed it, when
+    dressCodeSubmittedAt: { type: String },
+    dressCodeReviewedAt: { type: String },
+    dressCodeReviewedBy: { type: String },
+    dressCodeReviewedByName: { type: String },
+    dressCodeReviewedByRole: { type: String },
+    // Work From Home: attendance marked under an approved WFH application
+    workMode: { type: String },            // "WFH" when clocked in under an approved WFH application
+    wfhApplicationId: { type: String },
+    // How the attendance was recorded: SELF_CLOCK_IN | HR_MANUAL (older records: none)
+    attendanceSource: { type: String },
+    markedBy: { type: String },
+    markedByName: { type: String },
+    markedByRole: { type: String },
+    markedAt: { type: String },            // server time
+    hrRemarks: { type: String },
+    previousStatus: { type: String },
+    // Every HR change, oldest first (never overwritten)
+    attendanceAudit: [{
+        fromStatus: { type: String }, toStatus: { type: String },
+        previousClockIn: { type: String }, previousClockOut: { type: String },
+        by: { type: String }, byName: { type: String }, role: { type: String }, at: { type: String }, remarks: { type: String }
+    }],
+    // HOI multi-location attendance: where the clock-out happened (clock-in place stays in `location`)
+    clockOutLocation: { type: String }
+}, { timestamps: true }); // createdAt is set once on insert and never overwritten; updatedAt changes on every update
 
 // Work Schedule Schema
 const WorkScheduleSchema = new Schema({
@@ -284,7 +340,26 @@ const TicketSchema = new Schema({
     routeTo: { type: String },
     targetEmployeeId: { type: String },
     targetDate: { type: String },
-    originalMessageId: { type: String }
+    originalMessageId: { type: String },
+    // Ticket types (Normal / Attendance) — older tickets have none and are classified from targetCategory
+    ticketType: { type: String },          // NORMAL | ATTENDANCE
+    issueCategory: { type: String },       // e.g. "Login Problem", "Location Not Fetching"
+    attendanceDate: { type: String },      // attendance tickets: affected date (YYYY-MM-DD)
+    issueTime: { type: String },           // attendance tickets: time of the problem (HH:MM)
+    employeeRole: { type: String },        // role of the employee who raised it (captured by the server)
+    updatedAt: { type: String },
+    assignedAt: { type: String },
+    resolvedBy: { type: String },
+    resolvedByName: { type: String },
+    statusHistory: [{
+        action: { type: String },
+        status: { type: String },
+        by: { type: String },
+        byName: { type: String },
+        role: { type: String },
+        at: { type: String },
+        remarks: { type: String }
+    }]
 });
 
 // Reimbursement Schema
@@ -327,7 +402,16 @@ const HolidaySchema = new Schema({
     emailSentAt: { type: String },          // set once; guards against sending the same notification twice
     emailStatus: { type: String },          // "Sent" | "Failed" | "No Recipients"
     emailRecipients: [String],
-    emailError: { type: String }
+    emailError: { type: String },
+    // HOI direct announcement (no HR approval)
+    source: { type: String },               // "HOI_ANNOUNCEMENT" for holidays announced by an HOI
+    holidayType: { type: String },
+    reason: { type: String },
+    description: { type: String },
+    announcedByRole: { type: String },
+    createdAt: { type: String },
+    publishedStatus: { type: String },      // "Published"
+    announcementId: { type: String }        // linked Notice id
 });
 
 const PIPRecordSchema = new Schema({ id: { type: String, unique: true }, employeeId: String, employeeName: String, reason: String, startDate: String, status: String, warnings: Number, disclaimer: String });
@@ -427,11 +511,26 @@ const SprintPlanSchema = new Schema({
     lockedById: { type: String },
     lockedByName: { type: String },
     lockedByRole: { type: String },
+    // Approval behind the lock (who approved, as which role) — the workflow status above stays the source of truth
+    approval: {
+        state: { type: String },          // APPROVED | UNLOCKED
+        type: { type: String },           // CL_CH_APPROVED | HOI_APPROVED | AD_APPROVED | FOUNDER_APPROVED
+        label: { type: String },          // "CL/CH Approved" …
+        byId: { type: String },
+        byName: { type: String },
+        byRole: { type: String },
+        byDesignation: { type: String },
+        at: { type: String },
+        remarks: { type: String },
+    },
     unlockRequestedAt: { type: String },
     unlockedAt: { type: String },
     unlockedBy: { type: String },
     unlockedByName: { type: String },
     unlockedByRole: { type: String },
+    // Returned for correction by a reviewer (before locking)
+    returnedAt: { type: String },
+    returnNote: { type: String },
     version: { type: Number, default: 1 },
     // Every step, oldest first (never deleted)
     history: [{
@@ -627,6 +726,14 @@ const LectureReportSchema = new Schema({
     submittedToGroupAt: { type: String },
 
     // OM: who recorded the professor's entry / exit time and when
+    // OM verification record — kept separate from the professor's own submitted times
+    omCheck: {
+        entryTime: String, exitTime: String,          // when the OM saw the professor enter / leave
+        actualStart: String, actualEnd: String,       // actual class start / end
+        scheduledStart: String, scheduledEnd: String, // snapshot of the plan at verification time
+        delayMinutes: Number, isDelayed: Boolean, delayReason: String, remarks: String,
+        by: String, byName: String, at: String,
+    },
     omTimesUpdatedBy: { type: String },
     omTimesUpdatedByName: { type: String },
     omTimesUpdatedAt: { type: String },
@@ -770,6 +877,50 @@ const LocationSchema = new Schema({
     hoiId: { type: String }
 });
 
+// Exit formalities recorded by HR before an employee is removed (Workforce → Delete Employee)
+const ExitRecordSchema = new Schema({
+    id: { type: String, required: true, unique: true },
+    employeeId: { type: String, required: true, index: true },
+    employeeSnapshot: { type: Schema.Types.Mixed }, // name, email, role, dept, designation, location, status at exit time
+    documentsSent: { type: String, enum: ["YES", "NO"] },        // offer / experience letter sent
+    salarySettled: { type: String, enum: ["YES", "NO"] },
+    lastWorkingDay: { type: String },                                 // YYYY-MM-DD
+    leavingReason: { type: String },
+    leavingReasonOther: { type: String },
+    assetsReturned: { type: String, enum: ["YES", "NO"] },
+    reimbursementsCleared: { type: String, enum: ["YES", "NO"] },
+    remarks: { type: String },
+    status: { type: String, enum: ["PENDING", "COMPLETED"], default: "PENDING" },
+    outstanding: [String],                                            // what still blocks removal (last save)
+    finalEmployeeStatus: { type: String },
+    createdBy: String, createdByName: String, createdAt: String,
+    updatedBy: String, updatedByName: String, updatedAt: String,
+    completedBy: String, completedByName: String, completedByRole: String, completedAt: String,
+    history: [{ action: String, by: String, byName: String, role: String, at: String, note: String }],
+});
+
+// Give Access — delegated hubs (Founder / authorised Tech Lead → recipient), see src/lib/access-hubs.ts
+const AccessGrantSchema = new Schema({
+    id: { type: String, required: true, unique: true },
+    recipientId: { type: String, required: true, index: true },
+    recipientName: String,
+    category: { type: String, required: true },              // HOI, OM, TL, HR, AD, CURRICULUM_LEAD, CURRICULUM_HEAD, PROFESSOR
+    scopeType: { type: String, enum: ["SELECTED", "ALL", "ALL_DYNAMIC"], default: "SELECTED" }, // ALL = snapshot at grant time
+    sourceEmployeeIds: [String],
+    status: { type: String, enum: ["ACTIVE", "REVOKED"], default: "ACTIVE" },
+    grantedBy: String, grantedByName: String, grantedByRole: String, grantedAt: String,
+    updatedBy: String, updatedByName: String, updatedAt: String,
+    revokedBy: String, revokedByName: String, revokedAt: String,
+    history: [{ action: String, by: String, byName: String, role: String, at: String, note: String, sourceEmployeeIds: [String] }],
+});
+// Tech Leads the Founder allows to manage access, and for which categories
+const AccessManagerSchema = new Schema({
+    employeeId: { type: String, required: true, unique: true },
+    categories: [String],
+    enabled: { type: Boolean, default: true },
+    updatedBy: String, updatedByName: String, updatedAt: String,
+});
+
 export const Employee = mongoose.models.Employee || mongoose.model('Employee', EmployeeSchema);
 export const Attendance = mongoose.models.Attendance || mongoose.model('Attendance', AttendanceSchema);
 export const WorkSchedule = mongoose.models.WorkSchedule || mongoose.model('WorkSchedule', WorkScheduleSchema);
@@ -778,7 +929,37 @@ export const OverrideRequest = mongoose.models.OverrideRequest || mongoose.model
 export const PerformanceStar = mongoose.models.PerformanceStar || mongoose.model('PerformanceStar', PerformanceStarSchema);
 export const LeaveRequest = mongoose.models.LeaveRequest || mongoose.model('LeaveRequest', LeaveRequestSchema);
 export const Notice = mongoose.models.Notice || mongoose.model('Notice', NoticeSchema);
+// Work From Home application (separate from leave: never counted as leave, never changes Original Location)
+const WorkFromHomeSchema = new Schema({
+    id: { type: String, required: true, unique: true },
+    employeeId: { type: String, required: true },
+    employeeName: { type: String },
+    employeeRole: { type: String },
+    designation: { type: String },
+    dept: { type: String },
+    wfhType: { type: String, enum: ["FULL_DAY", "HALF_DAY"], default: "FULL_DAY" },
+    startDate: { type: String, required: true },   // YYYY-MM-DD
+    endDate: { type: String, required: true },
+    days: { type: Number },
+    reason: { type: String, required: true },
+    remarks: { type: String },
+    status: { type: String, enum: ["Pending", "Approved", "Rejected", "Cancelled"], default: "Pending" },
+    approverId: { type: String },
+    approverName: { type: String },
+    approverRole: { type: String },
+    decisionRemarks: { type: String },
+    decidedAt: { type: String },
+    cancelledAt: { type: String },
+    cancelledBy: { type: String },
+    history: [{
+        action: { type: String }, status: { type: String }, by: { type: String }, byName: { type: String },
+        role: { type: String }, at: { type: String }, remarks: { type: String }
+    }]
+}, { timestamps: true });
+WorkFromHomeSchema.index({ employeeId: 1, startDate: 1 });
+
 export const Ticket = mongoose.models.Ticket || mongoose.model('Ticket', TicketSchema);
+export const WorkFromHome = mongoose.models.WorkFromHome || mongoose.model('WorkFromHome', WorkFromHomeSchema);
 export const ReimbursementClaim = mongoose.models.ReimbursementClaim || mongoose.model('ReimbursementClaim', ReimbursementClaimSchema);
 export const PIPRecord = mongoose.models.PIPRecord || mongoose.model('PIPRecord', PIPRecordSchema);
 export const AdditionalResponsibility = mongoose.models.AdditionalResponsibility || mongoose.model('AdditionalResponsibility', AdditionalResponsibilitySchema);
@@ -793,3 +974,6 @@ export const CampusDailyMoM = mongoose.models.CampusDailyMoM || mongoose.model('
 export const Notification = mongoose.models.Notification || mongoose.model('Notification', NotificationSchema);
 export const ReminderLog = mongoose.models.ReminderLog || mongoose.model('ReminderLog', ReminderLogSchema);
 export const JobRun = mongoose.models.JobRun || mongoose.model('JobRun', JobRunSchema);
+export const ExitRecord = mongoose.models.ExitRecord || mongoose.model('ExitRecord', ExitRecordSchema);
+export const AccessGrant = mongoose.models.AccessGrant || mongoose.model('AccessGrant', AccessGrantSchema);
+export const AccessManager = mongoose.models.AccessManager || mongoose.model('AccessManager', AccessManagerSchema);

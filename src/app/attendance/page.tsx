@@ -122,6 +122,7 @@ export default function AttendancePage() {
             let status = "Absent";
             if (record) {
                 if (record.status === "On Leave") status = "On Leave";
+                else if (record.status === "Absent") status = "Absent"; // HR marked absent (record kept for history)
                 else if (record.clockOut) status = "Clocked Out";
                 else {
                     // Logic for No Clock-out
@@ -185,7 +186,8 @@ export default function AttendancePage() {
 
     const todaysRecord = attendanceRecords.find(r => r.employeeId === user.id && r.date === currentDate);
     const todaysMapRequest = markAsPresentRequests.find(r => r.employeeId === user.id && r.date === currentDate);
-    const hasCheckedIn = !!todaysRecord || !!todaysMapRequest;
+    // An HR-marked "Absent" record does not count as clocked in (before, marking absent removed the record)
+    const hasCheckedIn = (!!todaysRecord && todaysRecord.status !== "Absent") || !!todaysMapRequest;
     const hasCheckedOut = !!(todaysRecord && todaysRecord.clockOut);
     const isDefaulter = (emp.dressCodeDefaults || 0) >= 3;
     const markPresentCreditsLeft = Math.max(0, 3 - (emp.markPresentUsed || 0));
@@ -221,11 +223,14 @@ export default function AttendancePage() {
                 let targetCollege = college;
                 let dist = 999999;
 
-                if ((emp.role === "HOI" || emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM") && colleges.length > 0) {
-                    let closestCollege = colleges[0];
+                // HOI with authorised attendance locations: only those count (HR → Work Location → Clock-In Locations)
+                const hoiAllowed: string[] = emp.role === "HOI" ? ((emp as any).attendanceLocations || []) : [];
+                const candidates = hoiAllowed.length ? colleges.filter(c => hoiAllowed.includes(c.id)) : colleges;
+                if ((emp.role === "HOI" || emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM") && candidates.length > 0) {
+                    let closestCollege = candidates[0];
                     let minDistance = 999999;
 
-                    for (const c of colleges) {
+                    for (const c of candidates) {
                         const d = haversineDistance(pos.coords.latitude, pos.coords.longitude, c.lat, c.lng);
                         if (d < minDistance) {
                             minDistance = d;
@@ -431,11 +436,31 @@ export default function AttendancePage() {
                 }
             }
 
+            // HOI with authorised attendance locations: the clock-out location is checked too (any authorised college)
+            const hoiAllowed: string[] = emp.role === "HOI" ? ((emp as any).attendanceLocations || []) : [];
+            if (hoiAllowed.length && !isWFH && navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    pos => clockOut(timeNow, isShortLeave, pos.coords.latitude, pos.coords.longitude),
+                    () => setClockInError("Location access is needed to clock out."),
+                    { enableHighAccuracy: true, timeout: 10000 }
+                );
+                return;
+            }
             clockOut(timeNow, isShortLeave);
         }
     };
 
     const myLogs = attendanceRecords.filter(r => r.employeeId === user.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    // Attendance history: HR-marked records are labelled "HR Marked Present / Absent"; self clock-in keeps the normal status
+    const isHrMarked = (log: any) => log.attendanceSource === "HR_MANUAL";
+    const statusLabel = (log: any) => (isHrMarked(log) && (log.status === "Present" || log.status === "Absent") ? `HR Marked ${log.status}` : log.status);
+    const markedBy = (log: any) => (isHrMarked(log) ? `HR${log.markedByName ? ` · ${log.markedByName}` : ""}` : log.clockIn ? "Self Clock-In" : "System");
+    const markedAt = (log: any) => {
+        if (isHrMarked(log) && log.markedAt) return new Date(log.markedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true });
+        if (!log.clockIn) return "—";
+        const [h, m] = String(log.clockIn).split(":").map(Number);
+        return isNaN(h) ? log.clockIn : `${((h + 11) % 12) + 1}:${String(m || 0).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+    };
 
 
     return (
@@ -826,11 +851,14 @@ export default function AttendancePage() {
             <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl overflow-hidden">
                 <div className="p-4 border-b border-zinc-800/50 flex items-center gap-2"><History size={14} className="text-zinc-400" /><h3 className="text-sm font-semibold text-white">Attendance Log</h3></div>
                 <div className="overflow-x-auto -mx-2 sm:mx-0">
-                    <div className="min-w-[700px]">
-                        <table className="w-full">
+                    <div className="min-w-[960px]">
+                        <table className="w-full" data-testid="attendance-log">
                             <thead>
                                 <tr className="border-b border-zinc-800/50 text-[9px] text-zinc-500 uppercase tracking-widest">
                                     <th className="text-left px-5 py-3">Date</th>
+                                    <th className="text-left px-5 py-3">Attendance Status</th>
+                                    <th className="text-left px-5 py-3">Marked By</th>
+                                    <th className="text-left px-5 py-3">Marked At</th>
                                     <th className="text-left px-5 py-3">In</th>
                                     <th className="text-left px-5 py-3">Out</th>
                                     <th className="text-left px-5 py-3">Location</th>
@@ -840,13 +868,21 @@ export default function AttendancePage() {
                             </thead>
                             <tbody className="divide-y divide-zinc-800/50">
                                 {myLogs.slice(0, 20).map((log, index) => (
-                                    <tr key={log.id || (log as any)._id || index} className="hover:bg-zinc-800/20 transition-colors text-xs">
+                                    <tr key={log.id || (log as any)._id || index} data-testid="att-row" data-date={log.date} className="hover:bg-zinc-800/20 transition-colors text-xs">
                                         <td className="px-5 py-3 text-white font-medium whitespace-nowrap">
                                             {log.date ? log.date.split("-").reverse().join("-") : "—"}
                                         </td>
-                                        <td className="px-5 py-3 text-zinc-300">{log.clockIn}</td>
+                                        <td className="px-5 py-3" data-testid="att-status">
+                                            <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap",
+                                                log.status === "Absent" ? "text-red-400 bg-red-500/10 border-red-500/20"
+                                                    : isHrMarked(log) ? "text-sky-300 bg-sky-500/10 border-sky-500/20"
+                                                        : "text-green-400 bg-green-500/10 border-green-500/20")}>{statusLabel(log)}</span>
+                                        </td>
+                                        <td className="px-5 py-3 text-zinc-400 whitespace-nowrap" data-testid="att-marked-by">{markedBy(log)}</td>
+                                        <td className="px-5 py-3 text-zinc-400 whitespace-nowrap" data-testid="att-marked-at">{markedAt(log)}</td>
+                                        <td className="px-5 py-3 text-zinc-300">{log.clockIn || "—"}</td>
                                         <td className="px-5 py-3 text-zinc-300">{log.clockOut || "—"}</td>
-                                        <td className="px-5 py-3 text-zinc-400">{log.location}</td>
+                                        <td className="px-5 py-3 text-zinc-400">{log.location}{(log as any).clockOutLocation && (log as any).clockOutLocation !== log.location ? <span className="block text-[10px] text-zinc-500">Out: {(log as any).clockOutLocation}</span> : null}</td>
                                         <td className="px-5 py-3">
                                             {log.dressCodeImageUrl ? (
                                                 <a href={log.dressCodeImageUrl} target="_blank" rel="noopener" className="text-primary hover:underline flex items-center gap-1"><ImageIcon size={12} /> View</a>

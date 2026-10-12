@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import mongoose from 'mongoose';
 import dbConnect from '@/lib/mongodb';
 import { Employee, LeaveRequest } from '@/models/Schemas';
-import { verifySessionToken, COOKIE_NAME } from '@/lib/session';
+import { getSessionUser } from '@/lib/session-user';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,20 +13,16 @@ export const dynamic = 'force-dynamic';
  */
 export async function PUT(request: Request) {
     try {
-        const cookieStore = await cookies();
-        const sessionCookie = cookieStore.get(COOKIE_NAME);
-        if (!sessionCookie?.value) {
+        await dbConnect();
+        // Session user (also an HR delegate working through Give Access → HR Hub)
+        const actor = await getSessionUser();
+        if (!actor) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
-        const session = verifySessionToken(sessionCookie.value);
-        if (!session) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-        if (session.role !== "HR" && session.role !== "FOUNDER") {
+        if (actor.role !== "HR" && actor.role !== "FOUNDER") {
             return NextResponse.json({ error: 'Only HR can directly approve or reject leave.' }, { status: 403 });
         }
 
-        await dbConnect();
         const { id, action, remarks } = await request.json();
 
         if (!id || (action !== "approve" && action !== "reject")) {
@@ -43,13 +37,8 @@ export async function PUT(request: Request) {
             return NextResponse.json({ error: `This leave is already ${leave.status}` }, { status: 409 });
         }
 
-        // Who is acting: the session stores the Mongo _id (or the employee id as fallback)
-        let approver: any = null;
-        if (mongoose.isValidObjectId(session.userId)) approver = await Employee.findById(session.userId);
-        if (!approver) approver = await Employee.findOne({ id: session.userId });
-        if (!approver) approver = await Employee.findOne({ email: session.email });
-        const approverId = approver?.id || session.userId;
-        const approverName = approver?.name || session.email;
+        const approverId = actor.id;
+        const approverName = actor.name;
         const now = new Date().toISOString();
 
         // HR cannot decide their own leave: another HR or a Founder has to do it
@@ -68,14 +57,14 @@ export async function PUT(request: Request) {
             updates.hrApproval = "Approved";
             updates.approvedBy = approverId;
             updates.approvedByName = approverName;
-            updates.approvedByRole = session.role;
+            updates.approvedByRole = actor.role;
             updates.approvedAt = now;
         } else {
             updates.status = "Rejected";
             updates.hrApproval = "Rejected";
             updates.rejectedBy = approverId;
             updates.rejectedByName = approverName;
-            updates.rejectedByRole = session.role;
+            updates.rejectedByRole = actor.role;
             updates.rejectedAt = now;
         }
 

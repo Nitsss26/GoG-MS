@@ -16,7 +16,7 @@ export default function FinancialsPage() {
     if (!user) return null;
 
     const myClaims = reimbursements.filter(r => r.employeeId === user.id);
-    const allClaims = user.role === "HR" ? reimbursements : myClaims;
+    const allClaims = (user.role === "HR" || user.role === "FOUNDER") ? reimbursements : myClaims;
 
     const handleClaimSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -116,7 +116,7 @@ export default function FinancialsPage() {
                                                     )}
                                                 </td>
                                                 <td className="px-5 py-4 text-right">
-                                                    {user.role === "HR" && claim.status === "Pending" ? (
+                                                    {(user.role === "HR" || user.role === "FOUNDER") && claim.status === "Pending" ? (
                                                         <div className="flex justify-end gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
                                                             <button onClick={() => updateReimbursementStatus(claim.id, "Approved")} className="h-7 w-7 flex items-center justify-center bg-primary/10 text-primary border border-primary/20 rounded hover:bg-primary transition-colors hover:text-white">
                                                                 <Check size={14} />
@@ -140,7 +140,7 @@ export default function FinancialsPage() {
 
                 <div className="space-y-6">
                     {/* Tax & Deductions Summary (Admin Only) */}
-                    {user.role === "HR" && (
+                    {(user.role === "HR" || user.role === "FOUNDER") && (
                         <div className="card p-5 space-y-4">
                             <h3 className="text-sm font-bold text-white">Institutional Withholdings</h3>
                             <div className="space-y-3">

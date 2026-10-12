@@ -25,12 +25,15 @@ export async function GET() {
 
         // Fetch fresh user data from database (never trust the token for full data)
         await dbConnect();
-        const employee = await Employee.findOne({
-            $or: [
-                { employeeId: payload.userId },
-                { email: { $regex: new RegExp(`^${payload.email}$`, 'i') } }
-            ]
-        });
+        // The record of the designation this session was opened with (one email may hold several)
+        const mongoose = (await import('mongoose')).default;
+        let employee: any = mongoose.isValidObjectId(payload.userId) ? await Employee.findById(payload.userId) : null;
+        if (!employee) employee = await Employee.findOne({ id: payload.userId });
+        if (!employee) {
+            const escaped = String(payload.email || '').replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
+            employee = await Employee.findOne({ email: { $regex: new RegExp(`^${escaped}$`, 'i') }, role: payload.actualRole || payload.role });
+        }
+        if (employee && employee.role !== (payload.actualRole || payload.role)) employee = null;
 
         if (!employee) {
             return NextResponse.json({ authenticated: false, error: 'Account not found' }, { status: 404 });

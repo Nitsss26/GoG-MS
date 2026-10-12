@@ -25,7 +25,7 @@ export async function GET(req: Request) {
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         if (facultyId !== actor.id) {
             if (PROFESSOR_ROLES.includes(actor.role) || !(await professorIfInScope(await getAcademicScope(actor), facultyId))) {
-                return NextResponse.json({ error: 'This professor is not in your college.' }, { status: 403 });
+                return NextResponse.json({ error: 'This professor is not in your campus or reporting hierarchy.' }, { status: 403 });
             }
         }
 

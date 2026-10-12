@@ -15,7 +15,7 @@ export default function ManagerAttendanceOverridePage() {
     const todayDate = new Date().toISOString().split("T")[0];
     const reportees = getReportees(user.id) || [];
 
-    const mappedEmployees = useMemo(() => {
+    const mappedEmployees = (() => {
         return reportees.map(emp => {
             const todayRecord = (attendanceRecords || []).find(r => r.employeeId === emp.id && r.date === todayDate);
             const status = todayRecord ? todayRecord.status : "Absent";
@@ -42,7 +42,7 @@ export default function ManagerAttendanceOverridePage() {
             const idMatch = (emp.id || "").toLowerCase().includes(searchQuery.toLowerCase());
             return nameMatch || idMatch;
         });
-    }, [reportees, attendanceRecords, tickets, searchQuery, todayDate]);
+    })();
 
     const handleGiveCredit = (e: React.FormEvent) => {
         e.preventDefault();

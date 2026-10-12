@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { primeRevokedSessions } from '@/lib/session';
+import { onDbConnected } from '@/lib/db-startup';
 import { setServers } from "node:dns/promises";
 
 // Configure DNS servers globally to avoid timeouts
@@ -56,7 +56,7 @@ async function dbConnect() {
 
         cached.promise = mongoose.connect(MONGODB_URI!, opts).then(async (mongoose) => {
             console.log("[DB] Connected successfully.");
-            await primeRevokedSessions(mongoose.connection.db);
+            await onDbConnected(mongoose.connection.db);
             return mongoose;
         });
     }

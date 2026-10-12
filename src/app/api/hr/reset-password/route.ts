@@ -39,6 +39,20 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "HR cannot reset the Founder's password." }, { status: 403 });
         }
 
+        // The password belongs to the person (all designation records with this email)
+        const escapedTarget = String(target.email || '').replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
+        const samePerson: any[] = await Employee.find({ email: { $regex: new RegExp(`^${escapedTarget}$`, 'i') } }).select('id role').lean();
+        if (samePerson.some(e => e.id === actor.id)) {
+            return NextResponse.json({ error: 'Use Change Password to change your own password.' }, { status: 400 });
+        }
+        if (samePerson.some(e => e.role === 'FOUNDER') && actor.role !== 'FOUNDER') {
+            return NextResponse.json({ error: "HR cannot reset the Founder's password." }, { status: 403 });
+        }
+        // HR Executive cannot take over an HR account (HR has Reimbursements access, HR Executive does not)
+        if ((actor as any).hrExecutive && samePerson.some(e => e.role === 'HR')) {
+            return NextResponse.json({ error: "HR Executive cannot reset an HR account's password." }, { status: 403 });
+        }
+
         let plain: string;
         if (mode === 'generate') {
             plain = generateTemporaryPassword();
@@ -52,8 +66,10 @@ export async function POST(request: Request) {
         }
 
         const now = new Date().toISOString();
-        await Employee.updateOne(
-            { _id: target._id },
+        // One login identity per email: every active designation record of this person gets the new password
+        const escapedEmail = String(target.email || '').replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
+        await Employee.updateMany(
+            { email: { $regex: new RegExp(`^${escapedEmail}$`, 'i') } },
             {
                 $set: {
                     password: await hashPassword(plain),

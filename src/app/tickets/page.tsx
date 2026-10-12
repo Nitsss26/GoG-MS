@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { NORMAL_ISSUES, EXISTING_CATEGORIES, ATTENDANCE_ISSUES, ATTENDANCE_TICKET_CATEGORY, ATTENDANCE_OVERRIDE_CATEGORY, TICKET_TYPE_LABEL, ticketTypeOf, ticketIssueOf } from "@/lib/ticket-types";
 import { useAuth } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { cn } from "@/lib/utils";
@@ -8,21 +9,28 @@ import { AlertCircle, Clock, CheckCircle2, MessageSquare, Plus, FileText, ArrowR
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function TicketsPage() {
-    const { user, raiseTicket, resolveTicket, addADRemarks, forwardTicket, tickets, getReportees, employees, restoreAttendanceCredits, pipRecords } = useAuth();
+    const { user, raiseTicket, resolveTicket, updateTicket, addADRemarks, forwardTicket, tickets, getReportees, employees, restoreAttendanceCredits, pipRecords } = useAuth();
     const [showNewTicketModal, setShowNewTicketModal] = useState(false);
-    const [ticketForm, setTicketForm] = useState<{
-        targetCategory: string;
-        subject: string;
-        content: string;
-        targetEmployeeIds: string[];
-        targetDate: string;
-    }>({
-        targetCategory: "HR Desk",
+    const blankForm = () => ({
+        ticketType: "NORMAL" as "NORMAL" | "ATTENDANCE",
+        targetCategory: "HR Desk",          // existing category (desk) — drives routing and the ticket ID
+        issueCategory: "",                  // the issue chosen in the category dropdown
         subject: "",
         content: "",
-        targetEmployeeIds: [],
-        targetDate: new Date().toISOString().split('T')[0]
+        targetEmployeeIds: [] as string[],
+        targetDate: new Date().toISOString().split('T')[0],
+        attendanceDate: new Date().toISOString().split('T')[0],
+        issueTime: "",
     });
+    const [ticketForm, setTicketForm] = useState(blankForm());
+    // Dashboard: tabs + filters
+    const [typeTab, setTypeTab] = useState<"ALL" | "NORMAL" | "ATTENDANCE">("ALL");
+    const [fCategory, setFCategory] = useState("All");
+    const [fEmployee, setFEmployee] = useState("");
+    const [fDate, setFDate] = useState("");
+    const [fStatus, setFStatus] = useState("All");
+    const [fHandler, setFHandler] = useState("All");
+    const [ticketError, setTicketError] = useState("");
     const [proofUrls, setProofUrls] = useState<string[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const [resolutionModal, setResolutionModal] = useState<{ show: boolean, ticketId: string, ticketSubject: string, category: string, targetEmp?: string, targetDate?: string } | null>(null);
@@ -56,11 +64,30 @@ export default function TicketsPage() {
         ? tickets.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) 
         : myTickets;
 
+    // ── Dashboard filters (type tab, category, employee, date, status, handler) ──
+    const nameOf = (id?: string) => (id ? employees.find(e => e.id === id)?.name || id : "");
+    const typedTickets = displayTickets.filter(t => typeTab === "ALL" || ticketTypeOf(t) === typeTab);
+    const categoryOptions = Array.from(new Set(displayTickets.filter(t => typeTab === "ALL" || ticketTypeOf(t) === typeTab).map(ticketIssueOf).filter(Boolean))).sort();
+    const handlerOptions = Array.from(new Set(displayTickets.map(t => t.routeTo).filter(Boolean) as string[]));
+    const filteredTickets = typedTickets.filter(t =>
+        (fCategory === "All" || ticketIssueOf(t) === fCategory)
+        && (!fEmployee.trim() || `${t.employeeName} ${t.raisedBy}`.toLowerCase().includes(fEmployee.trim().toLowerCase()))
+        && (!fDate || String(t.createdAt || "").slice(0, 10) === fDate || t.attendanceDate === fDate)
+        && (fStatus === "All" || (fStatus === "Pending" ? t.status === "In Progress" : t.status === fStatus))
+        && (fHandler === "All" || t.routeTo === fHandler));
+    const fmtTs = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+
     const handleSubmitTicket = async (e: React.FormEvent) => {
         e.preventDefault();
         // Proof is mandatory for ALL tickets now
         if (proofUrls.length === 0) return;
 
+        if (!ticketForm.issueCategory) { setTicketError(ticketForm.ticketType === "ATTENDANCE" ? "Select the attendance issue." : "Select the ticket category."); return; }
+        if (ticketForm.ticketType === "ATTENDANCE" && ticketForm.targetCategory !== ATTENDANCE_OVERRIDE_CATEGORY && !ticketForm.attendanceDate) { setTicketError("Select the attendance date."); return; }
+        setTicketError("");
+        const extra = ticketForm.ticketType === "ATTENDANCE" && ticketForm.targetCategory !== ATTENDANCE_OVERRIDE_CATEGORY
+            ? { ticketType: "ATTENDANCE" as const, issueCategory: ticketForm.issueCategory, attendanceDate: ticketForm.attendanceDate, issueTime: ticketForm.issueTime || undefined }
+            : { ticketType: ticketForm.ticketType, issueCategory: ticketForm.issueCategory };
         setIsSubmitting(true);
         try {
             if (ticketForm.targetCategory === "Attendance Override Request") {
@@ -74,7 +101,8 @@ export default function TicketsPage() {
                         undefined,
                         proofUrls,
                         targetId,
-                        ticketForm.targetDate
+                        ticketForm.targetDate,
+                        extra
                     );
                 }
             } else {
@@ -86,12 +114,13 @@ export default function TicketsPage() {
                     undefined,
                     proofUrls,
                     undefined,
-                    undefined
+                    undefined,
+                    extra
                 );
             }
 
             setShowNewTicketModal(false);
-            setTicketForm({ targetCategory: "HR Desk", subject: "", content: "", targetEmployeeIds: [], targetDate: new Date().toISOString().split('T')[0] });
+            setTicketForm(blankForm());
             setProofUrls([]);
         } catch (err) {
             console.error(err);
@@ -152,40 +181,63 @@ export default function TicketsPage() {
             )}
 
             {/* Dashboard Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="card p-4 space-y-1">
-                    <p className="text-[9px] text-muted font-bold uppercase tracking-widest">Total Active</p>
-                    <p className="text-lg font-bold text-white">{displayTickets.filter(t => t.status !== "Resolved").length}</p>
-                </div>
-                <div className="card p-4 space-y-1">
-                    <p className="text-[9px] text-muted font-bold uppercase tracking-widest">Awaiting Action</p>
-                    <p className="text-lg font-bold text-amber-500">{displayTickets.filter(t => t.status === "Open").length}</p>
-                </div>
-                <div className="card p-4 space-y-1">
-                    <p className="text-[9px] text-muted font-bold uppercase tracking-widest">In Pipeline</p>
-                    <p className="text-lg font-bold text-blue-500">{displayTickets.filter(t => t.status === "In Progress").length}</p>
-                </div>
-                <div className="card p-4 space-y-1">
-                    <p className="text-[9px] text-muted font-bold uppercase tracking-widest">Resolved Log</p>
-                    <p className="text-lg font-bold text-green-500">{displayTickets.filter(t => t.status === "Resolved").length}</p>
-                </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3" data-testid="ticket-cards">
+                {[
+                    { k: "total", label: "Total Tickets", value: displayTickets.length, color: "text-white" },
+                    { k: "normal", label: "Normal Tickets", value: displayTickets.filter(t => ticketTypeOf(t) === "NORMAL").length, color: "text-sky-400" },
+                    { k: "attendance", label: "Attendance Tickets", value: displayTickets.filter(t => ticketTypeOf(t) === "ATTENDANCE").length, color: "text-violet-400" },
+                    { k: "open", label: "Open Tickets", value: displayTickets.filter(t => t.status === "Open").length, color: "text-amber-500" },
+                    { k: "pending", label: "Pending Tickets", value: displayTickets.filter(t => t.status === "In Progress").length, color: "text-blue-500" },
+                    { k: "resolved", label: "Resolved Tickets", value: displayTickets.filter(t => t.status === "Resolved").length, color: "text-green-500" },
+                ].map(c => (
+                    <div key={c.k} className="card p-4 space-y-1" data-testid={`ticket-card-${c.k}`}>
+                        <p className="text-[9px] text-muted font-bold uppercase tracking-widest">{c.label}</p>
+                        <p className={cn("text-lg font-bold", c.color)} data-testid={`ticket-card-${c.k}-value`}>{c.value}</p>
+                    </div>
+                ))}
             </div>
 
             {/* Ticket Stream */}
             <div className="card">
-                <div className="p-4 border-b border-border flex justify-between items-center bg-surface-light/50">
-                    <h3 className="text-sm font-semibold text-white">Active Queue</h3>
+                <div className="p-4 border-b border-border space-y-3 bg-surface-light/50">
+                    <div className="flex flex-wrap justify-between items-center gap-3">
+                        <h3 className="text-sm font-semibold text-white">Active Queue</h3>
+                        <div className="flex bg-zinc-900 border border-zinc-800 rounded-lg p-0.5" data-testid="ticket-tabs">
+                            {([["ALL", "All Tickets"], ["NORMAL", "Normal Tickets"], ["ATTENDANCE", "Attendance Tickets"]] as const).map(([k, l]) => (
+                                <button key={k} onClick={() => { setTypeTab(k); setFCategory("All"); }} data-testid={`ticket-tab-${k}`}
+                                    className={cn("px-3 py-1.5 rounded-md text-[10px] font-bold transition-all", typeTab === k ? "bg-primary/15 text-primary" : "text-zinc-500 hover:text-white")}>{l}</button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-[11px]" data-testid="ticket-filters">
+                        <select value={fCategory} onChange={e => setFCategory(e.target.value)} data-testid="ticket-filter-category" className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5 text-white outline-none">
+                            <option value="All">Category: All</option>
+                            {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        <input value={fEmployee} onChange={e => setFEmployee(e.target.value)} placeholder="Employee name / ID" data-testid="ticket-filter-employee" className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5 text-white outline-none w-40" />
+                        <input type="date" value={fDate} onChange={e => setFDate(e.target.value)} title="Ticket date / attendance date" data-testid="ticket-filter-date" className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5 text-white outline-none [color-scheme:dark]" />
+                        <select value={fStatus} onChange={e => setFStatus(e.target.value)} data-testid="ticket-filter-status" className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5 text-white outline-none">
+                            <option value="All">Status: All</option><option value="Open">Open</option><option value="Pending">Pending (In Progress)</option><option value="Resolved">Resolved</option>
+                        </select>
+                        <select value={fHandler} onChange={e => setFHandler(e.target.value)} data-testid="ticket-filter-handler" className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5 text-white outline-none">
+                            <option value="All">Handler: All</option>
+                            {handlerOptions.map(h => <option key={h} value={h}>{nameOf(h)}</option>)}
+                        </select>
+                        {(fCategory !== "All" || fEmployee || fDate || fStatus !== "All" || fHandler !== "All") && (
+                            <button onClick={() => { setFCategory("All"); setFEmployee(""); setFDate(""); setFStatus("All"); setFHandler("All"); }} className="text-zinc-400 hover:text-white px-1">Clear</button>
+                        )}
+                    </div>
                 </div>
                 <div className="divide-y divide-border">
-                    {displayTickets.length === 0 ? (
+                    {filteredTickets.length === 0 ? (
                         <div className="p-12 text-center text-xs text-muted font-medium italic">
                             No tickets registered in the current pipeline.
                         </div>
                     ) : (
-                        displayTickets.map((ticket) => {
+                        filteredTickets.map((ticket) => {
                             const targetEmp = ticket.targetEmployeeId ? employees.find(e => e.id === ticket.targetEmployeeId) : null;
                             return (
-                                <div key={ticket.id} className="p-5 flex items-start gap-4 group hover:bg-surface-light/50 transition-colors">
+                                <div key={ticket.id} data-testid="ticket-row" data-id={ticket.id} className="p-5 flex items-start gap-4 group hover:bg-surface-light/50 transition-colors">
                                     <div className="mt-1">
                                         <StatusIcon status={ticket.status} />
                                     </div>
@@ -201,6 +253,12 @@ export default function TicketsPage() {
                                                     <span>By: {ticket.employeeName}</span>
                                                     <span>·</span>
                                                     <span>{new Date(ticket.createdAt).toLocaleDateString()}</span>
+                                                </div>
+                                                <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[9px]">
+                                                    <span data-testid="ticket-type" className={cn("px-1.5 py-0.5 rounded border font-black uppercase tracking-wider", ticketTypeOf(ticket) === "ATTENDANCE" ? "border-violet-500/30 bg-violet-500/10 text-violet-300" : "border-sky-500/30 bg-sky-500/10 text-sky-300")}>{TICKET_TYPE_LABEL[ticketTypeOf(ticket)]}</span>
+                                                    <span data-testid="ticket-issue" className="px-1.5 py-0.5 rounded border border-zinc-700 bg-zinc-800/60 text-zinc-300 font-bold">{ticketIssueOf(ticket)}</span>
+                                                    {ticket.attendanceDate && <span className="text-zinc-400">Attendance date: <b className="text-zinc-200">{ticket.attendanceDate}</b>{ticket.issueTime ? ` · ${ticket.issueTime}` : ""}</span>}
+                                                    {ticket.routeTo && <span className="text-zinc-500">Handler: <b className="text-zinc-300">{nameOf(ticket.routeTo)}</b></span>}
                                                 </div>
                                             </div>
                                             <span className={cn("badge text-[9px]",
@@ -257,6 +315,20 @@ export default function TicketsPage() {
                                                 <p className="text-[11px] text-zinc-300 font-medium">{ticket.resolutionNotes}</p>
                                             </div>
                                         )}
+                                        {(ticket.resolvedByName || (ticket.statusHistory && ticket.statusHistory.length > 0)) && (
+                                            <details className="text-[10px] text-zinc-400" data-testid="ticket-history">
+                                                <summary className="cursor-pointer text-zinc-500 font-bold uppercase tracking-widest text-[9px]">
+                                                    History{ticket.resolvedByName ? ` · Resolved by ${ticket.resolvedByName}${ticket.resolvedAt ? ` on ${fmtTs(ticket.resolvedAt)}` : ""}` : ""}
+                                                </summary>
+                                                <div className="mt-1.5 space-y-1">
+                                                    {(ticket.statusHistory || []).map((h, i) => (
+                                                        <div key={i} className="bg-zinc-800/30 border border-zinc-700/30 rounded px-2 py-1">
+                                                            <span className="font-bold text-zinc-300">{h.action}</span> · {h.byName}{h.role ? ` (${h.role})` : ""} · {fmtTs(h.at)}{h.remarks ? <span className="italic"> — “{h.remarks}”</span> : null}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </details>
+                                        )}
                                         {ticket.adRemarks && (
                                             <div className="bg-indigo-500/5 p-3 rounded-lg border border-indigo-500/10">
                                                 <p className="text-[10px] font-bold text-indigo-400 mb-1 uppercase tracking-widest">AD Remarks</p>
@@ -301,6 +373,15 @@ export default function TicketsPage() {
                                                 <CheckCircle2 size={12} /> Resolve Ticket
                                             </button>
                                         )}
+                                        {(isHR || ticket.routeTo === user.id) && ticket.status === "Open" && (
+                                            <button
+                                                onClick={() => updateTicket(ticket.id, { status: "In Progress" })}
+                                                data-testid="ticket-in-progress"
+                                                className="btn-outline py-1.5 px-3 text-[10px] h-auto border-blue-500/20 text-blue-400 hover:bg-blue-500/10 whitespace-nowrap flex items-center gap-2"
+                                            >
+                                                <Clock size={12} /> Mark In Progress
+                                            </button>
+                                        )}
                                         {isHR && ticket.status !== "Resolved" && (
                                             <button
                                                 onClick={() => {
@@ -336,10 +417,10 @@ export default function TicketsPage() {
             {showNewTicketModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowNewTicketModal(false)} />
-                    <div className="card w-full max-w-lg p-6 relative z-10 shadow-2xl space-y-6">
+                    <div className="card w-full max-w-lg p-6 relative z-10 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto" data-testid="ticket-modal">
                         <div className="flex justify-between items-center">
                             <h2 className="text-base font-bold text-white flex items-center gap-2">
-                                <FileText size={16} className="text-primary" /> Raise Support Ticket
+                                <FileText size={16} className="text-primary" /> {ticketForm.ticketType === "ATTENDANCE" ? "Raise Attendance Ticket" : "Raise Support Ticket"}
                             </h2>
                             <button onClick={() => setShowNewTicketModal(false)} className="text-muted hover:text-white transition-colors">
                                 <X size={18} />
@@ -348,21 +429,67 @@ export default function TicketsPage() {
                         <form onSubmit={handleSubmitTicket} className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1.5 col-span-2">
-                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Target Category</label>
+                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Ticket Type</label>
                                     <select
+                                        data-testid="ticket-type-select"
                                         className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary cursor-pointer hover:border-primary/50 transition-colors"
-                                        value={ticketForm.targetCategory}
-                                        onChange={e => setTicketForm({ ...ticketForm, targetCategory: e.target.value })}
+                                        value={ticketForm.ticketType}
+                                        onChange={e => {
+                                            const t = e.target.value as "NORMAL" | "ATTENDANCE";
+                                            setTicketForm({ ...ticketForm, ticketType: t, issueCategory: "", targetCategory: t === "ATTENDANCE" ? ATTENDANCE_TICKET_CATEGORY : "HR Desk" });
+                                        }}
                                     >
-                                        <option value="HR Desk">HR Desk [Accounts/HR]</option>
-                                        <option value="Misconduct">Misconduct / Institute Issues</option>
-                                        <option value="Academic">Academic / Student Concerns</option>
-                                        <option value="Technical">Technical Issues</option>
-                                        <option value="Against HR (Confidential to Founders)">Against HR (Confidential to Founders)</option>
-                                        <option value="Attendance Override Request">Attendance Override Request</option>
-                                        <option value="Others">Others</option>
+                                        <option value="NORMAL">Normal Ticket</option>
+                                        <option value="ATTENDANCE">Attendance / Clock-In &amp; Clock-Out Ticket</option>
                                     </select>
                                 </div>
+                                <div className="space-y-1.5 col-span-2">
+                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest">{ticketForm.ticketType === "ATTENDANCE" ? "Select Attendance Issue" : "Ticket Category"}</label>
+                                    <select
+                                        data-testid="ticket-category-select"
+                                        required
+                                        className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary cursor-pointer hover:border-primary/50 transition-colors"
+                                        value={ticketForm.issueCategory ? `${ticketForm.targetCategory}||${ticketForm.issueCategory}` : ""}
+                                        onChange={e => {
+                                            const [cat, issue] = e.target.value.split("||");
+                                            setTicketForm({ ...ticketForm, targetCategory: cat || "HR Desk", issueCategory: issue || "" });
+                                        }}
+                                    >
+                                        <option value="">{ticketForm.ticketType === "ATTENDANCE" ? "Select Attendance Issue" : "Select Category"}</option>
+                                        {ticketForm.ticketType === "NORMAL" ? (
+                                            <>
+                                                <optgroup label="Issue">
+                                                    {NORMAL_ISSUES.map(i => <option key={i.label} value={`${i.route}||${i.label}`}>{i.label}</option>)}
+                                                </optgroup>
+                                                <optgroup label="Desk / Category">
+                                                    {EXISTING_CATEGORIES.map(c => <option key={c.value} value={`${c.value}||${c.value}`}>{c.label}</option>)}
+                                                </optgroup>
+                                            </>
+                                        ) : (
+                                            <>
+                                                {ATTENDANCE_ISSUES.map(i => <option key={i} value={`${ATTENDANCE_TICKET_CATEGORY}||${i}`}>{i}</option>)}
+                                                <option value={`${ATTENDANCE_OVERRIDE_CATEGORY}||${ATTENDANCE_OVERRIDE_CATEGORY}`}>{ATTENDANCE_OVERRIDE_CATEGORY}</option>
+                                            </>
+                                        )}
+                                    </select>
+                                </div>
+
+                                {ticketForm.ticketType === "ATTENDANCE" && ticketForm.targetCategory !== ATTENDANCE_OVERRIDE_CATEGORY && (
+                                    <>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Attendance Date</label>
+                                            <input type="date" required data-testid="ticket-attendance-date" max={new Date().toISOString().split('T')[0]}
+                                                className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary [color-scheme:dark]"
+                                                value={ticketForm.attendanceDate} onChange={e => setTicketForm({ ...ticketForm, attendanceDate: e.target.value })} />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Issue Time</label>
+                                            <input type="time" data-testid="ticket-issue-time"
+                                                className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary [color-scheme:dark]"
+                                                value={ticketForm.issueTime} onChange={e => setTicketForm({ ...ticketForm, issueTime: e.target.value })} />
+                                        </div>
+                                    </>
+                                )}
 
                                 {ticketForm.targetCategory === "Attendance Override Request" && (
                                     <>
@@ -420,7 +547,7 @@ export default function TicketsPage() {
                                     />
                                 </div>
                                 <div className="space-y-1.5 col-span-2">
-                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Content</label>
+                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Description</label>
                                     <textarea
                                         required
                                         rows={4}
@@ -466,6 +593,7 @@ export default function TicketsPage() {
                                     )}
                                 </div>
                             </div>
+                            {ticketError && <p className="text-[11px] text-red-400" data-testid="ticket-error">{ticketError}</p>}
                             <div className="flex justify-end gap-3 pt-4 border-t border-border">
                                 <button type="button" onClick={() => setShowNewTicketModal(false)} className="btn-outline text-xs py-2 px-6">Cancel</button>
                                 <button
@@ -476,7 +604,7 @@ export default function TicketsPage() {
                                     {isSubmitting ? (
                                         <Loader2 size={14} className="animate-spin inline mr-2" />
                                     ) : (
-                                        "Submit Ticket"
+                                        ticketForm.ticketType === "ATTENDANCE" ? "Submit Attendance Ticket" : "Submit Ticket"
                                     )}
                                     {!isSubmitting && <ArrowRight size={14} className="inline ml-1 group-hover:translate-x-1 transition-transform" />}
                                 </button>
