@@ -160,7 +160,8 @@ const BORDER = { style: "thin" as const, color: { argb: "FFE4E4E7" } };
 const isYmd = (v: any) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 async function newWorkbook(meta: { title: string; scope?: string; generatedBy: string; generatedAt: string }) {
-    const ExcelJS: any = (await import("exceljs")).default || (await import("exceljs"));
+    const mod: any = await import("exceljs");
+    const ExcelJS: any = mod.Workbook ? mod : (mod.default?.Workbook ? mod.default : (mod.default || mod));
     const wb = new ExcelJS.Workbook();
     wb.creator = "GOG OMS"; wb.created = new Date(meta.generatedAt);
     return wb;

@@ -1,7 +1,14 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
     /* config options here */
+    turbopack: {
+        root: path.resolve(__dirname),
+        resolveAlias: {
+            exceljs: "exceljs/dist/exceljs.min.js",
+        },
+    },
     serverExternalPackages: ["@ffmpeg-installer/ffmpeg", "fluent-ffmpeg"],
     images: {
         remotePatterns: [
