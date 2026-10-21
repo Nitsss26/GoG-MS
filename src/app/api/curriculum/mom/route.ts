@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { CampusDailyMoM } from '@/models/Schemas';
+import { getSessionUser } from '@/lib/session-user';
 
 export async function GET(req: Request) {
     try {
@@ -29,12 +30,17 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
     try {
         await dbConnect();
+        // The person saving is always the logged-in user (not taken from the request body)
+        const actor = await getSessionUser();
+        if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         const body = await req.json();
         const {
             id,
             campus,
             date,
             title,
+            meetingTime,
+            meetingType,
             agenda,
             discussionPoints,
             keyDecisions,
@@ -42,10 +48,8 @@ export async function POST(req: Request) {
             blockers,
             attendees,
             updateNote,
-            updatedBy,
-            updatedByName,
-            role
         } = body;
+        const updatedBy = actor.id, updatedByName = actor.name, role = actor.role;
 
         if (!campus || !date) {
             return NextResponse.json({ error: "Campus and date are required" }, { status: 400 });
@@ -71,6 +75,8 @@ export async function POST(req: Request) {
 
         if (momDoc) {
             if (title !== undefined) momDoc.title = title;
+            if (meetingTime !== undefined) momDoc.meetingTime = meetingTime;
+            if (meetingType !== undefined) momDoc.meetingType = meetingType;
             if (agenda !== undefined) momDoc.agenda = agenda;
             if (discussionPoints !== undefined) momDoc.discussionPoints = discussionPoints;
             if (keyDecisions !== undefined) momDoc.keyDecisions = keyDecisions;
@@ -82,12 +88,15 @@ export async function POST(req: Request) {
             momDoc.updates.push(auditUpdate);
             await momDoc.save();
         } else {
-            const newId = `MOM-${campus.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()}-${date}`;
+            // Full campus name + date + short random part: two campuses starting with the same letters (e.g. SAGE Bhopal / SAGE Indore) no longer clash
+            const newId = `MOM-${campus.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 40)}-${date}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
             momDoc = await CampusDailyMoM.create({
                 id: newId,
                 campus,
                 date,
                 title: title || `Daily Sync MoM - ${campus}`,
+                meetingTime: meetingTime || "",
+                meetingType: meetingType || "",
                 agenda: agenda || "",
                 discussionPoints: discussionPoints || "",
                 keyDecisions: keyDecisions || "",

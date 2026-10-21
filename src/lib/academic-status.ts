@@ -187,3 +187,27 @@ export const UNIT_NUMBERS = ["1", "2", "3", "4", "5", "6", "7", "8"];
 
 /** Default class strength when the project has no stored strength for that class (Module 7) */
 export const DEFAULT_CLASS_STRENGTH = 60;
+
+/** OM entry / exit check: minutes of grace before a late entry or an early exit needs a reason */
+export const OM_TIME_GRACE_MINUTES = 5;
+export const LATE_ENTRY_REASONS = [
+    "Previous class / lecture ran over",
+    "Traffic / commute delay",
+    "Official meeting or duty",
+    "Health / personal emergency",
+    "Classroom or technical setup issue",
+];
+/** Where the OM shared the lecture notes (Notes Submitted to Groups) */
+export const NOTES_GROUP_TYPES: { value: string; label: string }[] = [
+    { value: "TELEGRAM", label: "Telegram Group" },
+    { value: "WHATSAPP", label: "WhatsApp Group" },
+    { value: "BOTH", label: "Telegram & WhatsApp Groups" },
+];
+export const notesGroupLabel = (v?: string) => NOTES_GROUP_TYPES.find(g => g.value === v)?.label || "";
+export const EARLY_EXIT_REASONS = [
+    "Next class / lecture scheduled",
+    "Session content completed early",
+    "Official meeting or duty",
+    "Health / personal emergency",
+    "Students left early (event / exam)",
+];

@@ -14,6 +14,9 @@ const todayIST = () => new Date(new Date().toLocaleString("en-US", { timeZone: "
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const daysAgo = (n: number) => { const d = todayIST(); d.setDate(d.getDate() - n); return ymd(d); };
 
+/** Submitted and waiting for OM or for the final verification (CL / CH / HOI) */
+const PENDING_VERIFICATION = ["PENDING_OM", "PENDING_CL_CH", "PENDING_HOI"];
+
 export default function ClassVerificationPage() {
     const { user } = useAuth();
     const role = user?.role || "";
@@ -28,6 +31,8 @@ export default function ClassVerificationPage() {
     const [college, setCollege] = useState("All");
     const [facultyId, setFacultyId] = useState("All");
     const [statusFilter, setStatusFilter] = useState("All");
+    // All Classes: quick buttons — All / Pending Verification (with OM or CL / CH / HOI) / Verified (completed)
+    const [quick, setQuick] = useState<"ALL" | "PENDING" | "VERIFIED">("ALL");
     const [records, setRecords] = useState<any[]>([]);
     const [professors, setProfessors] = useState<any[]>([]);
     const [colleges, setColleges] = useState<any[]>([]);
@@ -63,6 +68,12 @@ export default function ClassVerificationPage() {
 
     useEffect(() => { if (user) load(); }, [user, tab, from, to, college, facultyId]);
 
+    // Deep link from "Professors Under My HOI": ?facultyId=<id> → all classes of that professor
+    useEffect(() => {
+        const f = new URLSearchParams(window.location.search).get("facultyId");
+        if (f) { setFacultyId(f); setTab("ALL"); }
+    }, []);
+
     // Deep link from a notification: ?record=<id>
     useEffect(() => {
         const id = new URLSearchParams(window.location.search).get("record");
@@ -76,6 +87,7 @@ export default function ClassVerificationPage() {
     const visible = useMemo(() => {
         let list = records;
         if (tab === "QUEUE" && queue) list = list.filter(r => queue.keys.includes(r.pipelineStatus));
+        if (tab === "ALL" && quick !== "ALL") list = list.filter(r => (quick === "VERIFIED" ? r.pipelineStatus === "COMPLETED" : PENDING_VERIFICATION.includes(r.pipelineStatus)));
         if (tab === "ALL" && statusFilter !== "All") {
             list = statusFilter === "DELAYED"
                 ? list.filter(r => r.classEnded && (r.pipelineStatus === "PENDING_PROFESSOR" || r.notesMissing))
@@ -83,7 +95,7 @@ export default function ClassVerificationPage() {
         }
         if (deepRecord && !list.some(r => r._id === deepRecord._id)) list = [deepRecord, ...list];
         return list;
-    }, [records, tab, statusFilter, queue, deepRecord]);
+    }, [records, tab, statusFilter, quick, queue, deepRecord]);
 
     const refreshAfterAction = async (msg: string) => {
         setMessage(msg);
@@ -98,6 +110,11 @@ export default function ClassVerificationPage() {
     }
 
     const queueCount = queue ? records.filter(r => queue.keys.includes(r.pipelineStatus)).length : 0;
+    const quickCounts = {
+        ALL: records.length,
+        PENDING: records.filter(r => PENDING_VERIFICATION.includes(r.pipelineStatus)).length,
+        VERIFIED: records.filter(r => r.pipelineStatus === "COMPLETED").length,
+    };
 
     return (
         <div className="max-w-6xl mx-auto pt-8 pb-16 px-4 sm:px-6 space-y-6 w-full [contain:inline-size]">
@@ -124,6 +141,18 @@ export default function ClassVerificationPage() {
                     All Classes
                 </button>
             </div>
+
+            {(
+                <div className="flex flex-wrap gap-1 p-1 w-fit rounded-xl border border-zinc-800 bg-zinc-900/60" role="tablist" data-testid="quick-filter">
+                    {([["ALL", "All", "text-zinc-200", "bg-zinc-700/70"], ["PENDING", "Pending Verification", "text-amber-300", "bg-amber-500/15 shadow-[inset_0_0_0_1px_rgba(245,158,11,0.35)]"], ["VERIFIED", "Verified", "text-emerald-300", "bg-emerald-500/15 shadow-[inset_0_0_0_1px_rgba(16,185,129,0.35)]"]] as const).map(([k, label, txt, on]) => (
+                        <button key={k} role="tab" aria-selected={tab === "ALL" && quick === k} onClick={() => { setQuick(k); setTab("ALL"); }} data-testid={`quick-${k}`}
+                            className={`h-9 px-3.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors ${tab === "ALL" && quick === k ? `${on} ${txt}` : "text-zinc-400 hover:text-white"}`}>
+                            {label}
+                            {!loading && tab === "ALL" && <span className={`text-[10px] tabular-nums px-1.5 py-0.5 rounded-md ${quick === k ? "bg-black/30" : "bg-zinc-800"}`}>{quickCounts[k]}</span>}
+                        </button>
+                    ))}
+                </div>
+            )}
 
             <div className="flex flex-wrap items-end gap-3 bg-zinc-900/40 border border-zinc-800 rounded-2xl p-4">
                 <Filter size={14} className="text-zinc-500 mb-2" />
@@ -162,7 +191,7 @@ export default function ClassVerificationPage() {
                 <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>
             ) : visible.length === 0 ? (
                 <div className="text-center py-16 text-sm text-zinc-500 bg-zinc-900/30 border border-dashed border-zinc-800 rounded-2xl">
-                    {tab === "QUEUE" ? "Nothing is waiting for you." : "No classes in this range."}
+                    {tab === "QUEUE" ? "Nothing is waiting for you." : quick === "PENDING" ? "No classes pending verification in this range." : quick === "VERIFIED" ? "No verified classes in this range." : "No classes in this range."}
                 </div>
             ) : (
                 <div className="space-y-3" data-testid="record-list">

@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import dbConnect from '@/lib/mongodb';
 import { Employee } from '@/models/Schemas';
 import { createSessionToken, getSessionCookieOptions } from '@/lib/session';
-import { verifyPassword, hashPassword } from '@/lib/password';
+import { verifyPassword, isHashedPassword, storedPasswordValue } from '@/lib/password';
 
 export async function POST(request: Request) {
     try {
@@ -49,12 +49,12 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: false, error: `Institutional role mismatch.` }, { status: 403 });
         }
 
-        // Older account with a plain-text password: replace it with a hash now that we know it is correct
-        if (check.needsRehash) {
+        // Account still holding an older hash: store the (now verified) password as plain text, like the original portal
+        if (isHashedPassword(storedPassword)) {
             try {
-                await Employee.updateOne({ _id: employee._id }, { $set: { password: await hashPassword(String(password)) } });
+                await Employee.updateOne({ _id: employee._id }, { $set: { password: storedPasswordValue(String(password)) } });
             } catch (e) {
-                console.error("Login: could not upgrade stored password to a hash");
+                console.error("Login: could not update the stored password");
             }
         }
 

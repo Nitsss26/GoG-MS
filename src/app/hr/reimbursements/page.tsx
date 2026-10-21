@@ -1,11 +1,30 @@
 "use client";
-import ReimbursementBlocked, { useIsHrExecutive } from "@/components/hr/ReimbursementBlocked";
 
 import { useAuth, ReimbursementClaim } from "@/context/AuthContext";
 import { Receipt, Clock, CheckCircle2, XCircle, Eye, X, Filter, User, Mail, Phone, FileText, Calendar, ExternalLink, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+
+import { ShieldOff } from "lucide-react";
+
+/** HR Executive: Reimbursements are not available (the API refuses this role too). */
+function useIsHrExecutive() {
+    const { user } = useAuth();
+    return !!(user as any)?.hrExecutive;
+}
+function ReimbursementBlocked() {
+    return (
+        <div className="flex items-center justify-center h-[70vh] p-6" data-testid="reimbursement-blocked">
+            <div className="max-w-sm text-center space-y-3">
+                <div className="w-12 h-12 mx-auto rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center"><ShieldOff size={20} className="text-red-400" /></div>
+                <h2 className="text-base font-bold text-white">Access restricted</h2>
+                <p className="text-xs text-zinc-400">Reimbursements are not available for the HR Executive role.</p>
+            </div>
+        </div>
+    );
+}
+
 
 const ROLE_TAGS: Record<string, { label: string; color: string }> = {
     FACULTY: { label: "Faculty", color: "text-pink-400 bg-pink-500/10 border-pink-500/20" },

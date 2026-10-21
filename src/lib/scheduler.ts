@@ -18,6 +18,7 @@ export function startAcademicScheduler() {
     }
     let busy = false;
     let doneFor: string | null = null;
+    let lastAttendanceSweep = 0;
 
     const tick = async () => {
         if (busy) return;
@@ -31,6 +32,19 @@ export function startAcademicScheduler() {
                 const result: any = await runWeeklyDeadlines({ trigger: 'scheduler' });
                 doneFor = saturday; // ran now, or another server / the cron URL already ran it
                 if (result?.ran) console.log('[scheduler] weekly deadline checks finished for', saturday);
+            }
+            // Attendance: Missing Clock-Out alerts (30 min after the scheduled clock-out) + email retries, every 5 minutes
+            if (Date.now() - lastAttendanceSweep >= 5 * 60000) {
+                lastAttendanceSweep = Date.now();
+                const { default: dbConnect } = await import('@/lib/mongodb');
+                await dbConnect();
+                const { runAttendanceSweep } = await import('@/lib/attendance-violations');
+                const r = await runAttendanceSweep();
+                if (r.alerts || r.retried) console.log('[scheduler] attendance alerts:', r);
+                // Tickets unresolved for 48 hours → reminder to the responsible HR (once per ticket)
+                const { runTicketEscalations } = await import('@/lib/ticket-emails');
+                const te = await runTicketEscalations();
+                if (te.sent || te.flagged) console.log('[scheduler] ticket 48h reminders:', te);
             }
         } catch (e: any) {
             console.error('[scheduler] weekly deadline check failed:', e?.message);

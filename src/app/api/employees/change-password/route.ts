@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import dbConnect from '@/lib/mongodb';
 import mongoose from 'mongoose';
 import { verifySessionToken, COOKIE_NAME } from '@/lib/session';
-import { verifyPassword, hashPassword } from '@/lib/password';
+import { verifyPassword, storedPasswordValue } from '@/lib/password';
 
 export async function POST(request: Request) {
     try {
@@ -58,11 +58,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: false, error: "Current password is incorrect" }, { status: 401 });
         }
 
-        // Only the hash is stored. One login identity per email: every designation record of this person changes.
+        // Saved as plain text (as in the original portal). One login identity per email: every designation record of this person changes.
         const escaped = String(employee.email || '').replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
         const result = await collection.updateMany(
             { email: { $regex: new RegExp(`^${escaped}$`, 'i') }, isRemoved: { $ne: true } },
-            { $set: { password: await hashPassword(String(newPassword)), passwordChangedAt: new Date().toISOString() } }
+            { $set: { password: storedPasswordValue(String(newPassword)), passwordChangedAt: new Date().toISOString() } }
         );
 
         if (result.matchedCount === 0) {

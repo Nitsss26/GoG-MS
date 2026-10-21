@@ -221,7 +221,7 @@ export default function RemoveEmployeeDialog({ employee, onClose, onRemoved }: {
 
                                 <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10">
                                     <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5" />
-                                    <p className="text-[11px] text-amber-200 leading-relaxed">This action will permanently delete the employee from the system. Please ensure all required exit formalities have been completed.</p>
+                                    <p className="text-[11px] text-amber-200 leading-relaxed">This action will permanently delete the employee and all of their records (attendance, leaves, WFH, tickets, reimbursements, reports) from the database. This cannot be undone. Please ensure all required exit formalities have been completed.</p>
                                 </div>
                                 {error && <p className="text-xs text-red-400" data-testid="exit-error">{error}</p>}
                             </div>

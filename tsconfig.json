@@ -38,7 +38,6 @@
   "exclude": [
     "node_modules",
     "scripts",
-    "tmp",
-    ".next/dev"
+    "tmp"
   ]
 }

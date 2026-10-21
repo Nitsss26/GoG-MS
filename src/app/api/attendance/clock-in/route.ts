@@ -4,11 +4,22 @@ import { Employee, Attendance, WorkSchedule, Location, WorkFromHome } from '@/mo
 import { getDistance } from '@/lib/utils';
 import { getExpectedTimingInternal } from '@/lib/attendance-utils';
 import { COLLEGES } from '@/lib/colleges';
+import { getSessionUser } from '@/lib/session-user';
+import { recordViolation } from '@/lib/attendance-violations';
 
 export async function POST(req: Request) {
     try {
         await dbConnect();
-        const { employeeId, lat, lng, dressCodeImageUrl, isOverride, date: overrideDate, isShortLeave } = await req.json();
+        const { employeeId, lat, lng, dressCodeImageUrl, isShortLeave, mode } = await req.json();
+        // Official time and date come only from this server's clock: any time / date / override sent by the browser is ignored
+        const isOverride = false, overrideDate: string | undefined = undefined;
+        // Only the logged-in employee can clock in for themself
+        const actor: any = await getSessionUser({ ignoreDelegation: true });
+        if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        if (actor.id !== employeeId) return NextResponse.json({ error: "You can only clock in for yourself." }, { status: 403 });
+        if (dressCodeImageUrl !== undefined && dressCodeImageUrl !== null && (typeof dressCodeImageUrl !== 'string' || !/^https:\/\//i.test(dressCodeImageUrl) || dressCodeImageUrl.length > 2048)) {
+            return NextResponse.json({ error: "Invalid attendance photo." }, { status: 400 });
+        }
 
         // 1. Fetch Employee
         const employee = await Employee.findOne({ id: employeeId });
@@ -62,10 +73,29 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: `Too early to clock-in. Window opens at ${Math.floor((schedTime - 30) / 60).toString().padStart(2, '0')}:${((schedTime - 30) % 60).toString().padStart(2, '0')}` }, { status: 403 });
         }
 
-        // Approved Work From Home application for today: remote attendance policy (no office geofence).
+        // One attendance session per day: an existing clock-in is never overwritten or duplicated
+        // (a double click / two tabs used to create a second record for the same date)
+        if (!isOverride) {
+            const existing: any = await Attendance.findOne({ employeeId, date: today }).select('clockIn status').lean();
+            if (existing?.clockIn && existing.status !== 'Absent') {
+                return NextResponse.json({ error: "You have already clocked in today.", record: existing, alreadyClockedIn: true }, { status: 409 });
+            }
+        }
+
+        // Work From Home: an application covering today (approved, or still pending — then the attendance is provisional).
+        // mode "WFH" = remote attendance, "OFFICE" = normal office attendance; without a mode an approved application means remote.
         // The employee's Original Location and schedule are not changed.
-        const approvedWfh: any = await WorkFromHome.findOne({ employeeId, status: 'Approved', startDate: { $lte: today }, endDate: { $gte: today } }).select('id').lean();
-        if (approvedWfh) expectedLocationId = "WFH";
+        const scheduledWfh = String(expectedLocationId || '').toLowerCase() === 'wfh';
+        const wfhApp: any = await WorkFromHome.findOne({ employeeId, status: { $in: ['Approved', 'Pending'] }, startDate: { $lte: today }, endDate: { $gte: today } })
+            .sort({ status: 1 }).select('id status workLocation').lean();
+        if (mode === 'WFH' && !scheduledWfh && !wfhApp) {
+            return NextResponse.json({ error: "No Work From Home application covers today. Apply for Work From Home first." }, { status: 403 });
+        }
+        const useWfhApp = !!wfhApp && !scheduledWfh && (mode === 'WFH' || (!mode && wfhApp.status === 'Approved'));
+        if (useWfhApp) expectedLocationId = "WFH";
+        if (mode === 'OFFICE' && scheduledWfh) {
+            return NextResponse.json({ error: "Today is scheduled as Work From Home." }, { status: 400 });
+        }
 
         // 5. Geofencing Check (Skip if WFH)
         const isWFH = expectedLocationId.toLowerCase() === "wfh";
@@ -122,11 +152,17 @@ export async function POST(req: Request) {
         const updateData: any = {
             clockIn: istTime.getHours().toString().padStart(2, '0') + ":" + istTime.getMinutes().toString().padStart(2, '0') + ":" + istTime.getSeconds().toString().padStart(2, '0'),
             location: isWFH ? "WFH" : (isOverride ? (expectedLocationId || "Office") : campus?.id),
+            clockInAt: now,
             status: "Present",
             dressCodeImageUrl: dressCodeImageUrl,
             dressCodeStatus: isOverride ? "Approved" : "Pending",
             ...(dressCodeImageUrl ? { dressCodeSubmittedAt: now.toISOString() } : {}),
-            ...(approvedWfh ? { workMode: "WFH", wfhApplicationId: approvedWfh.id } : {}),
+            ...(useWfhApp ? {
+                workMode: "WFH", wfhApplicationId: wfhApp.id, wfhStatus: wfhApp.status, wfhReviewRequired: false,
+                ...(wfhApp.workLocation ? { wfhWorkLocation: wfhApp.workLocation } : {}),
+                // approximate position (about 100 m) when the browser shared it — never shown to other employees
+                ...(typeof lat === 'number' && typeof lng === 'number' ? { wfhLocation: { lat: Math.round(lat * 1000) / 1000, lng: Math.round(lng * 1000) / 1000, at: now.toISOString() } } : {}),
+            } : {}),
             ...(isOverride ? {} : { attendanceSource: "SELF_CLOCK_IN" }),
             ...(isOverride ? {} : (isLate ? { "flags.late": true } : {}))
         };
@@ -134,11 +170,22 @@ export async function POST(req: Request) {
             updateData["flags.shortLeave"] = true;
         }
 
-        const attendance = await Attendance.findOneAndUpdate(
+        let attendance = await Attendance.findOneAndUpdate(
             { employeeId, date: today },
             { $set: updateData },
             { upsert: true, new: true }
         );
+        // Two simultaneous requests can both insert: keep the first record of the day, remove the copies just created
+        const sameDay: any[] = await Attendance.find({ employeeId, date: today }).sort({ _id: 1 }).select('_id').lean();
+        if (sameDay.length > 1) {
+            await Attendance.deleteMany({ _id: { $in: sameDay.slice(1).map(d => d._id) } });
+            attendance = await Attendance.findById(sameDay[0]._id);
+        }
+
+        // Late Clock-In → warning / deduction email (once per day; short leave is not counted)
+        if (isLate && !isShortLeave) {
+            await recordViolation({ emp: employee, type: 'LATE_IN', date: today, scheduledTime: expectedIn, actualTime: updateData.clockIn, durationMins: currentTime - schedTime });
+        }
 
         // 7. Update Employee Points (+2 for correct clock-in)
         const currentPeriod = "Mar 01 - Mar 15, 2026";

@@ -25,7 +25,7 @@ export async function ensureChecklist(employeeId: string, opts: { notify?: boole
     if (created && opts.notify) {
         await notifySafe({
             recipients: [emp], title: 'Onboarding form submitted',
-            message: 'Your onboarding form has been submitted successfully. Please complete your five mandatory post-onboarding activities.',
+            message: 'Your onboarding form has been submitted successfully. Please complete your six mandatory post-onboarding activities.',
             type: 'POST_ONBOARDING', link: '/', entityType: 'Employee', entityId: emp.id, actor: { id: '', name: 'GoG OMS' }, email: false,
         });
     }

@@ -17,7 +17,7 @@ const ROLE_LABEL: Record<string, string> = { HR_EXECUTIVE: "HR Executive", TECH_
 export default function WfhApprovalBoard() {
     const { refreshApprovedWfh } = useAuth();
     const [apps, setApps] = useState<any[] | null>(null);
-    const [status, setStatus] = useState("Pending");
+    const [status, setStatus] = useState("All"); // all applications; pending ones are listed first
     const [dept, setDept] = useState("All");
     const [date, setDate] = useState("");
     const [q, setQ] = useState("");
@@ -38,7 +38,8 @@ export default function WfhApprovalBoard() {
 
     const depts = useMemo(() => Array.from(new Set((apps || []).map(a => a.dept).filter(Boolean))).sort(), [apps]);
     const rows = (apps || []).filter(a => (status === "All" || a.status === status) && (dept === "All" || a.dept === dept)
-        && (!date || (a.startDate <= date && date <= a.endDate)) && (!q.trim() || `${a.employeeName} ${a.employeeId}`.toLowerCase().includes(q.trim().toLowerCase())));
+        && (!date || (a.startDate <= date && date <= a.endDate)) && (!q.trim() || `${a.employeeName} ${a.employeeId}`.toLowerCase().includes(q.trim().toLowerCase())))
+        .sort((x, y) => (x.status === "Pending" ? 0 : 1) - (y.status === "Pending" ? 0 : 1)); // stable: newest first inside each group
     const history = review ? (apps || []).filter(a => a.employeeId === review.employeeId && a.id !== review.id) : [];
 
     const decide = async (action: "approve" | "reject") => {
@@ -70,9 +71,9 @@ export default function WfhApprovalBoard() {
                 <input type="date" value={date} onChange={e => setDate(e.target.value)} className={cn(sel, "[color-scheme:dark]")} title="Applications covering this date" data-testid="wfh-board-date" />
             </div>
             <div className="overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-950/40">
-                <table className="w-full min-w-[760px] text-xs">
+                <table className="w-full min-w-[900px] text-xs">
                     <thead className="bg-zinc-950/70"><tr className="text-[9px] text-zinc-500 uppercase tracking-widest text-left">
-                        <th className="py-2.5 px-3">Employee</th><th className="py-2.5 px-3">Role</th><th className="py-2.5 px-3">WFH Dates</th><th className="py-2.5 px-3">Type</th><th className="py-2.5 px-3">Reason</th><th className="py-2.5 px-3">Status</th><th className="py-2.5 px-3 text-right">Action</th>
+                        <th className="py-2.5 px-3">Employee</th><th className="py-2.5 px-3">Role</th><th className="py-2.5 px-3">WFH Dates</th><th className="py-2.5 px-3">Type</th><th className="py-2.5 px-3">Reason</th><th className="py-2.5 px-3">Status</th><th className="py-2.5 px-3">Approved / Rejected By</th><th className="py-2.5 px-3 text-right">Action</th>
                     </tr></thead>
                     <tbody className="divide-y divide-zinc-800/60">
                         {rows.map(a => (
@@ -82,15 +83,18 @@ export default function WfhApprovalBoard() {
                                 <td className="py-2.5 px-3 text-zinc-200">{a.startDate === a.endDate ? fmt(a.startDate) : `${fmt(a.startDate)} – ${fmt(a.endDate)}`}</td>
                                 <td className="py-2.5 px-3 text-zinc-300">{WFH_TYPE_LABEL[a.wfhType]}</td>
                                 <td className="py-2.5 px-3 text-zinc-400 max-w-[220px] truncate" title={a.reason}>{a.reason}</td>
-                                <td className="py-2.5 px-3"><span className={cn("px-2 py-0.5 rounded border text-[10px] font-bold", WFH_STATUS_STYLE[a.status])}>{a.status}</span>{a.approverName && <p className="text-[10px] text-zinc-500 mt-0.5">by {a.approverName}</p>}</td>
+                                <td className="py-2.5 px-3"><span className={cn("px-2 py-0.5 rounded border text-[10px] font-bold", WFH_STATUS_STYLE[a.status])}>{a.status}</span></td>
+                                <td className="py-2.5 px-3" data-testid="wfh-board-decider">{a.approverName && a.status !== "Pending"
+                                    ? <><p className="text-zinc-200 font-semibold">{a.approverName}</p><p className="text-[10px] text-zinc-500">{ROLE_LABEL[a.approverRole] || a.approverRole || ""}{a.decidedAt ? ` · ${fmtTs(a.decidedAt)}` : ""}</p></>
+                                    : <span className="text-zinc-600">—</span>}</td>
                                 <td className="py-2.5 px-3 text-right">
                                     <button onClick={() => { setReview(a); setRemarks(""); setError(""); }} data-testid="wfh-review"
                                         className="px-2.5 py-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-bold">{a.canDecide ? "Review" : "View"}</button>
                                 </td>
                             </tr>
                         ))}
-                        {apps === null && <tr><td colSpan={7} className="py-10 text-center"><Loader2 className="animate-spin text-primary inline" size={16} /></td></tr>}
-                        {apps !== null && !rows.length && <tr><td colSpan={7} className="py-10 text-center text-zinc-500">No Work From Home applications.</td></tr>}
+                        {apps === null && <tr><td colSpan={8} className="py-10 text-center"><Loader2 className="animate-spin text-primary inline" size={16} /></td></tr>}
+                        {apps !== null && !rows.length && <tr><td colSpan={8} className="py-10 text-center text-zinc-500">No Work From Home applications.</td></tr>}
                     </tbody>
                 </table>
             </div>

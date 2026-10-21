@@ -75,6 +75,12 @@ const STREAMS = [
     "Civil Engineering"
 ];
 const YEARS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
+/** Class name built from the slot details, e.g. "Full Stack Web Development 1A" (stream + year number + section) */
+const autoClassName = (e: { stream?: string; year?: string; section?: string }) => {
+    const yr = (String(e.year || "").match(/\d+/) || [""])[0];
+    const sec = String(e.section || "").trim().toUpperCase();
+    return [String(e.stream || "").trim(), yr || sec ? `${yr}${sec}` : ""].filter(Boolean).join(" ");
+};
 const SEMESTERS = ["1st Semester", "2nd Semester", "3rd Semester", "4th Semester", "5th Semester", "6th Semester", "7th Semester", "8th Semester"];
 const SUBJECTS: Record<string, string> = {
     "OOPS": "Object Oriented Programming",
@@ -313,7 +319,7 @@ export default function SprintPlanPage() {
             lectureType: LECTURE_TYPES[0],
             unitNumber: "1",
             content: "",
-            className: ""
+            className: autoClassName({ stream: facultyStreams[0] || STREAMS[0], year: YEARS[0], section: "" })
         }]);
     };
 
@@ -324,6 +330,10 @@ export default function SprintPlanPage() {
         // Auto-update subject name if code changes
         if (field === "subjectCode" && facultySubjects[value]) {
             newEntry.subjectName = facultySubjects[value];
+        }
+        // Class is mapped automatically from stream, year and section
+        if (field === "stream" || field === "year" || field === "section") {
+            newEntry.className = autoClassName(newEntry);
         }
 
         updated[idx] = newEntry;
@@ -356,7 +366,7 @@ export default function SprintPlanPage() {
                     facultyId: user?.id,
                     weekStartDate: weekInfo.start,
                     weekEndDate: weekInfo.end,
-                    entries
+                    entries: entries.map(e => ({ ...e, className: autoClassName(e) }))
                 })
             });
             const data = await res.json();
@@ -686,17 +696,17 @@ export default function SprintPlanPage() {
                     <datalist id="sprint-class-names">
                         {Array.from(new Set(entries.map(e => e.className).filter(Boolean))).map(c => <option key={c} value={c as string} />)}
                     </datalist>
-                    <p className="text-[10px] text-zinc-500 px-1">Each class: Time From–Till · Subject · Topic · Branch · Section · Year / Semester, then Lecture Type · Unit · Class · Content.</p>
+                    <p className="text-[10px] text-zinc-500 px-1">Each class: Time From–Till · Subject · Topic · Branch · Section · Year / Semester, then Lecture Type · Unit. Class is filled automatically from Branch, Year and Section.</p>
                     {weekInfo.dates.map(({ day, date }) => {
                         const dayEntries = entries.filter(e => e.date === date || e.day === day);
                         // A calm accent per weekday: coloured day chip, tinted header, accent bar
-                        const DAY_THEME: Record<string, { name: string; chip: string; header: string; border: string; add: string }> = {
-                            MON: { name: "Monday", chip: "bg-sky-500/15 text-sky-300 border-sky-500/30", header: "from-sky-500/10", border: "border-l-sky-400", add: "text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 border-sky-500/20" },
-                            TUE: { name: "Tuesday", chip: "bg-teal-500/15 text-teal-300 border-teal-500/30", header: "from-teal-500/10", border: "border-l-teal-400", add: "text-teal-300 bg-teal-500/10 hover:bg-teal-500/20 border-teal-500/20" },
-                            WED: { name: "Wednesday", chip: "bg-amber-500/15 text-amber-300 border-amber-500/30", header: "from-amber-500/10", border: "border-l-amber-400", add: "text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20" },
-                            THU: { name: "Thursday", chip: "bg-violet-500/15 text-violet-300 border-violet-500/30", header: "from-violet-500/10", border: "border-l-violet-400", add: "text-violet-300 bg-violet-500/10 hover:bg-violet-500/20 border-violet-500/20" },
-                            FRI: { name: "Friday", chip: "bg-rose-500/15 text-rose-300 border-rose-500/30", header: "from-rose-500/10", border: "border-l-rose-400", add: "text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/20" },
-                            SAT: { name: "Saturday", chip: "bg-orange-500/15 text-orange-300 border-orange-500/30", header: "from-orange-500/10", border: "border-l-orange-400", add: "text-orange-300 bg-orange-500/10 hover:bg-orange-500/20 border-orange-500/20" },
+                        const DAY_THEME: Record<string, { name: string; chip: string; header: string; border: string; add: string; slot: string; slotChip: string }> = {
+                            MON: { name: "Monday", chip: "bg-sky-500/15 text-sky-300 border-sky-500/30", header: "from-sky-500/10", border: "border-l-sky-400", add: "text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 border-sky-500/20", slot: "border-sky-500/25 bg-sky-500/[0.04]", slotChip: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
+                            TUE: { name: "Tuesday", chip: "bg-teal-500/15 text-teal-300 border-teal-500/30", header: "from-teal-500/10", border: "border-l-teal-400", add: "text-teal-300 bg-teal-500/10 hover:bg-teal-500/20 border-teal-500/20", slot: "border-teal-500/25 bg-teal-500/[0.04]", slotChip: "bg-teal-500/15 text-teal-300 border-teal-500/30" },
+                            WED: { name: "Wednesday", chip: "bg-amber-500/15 text-amber-300 border-amber-500/30", header: "from-amber-500/10", border: "border-l-amber-400", add: "text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20", slot: "border-amber-500/25 bg-amber-500/[0.04]", slotChip: "bg-amber-500/15 text-amber-300 border-amber-500/30" },
+                            THU: { name: "Thursday", chip: "bg-violet-500/15 text-violet-300 border-violet-500/30", header: "from-violet-500/10", border: "border-l-violet-400", add: "text-violet-300 bg-violet-500/10 hover:bg-violet-500/20 border-violet-500/20", slot: "border-violet-500/25 bg-violet-500/[0.04]", slotChip: "bg-violet-500/15 text-violet-300 border-violet-500/30" },
+                            FRI: { name: "Friday", chip: "bg-rose-500/15 text-rose-300 border-rose-500/30", header: "from-rose-500/10", border: "border-l-rose-400", add: "text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/20", slot: "border-rose-500/25 bg-rose-500/[0.04]", slotChip: "bg-rose-500/15 text-rose-300 border-rose-500/30" },
+                            SAT: { name: "Saturday", chip: "bg-orange-500/15 text-orange-300 border-orange-500/30", header: "from-orange-500/10", border: "border-l-orange-400", add: "text-orange-300 bg-orange-500/10 hover:bg-orange-500/20 border-orange-500/20", slot: "border-orange-500/25 bg-orange-500/[0.04]", slotChip: "bg-orange-500/15 text-orange-300 border-orange-500/30" },
                         };
                         const theme = DAY_THEME[day] || DAY_THEME.MON;
 
@@ -749,11 +759,16 @@ export default function SprintPlanPage() {
                                 {dayEntries.length === 0 ? (
                                     <div className="px-4 py-6 text-center text-xs text-zinc-600">No lectures scheduled</div>
                                 ) : (
-                                    <div className="divide-y divide-zinc-800">
+                                    <div className="p-3 space-y-3">
                                         {entries.map((entry, idx) => {
                                             if (entry.date !== date && entry.day !== day) return null;
+                                            const slotNo = entries.slice(0, idx + 1).filter(x => x.date === date || x.day === day).length;
                                             return (
-                                                <div key={idx} className="px-4 py-3 space-y-2" data-testid="plan-entry">
+                                                <div key={idx} className={`rounded-xl border ${theme.slot} px-3 sm:px-4 pt-2.5 pb-3 space-y-2 shadow-sm shadow-black/30`} data-testid="plan-entry">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border ${theme.slotChip}`}>Slot {slotNo}</span>
+                                                    <span className="text-[10px] text-zinc-500 tabular-nums">{entry.timeStart || "--:--"} – {entry.timeStop || "--:--"}</span>
+                                                </div>
                                                 <div className="grid grid-cols-12 gap-2 items-start [&>*]:min-w-0">
                                                     <div className="col-span-12 sm:col-span-6 lg:col-span-2 flex gap-1 items-center">
                                                         <button 
@@ -836,7 +851,7 @@ export default function SprintPlanPage() {
                                                         </div>
                                                     </div>
                                                 </div>
-                                                {/* Lecture details: type, unit, class, content */}
+                                                {/* Lecture details: type, unit, class (automatic) */}
                                                 <div className="grid grid-cols-12 gap-2 items-start [&>*]:min-w-0">
                                                     <div className="col-span-12 sm:col-span-6 lg:col-span-2">
                                                         <select value={entry.lectureType || ""} onChange={e => updateEntry(idx, "lectureType", e.target.value)}
@@ -854,15 +869,10 @@ export default function SprintPlanPage() {
                                                             {UNIT_NUMBERS.map(u => <option key={u} value={u}>Unit {u}</option>)}
                                                         </select>
                                                     </div>
-                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-2">
-                                                        <input value={entry.className || ""} onChange={e => updateEntry(idx, "className", e.target.value)}
-                                                            disabled={isFrozen} placeholder="Class (e.g. B.Tech CSE 2A)" title="Class" list="sprint-class-names"
-                                                            className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50" />
-                                                    </div>
-                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-7">
-                                                        <input value={entry.content || ""} onChange={e => updateEntry(idx, "content", e.target.value)}
-                                                            disabled={isFrozen} placeholder="Content (what will be covered: sub-topics, activities, material)" title="Content"
-                                                            className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50" />
+                                                    <div className="col-span-12 sm:col-span-12 lg:col-span-9">
+                                                        <div className="w-full px-2 py-1.5 bg-zinc-900/60 border border-dashed border-zinc-700 rounded text-[10px] text-zinc-300 truncate" title="Class (filled automatically from Stream, Year and Section)" data-testid="plan-class-auto">
+                                                            <span className="text-zinc-500">Class:</span> <span className="font-semibold text-white">{autoClassName(entry) || "—"}</span>
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 </div>

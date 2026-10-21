@@ -30,6 +30,8 @@ const EmployeeSchema = new Schema({
     role: { type: String, required: true },
     // HOI: authorised clock-in / clock-out locations (Location ids) — separate from Original Location (`location`)
     attendanceLocations: [String],
+    // Slack workspace invite link entered by HR when onboarding; shown to the joinee before the onboarding form
+    slackInviteLink: { type: String, default: "" },
     // Five mandatory post-onboarding activities (created when the onboarding form is submitted)
     postOnboardingChecklist: { type: Schema.Types.Mixed },
     photoUrl: { type: String },
@@ -61,7 +63,15 @@ const EmployeeSchema = new Schema({
         date: { type: String },
         points: { type: Number },
         screenshotUrl: { type: String },
-        comment: { type: String }
+        comment: { type: String },
+        // who gave it (new submissions) and the update audit (Monthly Feedback → Update Feedback)
+        ratedBy: { type: String },
+        ratedByName: { type: String },
+        updatedAt: { type: String },
+        updatedBy: { type: String },
+        updatedByName: { type: String },
+        updateEmailStatus: { type: String },   // SENT / FAILED / NO_EMAIL
+        history: [{ at: String, by: String, byName: String, previous: Schema.Types.Mixed }]
     }],
     education: [{
         degree: String,
@@ -80,7 +90,7 @@ const EmployeeSchema = new Schema({
     bankName: String,
     accountNumber: String,
     ifscCode: String,
-    password: { type: String, default: "26082001" }, // stored as a scrypt hash (older records: plain text, hashed on next login)
+    password: { type: String, default: "26082001" }, // plain text, as in the original portal (older scrypt hashes become plain text on the next login)
     passwordChangedAt: String,
     // Last reset done by HR (who and when — never the password itself)
     passwordResetAt: String,
@@ -174,6 +184,10 @@ const AttendanceSchema = new Schema({
     date: { type: String, required: true },
     clockIn: { type: String }, // Can be empty if on leave
     clockOut: { type: String },
+    clockInAt: { type: Date },             // official server timestamp (UTC) of the clock-in
+    clockOutAt: { type: Date },            // official server timestamp (UTC) of the clock-out
+    clockOutImageUrl: { type: String },    // optional clock-out photo
+    clockOutRegularized: { type: Boolean }, // clock-out set by HR after an approved Missing Clock-Out explanation
     location: { type: String },
     status: { type: String, required: true, enum: ["Present", "On Leave", "Late", "Absent"] },
     flags: {
@@ -215,7 +229,14 @@ const AttendanceSchema = new Schema({
         by: { type: String }, byName: { type: String }, role: { type: String }, at: { type: String }, remarks: { type: String }
     }],
     // HOI multi-location attendance: where the clock-out happened (clock-in place stays in `location`)
-    clockOutLocation: { type: String }
+    clockOutLocation: { type: String },
+    // Work From Home attendance: approval state of the linked application (Pending = provisional,
+    // Approved = confirmed, Rejected / Cancelled = kept for HR review), the remote place and the
+    // approximate position captured at clock-in (only shown to HR)
+    wfhStatus: { type: String },
+    wfhReviewRequired: { type: Boolean },
+    wfhWorkLocation: { type: String },
+    wfhLocation: { type: Schema.Types.Mixed }
 }, { timestamps: true }); // createdAt is set once on insert and never overwritten; updatedAt changes on every update
 
 // Work Schedule Schema
@@ -351,6 +372,15 @@ const TicketSchema = new Schema({
     assignedAt: { type: String },
     resolvedBy: { type: String },
     resolvedByName: { type: String },
+    // Resolution e-mail to the employee (sent once, by the server, when the ticket becomes Resolved)
+    resolutionEmailStatus: { type: String },   // SENDING / SENT / FAILED / NO_EMAIL
+    resolutionEmailAt: { type: String },
+    // 48-hour unresolved reminder to the responsible HR (once per ticket)
+    escalationStatus: { type: String },        // SENDING / SENT / FAILED / ROUTING_ISSUE
+    escalationSentAt: { type: String },
+    escalationTo: { type: String },
+    escalationAttempts: { type: Number },
+    escalationError: { type: String },
     statusHistory: [{
         action: { type: String },
         status: { type: String },
@@ -724,6 +754,7 @@ const LectureReportSchema = new Schema({
     submittedToGroupBy: { type: String },
     submittedToGroupByName: { type: String },
     submittedToGroupAt: { type: String },
+    submittedToGroupType: { type: String },   // TELEGRAM / WHATSAPP / BOTH — where the OM shared the notes
 
     // OM: who recorded the professor's entry / exit time and when
     // OM verification record — kept separate from the professor's own submitted times
@@ -732,6 +763,7 @@ const LectureReportSchema = new Schema({
         actualStart: String, actualEnd: String,       // actual class start / end
         scheduledStart: String, scheduledEnd: String, // snapshot of the plan at verification time
         delayMinutes: Number, isDelayed: Boolean, delayReason: String, remarks: String,
+        earlyExitMinutes: Number, isEarlyExit: Boolean, earlyExitReason: String,  // professor left before the scheduled end
         by: String, byName: String, at: String,
     },
     omTimesUpdatedBy: { type: String },
@@ -808,6 +840,41 @@ const JobRunSchema = new Schema({
     error: { type: String }
 });
 
+// Attendance violations (Late Clock-In / Early Clock-Out / Missing Clock-Out) and the email sent for each.
+// One row per employee, type and date (unique key), so an event is never recorded or emailed twice.
+const AttendanceViolationSchema = new Schema({
+    id: { type: String, required: true, unique: true },
+    key: { type: String, required: true, unique: true },   // TYPE:employeeId:date
+    employeeId: { type: String, index: true },
+    employeeName: { type: String },
+    email: { type: String },
+    type: { type: String },              // LATE_IN / EARLY_OUT / MISSING_OUT
+    date: { type: String },              // attendance date (YYYY-MM-DD, IST)
+    period: { type: String, index: true }, // tracking period (YYYY-MM)
+    scheduledTime: { type: String },
+    actualTime: { type: String },
+    durationMins: { type: Number },
+    instance: { type: Number },          // count of this type in the period
+    level: { type: String },             // FIRST_WARNING / SECOND_WARNING / FINAL_WARNING / HALF_DAY / FULL_DAY / MISSING_ALERT
+    proposedDeduction: { type: String }, // None / Half-Day / Full-Day
+    hrStatus: { type: String },          // Not Required / Pending HR Verification / Approved for Payroll / Waived / Awaiting Explanation / Approved / Rejected
+    emailStatus: { type: String },       // Pending / Sending / Sent / Failed
+    emailAttempts: { type: Number, default: 0 },
+    emailSentAt: { type: String },
+    emailError: { type: String },
+    emailMessageId: { type: String },
+    decisionEmailStatus: { type: String },
+    explanation: { type: String },
+    proofUrls: [String],
+    explanationAt: { type: String },
+    hrDecisionBy: { type: String },
+    hrDecisionByName: { type: String },
+    hrDecisionAt: { type: String },
+    hrRemarks: { type: String },
+    laterClockOut: { type: String },     // Missing Clock-Out: clock-out recorded after the alert
+    createdAt: { type: String },
+});
+
 // Curriculum Task Schema — Tasks assigned by Curriculum Lead / Head to Professors
 const CurriculumTaskSchema = new Schema({
     id: { type: String, unique: true },
@@ -834,6 +901,8 @@ const CampusDailyMoMSchema = new Schema({
     campus: { type: String, required: true }, // e.g. "SAGE Bhopal" or location id
     date: { type: String, required: true }, // YYYY-MM-DD
     title: { type: String, default: "Campus Daily Sync & MoM" },
+    meetingTime: { type: String },   // HH:MM
+    meetingType: { type: String },   // Campus Standup / Academic Review / …
     agenda: { type: String },
     discussionPoints: { type: String },
     keyDecisions: { type: String },
@@ -943,6 +1012,11 @@ const WorkFromHomeSchema = new Schema({
     days: { type: Number },
     reason: { type: String, required: true },
     remarks: { type: String },
+    // Remote work location given in the application (not the Original Location, not a campus)
+    workLocation: { type: String },
+    // Optional supporting document (stored file reference)
+    documentUrl: { type: String },
+    reportingManagerName: { type: String },
     status: { type: String, enum: ["Pending", "Approved", "Rejected", "Cancelled"], default: "Pending" },
     approverId: { type: String },
     approverName: { type: String },
@@ -977,3 +1051,4 @@ export const JobRun = mongoose.models.JobRun || mongoose.model('JobRun', JobRunS
 export const ExitRecord = mongoose.models.ExitRecord || mongoose.model('ExitRecord', ExitRecordSchema);
 export const AccessGrant = mongoose.models.AccessGrant || mongoose.model('AccessGrant', AccessGrantSchema);
 export const AccessManager = mongoose.models.AccessManager || mongoose.model('AccessManager', AccessManagerSchema);
+export const AttendanceViolation = mongoose.models.AttendanceViolation || mongoose.model('AttendanceViolation', AttendanceViolationSchema);

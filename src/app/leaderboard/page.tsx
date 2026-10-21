@@ -1,7 +1,7 @@
 "use client";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
-import { Trophy, Star, Flag, Award, ChevronLeft, Users, Shield, X, TrendingUp, Plus, History, Calendar, CheckCircle2, AlertCircle } from "lucide-react";
+import { Trophy, Star, Flag, Award, Users, Shield, X, Plus, History, Calendar, AlertCircle, ArrowLeft, ArrowRight, ChevronRight, ChevronDown, Crown, ShieldCheck, Building2, GraduationCap } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { resolveImageUrl } from "@/lib/utils";
@@ -12,7 +12,7 @@ export default function LeaderboardPage() {
     const { 
         user, employees, performanceStars, attendanceRecords, 
         additionalResponsibilities, holidays, getReportees, 
-        ratings, addAdditionalResponsibility 
+        ratings, addAdditionalResponsibility, colleges
     } = useAuth();
 
     const [showRules, setShowRules] = useState(false);
@@ -57,115 +57,158 @@ export default function LeaderboardPage() {
                 const r = s.emp?.role?.toUpperCase();
                 return r === "OM" || r === "MARKETING_TEAM" || r === "TECH_TEAM";
             })
-            .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount)
-            .slice(0, 16);
+            .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount);
     }, [stats]);
 
     const facultyRankings = useMemo(() => {
         return stats
             .filter(s => s.emp?.role?.toUpperCase() === "PROFESSOR" || s.emp?.role?.toUpperCase() === "FACULTY")
-            .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount)
-            .slice(0, 24);
+            .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount);
     }, [stats]);
 
-    return (
-        <div className="min-h-screen bg-[#050505] text-white p-4 lg:p-10 space-y-12 animate-in fade-in duration-500">
-            {/* Header */}
-            <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 max-w-7xl mx-auto">
-                <div className="space-y-4">
-                    <Link href="/" className="flex items-center gap-2 text-primary hover:gap-3 transition-all text-xs font-bold">
-                        <ChevronLeft size={16} /> <span className="uppercase tracking-widest font-black">Back to Dashboard</span>
-                    </Link>
-                    <div className="space-y-1">
-                        <h1 className="text-3xl md:text-6xl font-black text-white tracking-tighter leading-none">
-                            LEADER<span className="text-primary italic">BOARD</span>
-                        </h1>
-                        <p className="text-zinc-500 text-[10px] font-black tracking-[0.2em] uppercase">Institute Performance Rankings &middot; {new Date().toLocaleString("en-IN", { month: "long", year: "numeric" }).toUpperCase()}</p>
-                    </div>
-                </div>
+    // ── Redesign: one scrolling board — all OMs first, then all Professors & Faculty — every rank as a card; Founders on their own tab ──
+    const [board, setBoard] = useState<"TEAM" | "FOUNDER">("TEAM");
+    const [institute, setInstitute] = useState("All");
+    const instituteName = (loc?: string) => {
+        if (!loc) return "—";
+        const c = (colleges || []).find((x: any) => [x.id, x.name, x.shortName].includes(loc));
+        return c ? (c.name || c.shortName) : loc;
+    };
+    const instituteKey = (loc?: string) => {
+        const c = loc ? (colleges || []).find((x: any) => [x.id, x.name, x.shortName].includes(loc)) : null;
+        return c ? c.id : (loc || "");
+    };
+    const instituteOptions = useMemo(() => {
+        const keys = new Map<string, string>();
+        [...omRankings, ...facultyRankings].forEach(s => { const k = instituteKey(s.emp?.location); if (k) keys.set(k, instituteName(s.emp?.location)); });
+        return Array.from(keys.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+    }, [omRankings, facultyRankings, colleges]);
+    const byInstitute = (rows: any[]) => rows.filter(s => institute === "All" || instituteKey(s.emp?.location) === institute);
+    const monthLabel = new Date().toLocaleString("en-IN", { month: "long", year: "numeric", timeZone: "Asia/Kolkata" });
+    const sections = board === "TEAM"
+        ? [
+            { key: "OM", title: "Operation Managers", desc: "Top performing Operation Managers across institutes based on assigned weightage and performance metrics.", icon: Users, rows: byInstitute(omRankings), founder: false },
+            { key: "FACULTY", title: "Professors & Faculty", desc: "Top performing Professors and Faculty across institutes based on assigned weightage and performance metrics.", icon: GraduationCap, rows: byInstitute(facultyRankings), founder: false },
+        ]
+        : [{ key: "FOUNDER", title: "Founders", desc: "Founders of the institute.", icon: Shield, rows: foundersRankings, founder: true }];
+    const tabs = [
+        { key: "TEAM" as const, label: "Operation Managers & Professors", count: omRankings.length + facultyRankings.length },
+        ...(foundersRankings.length ? [{ key: "FOUNDER" as const, label: "Founders", count: foundersRankings.length }] : []),
+    ];
 
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={() => setShowRules(true)}
-                        className="px-6 py-3 rounded-2xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
-                    >
-                        <Shield size={14} className="fill-current" />
-                        Rules & Weightage
-                    </button>
-                    <div className="hidden md:flex px-6 py-4 rounded-3xl bg-[#111] border border-white/[0.05] items-center gap-4">
-                        <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                            <Users size={24} />
+    return (
+        <div className="min-h-screen bg-[#04100c] text-white animate-in fade-in duration-500" data-testid="leaderboard">
+            {/* ── Hero ── */}
+            <header className="relative overflow-hidden border-b border-emerald-500/10">
+                <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_120%_at_55%_0%,rgba(16,185,129,0.24),transparent_60%)]" />
+                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_40%_80%_at_95%_10%,rgba(16,185,129,0.10),transparent_70%)]" />
+                    <svg className="absolute inset-0 w-full h-full opacity-30" preserveAspectRatio="none" viewBox="0 0 1200 240" aria-hidden>
+                        <path d="M0 190 C 250 120, 420 230, 640 150 S 1000 60, 1200 120" fill="none" stroke="url(#lbw)" strokeWidth="1.5" />
+                        <path d="M0 215 C 300 150, 460 250, 700 170 S 1020 90, 1200 150" fill="none" stroke="url(#lbw)" strokeWidth="1" />
+                        <defs><linearGradient id="lbw" x1="0" x2="1"><stop offset="0" stopColor="#10b981" stopOpacity="0" /><stop offset=".5" stopColor="#34d399" stopOpacity=".9" /><stop offset="1" stopColor="#10b981" stopOpacity="0" /></linearGradient></defs>
+                    </svg>
+                </div>
+                <div className="relative max-w-7xl mx-auto px-4 lg:px-8 py-6 lg:py-8 flex flex-wrap xl:flex-nowrap items-center gap-x-6 gap-y-5">
+                    <div className="min-w-0 shrink-0">
+                        <Link href="/" className="inline-flex items-center gap-2 text-emerald-400 hover:gap-3 transition-all text-sm font-semibold">
+                            <ArrowLeft size={18} /> Back to Dashboard
+                        </Link>
+                        <h1 className="mt-6 font-black tracking-tighter leading-none whitespace-nowrap text-[clamp(2.5rem,4.6vw,3.75rem)]">
+                            <span className="text-white">LEADER</span><span className="relative inline-block italic pr-1 bg-gradient-to-r from-emerald-400 to-green-300 bg-clip-text text-transparent">
+                                <Crown aria-hidden className="absolute -top-[0.55em] left-[0.1em] w-[0.5em] h-[0.5em] text-amber-400 fill-amber-400 drop-shadow-[0_0_10px_rgba(251,191,36,0.45)]" />
+                                BOARD
+                            </span>
+                        </h1>
+                        <p className="mt-3 text-sm text-zinc-300 tracking-[0.1em]">Institute Performance Rankings <span className="text-zinc-600 mx-1.5">·</span> {monthLabel}</p>
+                    </div>
+
+                    <div className="hidden min-[1400px]:flex flex-1 min-w-0 justify-center px-4" aria-hidden>
+                        <div className="relative">
+                            <div className="absolute inset-0 -m-6 rounded-full bg-emerald-500/20 blur-3xl" />
+                            <Trophy size={92} strokeWidth={1.25} className="relative text-emerald-300 fill-emerald-600/30 drop-shadow-[0_0_22px_rgba(16,185,129,0.6)]" />
                         </div>
-                        <div>
-                            <p className="text-[9px] text-zinc-500 font-black uppercase tracking-[0.2em]">Institutional Hub</p>
-                            <p className="text-xl font-black text-white">{employees?.filter(e => e.status === "Active").length || 0} <span className="text-[10px] text-primary">ACTIVE</span></p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-3 xl:ml-auto shrink-0">
+                        <button onClick={() => setShowRules(true)} data-testid="lb-rules"
+                            className="h-14 px-4 rounded-2xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:border-emerald-500/30 transition-colors flex items-center gap-3 text-sm font-semibold whitespace-nowrap">
+                            <ShieldCheck size={18} className="text-emerald-400" /> Rules &amp; Weightage <ChevronRight size={16} className="text-zinc-500" />
+                        </button>
+                        <div className="h-14 px-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] flex items-center gap-3 whitespace-nowrap">
+                            <div className="w-9 h-9 rounded-xl border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center text-emerald-400"><Users size={17} /></div>
+                            <div className="leading-tight">
+                                <p className="text-[11px] text-zinc-400">Institutional Hub</p>
+                                <p className="text-lg font-black">{employees?.filter(e => e.status === "Active").length || 0} <span className="text-xs font-semibold text-emerald-400">Active</span></p>
+                            </div>
                         </div>
                     </div>
                 </div>
             </header>
 
-            {/* Rankings Section */}
-            <div className="max-w-7xl mx-auto space-y-20 pb-20">
-
-                {/* FOUNDERS SECTION */}
-                {foundersRankings.length > 0 && (
-                    <section className="space-y-10">
-                        <div className="flex items-center gap-6">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                                    <Shield className="text-primary" size={20} />
-                                </div>
-                                <h2 className="text-xl font-black text-white tracking-widest uppercase">Founders</h2>
-                            </div>
-                            <div className="h-px flex-1 bg-gradient-to-r from-border/50 to-transparent" />
-                        </div>
-
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
-                            {foundersRankings.map((s, i) => (
-                                <LeaderboardBox key={s.employeeId || `founder-${i}`} data={s} rank={i + 1} type="FOUNDER" onRespClick={() => setSelectedEmpForResp(s)} onAuditClick={() => setSelectedEmpForAudit(s)} canAdd={canAddFor(s.emp)} />
+            {/* ── Board ── */}
+            <div className="max-w-7xl mx-auto px-4 lg:px-8 py-6 lg:py-8 pb-20">
+                <div className="@container rounded-3xl border border-white/[0.06] bg-[#06120e]/80 p-4 sm:p-6 space-y-10">
+                    {/* Toolbar: board switch + filters */}
+                    <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex flex-wrap gap-1 p-1 rounded-xl border border-white/[0.06] bg-black/20" role="tablist" data-testid="lb-tabs">
+                            {tabs.map(t => (
+                                <button key={t.key} role="tab" aria-selected={board === t.key} onClick={() => setBoard(t.key)} data-testid={`lb-tab-${t.key}`}
+                                    className={cn("h-9 px-3.5 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 whitespace-nowrap",
+                                        board === t.key ? "bg-emerald-500/15 text-emerald-300 shadow-[inset_0_0_0_1px_rgba(16,185,129,0.35)]" : "text-zinc-400 hover:text-white")}>
+                                    {t.label} <span className={cn("text-[11px] tabular-nums px-1.5 rounded-md", board === t.key ? "bg-emerald-500/20" : "bg-white/5")}>{t.count}</span>
+                                </button>
                             ))}
                         </div>
-                    </section>
-                )}
-
-                {/* OMs SECTION */}
-                <section className="space-y-10">
-                    <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center">
-                                <Trophy className="text-yellow-500" size={20} />
+                        <div className="flex flex-wrap gap-2 ml-auto">
+                            <div className="h-11 px-3.5 rounded-xl border border-white/10 bg-white/[0.03] flex items-center gap-2.5 text-sm whitespace-nowrap" title="Points are counted from 1 May 2026 up to today">
+                                <Calendar size={16} className="text-emerald-400" /> {monthLabel}
                             </div>
-                            <h2 className="text-xl font-black text-white tracking-widest uppercase">Operation Managers</h2>
+                            {board === "TEAM" && (
+                                <label className="relative h-11 rounded-xl border border-white/10 bg-white/[0.03] flex items-center gap-2.5 pl-3.5 pr-2 text-sm">
+                                    <Building2 size={16} className="text-zinc-400 shrink-0" />
+                                    <select value={institute} onChange={e => setInstitute(e.target.value)} data-testid="lb-institute"
+                                        className="appearance-none bg-transparent outline-none pr-7 text-white w-[11rem] truncate [color-scheme:dark] cursor-pointer">
+                                        <option value="All" className="bg-[#0b1210] text-white">All Institutes</option>
+                                        {instituteOptions.map(([k, n]) => <option key={k} value={k} className="bg-[#0b1210] text-white">{n}</option>)}
+                                    </select>
+                                    <ChevronDown size={16} className="absolute right-3 pointer-events-none text-zinc-500" />
+                                </label>
+                            )}
                         </div>
-                        <div className="h-px flex-1 bg-gradient-to-r from-border/50 to-transparent" />
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
-                        {omRankings.map((s, i) => (
-                            <LeaderboardBox key={s.employeeId || `om-${i}`} data={s} rank={i + 1} type="OM" onRespClick={() => setSelectedEmpForResp(s)} onAuditClick={() => setSelectedEmpForAudit(s)} canAdd={canAddFor(s.emp)} />
-                        ))}
-                    </div>
-                </section>
-
-                {/* PROFESSORS SECTION */}
-                <section className="space-y-10">
-                    <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                                <Award className="text-emerald-500" size={20} />
+                    {sections.map(sec => (
+                        <section key={sec.key} className="space-y-4 scroll-mt-4" data-testid={`lb-section-${sec.key}`}>
+                            {/* Section header */}
+                            <div className="flex flex-wrap items-center gap-4">
+                                <div className="w-12 h-12 shrink-0 rounded-2xl border border-amber-500/30 bg-amber-500/10 flex items-center justify-center text-amber-400"><sec.icon size={22} /></div>
+                                <div className="min-w-0 flex-1 basis-[22rem]">
+                                    <div className="flex items-center gap-4">
+                                        <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight whitespace-nowrap" data-testid="lb-title">{sec.title}</h2>
+                                        <span className="text-xs font-semibold tabular-nums px-2 py-0.5 rounded-md bg-white/5 text-zinc-400">{sec.rows.length}</span>
+                                        <div className="hidden sm:block h-px flex-1 bg-gradient-to-r from-emerald-500/40 to-transparent" />
+                                    </div>
+                                    <p className="text-sm text-zinc-400 mt-0.5">{sec.desc}</p>
+                                </div>
                             </div>
-                            <h2 className="text-xl font-black text-white tracking-widest uppercase">Professors & Faculty</h2>
-                        </div>
-                        <div className="h-px flex-1 bg-gradient-to-r from-border/50 to-transparent" />
-                    </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 lg:gap-6">
-                        {facultyRankings.map((s, i) => (
-                            <LeaderboardBox key={s.employeeId || `faculty-${i}`} data={s} rank={i + 1} type="FACULTY" onRespClick={() => setSelectedEmpForResp(s)} onAuditClick={() => setSelectedEmpForAudit(s)} canAdd={canAddFor(s.emp)} />
-                        ))}
-                    </div>
-                </section>
-
+                            {sec.rows.length > 0 ? (
+                                <div className="grid grid-cols-1 @md:grid-cols-2 @xl:grid-cols-3 @3xl:grid-cols-5 gap-3 @5xl:gap-4 pt-3" data-testid="lb-grid">
+                                    {sec.rows.map((s: any, i: number) => (
+                                        <PodiumCard key={s.employeeId || i} data={s} rank={i + 1} institute={instituteName(s.emp?.location)}
+                                            badgeLabel={sec.founder ? "👑" : undefined} plain={sec.founder}
+                                            onHistory={() => setSelectedEmpForAudit(s)} />
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="py-10 text-center text-sm text-zinc-500 rounded-2xl border border-dashed border-white/[0.06]" data-testid="lb-empty">
+                                    {institute !== "All" && !sec.founder ? "No one from this institute is on this leaderboard yet." : "No rankings to show yet."}
+                                </div>
+                            )}
+                        </section>
+                    ))}
+                </div>
             </div>
 
             {/* Rules Modal */}
@@ -467,8 +510,12 @@ export default function LeaderboardPage() {
                                 )}
                             </div>
                             
-                            <div className="p-6 border-t border-white/5 bg-[#050505]">
-                                <button onClick={() => setSelectedEmpForAudit(null)} className="w-full py-4 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-[10px] font-black uppercase tracking-widest transition-all text-white">
+                            <div className="p-6 border-t border-white/5 bg-[#050505] flex flex-col sm:flex-row gap-3">
+                                <button onClick={() => { const e = selectedEmpForAudit; setSelectedEmpForAudit(null); setSelectedEmpForResp(e); }} data-testid="lb-open-resp"
+                                    className="flex-1 py-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-[10px] font-black uppercase tracking-widest transition-all text-amber-300 inline-flex items-center justify-center gap-2">
+                                    <Award size={14} /> {canAddFor(selectedEmpForAudit.emp) ? "Responsibilities (View / Assign)" : "Additional Responsibilities"}
+                                </button>
+                                <button onClick={() => setSelectedEmpForAudit(null)} className="flex-1 py-4 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-[10px] font-black uppercase tracking-widest transition-all text-white">
                                     Close Performance Ledger
                                 </button>
                             </div>
@@ -480,156 +527,129 @@ export default function LeaderboardPage() {
     );
 }
 
-function StarRating({ stars }: { stars: number }) {
+function StarRating({ stars, size = 12 }: { stars: number; size?: number }) {
     const full = Math.floor(stars);
     const hasHalf = stars % 1 >= 0.25 && stars % 1 <= 0.75;
     const remaining = 5 - full - (hasHalf ? 1 : 0);
 
     return (
-        <div className="flex items-center gap-0.5">
-            {[...Array(full)].map((_, i) => <Star key={`f-${i}`} size={12} className="text-yellow-500 fill-yellow-500" />)}
+        <div className="flex items-center gap-0.5" title={`${stars.toFixed(1)} / 5`}>
+            {[...Array(full)].map((_, i) => <Star key={`f-${i}`} size={size} className="text-amber-400 fill-amber-400" />)}
             {hasHalf && (
                 <div className="relative">
-                    <Star size={12} className="text-zinc-700 fill-zinc-700" />
+                    <Star size={size} className="text-zinc-700 fill-zinc-700" />
                     <div className="absolute inset-0 overflow-hidden w-1/2">
-                        <Star size={12} className="text-yellow-500 fill-yellow-500" />
+                        <Star size={size} className="text-amber-400 fill-amber-400" />
                     </div>
                 </div>
             )}
-            {[...Array(Math.max(0, remaining))].map((_, i) => <Star key={`e-${i}`} size={12} className="text-zinc-700 fill-zinc-700" />)}
+            {[...Array(Math.max(0, remaining))].map((_, i) => <Star key={`e-${i}`} size={size} className="text-zinc-700 fill-zinc-700" />)}
         </div>
     );
 }
 
-function LeaderboardBox({ data, rank, type, onRespClick, onAuditClick, canAdd }: { data: any; rank: number; type: "OM" | "FACULTY" | "FOUNDER" | "HOI"; onRespClick: () => void; onAuditClick: () => void; canAdd: boolean }) {
-    const medal = rank === 1 && type !== "FOUNDER" ? "🥇" : rank === 2 && type !== "FOUNDER" ? "🥈" : rank === 3 && type !== "FOUNDER" ? "🥉" : null;
-    const isTop3 = (rank <= 3) && type !== "FOUNDER";
+const roleLabel = (emp: any) =>
+    emp?.role === "FOUNDER" ? "Founder" :
+        emp?.role === "OM" ? "Operation Manager" :
+            emp?.role === "MARKETING_TEAM" ? "Marketing Team" :
+                emp?.role === "TECH_TEAM" ? "Tech Team" :
+                    emp?.role === "PROFESSOR" ? "Professor" :
+                        emp?.designation || "Faculty";
 
+const photoOf = (emp: any) => emp?.photoUrl || emp?.passport_size_photo || emp?.upload_your_passport_size_photo || "";
+
+/** Photo with the initial behind it, so a missing or broken photo still shows a clean avatar */
+function Avatar({ emp, className = "" }: { emp: any; className?: string }) {
+    const [broken, setBroken] = useState(false);
+    const src = photoOf(emp);
     return (
-        <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: rank * 0.05 }}
-            onClick={onAuditClick}
-            className={cn(
-                "group relative w-full h-auto min-h-[14rem] rounded-[1.8rem] md:rounded-[2.2rem] border transition-all duration-500 flex flex-col items-center p-4 sm:p-5 overflow-visible cursor-pointer",
-                isTop3 || type === "FOUNDER"
-                    ? "bg-gradient-to-b from-primary/10 to-transparent border-primary/30 shadow-[0_0_40px_-15px_rgba(16,185,129,0.2)]"
-                    : "bg-[#111] border-white/[0.05] hover:border-primary/30"
-            )}
-        >
-            {/* Rank Badge */}
-            <div className={cn(
-                "absolute -top-1.5 -left-1.5 sm:-top-3 sm:-left-3 w-6 h-6 sm:w-10 sm:h-10 rounded-lg sm:rounded-2xl flex items-center justify-center text-[7px] sm:text-xs font-black z-30 shadow-2xl rotate-[-10deg] group-hover:rotate-0 transition-transform",
-                type === "FOUNDER" ? "bg-primary text-primary-foreground" :
-                    rank === 1 ? "bg-yellow-500 text-black" :
-                        rank === 2 ? "bg-zinc-300 text-black" :
-                            rank === 3 ? "bg-amber-600 text-white" :
-                                "bg-zinc-800 border border-white/10 text-zinc-400"
-            )}>
-                {type === "FOUNDER" ? "👑" : `#${rank}`}
-            </div>
+        <div className={cn("relative shrink-0 overflow-hidden bg-zinc-800 flex items-center justify-center font-black text-zinc-400", className)}>
+            <span>{(emp?.name || "?")[0]}</span>
+            {src && !broken && <img src={resolveImageUrl(src)} alt="" className="absolute inset-0 w-full h-full object-cover" onError={() => setBroken(true)} />}
+        </div>
+    );
+}
 
-            {/* Medal for Top Performer */}
-            {medal && (
-                <div className="absolute -top-2 -right-2 sm:-top-4 sm:-right-4 text-lg sm:text-3xl z-30 drop-shadow-[0_0_10px_rgba(255,255,255,0.3)] group-hover:scale-125 transition-transform duration-300">
-                    {medal}
-                </div>
-            )}
-
-            {/* Avatar Section */}
-            <div className="relative mt-0.5 mb-2 sm:mb-3">
-                <div className={cn(
-                    "w-12 h-12 sm:w-14 sm:h-14 md:w-20 md:h-20 rounded-2xl md:rounded-3xl border-2 md:border-4 overflow-hidden shadow-2xl transition-all duration-500 transform group-hover:scale-105 relative z-10 bg-[#222]",
-                    rank === 1 ? "border-yellow-500" : rank === 2 ? "border-zinc-300" : rank === 3 ? "border-amber-600" : "border-white/5"
-                )}>
-                    {data.emp?.photoUrl || data.emp?.passport_size_photo || data.emp?.upload_your_passport_size_photo ? (
-                        <img
-                            src={resolveImageUrl(data.emp?.photoUrl || data.emp?.passport_size_photo || data.emp?.upload_your_passport_size_photo)}
-                            alt=""
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none';
-                                (e.target as HTMLImageElement).parentElement!.classList.add('flex', 'items-center', 'justify-center');
-                                const initial = document.createElement('span');
-                                initial.innerText = data.emp?.name?.[0] || 'U';
-                                initial.className = "text-lg sm:text-xl md:text-2xl font-black text-zinc-700";
-                                (e.target as HTMLImageElement).parentElement!.appendChild(initial);
-                            }}
-                        />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center text-lg sm:text-xl md:text-2xl font-black text-zinc-700">
-                            {data.emp?.name?.[0]}
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Identity Info */}
-            <div className="text-center w-full min-w-0 flex flex-col items-center gap-0.5 flex-1">
-                <h3 title={data.emp?.name} className="w-full max-w-full text-[10px] sm:text-[11px] md:text-sm font-black text-white truncate px-2 leading-tight group-hover:text-primary transition-colors">
-                    {data.emp?.name}
-                </h3>
-                <p className="w-full max-w-full text-[6px] sm:text-[7px] text-zinc-500 font-bold uppercase tracking-[0.1em] truncate px-4">
-                    {data.emp?.role === "FOUNDER" ? "Founder" : 
-                     data.emp?.role === "OM" ? "Operation Manager" : 
-                     data.emp?.role === "MARKETING_TEAM" ? "Marketing Team" : 
-                     data.emp?.role === "TECH_TEAM" ? "Tech Team" : 
-                     data.emp?.role === "PROFESSOR" ? "Professor" : 
-                     data.emp?.designation}
-                </p>
-
-                {/* Stars Display */}
-                <div className="mt-1">
-                    <StarRating stars={data.calculatedStars} />
-                </div>
-
-                {/* Flags Display: at most 5 flags, the rest as +N (full breakdown on hover / in the point history) */}
-                {(() => {
-                    const MAX_FLAGS = 5;
-                    const fc = data.flagCounts || {};
-                    const kinds = [
-                        { key: "red", label: "Red", count: fc.red || 0, cls: "text-red-500 fill-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]" },
-                        { key: "orange", label: "Orange", count: fc.orange || 0, cls: "text-orange-500 fill-orange-500 drop-shadow-[0_0_8px_rgba(249,115,22,0.5)]" },
-                        { key: "yellow", label: "Yellow", count: fc.yellow || 0, cls: "text-yellow-500 fill-yellow-500 drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" },
-                        { key: "blue", label: "Blue", count: fc.blue || 0, cls: "text-blue-500 fill-blue-500 drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]" },
-                        { key: "black", label: "Black", count: fc.black || 0, cls: "text-zinc-500 fill-black drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]" },
-                    ];
-                    const allFlags = kinds.flatMap(k => Array.from({ length: k.count }, (_, i) => ({ id: k.key + i, cls: k.cls })));
-                    const extra = allFlags.length - MAX_FLAGS;
-                    const breakdown = kinds.filter(k => k.count > 0).map(k => `${k.count} ${k.label}`).join(", ");
-                    return (
-                        <div className="flex items-center justify-center flex-nowrap gap-1 mt-1 mb-1.5 min-h-3 w-full overflow-hidden" style={{ minHeight: "12px" }} title={breakdown ? `${allFlags.length} Flag(s): ${breakdown}` : undefined}>
-                            {allFlags.slice(0, MAX_FLAGS).map(f => <Flag key={f.id} size={9} className={cn("shrink-0", f.cls)} />)}
-                            {extra > 0 && <span className="shrink-0 text-[8px] font-black text-zinc-400 leading-none">+{extra}</span>}
-                        </div>
-                    );
-                })()}
-            </div>
-
-            {/* Performance Stats */}
-            <div className="w-full mt-2 pt-2.5 border-t border-white/5 group-hover:border-primary/20 transition-colors flex items-center justify-between">
-                <div className="flex flex-col">
-                    <span className="text-[6px] sm:text-[7px] text-zinc-500 font-black uppercase tracking-widest truncate">Points</span>
-                    <span className="text-[10px] sm:text-xs font-black text-white leading-none">{data.totalPoints.toFixed(0)}</span>
-                </div>
-                <button 
-                    onClick={(e) => { e.stopPropagation(); onRespClick(); }}
-                    className="flex flex-col items-end group/btn cursor-pointer overflow-hidden p-1 -m-1 rounded-lg hover:bg-primary/5 transition-colors"
-                >
-                    <span className="text-[6px] sm:text-[7px] text-primary font-black uppercase tracking-widest group-hover/btn:underline truncate mb-0.5">
-                        {canAdd ? "Assign/View" : "View History"}
+/** Every flag in its own colour; with more than 5, each colour once with its count (never overflows) */
+function FlagRow({ data, className = "" }: { data: any; className?: string }) {
+    const MAX_FLAGS = 5;
+    const fc = data.flagCounts || {};
+    const kinds = [
+        { key: "red", label: "Red", count: fc.red || 0, cls: "text-red-500 fill-red-500" },
+        { key: "orange", label: "Orange", count: fc.orange || 0, cls: "text-orange-500 fill-orange-500" },
+        { key: "yellow", label: "Yellow", count: fc.yellow || 0, cls: "text-yellow-500 fill-yellow-500" },
+        { key: "blue", label: "Blue", count: fc.blue || 0, cls: "text-blue-500 fill-blue-500" },
+        { key: "black", label: "Black", count: fc.black || 0, cls: "text-zinc-500 fill-black" },
+    ].filter(k => k.count > 0);
+    const total = kinds.reduce((n, k) => n + k.count, 0);
+    if (!total) return null;
+    const breakdown = kinds.map(k => `${k.count} ${k.label}`).join(", ");
+    return (
+        <div className={cn("flex items-center flex-nowrap gap-1 overflow-hidden", className)} title={`${total} Flag(s): ${breakdown}`} data-testid="lb-flags">
+            {total <= MAX_FLAGS
+                ? kinds.flatMap(k => Array.from({ length: k.count }, (_, i) => <Flag key={k.key + i} size={12} data-flag={k.key} className={cn("shrink-0", k.cls)} />))
+                : kinds.map(k => (
+                    <span key={k.key} className="shrink-0 inline-flex items-center gap-[1px]" title={`${k.count} ${k.label} Flag(s)`}>
+                        <Flag size={12} data-flag={k.key} className={cn("shrink-0", k.cls)} />
+                        <span className="text-[9px] font-black text-zinc-300 leading-none">{k.count}</span>
                     </span>
-                    <div className={cn(
-                        "px-2 py-0.5 rounded-md shadow-lg transition-all",
-                        data.responsibilities.length > 0 
-                            ? "bg-primary shadow-primary/20" 
-                            : "bg-primary/40 shadow-primary/10 group-hover:bg-primary/60"
-                    )}>
-                        <span className="text-[9px] font-black text-primary-foreground leading-none">
-                            {data.responsibilities.length > 0 ? `+${data.responsibilities.length}` : '0'}
-                        </span>
-                    </div>
+                ))}
+        </div>
+    );
+}
+
+/** Small laurel branch (mirrored for the right side) */
+function Laurel({ className = "", flip = false }: { className?: string; flip?: boolean }) {
+    return (
+        <svg viewBox="0 0 24 64" className={cn(className, flip && "-scale-x-100")} fill="currentColor" aria-hidden>
+            <path d="M18 62 C 8 50, 6 30, 14 4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            {[[13, 52, -35], [10, 42, -30], [9, 32, -20], [10, 22, -10], [12, 13, 0]].map(([x, y, r], i) => (
+                <ellipse key={i} cx={x} cy={y} rx="6" ry="2.6" transform={`rotate(${r} ${x} ${y}) translate(-5 0)`} />
+            ))}
+            {[[15, 47, 35], [13, 37, 30], [13, 27, 25], [14, 18, 15]].map(([x, y, r], i) => (
+                <ellipse key={`r${i}`} cx={x} cy={y} rx="5" ry="2.2" transform={`rotate(${r} ${x} ${y}) translate(4 0)`} />
+            ))}
+        </svg>
+    );
+}
+
+const PODIUM_STYLE: Record<number, { card: string; ring: string; badge: string; crown?: string; laurel?: string; glow: string }> = {
+    1: { card: "border-amber-400/70 bg-gradient-to-b from-amber-500/25 via-amber-900/10 to-[#0a0f0c]", ring: "border-amber-400", badge: "bg-amber-400 text-zinc-950", crown: "text-amber-400 fill-amber-400", laurel: "text-amber-600/80", glow: "shadow-[0_0_45px_-10px_rgba(251,191,36,0.55)]" },
+    2: { card: "border-sky-200/50 bg-gradient-to-b from-sky-300/15 via-slate-800/20 to-[#0a0f0c]", ring: "border-slate-200", badge: "bg-slate-200 text-zinc-900", crown: "text-slate-200 fill-slate-200", laurel: "text-slate-400/70", glow: "shadow-[0_0_40px_-12px_rgba(186,230,253,0.4)]" },
+    3: { card: "border-orange-500/60 bg-gradient-to-b from-orange-600/25 via-orange-950/10 to-[#0a0f0c]", ring: "border-orange-500", badge: "bg-orange-500 text-white", crown: "text-orange-400 fill-orange-400", laurel: "text-orange-700/80", glow: "shadow-[0_0_40px_-12px_rgba(249,115,22,0.5)]" },
+};
+
+function PodiumCard({ data, rank, onHistory, institute, badgeLabel, plain = false }: { data: any; rank: number; onHistory: () => void; institute?: string; badgeLabel?: string; plain?: boolean }) {
+    const st = plain ? undefined : PODIUM_STYLE[rank];
+    return (
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(rank, 10) * 0.04 }}
+            className={cn("relative min-w-0 rounded-2xl border px-3 pt-4 pb-3.5 sm:px-4 flex flex-col items-center text-center", st ? cn(st.card, st.glow) : "border-white/[0.08] bg-[#0b1210]")}
+            data-testid="lb-podium-card" data-rank={rank}>
+            {st?.crown && <Crown aria-hidden className={cn("absolute -top-3.5 left-4 w-7 h-7 drop-shadow-lg", st.crown)} />}
+            <span className={cn("absolute top-3 left-3 h-8 min-w-[2.5rem] px-2 rounded-lg flex items-center justify-center text-sm font-black tabular-nums z-10", st ? st.badge : "bg-zinc-800 text-zinc-300 border border-white/10")}>{badgeLabel ?? `#${rank}`}</span>
+
+            <div className="relative mt-6 mb-3 flex items-center justify-center">
+                {st?.laurel && <Laurel className={cn("w-5 h-14 -mr-1.5 shrink-0", st.laurel)} />}
+                <Avatar emp={data.emp} className={cn("w-20 h-20 xl:w-24 xl:h-24 rounded-2xl border-[3px] text-2xl", st ? st.ring : "border-zinc-700")} />
+                {st?.laurel && <Laurel flip className={cn("w-5 h-14 -ml-1.5 shrink-0", st.laurel)} />}
+            </div>
+
+            <h3 className="text-[15px] font-bold text-white leading-snug w-full truncate" title={data.emp?.name}>{data.emp?.name}</h3>
+            <p className="text-[10px] uppercase tracking-wide text-zinc-400 mt-1 w-full truncate" title={roleLabel(data.emp)}>{roleLabel(data.emp)}</p>
+            <div className="mt-2"><StarRating stars={data.calculatedStars} size={16} /></div>
+            <div className="mt-2 h-4 flex items-center justify-center"><FlagRow data={data} /></div>
+            <p className="mt-2 w-full inline-flex items-center justify-center gap-1.5 text-[11px] text-zinc-400 min-w-0" title={institute} data-testid="lb-card-institute">
+                <Building2 size={12} className="text-zinc-500 shrink-0" /><span className="truncate">{institute || "—"}</span>
+            </p>
+
+            <div className="w-full mt-3 pt-3 border-t border-white/10 flex flex-wrap items-end justify-between gap-2">
+                <div className="text-left">
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-400">Points</p>
+                    <p className="text-xl font-black tabular-nums leading-none mt-1">{data.totalPoints.toFixed(0)}</p>
+                </div>
+                <button onClick={onHistory} data-testid="lb-history"
+                    className="h-9 px-3 rounded-lg border border-emerald-500/45 bg-emerald-500/[0.07] hover:bg-emerald-500/15 text-emerald-300 text-xs font-semibold inline-flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors">
+                    View History <ArrowRight size={13} />
                 </button>
             </div>
         </motion.div>

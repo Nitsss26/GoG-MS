@@ -1,17 +1,27 @@
 /**
- * Post-onboarding checklist — five mandatory activities after the onboarding form is submitted.
+ * Post-onboarding checklist — six mandatory activities after the onboarding form is submitted.
  * Shared by the API and the pages (no server-only imports). Stored on Employee.postOnboardingChecklist.
- * The organisation uses "HOI" (Head of Institute) for the role called HOH in the request.
+ * The stored key "hohCall" is kept for existing records; it is shown as the HOI call.
  */
-export type ChecklistItemKey = "hohCall" | "adCall" | "hrSopWalkthrough" | "slackWorkspace" | "googleWorkspace";
+export type ChecklistItemKey = "hohCall" | "adCall" | "hrSopWalkthrough" | "slackWorkspace" | "googleWorkspace" | "idCard";
 
-export const CHECKLIST_ITEMS: { key: ChecklistItemKey; label: string; short: string; kind: "call" | "slack" | "google" }[] = [
-    { key: "hohCall", label: "One-on-One Call with HOH (HOI)", short: "HOH", kind: "call" },
-    { key: "adCall", label: "One-on-One Call with AD", short: "AD", kind: "call" },
-    { key: "hrSopWalkthrough", label: "SOP Walkthrough Call with HR", short: "SOP", kind: "call" },
+export const CHECKLIST_ITEMS: { key: ChecklistItemKey; label: string; short: string; kind: "call" | "slack" | "google" | "idcard" }[] = [
+    { key: "hohCall", label: "One-on-One Call with HOI (Head of Institution)", short: "HOI", kind: "call" },
+    { key: "adCall", label: "One-on-One Call with AD (Associate Director)", short: "AD", kind: "call" },
+    { key: "hrSopWalkthrough", label: "SOP Walkthrough Call with HR (Manager)", short: "SOP", kind: "call" },
     { key: "slackWorkspace", label: "Slack Workspace Joined & Verified", short: "Slack", kind: "slack" },
     { key: "googleWorkspace", label: "Google Workspace Credentials Activated & Verified", short: "Google", kind: "google" },
+    { key: "idCard", label: "ID Card Given", short: "ID Card", kind: "idcard" },
 ];
+export const CHECKLIST_TOTAL = CHECKLIST_ITEMS.length;
+
+/** ID card: "Yes" completes the item; "No" needs a reason and keeps the item pending */
+export const ID_CARD_STATUSES: { value: string; label: string }[] = [
+    { value: "NOT_UPDATED", label: "Not Updated" },
+    { value: "YES", label: "Yes – Given" },
+    { value: "NO", label: "No – Not Given" },
+];
+export const ID_CARD_DONE = "YES";
 
 /** Slack: an invitation is not membership — only VERIFIED completes the item */
 export const SLACK_STATUSES: { value: string; label: string }[] = [
@@ -39,7 +49,7 @@ export function itemDone(c: any, key: ChecklistItemKey): boolean {
 }
 export function summarize(c: any): { completed: number; total: number; status: ChecklistStatus } {
     const completed = CHECKLIST_ITEMS.filter(i => itemDone(c, i.key)).length;
-    return { completed, total: 5, status: completed === 0 ? "Not Started" : completed === 5 ? "Completed" : "In Progress" };
+    return { completed, total: CHECKLIST_TOTAL, status: completed === 0 ? "Not Started" : completed === CHECKLIST_TOTAL ? "Completed" : "In Progress" };
 }
 export const statusLabel = (list: { value: string; label: string }[], v?: string) => list.find(x => x.value === v)?.label || v || "—";
 
@@ -48,6 +58,7 @@ export function itemState(c: any, key: ChecklistItemKey): string {
     const it = c?.[key] || {};
     if (key === "slackWorkspace") return it.completed ? "Verified" : statusLabel(SLACK_STATUSES, it.status || "NOT_INVITED");
     if (key === "googleWorkspace") return it.completed ? "Verified" : statusLabel(GOOGLE_STATUSES, it.status || "NOT_CREATED");
+    if (key === "idCard") return it.completed ? "Given" : it.status === "NO" ? "Not Given" : "Pending";
     return it.completed ? "Completed" : "Pending";
 }
 
@@ -60,7 +71,8 @@ export function newChecklist(now: string, officialEmail?: string) {
         hohCall: call(), adCall: call(), hrSopWalkthrough: call(),
         slackWorkspace: { status: "NOT_INVITED", invitationStatus: "NOT_INVITED", membershipStatus: "NOT_VERIFIED", slackUserId: null, completed: false, verifiedBy: null, verifiedByName: null, verifiedAt: null, verificationSource: null, integration: null },
         googleWorkspace: { status: "NOT_CREATED", accountStatus: "NOT_CREATED", activationStatus: "NOT_VERIFIED", officialEmail: officialEmail || null, completed: false, verifiedBy: null, verifiedByName: null, verifiedAt: null, verificationSource: null, integration: null },
-        progress: { completed: 0, total: 5 },
+        idCard: { status: "NOT_UPDATED", completed: false, reason: null, updatedBy: null, updatedByName: null, updatedAt: null },
+        progress: { completed: 0, total: CHECKLIST_TOTAL },
         status: "Not Started",
         history: [] as any[],
     };

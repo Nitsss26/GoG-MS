@@ -68,3 +68,45 @@ export async function removeEmployeeFromPortal(actor: RemovalActor, employeeId: 
         },
     };
 }
+
+/**
+ * SERVER-ONLY: permanent delete (HR asked for it): after the exit is completed, the employee record of THIS
+ * designation and every record that belongs to the employee are deleted from the database. Cannot be undone.
+ * Records of other people stay; only their link to this employee was removed above (reporting lines).
+ * Uploaded files (photos / documents in storage) are not touched.
+ */
+export async function purgeEmployeeData(employeeId: string): Promise<Record<string, number>> {
+    const M = await import('@/models/Schemas');
+    const targets: [string, any, Record<string, unknown>][] = [
+        ['attendance', M.Attendance, { employeeId }],
+        ['attendanceViolations', M.AttendanceViolation, { employeeId }],
+        ['markAsPresentRequests', M.MarkAsPresentRequest, { employeeId }],
+        ['overrideRequests', M.OverrideRequest, { employeeId }],
+        ['leaves', M.LeaveRequest, { employeeId }],
+        ['workFromHome', M.WorkFromHome, { employeeId }],
+        ['workSchedules', M.WorkSchedule, { employeeId }],
+        ['reimbursements', M.ReimbursementClaim, { employeeId }],
+        ['responsibilities', M.AdditionalResponsibility, { employeeId }],
+        ['performanceStars', M.PerformanceStar, { employeeId }],
+        ['pipRecords', M.PIPRecord, { employeeId }],
+        ['meetingRequests', M.MeetingRequest, { employeeId }],
+        ['tickets', M.Ticket, { $or: [{ raisedBy: employeeId }, { targetEmployeeId: employeeId }] }],
+        ['sprintPlans', M.SprintPlan, { facultyId: employeeId }],
+        ['lectureReports', M.LectureReport, { facultyId: employeeId }],
+        ['facultyPreferences', M.FacultyPreference, { facultyId: employeeId }],
+        ['curriculumTasks', M.CurriculumTask, { assignedTo: employeeId }],
+        ['notifications', M.Notification, { recipientId: employeeId }],
+        ['reminderLogs', M.ReminderLog, { recipientId: employeeId }],
+        ['accessGrants', M.AccessGrant, { recipientId: employeeId }],
+        ['accessManagers', M.AccessManager, { employeeId }],
+        ['exitRecords', M.ExitRecord, { employeeId }],
+        ['employee', M.Employee, { id: employeeId }],
+    ];
+    const deleted: Record<string, number> = {};
+    for (const [name, model, filter] of targets) {
+        if (!model) continue;
+        try { deleted[name] = (await model.deleteMany(filter)).deletedCount || 0; }
+        catch (e: any) { console.error(`[employee-removal] could not delete ${name} of ${employeeId}:`, e?.message); deleted[name] = -1; }
+    }
+    return deleted;
+}

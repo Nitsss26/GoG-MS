@@ -102,13 +102,23 @@ export const getAuthorityEmails = (employee: any, allEmployees: any[], excludeRo
         adEmails.forEach(email => authorities.add(email));
     }
 
-    // 5. Explicit HOI Inclusion for certain roles
-    // If sender is Professor or OM, ensure ALL HOIs are fetched from the email field of the employees list
-    if (employee?.role === "PROFESSOR" || employee?.role === "OM" || employee?.role === "MARKETING_TEAM" || employee?.role === "TECH_TEAM") {
-        const hoiEmails = allEmployees
-            .filter(e => e.role === "HOI" && e.email)
-            .map(e => e.email!.toLowerCase());
-        hoiEmails.forEach(email => authorities.add(email));
+    // 5. HOI: only the employee's OWN HOI(s) — they are already included by the reporting-line traversal above
+    // (Employee.reportsTo, set by HR "Appoint HOI"). Earlier every HOI of the organisation was added here for
+    // Professors / OMs / Tech / Marketing, so their mails reached all HOIs. If no HOI is found in the reporting
+    // line, nothing is broadcast: the missing mapping is recorded for HR to review.
+    if (employee?.id && ["PROFESSOR", "FACULTY", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(employee?.role)) {
+        const hasOwnHoi = (() => {
+            const seen = new Set<string>(); let level: string[] = [employee.id];
+            while (level.length) {
+                const ups = level.flatMap(id => { const e = allEmployees.find(x => x.id === id); return e?.reportsTo ? (Array.isArray(e.reportsTo) ? e.reportsTo : [e.reportsTo]) : []; })
+                    .filter((id: string) => !seen.has(id));
+                ups.forEach((id: string) => seen.add(id));
+                if (ups.some((id: string) => allEmployees.find(x => x.id === id)?.role === "HOI")) return true;
+                level = ups;
+            }
+            return false;
+        })();
+        if (!hasOwnHoi) reportEmailRoutingIssue(employee.id, "No HOI assigned in the reporting line — HOI copy of the e-mail was not sent");
     }
 
     if (employee && employee.email) {
@@ -127,6 +137,14 @@ const getPriorityConfig = (category: string) => {
         return { label: "Medium Priority", color: "#3b82f6", time: "16 Hours" };
     }
     return { label: "Normal Priority", color: "#f59e0b", time: "24 Hours" };
+};
+
+/** Records a recipient-routing problem for review (browser only, best effort, never blocks the mail) */
+export const reportEmailRoutingIssue = (employeeId: string, issue: string) => {
+    if (typeof window === "undefined" || !employeeId) return;
+    try {
+        fetch("/api/email-routing-issues", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeId, issue }) }).catch(() => { });
+    } catch { /* ignore */ }
 };
 
 // --- EMAIL TEMPLATES ---
@@ -170,6 +188,47 @@ export const getTicketTemplate = (ticket: any, type: 'raised' | 'resolved') => {
         `, priority.color)
     };
 };
+
+/** Ticket resolved → e-mail to the employee who raised it (only) */
+export const getTicketResolvedEmployeeTemplate = (ticket: any, employeeName: string) => ({
+    subject: `Your Support Ticket Has Been Resolved – ${ticket.id}`,
+    html: ProfessionalWrapper("Support Ticket Resolved", `
+        <p>Dear ${employeeName || "Employee"},</p>
+        <p>We would like to inform you that your support ticket has been marked as resolved.</p>
+        ${DataTable([
+            { label: "Ticket ID", value: ticket.id },
+            { label: "Ticket Subject", value: ticket.subject },
+            { label: "Submitted On", value: formatDate(ticket.createdAt) },
+            { label: "Resolved On", value: formatDate(ticket.resolvedAt) },
+            { label: "Status", value: "Resolved", color: "#10b981" },
+        ])}
+        ${ticket.resolutionNotes ? `<div style="background-color: #ecfdf5; border-radius: 8px; padding: 16px; margin-top: 12px; border-left: 4px solid #10b981;"><strong style="color: #065f46; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 4px;">Resolution Remarks</strong><p style="margin: 0; color: #047857; font-size: 14px;">${ticket.resolutionNotes}</p></div>` : ""}
+        <p>You can log in to the GOG OMS portal to review the ticket details.</p>
+        <p>If you believe the issue remains unresolved, please follow the existing ticket reopening or support process.</p>
+        <p>Regards,<br/>HR Department<br/>Geeks of Gurukul</p>
+    `, "#10b981"),
+});
+
+/** Ticket still unresolved 48 hours after it was raised → reminder to the responsible HR */
+export const getTicketEscalationTemplate = (ticket: any, hrName: string, pendingFor: string) => ({
+    subject: `Action Required – Ticket ${ticket.id} Pending for Over 48 Hours`,
+    html: ProfessionalWrapper("Ticket Pending for Over 48 Hours", `
+        <p>Dear ${hrName || "HR"},</p>
+        <p>This is an automated reminder that the following employee support ticket has remained unresolved for more than 48 hours.</p>
+        ${DataTable([
+            { label: "Ticket ID", value: ticket.id },
+            { label: "Employee Name", value: ticket.employeeName },
+            { label: "Employee ID", value: ticket.raisedBy },
+            { label: "Ticket Subject", value: ticket.subject },
+            { label: "Ticket Created On", value: new Date(ticket.createdAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }) },
+            { label: "Pending Duration", value: pendingFor, color: "#ef4444" },
+            { label: "Current Status", value: ticket.status },
+        ])}
+        <p>Kindly review and resolve this ticket at the earliest.</p>
+        <p>Please log in to the GOG OMS HR portal to review the ticket details and take the necessary action.</p>
+        <p>Regards,<br/>GOG OMS Automated Support System<br/>Geeks of Gurukul</p>
+    `, "#ef4444"),
+});
 
 export const getTicketForwardTemplate = (ticket: any, forwardedToName: string, forwardedByName: string, remarks: string) => {
     const title = "Ticket Forwarded";
@@ -487,6 +546,25 @@ export const getDressCodeWarningTemplate = (employee: any, defaults: number) => 
         `, "#ef4444")
     };
 };
+
+/** Monthly feedback UPDATED → employee (CC: own HOI). Separate from the original submission mail. */
+export const getFeedbackUpdatedTemplate = (f: { employeeName: string; employeeId: string; period: string; updatedByName: string; updatedAt: string }) => ({
+    subject: `Monthly Performance Feedback Updated – ${f.period}`,
+    html: ProfessionalWrapper("Monthly Feedback Updated", `
+        <p>Dear ${f.employeeName},</p>
+        <p>This is to inform you that your monthly performance feedback for ${f.period} has been updated.</p>
+        ${DataTable([
+            { label: "Employee Name", value: f.employeeName },
+            { label: "Employee ID", value: f.employeeId },
+            { label: "Feedback Month", value: f.period },
+            { label: "Updated By", value: f.updatedByName },
+            { label: "Updated On", value: new Date(f.updatedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }) },
+            { label: "Status", value: "Feedback Updated", color: "#10b981" },
+        ])}
+        <p>You can log in to the GOG OMS portal to view your updated performance ratings and feedback.</p>
+        <p>Regards,<br/>HR Department<br/>Geeks of Gurukul</p>
+    `, "#10b981"),
+});
 
 export const getRatingTemplate = (rating: any) => {
     const title = "Performance Assessment";

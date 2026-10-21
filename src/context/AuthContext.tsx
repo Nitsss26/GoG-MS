@@ -1,11 +1,12 @@
 "use client";
 import { COLLEGES as INITIAL_COLLEGES, College } from "@/lib/colleges";
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { LucideIcon, Clock, MapPin, CheckCircle2, AlertTriangle, History, Calendar, User, Search, Filter, ArrowLeft, ArrowRight, Download, Eye, X, Plus, Edit2, Trash2, Save, MoreVertical, Shield, Briefcase, Mail, Phone, MapPin as Pin, Fingerprint, Camera, CameraOff, RefreshCw, Layers, Award, Star, TrendingUp, Info } from 'lucide-react';
 import {
     sendMail,
     getAuthorityEmails,
+    reportEmailRoutingIssue,
     getTicketTemplate,
     getLeaveTemplate,
     getMisbehaviourTemplate,
@@ -52,6 +53,8 @@ export interface User {
     onboardingStatus?: string;
     photoUrl?: string;
     location?: string;
+    /** Slack invite link set by HR at onboarding (shown before the onboarding form) */
+    slackInviteLink?: string;
 }
 export interface EducationRecord { degree: string; institution: string; yearOfPassing: string; percentage: string; }
 export interface ExperienceRecord { company: string; role: string; duration: string; lastSalary: number; payslipRef?: string; }
@@ -82,6 +85,15 @@ export interface Employee extends User {
         date?: string;
         points: number;
         status?: string;
+        comment?: string;
+        screenshotUrl?: string;
+        ratedBy?: string;
+        ratedByName?: string;
+        updatedAt?: string;
+        updatedBy?: string;
+        updatedByName?: string;
+        updateEmailStatus?: string;
+        history?: { at: string; by: string; byName: string; previous: any }[];
     }[];
     // Bank Details
     bankAccountName?: string;
@@ -623,354 +635,35 @@ const INITIAL_SOPS: SOP[] = [
     { id: "sop6", title: "Harassment-Free Workplace (3.12)", version: "1.0", content: "Zero tolerance for harassment. Report to HR immediately. Guilty employees face suspension or termination.", lastUpdated: "2024-02-10", updatedBy: "Vivek Yadav", changeType: "new" },
 ];
 
-const INITIAL_SOP_NOTIFICATIONS: SOPNotification[] = [
-    { id: "sopn1", sopId: "sop1", title: "Dress Code Policy (3.1)", changeType: "updated", changedBy: "Vivek Yadav", changedAt: "2024-02-25", readBy: [] },
-    { id: "sopn2", sopId: "sop2", title: "Attendance & Timing (3.2)", changeType: "new", changedBy: "Vivek Yadav", changedAt: "2024-02-20", readBy: [] },
-];
+const INITIAL_SOP_NOTIFICATIONS: SOPNotification[] = []; // loaded from the database (no dummy data)
 
-// Helper to generate Feb 2026 attendance (Mon-Sat working, Sun off)
-const FEB26_WORKING = ["02", "03", "04", "05", "06", "07", "09", "10", "11", "12", "13", "14", "16", "17", "18", "19", "20", "21", "23", "24", "25", "26", "27", "28"];
-const _a = (id: string, eid: string, day: string, ci: string, co: string, loc: string, fl: any): AttendanceRecord => ({ id, employeeId: eid, date: `2026-02 - ${day} `, clockIn: ci, clockOut: co, location: loc, status: "Present", flags: fl, isApprovedByHR: true });
-const INITIAL_ATTENDANCE: AttendanceRecord[] = [
-    // FAC001 - Anil Kumar (SAGE Bhopal) — has late, earlyOut, dressCode flags
-    ...FEB26_WORKING.map((d, i) => _a(`a1_${i} `, "FAC001", d,
-        ["10", "17"].includes(d) ? "10:20" : "09:05",
-        ["06", "20"].includes(d) ? "16:00" : "18:10",
-        "SAGE Bhopal", {
-        late: ["10", "17"].includes(d),
-        earlyOut: ["06", "20"].includes(d),
-        dressCode: d === "12",
-        misconduct: d === "25",
-    })),
-    // FAC002 - Meera Das (SAGE Indore, Wed WFH) — has performance, meetingAbsent
-    ...FEB26_WORKING.filter(d => d !== "11").map((d, i) => _a(`a2_${i} `, "FAC002", d,
-        d === "16" ? "10:45" : "09:00",
-        d === "19" ? "16:30" : "18:00",
-        ["04", "11", "18", "25"].includes(d) ? "WFH" : "SAGE Indore", {
-        late: d === "16",
-        earlyOut: d === "19",
-        performance: d === "23",
-        meetingAbsent: d === "09",
-    })),
-    // FAC003 - Priya Singh (Barkatullah, Fri WFH) — has misconduct, locationDiff
-    ...FEB26_WORKING.filter(d => d !== "17").map((d, i) => _a(`a3_${i} `, "FAC003", d,
-        d === "03" ? "10:30" : "09:00",
-        d === "24" ? "15:30" : "17:10",
-        ["06", "13", "20", "27"].includes(d) ? "WFH" : "BU Bhopal", {
-        late: d === "03",
-        earlyOut: d === "24",
-        locationDiff: d === "10",
-        misconduct: d === "18",
-    })),
-    // FAC004 - Rahul Das — has dressCode, performance, meetingAbsent
-    ...FEB26_WORKING.filter(d => !["14", "21"].includes(d)).map((d, i) => _a(`a4_${i} `, "FAC004", d,
-        d === "05" ? "10:15" : "09:10",
-        d === "26" ? "16:00" : "18:00",
-        "SAGE Bhopal", {
-        late: d === "05",
-        earlyOut: d === "26",
-        dressCode: ["09", "16"].includes(d),
-        performance: d === "19",
-        meetingAbsent: d === "12",
-    })),
-    // FAC005 - Sneha Reddy — has late, misconduct
-    ...FEB26_WORKING.map((d, i) => _a(`a5_${i} `, "FAC005", d,
-        ["04", "18"].includes(d) ? "10:40" : "08:55",
-        d === "13" ? "15:45" : "18:05",
-        "SAGE Indore", {
-        late: ["04", "18"].includes(d),
-        earlyOut: d === "13",
-        misconduct: d === "27",
-    })),
-    // FAC006 - Vikram Deshmukh — has dressCode, meetingAbsent
-    ...FEB26_WORKING.filter(d => d !== "07").map((d, i) => _a(`a6_${i} `, "FAC006", d,
-        d === "23" ? "10:10" : "09:00",
-        "18:00", "Centurion", {
-        late: d === "23",
-        dressCode: d === "11",
-        meetingAbsent: d === "20",
-    })),
-    // OM001 - Arjun Sharma (Centurion, Sat WFH) — has late, performance
-    ...FEB26_WORKING.map((d, i) => _a(`a7_${i} `, "OM001", d,
-        d === "02" ? "10:00" : "09:30",
-        d === "27" ? "16:30" : "18:30",
-        ["07", "14", "21", "28"].includes(d) ? "WFH" : "Centurion", {
-        late: d === "02",
-        earlyOut: d === "27",
-        performance: d === "16",
-    })),
-    // OM002 - Kavitha Nair (Scope Global) — has dressCode, late
-    ...FEB26_WORKING.map((d, i) => _a(`a8_${i} `, "OM002", d,
-        ["06", "19"].includes(d) ? "10:25" : "09:00",
-        d === "12" ? "16:15" : "18:00",
-        "Scope Global", {
-        late: ["06", "19"].includes(d),
-        earlyOut: d === "12",
-        dressCode: d === "24",
-    })),
-    // OM003 - Amit Patel — has meetingAbsent, locationDiff
-    ...FEB26_WORKING.filter(d => d !== "28").map((d, i) => _a(`a9_${i} `, "OM003", d,
-        d === "10" ? "10:35" : "09:05",
-        "18:00", "SAGE Bhopal", {
-        late: d === "10",
-        meetingAbsent: d === "17",
-        locationDiff: d === "05",
-    })),
-    // EMP101 - Ayush Chauhan — has late
-    ...FEB26_WORKING.map((d, i) => _a(`a10_${i} `, "EMP101", d,
-        d === "11" ? "10:00" : "09:00",
-        "19:00", "SAGE Bhopal", {
-        late: d === "11",
-    })),
-    // EMP102 - Sachin Kumar — has earlyOut
-    ...FEB26_WORKING.map((d, i) => _a(`a11_${i} `, "EMP102", d,
-        "09:00",
-        d === "20" ? "15:00" : "18:30",
-        "SAGE Indore", {
-        earlyOut: d === "20",
-    })),
-    // EMP135 - Sidhartha Paikaray — clean month
-    ...FEB26_WORKING.map((d, i) => _a(`a12_${i} `, "EMP135", d, "09:00", "18:30", "Centurion", {})),
-    // HR001 - Vivek Yadav — has late
-    ...FEB26_WORKING.map((d, i) => _a(`a13_${i} `, "HR001", d,
-        d === "09" ? "10:15" : "09:00", "18:00", "SAGE Bhopal", { late: d === "09" })),
-    // AD001 - Raj Kumar Sahoo — clean
-    ...FEB26_WORKING.map((d, i) => _a(`a14_${i} `, "AD001", d, "08:50", "19:00", "SAGE Bhopal", {})),
-    // EMP127 - Nitesh — has various flags from Jan to Mar 8
-    ...(() => {
-        const records: AttendanceRecord[] = [];
-        const generateMonth = (m: number, year: number, flagDays: Record<number, any>, leaveDays: number[] = []) => {
-            const daysInMonth = new Date(year, m, 0).getDate();
-            for (let d = 1; d <= daysInMonth; d++) {
-                const date = `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                const dayOfWeek = new Date(year, m - 1, d).getDay();
-                if (dayOfWeek === 0) continue; // Skip Sundays
+const INITIAL_ATTENDANCE: AttendanceRecord[] = []; // loaded from the database (no dummy data)
 
-                if (m === 3 && d > 10) continue; // Only up to March 10 for Nitesh requested logs
+const INITIAL_MEETINGS: MeetingRequest[] = []; // loaded from the database (no dummy data)
 
-                if (leaveDays.includes(d)) {
-                    records.push({ id: `att_n_${m}_${d}`, employeeId: "EMP127", date, clockIn: "—", clockOut: "—", location: "—", status: "On Leave", flags: {}, isApprovedByHR: true });
-                } else {
-                    const isLate = flagDays[d]?.late;
-                    const isDress = flagDays[d]?.dressCode;
-                    records.push({
-                        id: `att_n_${m}_${d}`, employeeId: "EMP127", date,
-                        clockIn: isLate ? "10:15" : "09:00",
-                        clockOut: "18:00",
-                        location: "SAGE Bhopal",
-                        status: "Present",
-                        flags: flagDays[d] || {},
-                        isApprovedByHR: true
-                    });
-                }
-            }
-        };
+const INITIAL_LEAVES: LeaveRequest[] = []; // loaded from the database (no dummy data)
 
-        // JAN 2026 Flags
-        generateMonth(1, 2026, {
-            8: { late: true }, 12: { late: true }, 13: { dressCode: true }, 14: { late: true },
-            15: { late: true }, 17: { late: true }, 19: { dressCode: true, late: true }, // Multiple flags
-            21: { late: true }, 23: { late: true }
-        });
-        // FEB 2026 Flags
-        generateMonth(2, 2026, {
-            3: { late: true }, 7: { dressCode: true }, 11: { dressCode: true }, 12: { late: true },
-            17: { late: true }, 18: { late: true }, 21: { dressCode: true }, 23: { dressCode: true, misconduct: true }
-        });
-        // MAR 2026 Flags
-        generateMonth(3, 2026, {
-            2: { late: true }, 3: { late: true }, 4: { dressCode: true },
-            7: { late: true, dressCode: true },
-            8: { meetingAbsent: true, performance: true, misconduct: true },
-            9: { earlyOut: true, locationDiff: true, late: true },
-            10: { misconduct: true, dressCode: true, meetingAbsent: true, performance: true }
-        }, [6]); // March 6 as Leave
+const INITIAL_TICKETS: Ticket[] = []; // loaded from the database (no dummy data)
 
-        return records;
-    })(),
-];
+const INITIAL_REIMBURSEMENTS: ReimbursementClaim[] = []; // loaded from the database (no dummy data)
 
-const INITIAL_MEETINGS: MeetingRequest[] = [
-    {
-        id: "m1", employeeId: "HR001", employeeName: "Vivek Yadav", targetName: "All Faculty",
-        purpose: "Weekly Progress Review", date: "2024-03-10", time: "11:00",
-        status: "Scheduled", googleLink: "https://meet.google.com/abc-defg-hij",
-        agenda: "Reviewing faculty performance and dress code adherence.",
-        attendees: [
-            { id: "FAC001", name: "Anil Kumar" },
-            { id: "FAC002", name: "Meera Das" }
-        ],
-        createdAt: "2024-03-05T10:00:00Z"
-    },
-];
+const INITIAL_HOLIDAYS: Holiday[] = []; // loaded from the database (no dummy data)
 
-const INITIAL_LEAVES: LeaveRequest[] = [
-    { id: "lv1", employeeId: "FAC001", employeeName: "Anil Kumar", type: "Casual", startDate: "2024-03-05", endDate: "2024-03-05", days: 1, status: "Approved", classification: "Paid", leaveType: "Planned", reason: "Personal work", hoiApproval: "Approved", hrApproval: "Approved" },
-    { id: "lv2", employeeId: "FAC003", employeeName: "Priya Singh", type: "Sick", startDate: "2024-03-10", endDate: "2024-03-11", days: 2, status: "Pending", classification: "Paid", leaveType: "Emergency", reason: "Fever and cold", hoiApproval: "Pending", hrApproval: "Pending" },
-    { id: "lv3", employeeId: "OM001", employeeName: "Arjun Sharma", type: "Casual", startDate: "2024-03-15", endDate: "2024-03-15", days: 1, status: "Pending", classification: "Paid", leaveType: "Planned", reason: "Family function", hoiApproval: "Pending", hrApproval: "Pending" },
-    { id: "lv4", employeeId: "FAC005", employeeName: "Sneha Reddy", type: "Privilege", startDate: "2024-04-01", endDate: "2024-04-05", days: 5, status: "Pending", classification: "Paid", leaveType: "Planned", reason: "Vacation", hoiApproval: "Pending", hrApproval: "Pending" },
-];
+const INITIAL_PIP: PIPRecord[] = []; // loaded from the database (no dummy data)
 
-const INITIAL_TICKETS: Ticket[] = [
-    { id: "TKT001", raisedBy: "FAC001", employeeName: "Anil Kumar", targetCategory: "Technical", subject: "Laptop Screen Flickering", content: "My laptop screen has been flickering for the past 2 days. Unable to work properly.", status: "Open", createdAt: "2024-02-25T10:30:00", routeTo: "TL001", cc: ["OM001", "EMP135", "HR001"] },
-    { id: "TKT002", raisedBy: "FAC003", employeeName: "Priya Singh", targetCategory: "HR Desk", subject: "Salary Slip Query", content: "My February salary slip shows incorrect deductions. Please review.", status: "In Progress", createdAt: "2024-02-24T14:00:00", routeTo: "HR001", cc: ["AD001"] },
-];
+const INITIAL_STARS: PerformanceStar[] = []; // loaded from the database (no dummy data)
 
-const INITIAL_REIMBURSEMENTS: ReimbursementClaim[] = [
-    { id: "RMB001", employeeId: "FAC001", employeeName: "Anil Kumar", email: "anil@geeksofgurukul.com", phone: "9876543219", type: "Travel", amount: 2500, monthYear: "2026-03", description: "Auto fare for client meeting at Vijay Nagar campus", status: "Pending", date: "2026-03-03" },
-    { id: "RMB002", employeeId: "OM001", employeeName: "Arjun Sharma", email: "arjun@geeksofgurukul.com", phone: "9876543216", type: "Internet", amount: 1000, monthYear: "2026-03", description: "Monthly internet recharge for WFH days", status: "Approved - Pending Payment", hrRemarks: "Verified WFH records. Approved for this month.", date: "2026-03-01" },
-    { id: "RMB003", employeeId: "EMP101", employeeName: "Ayush Chauhan", email: "ayush@geeksofgurukul.com", phone: "9876543213", type: "Food", amount: 800, monthYear: "2026-02", description: "Team lunch expense for project kickoff", status: "Approved - Payment Done", hrRemarks: "Payment processed via NEFT.", date: "2026-02-25" },
-    { id: "RMB004", employeeId: "FAC002", employeeName: "Sneha Reddy", email: "sneha@geeksofgurukul.com", phone: "9876543220", type: "Medical", amount: 4500, monthYear: "2026-03", description: "OPD consultation and prescribed medicines", status: "Pending", date: "2026-03-04" },
-    { id: "RMB005", employeeId: "OM002", employeeName: "Kavitha Nair", email: "kavitha@geeksofgurukul.com", phone: "9876543217", type: "Stationery", amount: 650, monthYear: "2026-02", description: "Notebooks, pens & whiteboard markers for training sessions", status: "Approved - Payment Done", hrRemarks: "Receipts verified. Paid.", date: "2026-02-18" },
-    { id: "RMB006", employeeId: "FAC003", employeeName: "Priya Singh", email: "priya@geeksofgurukul.com", phone: "9876543221", type: "Books & Certification", amount: 3200, monthYear: "2026-03", description: "AWS Cloud Practitioner exam fee", status: "Pending", date: "2026-03-02" },
-    { id: "RMB007", employeeId: "OM001", employeeName: "Arjun Sharma", email: "arjun@geeksofgurukul.com", phone: "9876543216", type: "Equipment", amount: 1800, monthYear: "2026-02", description: "Wireless mouse and keyboard for office use", status: "Rejected", rejectionReason: "Equipment should be requisitioned through IT department, not reimbursement.", date: "2026-02-10" },
-    { id: "RMB008", employeeId: "FAC004", employeeName: "Meera Das", email: "meera@geeksofgurukul.com", phone: "9876543222", type: "Travel", amount: 1200, monthYear: "2026-03", description: "Cab fare for student placement drive at TCS office", status: "Pending", date: "2026-03-05" },
-    { id: "RMB009", employeeId: "FAC001", employeeName: "Anil Kumar", email: "anil@geeksofgurukul.com", phone: "9876543219", type: "Phone & Data", amount: 500, monthYear: "2026-02", description: "Mobile recharge for official calls", status: "Approved - Pending Payment", hrRemarks: "Approved. Will process by month end.", date: "2026-02-20" },
-    { id: "RMB010", employeeId: "EMP101", employeeName: "Ayush Chauhan", email: "ayush@geeksofgurukul.com", phone: "9876543213", type: "Fuel", amount: 3500, monthYear: "2026-03", description: "Petrol expense for campus visits during surprise audits", status: "Pending", date: "2026-03-04" },
-];
+const INITIAL_RATINGS: Rating[] = []; // loaded from the database (no dummy data)
 
-const INITIAL_HOLIDAYS: Holiday[] = [
-    { id: "hol1", name: "Republic Day", date: "2026-01-26", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
-    { id: "hol2", name: "Holi", date: "2026-03-03", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true, customMessage: "Happy Holi! Office remains closed. Enjoy the festival of colors!" },
-    { id: "hol3", name: "Holi (Dhuleti)", date: "2026-03-04", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
-    { id: "hol4", name: "Ram Navami", date: "2026-04-02", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
-    { id: "hol5", name: "Good Friday", date: "2026-04-03", status: "Proposed", proposedBy: "EMP101", proposedByName: "Ayush Chauhan", collegeIds: ["sage-bhopal"] },
-    { id: "hol6", name: "Independence Day", date: "2026-08-15", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
-    { id: "hol7", name: "Gandhi Jayanti", date: "2026-10-02", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
-    { id: "hol8", name: "Dussehra", date: "2026-10-02", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
-    { id: "hol9", name: "Diwali", date: "2026-10-21", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true, customMessage: "Happy Diwali! May the festival of lights bring joy to all." },
-    { id: "hol10", name: "Christmas", date: "2026-12-25", status: "Approved", proposedBy: "HR001", proposedByName: "Vivek Yadav", forAll: true },
-];
+const INITIAL_MISBEHAVIOURS: MisbehaviourReport[] = []; // loaded from the database (no dummy data)
 
-const INITIAL_PIP: PIPRecord[] = [
-    { id: "pip1", employeeId: "FAC004", employeeName: "Rahul Das", reason: "Consistent low performance in assessments", startDate: "2024-02-15", status: "Active", warnings: 1, disclaimer: "You are currently under Performance Improvement Plan. Your conduct and output are being closely monitored." },
-];
-
-const INITIAL_STARS: PerformanceStar[] = [
-    { employeeId: "FAC001", stars: 4, rating: 4.5, badges: ["On Time", "Good Dress Code", "0 Flags"] },
-    { employeeId: "FAC002", stars: 3, rating: 3.5, badges: [] },
-    { employeeId: "FAC003", stars: 3, rating: 4.2, badges: ["On Time", "Good Dress Code"] },
-    { employeeId: "FAC004", stars: 2, rating: 2.8, badges: [] },
-    { employeeId: "FAC005", stars: 4, rating: 4.3, badges: ["On Time", "0 Flags"] },
-    { employeeId: "FAC006", stars: 3, rating: 3.8, badges: [] },
-    { employeeId: "OM001", stars: 5, rating: 4.8, badges: ["On Time", "Good Dress Code", "0 Flags", "Additional Responsibilities"] },
-    { employeeId: "OM002", stars: 3, rating: 3.9, badges: ["Good Dress Code"] },
-    { employeeId: "OM003", stars: 4, rating: 4.1, badges: ["On Time"] },
-    { employeeId: "EMP101", stars: 5, rating: 4.7, badges: ["On Time", "0 Flags", "Good Dress Code"] },
-    { employeeId: "EMP102", stars: 4, rating: 4.1, badges: ["On Time"] },
-    { employeeId: "EMP135", stars: 4, rating: 4.4, badges: ["On Time", "Good Dress Code"] },
-];
-
-const INITIAL_RATINGS: Rating[] = [
-    { id: "r1", employeeId: "OM001", employeeName: "Arjun Sharma", ratedBy: "EMP135", ratedByName: "Sidhartha Paikaray", score: 4.5, period: "Feb 1-15", comment: "Excellent coordination", date: "2024-02-16" },
-    { id: "r2", employeeId: "FAC001", employeeName: "Anil Kumar", ratedBy: "EMP135", ratedByName: "Sidhartha Paikaray", score: 4.2, period: "Feb 1-15", comment: "Good teaching quality", date: "2024-02-16" },
-    { id: "r3", employeeId: "FAC002", employeeName: "Meera Das", ratedBy: "EMP135", ratedByName: "Sidhartha Paikaray", score: 3.5, period: "Feb 1-15", comment: "Needs improvement in punctuality", date: "2024-02-16" },
-];
-
-const INITIAL_MISBEHAVIOURS: MisbehaviourReport[] = [
-    { id: "mb1", reportedBy: "EMP101", reportedByName: "Ayush Chauhan", employeeId: "FAC004", employeeName: "Rahul Das", type: "Performance", description: "Failed to submit assignment reports for 2 consecutive weeks.", date: "2024-02-10", ccList: ["AD001", "HR001"], meetingScheduled: true, meetingStep: 2 },
-];
-
-const INITIAL_SCHEDULES: WorkSchedule[] = [
-    { employeeId: "FAC001", employeeName: "Anil Kumar", approvedByHR: true, assignedBy: "EMP101", assignedByName: "Ayush Chauhan", dayWise: { Mon: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "sage-bhopal", clockInTime: "09:00", clockOutTime: "14:00" } } },
-    { employeeId: "FAC002", employeeName: "Sneha Reddy", approvedByHR: true, assignedBy: "EMP101", assignedByName: "Ayush Chauhan", dayWise: { Mon: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "WFH", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "sage-indore", clockInTime: "09:00", clockOutTime: "14:00" } } },
-    { employeeId: "OM001", employeeName: "Arjun Sharma", approvedByHR: true, assignedBy: "EMP135", assignedByName: "Sidhartha Paikaray", dayWise: { Mon: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Tue: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Wed: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Thu: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Fri: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Sat: { location: "WFH", clockInTime: "10:00", clockOutTime: "14:00" } } },
-    { employeeId: "FAC003", employeeName: "Priya Singh", approvedByHR: true, assignedBy: "EMP101", assignedByName: "Ayush Chauhan", dayWise: { Mon: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "17:00" }, Tue: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "17:00" }, Wed: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "17:00" }, Thu: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "17:00" }, Fri: { location: "WFH", clockInTime: "09:00", clockOutTime: "17:00" }, Sat: { location: "barkatullah", clockInTime: "09:00", clockOutTime: "14:00" } } },
-    { employeeId: "OM002", employeeName: "Kavitha Nair", approvedByHR: true, assignedBy: "EMP101", assignedByName: "Ayush Chauhan", dayWise: { Mon: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "scope-global", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "scope-global", clockInTime: "09:00", clockOutTime: "14:00" } } },
-    { employeeId: "EMP101", employeeName: "Ayush Chauhan", approvedByHR: true, assignedBy: "FND001", assignedByName: "Chintan Vatsa Jha", dayWise: { Mon: { location: "bansal-mandideep", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "bansal-mandideep", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "bansal-mandideep", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "bansal-mandideep", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "bansal-mandideep", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "bansal-mandideep", clockInTime: "09:00", clockOutTime: "14:00" } } },
-    { employeeId: "EMP102", employeeName: "Sachin Kumar Gupta", approvedByHR: true, assignedBy: "FND001", assignedByName: "Chintan Vatsa Jha", dayWise: { Mon: { location: "bansal-kokta", clockInTime: "09:00", clockOutTime: "18:00" }, Tue: { location: "bansal-kokta", clockInTime: "09:00", clockOutTime: "18:00" }, Wed: { location: "bansal-kokta", clockInTime: "09:00", clockOutTime: "18:00" }, Thu: { location: "bansal-kokta", clockInTime: "09:00", clockOutTime: "18:00" }, Fri: { location: "bansal-kokta", clockInTime: "09:00", clockOutTime: "18:00" }, Sat: { location: "bansal-kokta", clockInTime: "09:00", clockOutTime: "14:00" } } },
-    { employeeId: "EMP135", employeeName: "Sidhartha Paikaray", approvedByHR: true, assignedBy: "FND001", assignedByName: "Chintan Vatsa Jha", dayWise: { Mon: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Tue: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Wed: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Thu: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Fri: { location: "centurion", clockInTime: "09:30", clockOutTime: "18:30" }, Sat: { location: "centurion", clockInTime: "09:30", clockOutTime: "14:00" } } },
-];
+const INITIAL_SCHEDULES: WorkSchedule[] = []; // loaded from the database (no dummy data)
 
 // Shared constants moved to @/lib/attendance-config
 
-const INITIAL_RESPONSIBILITIES: AdditionalResponsibility[] = [
-    { id: "ar1", employeeId: "OM001", employeeName: "Arjun Sharma", addedBy: "EMP135", description: "Coordinating inter-department tech workshops", date: "2024-02-20", status: "Approved", points: 15 },
-];
+const INITIAL_RESPONSIBILITIES: AdditionalResponsibility[] = []; // loaded from the database (no dummy data)
 
-const INITIAL_NOTICES: Notice[] = [
-    {
-        id: "n1",
-        title: "SOP Update: Dress Code (3.1)",
-        content: "Reminder: White formal shirt, black pants, and black blazer are mandatory. 3rd violation results in a 10% daily salary fine. Please adhere to professional standards.",
-        category: "Update",
-        createdBy: "HR001",
-        createdAt: "2026-03-01T09:00:00Z"
-    },
-    {
-        id: "n2",
-        title: "Birthday Celebration!",
-        content: "Happy Birthday to all team members born in March! Join us for a cake cutting ceremony in the main hall at 4:00 PM today.",
-        category: "Birthday",
-        createdBy: "HR001",
-        createdAt: "2026-03-05T10:30:00Z"
-    },
-    {
-        id: "n3",
-        title: "Attendance Timing Reminder",
-        content: "Ref SOP 3.2: A 2-minute grace period is allowed for geotagging. 4th late instance leads to a half-day pay cut. Please ensure clock-in is done within premises.",
-        category: "Urgent",
-        createdBy: "HR001",
-        createdAt: "2026-03-02T08:45:00Z"
-    },
-    {
-        id: "n4",
-        title: "Holi Celebration & Holiday",
-        content: "The office will remain closed on 14th March for Holi. We will have a small pre-Holi celebration on the 13th afternoon.",
-        category: "Event",
-        createdBy: "FND001",
-        createdAt: "2026-03-04T11:00:00Z"
-    },
-    {
-        id: "n5",
-        title: "Monthly Performance Scores",
-        content: "Performance scores for the period Feb 15 - Feb 28 are now live. Please check your dashboard to view your stars and feedback.",
-        category: "General",
-        createdBy: "AD001",
-        createdAt: "2026-03-01T15:00:00Z"
-    },
-    {
-        id: "n6",
-        title: "Leave Policy Reminder (3.7)",
-        content: "Faculty members must obtain HOI permission 18 hours in advance for casual leaves. Only one professor per college is permitted on leave per day.",
-        category: "Policy",
-        createdBy: "HR001",
-        createdAt: "2026-03-03T12:00:00Z"
-    },
-    {
-        id: "n7",
-        title: "Mandatory Safety Training",
-        content: "All employees must complete the fire safety and first-aid training module by the end of this week. Check the Training tab for details.",
-        category: "Training",
-        createdBy: "OM001",
-        createdAt: "2026-03-06T09:30:00Z"
-    },
-    {
-        id: "n8",
-        title: "Welcome New Joiners!",
-        content: "We are excited to welcome 5 new faculty members to our SAGE Bhopal and Indore campuses this week. Let's make them feel at home!",
-        category: "Welcome",
-        createdBy: "FND001",
-        createdAt: "2026-03-08T10:00:00Z"
-    },
-    {
-        id: "n9",
-        title: "System Maintenance Notice",
-        content: "The HRMS portal will be under scheduled maintenance on 10th March from 11:00 PM to 1:00 AM. Access will be temporarily unavailable.",
-        category: "Update",
-        createdBy: "AD001",
-        createdAt: "2026-03-07T18:00:00Z"
-    },
-    {
-        id: "n10",
-        title: "Tobacco-Free Campus Policy",
-        content: "Strict Reminder (SOP 3.11): Smoking and chewing tobacco are strictly prohibited within office premises. Violations will result in immediate suspension.",
-        category: "Policy",
-        createdBy: "HR001",
-        createdAt: "2026-03-04T09:15:00Z"
-    }
-
-];
+const INITIAL_NOTICES: Notice[] = []; // loaded from the database (no dummy data)
 const INITIAL_NOTIFICATIONS: PortalNotification[] = [];
 
 
@@ -1004,8 +697,8 @@ interface AuthContextType {
     editNotice: (id: string, data: { title?: string; content?: string; category?: Notice["category"] }) => Promise<void>;
     markAnnouncementRead: (noticeId: string) => void;
     updateProfile: (data: Partial<Employee>) => void; // Added updateProfile
-    clockIn: (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number, isShortLeave?: boolean) => Promise<void>;
-    clockOut: (time: string, isShortLeave?: boolean, lat?: number, lng?: number) => Promise<void>;
+    clockIn: (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number, isShortLeave?: boolean, mode?: "WFH" | "OFFICE") => Promise<void>;
+    clockOut: (time: string, isShortLeave?: boolean, lat?: number, lng?: number, clockOutImageUrl?: string) => Promise<void>;
     raiseTicket: (targetCategory: string, subject: string, content: string, routeTo?: string, cc?: string[], proofUrls?: string[], targetEmployeeId?: string, targetDate?: string, extra?: TicketExtra) => Promise<void>;
     resolveTicket: (id: string, notes: string) => Promise<void>;
     /** Generic ticket update (e.g. status "In Progress"); permissions are checked on the server */
@@ -1050,6 +743,7 @@ interface AuthContextType {
     resolveMarkAsPresentRequest: (id: string, status: "Approved" | "Rejected") => void;
     resolveDressCodeCheck: (recordId: string, status: "Approved" | "Rejected") => Promise<void>;
     addMonthlyRating: (employeeId: string, score: number, period: string, screenshotUrl?: string, points?: number, comment?: string) => Promise<void>;
+    updateMonthlyFeedback: (employeeId: string, period: string, score: number, points: number, comment: string, screenshotUrl: string) => Promise<{ success: boolean; unchanged?: boolean; msg?: string }>;
     overrideAttendance: (employeeId: string, date: string, status: "Present" | "Absent") => Promise<void>;
     addMeetingRequest: (req: Omit<MeetingRequest, "id" | "status" | "employeeId" | "employeeName" | "createdAt">) => void;
     joinMeeting: (meetingId: string) => void;
@@ -1075,6 +769,8 @@ interface AuthContextType {
     getMyNotifications: () => PortalNotification[];
     activityLogs: PortalNotification[];
     getExpectedTiming: (employeeId: string, date?: string | Date) => { in: string; out: string; location: string };
+    /** Scheduled timing / place without the Work From Home override (office attendance on a WFH day) */
+    getScheduledTiming: (employeeId: string, date?: string | Date) => { in: string; out: string; location: string };
     /** Re-read approved Work From Home applications (after applying / approving) */
     refreshApprovedWfh: () => Promise<void>;
     /** Re-read holidays and announcements from the server (after an HOI announces a holiday) */
@@ -1113,7 +809,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [holidays, setHolidays] = useState<Holiday[]>(INITIAL_HOLIDAYS);
     const [pipRecords, setPipRecords] = useState<PIPRecord[]>(INITIAL_PIP);
     const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>(INITIAL_SCHEDULES);
-    const [colleges, setColleges] = useState<College[]>(INITIAL_COLLEGES);
+    const [colleges, setColleges] = useState<College[]>([]); // locations come from the database (/api/locations)
     const [performanceStars, setPerformanceStars] = useState<PerformanceStar[]>(INITIAL_STARS);
     const [moms, setMoms] = useState<MOM[]>([]);
     const [reimbursements, setReimbursements] = useState<ReimbursementClaim[]>(INITIAL_REIMBURSEMENTS);
@@ -1269,18 +965,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             try {
                 const res = await fetch(`/api/attendance?userId=${user.id}&role=${user.role}`);
                 const data = await res.json();
-                if (Array.isArray(data)) {
-                    // For Nitesh (EMP127), ensure hardcoded March 7-10 logs are preserved
-                    if (user.id === "EMP127") {
-                        const hardcodedDates = ["2026-03-07", "2026-03-08", "2026-03-09", "2026-03-10"];
-                        const hLogs = INITIAL_ATTENDANCE.filter(r => r.employeeId === "EMP127" && hardcodedDates.includes(r.date));
-                        const apiDates = new Set(data.map(r => r.date));
-                        const missingInApi = hLogs.filter(h => !apiDates.has(h.date));
-                        setAttendanceRecords([...missingInApi, ...data]);
-                    } else {
-                        setAttendanceRecords(data);
-                    }
-                }
+                if (Array.isArray(data)) setAttendanceRecords(data);
             } catch (err) {
                 console.error("Failed to fetch attendance:", err);
             }
@@ -1704,7 +1389,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // ─── ATTENDANCE ───
     // ─── ATTENDANCE ───
-    const clockIn = async (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number, isShortLeave?: boolean) => {
+    // One clock-in request at a time (a double click used to send two and create two records for the day)
+    const clockInBusy = useRef(false);
+    /** Put the day's record into the list once (replaces an existing copy instead of adding a second) */
+    const upsertAttendanceRecord = (rec: any) => setAttendanceRecords(prev => {
+        const rest = prev.filter(r => !(r.employeeId === rec.employeeId && r.date === rec.date));
+        return [...rest, rec];
+    });
+    const clockIn = async (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number, isShortLeave?: boolean, mode?: "WFH" | "OFFICE") => {
+        if (!user) return;
+        if (clockInBusy.current) return;
+        clockInBusy.current = true;
+        try { await clockInOnce(location, time, dressCodeImageUrl, lat, lng, isShortLeave, mode); } finally { clockInBusy.current = false; }
+    };
+    const clockInOnce = async (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number, isShortLeave?: boolean, mode?: "WFH" | "OFFICE") => {
         if (!user) return;
 
         // Founders skip all restrictions
@@ -1713,10 +1411,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const res = await fetch("/api/attendance/clock-in", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ employeeId: user.id, location, time, dressCodeImageUrl, role: user.role, skipChecks: true, lat, lng })
+                    body: JSON.stringify({ employeeId: user.id, location, time, dressCodeImageUrl, role: user.role, skipChecks: true, lat, lng, mode })
                 });
                 const data = await res.json();
-                if (data.record) setAttendanceRecords(prev => [...prev, data.record]);
+                if (data.record) upsertAttendanceRecord(data.record);
                 return;
             } catch (err) { console.error(err); return; }
         }
@@ -1742,7 +1440,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         // Image Requirement
-        if (!dressCodeImageUrl && expected.location !== "WFH") {
+        if (!dressCodeImageUrl && expected.location !== "WFH" && mode !== "WFH") {
             alert("Selfie/Dress-code image is mandatory for clock-in.");
             return;
         }
@@ -1751,38 +1449,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const res = await fetch("/api/attendance/clock-in", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ employeeId: user.id, location, time, dressCodeImageUrl, role: user.role, lat, lng, isShortLeave })
+                body: JSON.stringify({ employeeId: user.id, location, time, dressCodeImageUrl, role: user.role, lat, lng, isShortLeave, mode })
             });
             const data = await res.json();
             if (data.record) {
-                setAttendanceRecords(prev => [...prev, data.record]);
+                upsertAttendanceRecord(data.record);
+                if (data.alreadyClockedIn) alert(data.error || "You have already clocked in today.");
             } else {
                 alert(data.error || "Clock-in failed");
             }
         } catch (err) {
             console.error("Clock-in error:", err);
+            alert("Could not reach the server. Clock-in was not recorded — please try again.");
         }
     };
 
-    const clockOut = async (time: string, isShortLeave?: boolean, lat?: number, lng?: number) => {
+    // `time` is only used for the on-screen checks; the official clock-out time is generated by the server
+    const clockOut = async (time: string, isShortLeave?: boolean, lat?: number, lng?: number, clockOutImageUrl?: string) => {
         if (!user) return;
         try {
             const res = await fetch("/api/attendance/clock-out", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ employeeId: user.id, time, isShortLeave, ...(typeof lat === "number" && typeof lng === "number" ? { lat, lng } : {}) })
+                body: JSON.stringify({ employeeId: user.id, isShortLeave, ...(clockOutImageUrl ? { clockOutImageUrl } : {}), ...(typeof lat === "number" && typeof lng === "number" ? { lat, lng } : {}) })
             });
+            const d = await res.json().catch(() => ({}));
             // A refused clock-out (e.g. outside the HOI's authorised locations) is shown and not recorded locally
             if (!res.ok) {
-                const d = await res.json().catch(() => ({}));
+                if (d.record) upsertAttendanceRecord(d.record);
                 alert(d.error || "Clock-out failed.");
                 return;
             }
-            const today = new Date().toISOString().split("T")[0];
-            setAttendanceRecords(prev => prev.map(r =>
-                r.employeeId === user.id && r.date === today ? { ...r, clockOut: time } : r
-            ));
-        } catch (err) { console.error(err); }
+            // Show exactly what the server saved
+            if (d.record) upsertAttendanceRecord(d.record);
+        } catch (err) { console.error(err); alert("Could not reach the server. Clock-out was not recorded — please try again."); }
     };
 
     const markAttendanceOverride = (employeeId: string, date: string, reason: string) => {
@@ -1937,7 +1637,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         const clampedPoints = Math.round(points);
-        const newScore = { score, period, date: new Date().toISOString().split('T')[0], points: clampedPoints, screenshotUrl, comment };
+        const newScore = { score, period, date: new Date().toISOString().split('T')[0], points: clampedPoints, screenshotUrl, comment, ratedBy: user?.id, ratedByName: user?.name };
 
         try {
             const emp = employees.find(emp => emp.id === employeeId);
@@ -1987,6 +1687,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.error("Failed to add monthly rating:", err);
             throw err; // Re-throw to show error in UI
         }
+    };
+
+    /** Monthly Feedback → Update Feedback: server checks scope, keeps an audit and e-mails the employee + own HOI */
+    const updateMonthlyFeedback = async (employeeId: string, period: string, score: number, points: number, comment: string, screenshotUrl: string) => {
+        const res = await fetch("/api/monthly-feedback", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeId, period, score, points, comment, screenshotUrl }) });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) return { success: false, msg: d.error || "Could not update the feedback." };
+        if (d.monthlyScores) setEmployees(prev => prev.map(e => (e.id === employeeId ? { ...e, monthlyScores: d.monthlyScores } : e)));
+        return { success: true, unchanged: !!d.unchanged, msg: d.message as string };
     };
 
     const addCollege = async (college: Omit<College, "id">) => {
@@ -2337,28 +2046,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setTickets(prev => [data, ...prev]);
 
                 // --- EMAIL NOTIFICATION ---
+                // Sent only to the person of the desk selected in the form (the ticket handler); the employee gets a copy.
+                //   HR Desk / Others / Attendance → HR handler · Misconduct / Academic → reporting manager (HOI)
+                //   Technical → Tech Lead · Against HR → Founders (never HR)
                 const raiser = employees.find(e => e.id === user.id);
-                // Robust target identification: Always fall back to HR if specified target is invalid
                 const targetEmp = employees.find(e => e.id === finalRouteTo) || employees.find(e => e.id === hrId);
-
                 const { subject: mailSub, html: mailHtml } = getTicketTemplate(data, 'raised');
-                
-                // Convert CC IDs to actual emails
-                const ccEmails = (data.cc || [])
-                    .map((idOrEmail: string) => {
-                        if (idOrEmail.includes('@')) return idOrEmail;
-                        const emp = employees.find(e => e.id === idOrEmail);
-                        return emp?.email;
-                    })
-                    .filter(Boolean);
+                const isAgainstHr = targetCategoryNormalized.includes("against hr");
+                // no hard-coded fallback address: without a recipient the routing problem is recorded for review
+                const toEmails: string[] = isAgainstHr
+                    ? founderEmails
+                    : [targetEmp?.email || hrEmails[0] || founderEmails[0] || ""].filter(Boolean);
+                if (!toEmails.length) reportEmailRoutingIssue(user.id, `Ticket ${data.id}: no recipient for the selected desk (${targetCategory})`);
 
-                const targetEmail = targetEmp?.email || hrEmails[0] || founderEmails[0] || "nitesh.singh@geeksofgurukul.com";
-                const excludeRoles = targetCategoryNormalized.includes("against hr") ? ["HR"] : [];
-
-                if (targetEmail) {
+                if (toEmails.length) {
                     const mailRes = await sendMail({
-                        to: targetEmail,
-                        cc: [...new Set([...getAuthorityEmails(raiser, employees, excludeRoles), raiser?.email, ...ccEmails])].filter(Boolean) as string[],
+                        to: toEmails,
+                        cc: [raiser?.email].filter((e): e is string => !!e && !toEmails.includes(e)),
                         subject: mailSub,
                         html: mailHtml
                     });
@@ -2397,26 +2101,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     }
                 }
 
-                const raiser = employees.find(e => e.id === updated.raisedBy);
-                const { subject, html } = getTicketTemplate(updated, 'resolved');
-                
-                // Convert CC IDs to actual emails
-                const ccEmails = (updated.cc || [])
-                    .map((idOrEmail: string) => {
-                        if (idOrEmail.includes('@')) return idOrEmail;
-                        const emp = employees.find(e => e.id === idOrEmail);
-                        return emp?.email;
-                    })
-                    .filter(Boolean);
-
-                if (raiser?.email) sendMail({
-                    to: raiser.email,
-                    cc: Array.from(new Set([...getAuthorityEmails(raiser, employees), ...ccEmails])).filter(Boolean) as string[],
-                    subject: `Re: ${subject}`,
-                    html,
-                    inReplyTo: updated.originalMessageId,
-                    references: updated.originalMessageId
-                });
+                // The resolution e-mail is sent by the server (/api/tickets) to the employee who raised the ticket only
             }
         } catch (err) { console.error(err); }
     };
@@ -3509,12 +3194,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             approveAdditionalResponsibility, addMeetingRequest, updateMeetingStatus,
             getReportees, getManagerChain, generatePayroll, addEmployee, updateOnboarding,
             removeFromPIP, deductChance, resetChances,
-            addMonthlyRating,
+            addMonthlyRating, updateMonthlyFeedback,
             addJobPosting, closeJobPosting, generateCertificate, submitResignation, approveResignation,
             requestAsset, assignAsset, updateAssetRequestStatus,
             addNotification, markNotificationRead, getMyNotifications,
             markAsPresentRequests, addMarkAsPresentRequest, resolveMarkAsPresentRequest, resolveDressCodeCheck, giveCredit,
-            getExpectedTiming, refreshApprovedWfh, reloadHolidaysAndNotices, restoreAttendanceCredits, changePassword, authLoading,
+            getExpectedTiming, getScheduledTiming: baseExpectedTiming, refreshApprovedWfh, reloadHolidaysAndNotices, restoreAttendanceCredits, changePassword, authLoading,
             updateSingleDaySchedule, joinMeeting, submitAbsenceReason, finalizeMeeting
         }}>
             {children}

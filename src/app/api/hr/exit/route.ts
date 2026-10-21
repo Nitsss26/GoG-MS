@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { Employee, ExitRecord, ReimbursementClaim, Location } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
-import { removeEmployeeFromPortal } from '@/lib/employee-removal';
+import { removeEmployeeFromPortal, purgeEmployeeData } from '@/lib/employee-removal';
 import { newId } from '@/lib/academic';
 
 export const dynamic = 'force-dynamic';
@@ -135,7 +135,10 @@ export async function POST(req: Request) {
         });
         record.history.push({ action: 'Exit completed — employee removed', by: actor.id, byName: actor.name, role: actor.role, at: now, note: `Last working day ${answers.lastWorkingDay}; reason ${answers.leavingReason}${answers.leavingReasonOther ? ` (${answers.leavingReasonOther})` : ''}` });
         await record.save();
-        return NextResponse.json({ success: true, message: `${employee.name} was removed from the portal.`, record, cleaned: removal.cleaned });
+        // Permanent delete: the employee and all of their records are removed from the database (cannot be undone)
+        const deleted = await purgeEmployeeData(employeeId);
+        console.log(`[exit] ${employeeId} permanently deleted by ${actor.id}:`, deleted);
+        return NextResponse.json({ success: true, message: `${employee.name} was permanently deleted from the portal and the database.`, record, cleaned: removal.cleaned, deleted });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

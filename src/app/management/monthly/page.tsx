@@ -58,7 +58,10 @@ function Section({ n, title, hint, children, right }: { n: number; title: string
 }
 
 export default function MonthlyReportPage() {
-    const { user, employees, getReportees, addMonthlyRating } = useAuth();
+    const { user, employees, getReportees, addMonthlyRating, updateMonthlyFeedback } = useAuth();
+    // Feedback already given for the selected month: view it, or update it (pre-filled form)
+    const [editing, setEditing] = useState(false);
+    const [viewOpen, setViewOpen] = useState(false);
     const [selectedId, setSelectedId] = useState<string>("");
     const [score, setScore] = useState<number>(4.0);
     const [bonusPoints, setBonusPoints] = useState<number>(0);
@@ -88,6 +91,7 @@ export default function MonthlyReportPage() {
         window.history.replaceState(null, "", url.toString());
     };
     const [isSubmitting, setIsSubmitting] = useState(false);
+    useEffect(() => { setEditing(false); setViewOpen(false); }, [selectedId, period]);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
     const myReportees = useMemo(() => {
@@ -145,6 +149,14 @@ export default function MonthlyReportPage() {
         setMessage(null);
 
         try {
+            if (editing) {
+                // Update the existing feedback of this month (server: scope check, audit, e-mail to employee + own HOI)
+                const r = await updateMonthlyFeedback(selectedId, period, score, projectedPoints, comment, screenshotUrl || "");
+                if (!r.success) { setMessage({ type: 'error', text: r.msg || "Could not update the feedback." }); return; }
+                setMessage({ type: 'success', text: r.unchanged ? "No changes to save." : "Feedback Updated Successfully" });
+                if (!r.unchanged) setEditing(false);
+                return;
+            }
             // Screenshot is now optional
             await addMonthlyRating(selectedId, score, period, screenshotUrl || "", projectedPoints, comment);
             setMessage({ type: 'success', text: "Performance data recorded. Total points: " + projectedPoints });
@@ -171,6 +183,17 @@ export default function MonthlyReportPage() {
     const listed = q ? tabReportees.filter(e => `${e.name} ${e.id} ${e.designation || ""}`.toLowerCase().includes(q)) : tabReportees;
     const selected = tabReportees.find(e => e.id === selectedId);
     const existing = selected?.monthlyScores?.find((s: any) => s.period === period) as any;
+    const givenFor = (emp: any) => !!emp.monthlyScores?.some((s: any) => s.period === period);
+    const fmtDt = (v?: string) => { if (!v) return "—"; const d = new Date(v); return isNaN(d.getTime()) ? v : (/T/.test(v) ? d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }) : v.split("-").reverse().join("-")); };
+    const startUpdate = () => {
+        if (!existing) return;
+        const sc = Number(existing.score) || 4.0;
+        setScore(sc);
+        setBonusPoints((Number(existing.points) || 0) - pointsFor(sc));   // points = score points + bonus
+        setComment(existing.comment || "");
+        setScreenshotUrl(existing.screenshotUrl || "");
+        setMessage(null); setViewOpen(false); setEditing(true);
+    };
     const basePoints = pointsFor(score);
     const scoreTone = score > 4.2 ? "text-emerald-400 border-emerald-500/40 bg-emerald-500/10" : score <= 3.5 ? "text-red-400 border-red-500/40 bg-red-500/10" : "text-sky-300 border-sky-500/40 bg-sky-500/10";
     const card = "rounded-2xl border border-zinc-800 bg-zinc-900/60";
@@ -246,6 +269,7 @@ export default function MonthlyReportPage() {
                                             <span className={cn("block text-sm font-bold truncate", on ? "text-emerald-300" : "text-white")}>{emp.name}</span>
                                             <span className="block text-[11px] text-zinc-500 truncate">{emp.designation || "—"} · {emp.id}</span>
                                         </span>
+                                        <span data-testid="fb-status" className={cn("shrink-0 text-[9px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap", givenFor(emp) ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/25" : "text-zinc-400 bg-zinc-800/60 border-zinc-700")}>{givenFor(emp) ? "Feedback Given" : "Pending"}</span>
                                         {on && <CheckCircle2 size={18} className="shrink-0 text-emerald-400" />}
                                     </button>
                                 );
@@ -255,6 +279,46 @@ export default function MonthlyReportPage() {
                         </div>
                     </Section>
 
+                    {selected && existing && !editing && (
+                        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.05] p-4 space-y-3" data-testid="fb-given">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="flex items-center gap-2 text-sm font-bold text-emerald-300"><CheckCircle2 size={16} /> Feedback Already Given</p>
+                                <span className="text-[11px] text-zinc-400">{selected.name} · {period}</span>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                                <div><p className="text-zinc-500">Score</p><p className="text-white font-bold">{Number(existing.score).toFixed(1)} / 5</p></div>
+                                <div><p className="text-zinc-500">Points</p><p className={cn("font-bold", existing.points >= 0 ? "text-emerald-400" : "text-red-400")}>{existing.points >= 0 ? "+" : ""}{existing.points}</p></div>
+                                <div><p className="text-zinc-500">Feedback Date</p><p className="text-white">{fmtDt(existing.date)}</p></div>
+                                <div><p className="text-zinc-500">Given By</p><p className="text-white">{existing.ratedByName || "—"}</p></div>
+                            </div>
+                            {existing.updatedAt && <p className="text-[10px] text-zinc-400" data-testid="fb-updated">Last updated {fmtDt(existing.updatedAt)} by {existing.updatedByName || "—"}</p>}
+                            {viewOpen && (
+                                <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 space-y-2 text-[11px]" data-testid="fb-view">
+                                    <div><p className="text-zinc-500">Comments</p><p className="text-zinc-200 whitespace-pre-wrap">{existing.comment || "—"}</p></div>
+                                    {existing.screenshotUrl && <a href={existing.screenshotUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sky-300 hover:underline"><FileText size={12} /> Meeting screenshot</a>}
+                                    {existing.history?.length ? (
+                                        <div><p className="text-zinc-500 mb-1">Update history</p>
+                                            {existing.history.slice().reverse().map((h: any, i: number) => (
+                                                <p key={i} className="text-zinc-400">{fmtDt(h.at)} · {h.byName} — before: score {Number(h.previous?.score).toFixed(1)}, {h.previous?.points >= 0 ? "+" : ""}{h.previous?.points} pts</p>
+                                            ))}
+                                        </div>
+                                    ) : null}
+                                </div>
+                            )}
+                            <div className="flex flex-wrap gap-2">
+                                <button type="button" onClick={() => setViewOpen(v => !v)} data-testid="fb-view-btn" className="px-3 py-2 rounded-lg border border-zinc-700 text-xs font-bold text-zinc-200 hover:border-zinc-500">{viewOpen ? "Hide Feedback" : "View Feedback"}</button>
+                                <button type="button" onClick={startUpdate} data-testid="fb-update-btn" className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white">Update Feedback</button>
+                            </div>
+                        </div>
+                    )}
+                    {editing && selected && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] px-4 py-2.5" data-testid="fb-editing">
+                            <p className="text-xs text-amber-200">Updating {period} feedback for <b>{selected.name}</b> — the original submission date is kept.</p>
+                            <button type="button" onClick={() => setEditing(false)} className="text-[11px] font-bold text-zinc-300 hover:text-white">Cancel</button>
+                        </div>
+                    )}
+
+                    {(!existing || editing) && (<>
                     <Section n={2} title="Performance Details">
                         <div className="grid grid-cols-1 md:grid-cols-2 min-[1400px]:grid-cols-[1.35fr_1fr_1fr] gap-3">
                             {/* Score */}
@@ -337,16 +401,11 @@ export default function MonthlyReportPage() {
                     )}
                     <button disabled={isSubmitting || !selectedId || isUploading} data-testid="submit-record"
                         className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold transition-all shadow-lg shadow-emerald-900/30 disabled:opacity-50 disabled:cursor-not-allowed">
-                        {isSubmitting ? <><Loader2 size={16} className="animate-spin" /> Processing...</> : isUploading ? "Uploading Screenshot..." : <><Save size={16} /> Submit Performance Record</>}
+                        {isSubmitting ? <><Loader2 size={16} className="animate-spin" /> Processing...</> : isUploading ? "Uploading Screenshot..." : <><Save size={16} /> {editing ? "Update Feedback" : "Submit Performance Record"}</>}
                     </button>
                     {!selectedId && <p className="text-center text-[10px] text-zinc-600">Select {tab === "om" ? "an Operation Manager" : "a faculty member"} to submit.</p>}
-                    {selected && existing && (
-                        <p className="flex items-center justify-center gap-1.5 text-[10px] text-zinc-500" data-testid="existing-record">
-                            <History size={12} /> Already recorded for {period}: score {Number(existing.score).toFixed(1)} · {existing.points >= 0 ? "+" : ""}{existing.points} pts. Submitting again replaces it.
-                        </p>
-                    )}
-
                     </div>
+                    </>)}
 
                     {message && (
                         <div className={cn("p-3.5 rounded-xl flex items-center gap-3 border", message.type === 'success' ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-red-500/10 border-red-500/20 text-red-400")} data-testid="form-message">

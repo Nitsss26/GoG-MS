@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronUp, Users, Code2, Megaphone, BookOpen, UserCog, UserX, ZoomIn, ZoomOut, Maximize2, RotateCcw, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Users, Code2, Megaphone, BookOpen, UserCog, UserX, ZoomIn, ZoomOut, Maximize2, RotateCcw, Download, Image as ImageIcon, FileText, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { OrgChartData, OrgPerson } from "@/lib/org-chart";
 
@@ -33,7 +32,7 @@ const toneOf = (p: OrgPerson): string => {
     if (p.role === "FOUNDER") return "exec";
     if (p.role === "TL") return "tl";
     if (p.role === "AD") return "ad";
-    if (/\bhr\s*exec/i.test(p.designation)) return "hrexec";
+    if (p.role === "HR_EXECUTIVE" || /\bhr\s*exec/i.test(p.designation)) return "hrexec";
     if (p.role === "HR") return "hr";
     if (p.role === "HOI") return "hoi";
     if (p.role === "CURRICULUM_LEAD" || p.role === "CURRICULUM_HEAD") return "clch";
@@ -48,25 +47,22 @@ const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map(w
 const VLine = ({ h, className }: { h: number; className?: string }) => <div className={cn("w-[2px] shrink-0", LINE, className)} style={{ height: h }} />;
 
 /* ── Employee card ── */
-export function PersonCard({ p, toggle, open, count, highlight }: { p: OrgPerson; toggle?: () => void; open?: boolean; count?: number; highlight?: boolean }) {
+// Org chart shows the full title for short executive designations (display only — the stored designation is unchanged)
+const FULL_TITLE: Record<string, string> = { COO: "Chief Operating Officer", CEO: "Chief Executive Officer", CTO: "Chief Technology Officer", CFO: "Chief Financial Officer" };
+const fullTitle = (d?: string) => (d && FULL_TITLE[d.trim().toUpperCase()]) || d || "";
+export function PersonCard({ p, highlight }: { p: OrgPerson; highlight?: boolean }) {
     const t = TONES[toneOf(p)];
     return (
         <div data-person={p.id} data-testid="org-card"
             className={cn("relative z-10 bg-zinc-950 border rounded-2xl flex items-center gap-3 px-3 transition-shadow", t.ring, t.glow, highlight && "ring-2 ring-primary ring-offset-2 ring-offset-zinc-950")}
             style={{ width: CARD_W, height: CARD_H }}>
-            <div className={cn("w-10 h-10 rounded-full border flex items-center justify-center text-[12px] font-black shrink-0 overflow-hidden", t.avatar)}>
-                {p.photo ? <img src={p.photo} alt="" className="w-full h-full object-cover" /> : initials(p.name)}
+            <div className={cn("relative w-10 h-10 rounded-full border flex items-center justify-center text-[12px] font-black shrink-0 overflow-hidden", t.avatar)}>
+                {initials(p.name)}{p.photo && <img src={p.photo} alt="" className="absolute inset-0 w-full h-full object-cover" />}
             </div>
             <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-black text-white uppercase tracking-wide truncate" title={p.name} data-testid="org-name">{p.name}</p>
-                <p className="text-[10px] text-zinc-400 font-semibold truncate mt-0.5" title={p.designation} data-testid="org-desig">{p.designation}</p>
+                <p className="text-[10px] text-zinc-400 font-semibold truncate mt-0.5" title={fullTitle(p.designation)} data-testid="org-desig">{fullTitle(p.designation)}</p>
             </div>
-            {toggle && (
-                <button onClick={toggle} data-testid="org-toggle" aria-expanded={open} title={open ? "Collapse" : "Expand"}
-                    className="absolute -bottom-3 left-1/2 -translate-x-1/2 h-6 min-w-6 px-1.5 rounded-full bg-zinc-900 border border-zinc-700 hover:border-primary text-zinc-300 hover:text-white flex items-center justify-center gap-0.5 text-[9px] font-black z-10">
-                    {count !== undefined && <span>{count}</span>}{open ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                </button>
-            )}
         </div>
     );
 }
@@ -98,47 +94,42 @@ function SectionRow({ people, placeholder, highlightId }: { people: OrgPerson[];
     );
 }
 
-/** Expandable team group: header strip + employee cards (header is the only label, cards keep the same size). */
-function GroupBox({ id, label, icon, tone, people, open, onToggle, highlightId, emptyText }: {
-    id: string; label: string; icon: ReactNode; tone: string; people: OrgPerson[]; open: boolean; onToggle: () => void; highlightId?: string | null; emptyText: string;
+/** Team group: header strip + every employee card, always visible (no expand / collapse). Cards keep the same size. */
+function GroupBox({ id, label, icon, tone, people, highlightId, emptyText }: {
+    id: string; label: string; icon: ReactNode; tone: string; people: OrgPerson[]; highlightId?: string | null; emptyText: string;
 }) {
     const cols = people.length > 14 ? 3 : people.length > 5 ? 2 : 1;
     const t = TONES[tone];
     return (
         <div data-testid={`org-group-${id}`} className={cn("rounded-2xl border bg-zinc-950/70 backdrop-blur-sm", t.ring)}>
-            <button onClick={onToggle} data-testid={`org-group-toggle-${id}`} aria-expanded={open}
-                className="w-full flex items-center gap-2 px-3 h-9 text-left hover:bg-white/[0.03] rounded-2xl" style={{ minWidth: CARD_W + 16 }}>
+            <div className="w-full flex items-center gap-2 px-3 h-9 text-left rounded-2xl" style={{ minWidth: CARD_W + 16 }}>
                 <span className={cn("w-6 h-6 rounded-full border flex items-center justify-center", t.avatar)}>{icon}</span>
-                <span className="text-[10px] font-black text-white uppercase tracking-[0.14em] flex-1">{label}</span>
+                <span className={cn("text-[10px] font-black text-white tracking-[0.14em] flex-1", label !== "OMs" && "uppercase")}>{label}</span>
                 <span className="text-[10px] font-bold text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-full px-2 py-0.5" data-testid={`org-group-count-${id}`}>{people.length}</span>
-                {open ? <ChevronUp size={13} className="text-zinc-400" /> : <ChevronDown size={13} className="text-zinc-400" />}
-            </button>
-            <AnimatePresence initial={false}>
-                {open && (
-                    <motion.div key="body" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22 }} className="overflow-hidden">
-                        <div className="p-2 pt-1 grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, ${CARD_W}px)` }}>
-                            {people.map(p => <PersonCard key={p.id} p={p} highlight={highlightId === p.id} />)}
-                            {!people.length && <p className="text-[10px] text-zinc-500 italic px-2 py-3">{emptyText}</p>}
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            </div>
+            <div className="p-2 pt-1 grid gap-2" data-testid={`org-group-body-${id}`} style={{ gridTemplateColumns: `repeat(${cols}, ${CARD_W}px)` }}>
+                {people.map(p => <PersonCard key={p.id} p={p} highlight={highlightId === p.id} />)}
+                {!people.length && <p className="text-[10px] text-zinc-500 italic px-2 py-3">{emptyText}</p>}
+            </div>
         </div>
     );
 }
 
-/** Children hanging from a parent with a horizontal bus. `drop` lengthens the line for a child (to skip a depth). */
-function Branches({ items }: { items: { key: string; node: ReactNode; drop?: number }[] }) {
+/** Children hanging from a parent with a horizontal bus. `drop` lengthens the line for a child (to skip a depth).
+ *  A `detached` child sits at the same level but is not hung from this bus (it is joined by its own lines). */
+function Branches({ items }: { items: { key: string; node: ReactNode; drop?: number; detached?: boolean }[] }) {
     if (!items.length) return null;
+    const joined = items.map((c, i) => (c.detached ? -1 : i)).filter(i => i >= 0);
+    const first = joined.length ? joined[0] : -1, last = joined.length ? joined[joined.length - 1] : -1;
     return (
         <div className="flex flex-col items-center">
             <VLine h={GAP_Y / 2} />
             <div className="flex items-start">
                 {items.map((c, i) => (
                     <div key={c.key} className="relative flex flex-col items-center" style={{ paddingLeft: GAP_X / 2, paddingRight: GAP_X / 2 }}>
-                        {items.length > 1 && i > 0 && <div className={cn("absolute top-0 left-0 w-1/2 h-[2px]", LINE)} />}
-                        {items.length > 1 && i < items.length - 1 && <div className={cn("absolute top-0 right-0 w-1/2 h-[2px]", LINE)} />}
-                        <VLine h={GAP_Y / 2 + (c.drop || 0)} />
+                        {joined.length > 1 && i > first && i <= last && <div className={cn("absolute top-0 left-0 w-1/2 h-[2px]", LINE)} />}
+                        {joined.length > 1 && i >= first && i < last && <div className={cn("absolute top-0 right-0 w-1/2 h-[2px]", LINE)} />}
+                        {c.detached ? <div className="shrink-0" style={{ height: GAP_Y / 2 + (c.drop || 0) }} /> : <VLine h={GAP_Y / 2 + (c.drop || 0)} />}
                         {c.node}
                     </div>
                 ))}
@@ -147,50 +138,103 @@ function Branches({ items }: { items: { key: string; node: ReactNode; drop?: num
     );
 }
 
-export default function OrgChart({ data, open, setOpen, highlightId }: {
-    data: OrgChartData; open: Set<string>; setOpen: (fn: (s: Set<string>) => Set<string>) => void; highlightId?: string | null;
-}) {
-    const toggle = useCallback((k: string) => setOpen(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; }), [setOpen]);
-    const isOpen = (k: string) => open.has(k);
+/* ── Tech Lead → CL / CH → HOIs: drawn from the measured card positions so the lines stay aligned at any zoom ── */
+const TL_BRANCH_X = 44; // x of the Tech Lead → Curriculum Team line, measured from the Tech Lead card's left edge
+const CLCH_LINE = "rgba(255,255,255,0.35)"; // same colour as every other line in the chart (LINE = bg-white/35)
+function useClchLinks(rootRef: React.RefObject<HTMLDivElement | null>, deps: unknown[], setShift: (f: (s: number) => number) => void) {
+    const [links, setLinks] = useState<{ w: number; h: number; paths: string[] } | null>(null);
+    const measure = useCallback(() => {
+        const root = rootRef.current; if (!root) return;
+        const r = root.getBoundingClientRect();
+        const scale = root.offsetWidth ? r.width / root.offsetWidth : 1;
+        const box = (el: Element | null) => {
+            if (!el) return null;
+            const b = el.getBoundingClientRect();
+            return { l: (b.left - r.left) / scale, t: (b.top - r.top) / scale, r: (b.right - r.left) / scale, b: (b.bottom - r.top) / scale };
+        };
+        const tl = box(root.querySelector('[data-testid="org-section-techlead"] [data-person]'));
+        const clch = box(root.querySelector('[data-testid="org-clch-node"]'));
+        const hois = Array.from(root.querySelectorAll('[data-testid="org-hoi"] > [data-person]')).map(box).filter(Boolean) as NonNullable<ReturnType<typeof box>>[];
+        if (!clch) { setLinks(null); return; }
+        const paths: string[] = [];
+        const midY = hois.length ? hois[0].t + CARD_H / 2 : clch.t + CARD_H / 2;
+        if (tl) {
+            // Separate branch: leaves the Tech Lead card left of its centre (the centre line belongs to the AD / HR bus),
+            // so it never runs on top of another line. The Curriculum Team card is nudged so its centre is on this line.
+            const x = tl.l + TL_BRANCH_X;
+            const delta = x - (clch.l + clch.r) / 2;
+            if (Math.abs(delta) > 1) { setShift(s => s + 2 * delta); return; }
+            // Where it crosses the HOI bus (if the bus runs past it), draw a small bridge so the lines stay separate
+            const busY = clch.t - GAP_Y / 2, r = 6;
+            const crosses = hois.some(h => h.r < x) && hois.some(h => h.l > x);
+            paths.push(crosses
+                ? `M ${x} ${tl.b} V ${busY - r} A ${r} ${r} 0 0 1 ${x} ${busY + r} V ${clch.t}`
+                : `M ${x} ${tl.b} V ${clch.t}`);
+        }
+        // CL / CH → HOIs on its left and right (segments between neighbouring cards on the same row)
+        const row = [clch, ...hois].sort((a, b) => a.l - b.l);
+        for (let i = 0; i < row.length - 1; i++) if (row[i + 1].l > row[i].r) paths.push(`M ${row[i].r} ${midY} H ${row[i + 1].l}`);
+        setLinks({ w: root.scrollWidth, h: root.scrollHeight, paths });
+    }, [rootRef, setShift]);
+    useLayoutEffect(() => { measure(); }, [measure, ...deps]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        const root = rootRef.current; if (!root || typeof ResizeObserver === "undefined") return;
+        const ro = new ResizeObserver(() => measure());
+        ro.observe(root);
+        // card widths can change once the web fonts / photos have loaded → measure again
+        document.fonts?.ready.then(() => measure()).catch(() => {});
+        const t = window.setTimeout(measure, 800);
+        return () => { ro.disconnect(); window.clearTimeout(t); };
+    }, [measure, rootRef]);
+    return links;
+}
+
+/** The whole hierarchy is always rendered — no dropdowns, expand or collapse controls. */
+export default function OrgChart({ data, highlightId }: { data: OrgChartData; highlightId?: string | null }) {
 
     // Depth of a section row = CARD_H + TAIL; teams under Tech Lead skip one depth so their cards align with Faculty / OM
     const skipDepth = CARD_H + GAP_Y;
+    const rootRef = useRef<HTMLDivElement>(null);
+    const [clchShift, setClchShift] = useState(0);
+    const clchLinks = useClchLinks(rootRef, [data, clchShift], setClchShift);
 
     const group = (id: string, label: string, icon: ReactNode, tone: string, people: OrgPerson[], emptyText: string) => (
-        <GroupBox id={id} label={label} icon={icon} tone={tone} people={people} open={isOpen(`grp:${id}`)} onToggle={() => toggle(`grp:${id}`)} highlightId={highlightId} emptyText={emptyText} />
+        <GroupBox id={id} label={label} icon={icon} tone={tone} people={people} highlightId={highlightId} emptyText={emptyText} />
     );
 
     const hoiNodes = data.hois.map(h => ({
         key: `hoi-${h.person.id}`,
         node: (
             <div className="flex flex-col items-center" data-testid="org-hoi" data-hoi={h.person.id}>
-                <PersonCard p={h.person} toggle={() => toggle(`hoi:${h.person.id}`)} open={isOpen(`hoi:${h.person.id}`)} count={h.members.length} highlight={highlightId === h.person.id} />
-                <AnimatePresence initial={false}>
-                    {isOpen(`hoi:${h.person.id}`) && (
-                        <motion.div key="m" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }} className="flex flex-col items-center">
-                            <VLine h={GAP_Y} />
-                            <div data-testid="org-hoi-members" className={cn("rounded-2xl border bg-zinc-950/70", TONES.hoi.ring)}>
-                                {/* same header height as the team groups, so these cards line up with Tech / Marketing Team cards */}
-                                <div className="flex items-center gap-2 px-3 h-9" style={{ minWidth: CARD_W + 16 }}>
-                                    <span className={cn("w-6 h-6 rounded-full border flex items-center justify-center", TONES.hoi.avatar)}><Users size={12} /></span>
-                                    <span className="text-[10px] font-black text-white uppercase tracking-[0.14em] flex-1">Team</span>
-                                    <span className="text-[10px] font-bold text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-full px-2 py-0.5">{h.members.length}</span>
-                                </div>
-                                <div className="p-2 pt-1 grid gap-2" style={{ gridTemplateColumns: `repeat(${h.members.length > 14 ? 3 : h.members.length > 5 ? 2 : 1}, ${CARD_W}px)` }}>
-                                    {h.members.map(m => <PersonCard key={m.id} p={m} highlight={highlightId === m.id} />)}
-                                    {!h.members.length && <p className="text-[10px] text-zinc-500 italic px-2 py-3">No employees assigned to this HOI yet.</p>}
-                                </div>
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                <PersonCard p={h.person} highlight={highlightId === h.person.id} />
+                {/* Under each HOI: Faculty and OMs in separate groups (display grouping only — reporting lines are unchanged) */}
+                <div data-testid="org-hoi-members" className="flex flex-col items-center">
+                    {(() => {
+                        const faculty = h.members.filter(m => m.role === "PROFESSOR" || m.role === "FACULTY");
+                        const oms = h.members.filter(m => m.role === "OM");
+                        const others = h.members.filter(m => !["PROFESSOR", "FACULTY", "OM"].includes(m.role));
+                        return (
+                            <Branches items={[
+                                { key: "faculty", node: group(`hoi-faculty-${h.person.id}`, "Faculty", <BookOpen size={12} />, "faculty", faculty, "No faculty under this HOI yet.") },
+                                { key: "om", node: group(`hoi-om-${h.person.id}`, "OMs", <UserCog size={12} />, "om", oms, "No OM under this HOI yet.") },
+                                ...(others.length ? [{ key: "other", node: group(`hoi-other-${h.person.id}`, "Other Team", <Users size={12} />, "hoi", others, "") }] : []),
+                            ]} />
+                        );
+                    })()}
+                </div>
             </div>
         ),
     }));
 
+    // CL / CH: on the same level as the HOIs, straight below the Tech Lead, joined to the HOIs on its left and right
+    // (not hung from the AD / HR bus). Display only — reporting data is unchanged.
+    const clchNode = {
+        key: "clch", detached: true,
+        node: <div data-testid="org-clch-node" style={{ marginLeft: Math.max(0, clchShift), marginRight: Math.max(0, -clchShift) }}>{group("clch", "Curriculum Team", <BookOpen size={12} />, "clch", data.clch, "No Curriculum Team members onboarded yet.")}</div>,
+    };
+    const clchAt = hoiNodes.length > 1 ? Math.floor(hoiNodes.length / 2) : 0;
     const adChildren = [
-        ...hoiNodes,
-        { key: "clch", node: group("clch", "CL / CH", <BookOpen size={12} />, "clch", data.clch, "No CL / CH onboarded yet.") },
+        ...hoiNodes.slice(0, clchAt), clchNode, ...hoiNodes.slice(clchAt),
         ...(data.noHoi.length ? [{ key: "nohoi", node: group("nohoi", "No HOI Assigned", <UserX size={12} />, "muted", data.noHoi, "") }] : []),
     ];
 
@@ -222,7 +266,12 @@ export default function OrgChart({ data, open, setOpen, highlightId }: {
     );
 
     return (
-        <div className="flex items-start px-10 pt-6 pb-16" data-testid="org-chart">
+        <div ref={rootRef} className="relative flex items-start px-10 pt-6 pb-16" data-testid="org-chart">
+            {clchLinks && (
+                <svg className="absolute left-0 top-0 pointer-events-none" width={clchLinks.w} height={clchLinks.h} style={{ zIndex: 5 }} data-testid="org-clch-links" aria-hidden>
+                    {clchLinks.paths.map((d, i) => <path key={i} d={d} fill="none" stroke={CLCH_LINE} strokeWidth={2} data-testid="org-clch-link" />)}
+                </svg>
+            )}
             {sideColumn("left", [
                 { key: "tech", drop: skipDepth, node: group("tech", "Tech Team", <Code2 size={12} />, "tech", data.techTeam, "No Tech Team employees yet.") },
                 { key: "marketing", drop: skipDepth, node: group("marketing", "Marketing Team", <Megaphone size={12} />, "marketing", data.marketingTeam, "No Marketing Team employees yet.") },
@@ -257,14 +306,14 @@ export default function OrgChart({ data, open, setOpen, highlightId }: {
             </div>
 
             {sideColumn("right", [
-                { key: "hrexec", node: group("hrexec", "HR Executive", <UserCog size={12} />, "hrexec", data.hrExecutives, "No HR Executives onboarded yet.") },
+                { key: "hrexec", node: group("hrexec", "HR Team", <UserCog size={12} />, "hrexec", data.hrExecutives, "No HR Team members onboarded yet.") },
             ], "org-col-hr")}
         </div>
     );
 }
 
 /* ── Canvas: horizontal/vertical scroll, drag-to-pan, zoom in/out, fit to screen ── */
-export function OrgCanvas({ children, allOpen, onExpandAll, onCollapseAll }: { children: ReactNode; allOpen: boolean; onExpandAll: () => void; onCollapseAll: () => void }) {
+export function OrgCanvas({ children }: { children: ReactNode }) {
     const outer = useRef<HTMLDivElement>(null);
     const inner = useRef<HTMLDivElement>(null);
     const [size, setSize] = useState({ w: 0, h: 0 });
@@ -319,18 +368,87 @@ export function OrgCanvas({ children, allOpen, onExpandAll, onCollapseAll }: { c
     };
     const stop = () => { drag.current = null; };
 
+    // Download the whole chart (always at 100 %, whatever the current zoom) as an image or a PDF
+    const [exporting, setExporting] = useState<"" | "png" | "pdf">("");
+    const [menu, setMenu] = useState(false);
+    const [exportError, setExportError] = useState("");
+    const download = async (kind: "png" | "pdf") => {
+        const el = inner.current; if (!el || exporting) return;
+        setMenu(false); setExporting(kind); setExportError("");
+        try {
+            const { toPng } = await import("html-to-image");
+            // Employee photos from other websites cannot be drawn into the file directly: load each one through
+            // our own server (/api/image-proxy) as a data URL for the export, then put the original back.
+            const restore: [HTMLImageElement, string][] = [];
+            await Promise.all(Array.from(el.querySelectorAll("img")).map(async img => {
+                const src = img.getAttribute("src") || "";
+                if (!/^https?:\/\//i.test(src) || src.startsWith(window.location.origin)) return;
+                try {
+                    const r = await fetch(`/api/image-proxy?url=${encodeURIComponent(src)}`);
+                    if (!r.ok) return;
+                    const blob = await r.blob();
+                    const dataUrl: string = await new Promise((ok, bad) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result)); fr.onerror = bad; fr.readAsDataURL(blob); });
+                    await new Promise<void>(ok => { img.onload = () => ok(); img.onerror = () => ok(); restore.push([img, src]); img.src = dataUrl; });
+                } catch { /* this photo stays as it is (initials are shown if it cannot be drawn) */ }
+            }));
+            const w = el.offsetWidth, h = el.offsetHeight;
+            // sharp output, but within the browser's canvas limits for very large charts
+            const ratio = Math.max(0.25, Math.min(2, 16000 / w, 16000 / h, Math.sqrt(120_000_000 / (w * h))));
+            const opts: any = { width: w, height: h, pixelRatio: ratio, backgroundColor: "#09090b", style: { transform: "none" }, cacheBust: true,
+                imagePlaceholder: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" };
+            // Try the full chart first; if a font or an employee photo (another website / private storage) cannot be
+            // read by the browser, retry without web fonts, then without photos (initials stay on the cards).
+            const attempts: any[] = [
+                opts,
+                { ...opts, skipFonts: true },
+                { ...opts, skipFonts: true, cacheBust: false, filter: (n: HTMLElement) => n.tagName !== "IMG" },
+            ];
+            let dataUrl = "", lastErr: any = null;
+            for (const a of attempts) {
+                try { dataUrl = await toPng(el, a); if (dataUrl && dataUrl.length > 100) break; }
+                catch (err) { lastErr = err; dataUrl = ""; }
+            }
+            restore.forEach(([img, src]) => { img.onload = null; img.onerror = null; img.src = src; });
+            if (!dataUrl) throw lastErr || new Error("empty image");
+            const name = `GOG-Organization-Chart-${new Date().toISOString().slice(0, 10)}`;
+            if (kind === "png") {
+                const a = document.createElement("a"); a.href = dataUrl; a.download = `${name}.png`; a.click();
+            } else {
+                const { default: jsPDF } = await import("jspdf");
+                const k = Math.min(1, 14000 / Math.max(w, h)); // PDF page size limit
+                const pw = w * k, ph = h * k;
+                const pdf = new jsPDF({ orientation: pw >= ph ? "landscape" : "portrait", unit: "pt", format: [pw, ph], compress: true });
+                pdf.addImage(dataUrl, "PNG", 0, 0, pw, ph);
+                pdf.save(`${name}.pdf`);
+            }
+        } catch (e: any) {
+            setExportError(`Could not create the file${e?.message ? ` (${String(e.message).slice(0, 80)})` : ""}. Please try again.`);
+            console.error("[org chart] export failed", e);
+        } finally { setExporting(""); }
+    };
+
     const btn = "w-9 h-9 bg-zinc-900/95 border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:border-primary transition-all";
     return (
         <div className="relative rounded-3xl border border-zinc-900 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.04),transparent_60%)] bg-zinc-950/60 overflow-hidden">
             <div className="flex items-center justify-end gap-1.5 px-3 py-2.5 border-b border-zinc-900 bg-zinc-950/80" data-testid="org-controls" onClickCapture={userMoved}>
+                {exportError && <span className="text-[10px] text-red-400 mr-auto" data-testid="org-export-error">{exportError}</span>}
+                <div className="relative">
+                    <button className={cn(btn, "w-auto px-3 gap-1.5 text-[11px] font-bold")} title="Download the organization chart" data-testid="org-download"
+                        onClick={() => setMenu(m => !m)} disabled={!!exporting}>
+                        {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} {exporting ? "Preparing…" : "Download"}
+                    </button>
+                    {menu && (
+                        <div className="absolute right-0 top-full mt-1.5 z-30 w-44 rounded-xl border border-zinc-800 bg-zinc-950 shadow-xl p-1" data-testid="org-download-menu">
+                            <button onClick={() => download("png")} data-testid="org-download-png" className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] text-zinc-200 hover:bg-zinc-900"><ImageIcon size={13} /> Image (PNG)</button>
+                            <button onClick={() => download("pdf")} data-testid="org-download-pdf" className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] text-zinc-200 hover:bg-zinc-900"><FileText size={13} /> PDF</button>
+                        </div>
+                    )}
+                </div>
                 <span className="text-[10px] font-bold text-zinc-500 w-10 text-right" data-testid="org-zoom">{Math.round(zoom * 100)}%</span>
                 <button className={btn} title="Zoom Out" data-testid="org-zoom-out" onClick={() => setZoom(z => Math.max(0.25, Math.round((z - 0.1) * 100) / 100))}><ZoomOut size={15} /></button>
                 <button className={btn} title="Zoom In" data-testid="org-zoom-in" onClick={() => setZoom(z => Math.min(2, Math.round((z + 0.1) * 100) / 100))}><ZoomIn size={15} /></button>
                 <button className={btn} title="Fit to Screen" data-testid="org-fit" onClick={fit}><Maximize2 size={14} /></button>
                 <button className={btn} title="Actual size (100%)" onClick={() => { setZoom(1); centre(); }}><RotateCcw size={14} /></button>
-                <button className={btn} title={allOpen ? "Collapse all" : "Expand all"} data-testid="org-expand-all" onClick={allOpen ? onCollapseAll : onExpandAll}>
-                    {allOpen ? <ChevronsDownUp size={15} /> : <ChevronsUpDown size={15} />}
-                </button>
             </div>
             <div ref={outer} data-testid="org-canvas" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={stop} onPointerLeave={stop} onWheel={userMoved} onTouchStart={userMoved}
                 className="overflow-auto h-[72vh] min-h-[460px] cursor-grab active:cursor-grabbing custom-scrollbar select-none">

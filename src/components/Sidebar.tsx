@@ -32,7 +32,7 @@ const personalMenu = [
     { label: "SOP", icon: FileText, path: "/sop" },
     { label: "Flag Calendar", icon: Flag, path: "/flag-calendar" },
     { label: "Change Password", icon: ShieldCheck, path: "/change-password" },
-    { label: "Notifications", icon: Bell, path: "/notifications" },
+    // Notifications moved to the bell at the top right (NotificationBell)
 ];
 
 const managerMenu = [

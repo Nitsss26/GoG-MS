@@ -16,7 +16,6 @@ export default function HierarchyPage() {
     const { employees, orgHierarchy } = useAuth();
     const [searchQuery, setSearchQuery] = useState("");
     const [live, setLive] = useState<any[] | null>(null);
-    const [open, setOpen] = useState<Set<string>>(() => new Set());
     const [highlightId, setHighlightId] = useState<string | null>(null);
 
     const load = useCallback(async () => {
@@ -61,15 +60,11 @@ export default function HierarchyPage() {
         return [...m.values()];
     }, [data]);
 
-    const allKeys = useMemo(() => ["grp:tech", "grp:marketing", "grp:hrexec", "grp:clch", ...(data.noHoi.length ? ["grp:nohoi"] : []), ...data.hois.map(h => `hoi:${h.person.id}`)], [data]);
-    const allOpen = allKeys.length > 0 && allKeys.every(k => open.has(k));
-
     const q = searchQuery.trim().toLowerCase();
     const filteredNodes = q ? everyone.filter(p => p.name.toLowerCase().includes(q) || p.designation.toLowerCase().includes(q) || p.id.toLowerCase().includes(q)).slice(0, 24) : [];
 
+    // Everyone is already visible: just highlight and scroll to the card
     const reveal = (id: string) => {
-        const keys = (data.placements[id] || []).filter(k => k !== "root");
-        setOpen(s => new Set([...s, ...keys]));
         setHighlightId(id);
         setTimeout(() => document.querySelector(`[data-testid="org-canvas"] [data-person="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" }), 350);
         setTimeout(() => setHighlightId(h => (h === id ? null : h)), 3500);
@@ -182,8 +177,8 @@ export default function HierarchyPage() {
                 </div>
             )}
 
-            <OrgCanvas allOpen={allOpen} onExpandAll={() => setOpen(new Set(allKeys))} onCollapseAll={() => setOpen(new Set())}>
-                <OrgChart data={data} open={open} setOpen={setOpen} highlightId={highlightId} />
+            <OrgCanvas>
+                <OrgChart data={data} highlightId={highlightId} />
             </OrgCanvas>
         </div>
     );

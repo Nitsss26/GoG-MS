@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import { Ticket, Employee } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
 import { notifySafe } from '@/lib/academic';
+import { sendTicketResolvedEmail } from '@/lib/ticket-emails';
 import { ATTENDANCE_ISSUES, ATTENDANCE_TICKET_CATEGORY, ATTENDANCE_OVERRIDE_CATEGORY, ticketTypeOf } from '@/lib/ticket-types';
 
 export const dynamic = 'force-dynamic';
@@ -156,6 +157,11 @@ export async function PUT(req: Request) {
         const op: any = { $set: set };
         if (Object.keys(push).length) op.$push = push;
         const updated: any = await Ticket.findOneAndUpdate({ id }, op, { new: true });
+
+        // Resolution e-mail: only to the employee who raised it, once, only on the change to Resolved
+        if (updated && updates.status === 'Resolved' && ticket.status !== 'Resolved') {
+            await sendTicketResolvedEmail(updated.id).catch((e: any) => console.error('[ticket-mail] resolution failed:', e?.message));
+        }
 
         // In-app notifications to the employee (e-mails are sent by the existing client flow)
         if (updated && history.length) {

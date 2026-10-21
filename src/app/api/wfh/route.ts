@@ -1,17 +1,18 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
-import { WorkFromHome, LeaveRequest, Employee } from '@/models/Schemas';
+import { WorkFromHome, LeaveRequest, Employee, Attendance } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
 import { managedEmployeeIds } from '@/lib/leave-scope';
 import { notifySafe, newId, zonedNow, isValidYmd, addDays } from '@/lib/academic';
-import { WFH_POLICY, WFH_TYPE_LABEL } from '@/lib/wfh-policy';
+import { WFH_POLICY, WFH_TYPE_LABEL, canApplyWfh } from '@/lib/wfh-policy';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * Work From Home applications (separate from leave).
  *   GET  ?view=mine | queue | approved   — own applications / applications this user may decide / approved WFH
- *   POST { wfhType, startDate, endDate, reason, remarks }   — apply (always for the logged-in employee)
+ *   POST { wfhType, startDate, endDate, reason, workLocation, documentUrl?, remarks }   — apply (always for the logged-in employee;
+ *        roles in WFH_POLICY.applyRoles). Attendance can be marked from home while the application is pending (provisional).
  *   PUT  { id, action: "approve" | "reject" | "cancel", remarks }
  * Permissions are decided on the server from the session (src/lib/wfh-policy.ts).
  */
@@ -76,6 +77,7 @@ export async function POST(req: Request) {
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         const emp: any = actor.employee?.toObject ? actor.employee.toObject() : actor.employee;
         if (!emp || /inactive|terminated|resigned|exited/i.test(String(emp.status || ''))) return NextResponse.json({ error: 'Only active employees can apply for Work From Home.' }, { status: 403 });
+        if (!canApplyWfh({ role: actor.role, actualRole: actor.session?.actualRole || emp.role })) return NextResponse.json({ error: 'Work From Home is not available for your role.' }, { status: 403 });
 
         const body = await req.json().catch(() => ({}));
         const wfhType = body.wfhType === 'HALF_DAY' ? 'HALF_DAY' : 'FULL_DAY';
@@ -89,6 +91,12 @@ export async function POST(req: Request) {
         let days = 0; for (let d = startDate; d <= endDate; d = addDays(d, 1)) days++;
         if (days > WFH_POLICY.maxDaysPerApplication) return NextResponse.json({ error: `One application can cover at most ${WFH_POLICY.maxDaysPerApplication} days.` }, { status: 400 });
         if (reason.length < 3) return NextResponse.json({ error: 'Please give the reason.' }, { status: 400 });
+        const workLocation = String(body.workLocation || '').trim().slice(0, 200);
+        if (workLocation.length < 3) return NextResponse.json({ error: 'Please enter your remote work location.' }, { status: 400 });
+        const documentUrl = String(body.documentUrl || '').trim();
+        if (documentUrl && !/^https:\/\/\S+$/i.test(documentUrl)) return NextResponse.json({ error: 'The supporting document was not uploaded correctly. Please upload it again.' }, { status: 400 });
+        const managerIds = (Array.isArray(emp.reportsTo) ? emp.reportsTo : emp.reportsTo ? [emp.reportsTo] : []).filter(Boolean);
+        const managers: any[] = managerIds.length ? await Employee.find({ id: { $in: managerIds } }).select('name').lean() : [];
 
         // No duplicate WFH for the same dates, and no clash with a leave request
         const overlap = { startDate: { $lte: endDate }, endDate: { $gte: startDate } };
@@ -101,14 +109,15 @@ export async function POST(req: Request) {
             id: newId('WFH'), employeeId: actor.id, employeeName: emp.name, employeeRole: actorRole(actor),
             designation: emp.designation || '', dept: emp.dept || '',
             wfhType, startDate, endDate, days, reason, remarks: String(body.remarks || '').trim(), status: 'Pending',
+            workLocation, ...(documentUrl ? { documentUrl } : {}), reportingManagerName: managers.map(m => m.name).join(', '),
             history: [historyItem(actor, 'Applied', 'Pending', reason)],
         });
         await notifySafe({
             recipients: await approversFor(emp),
             title: `Work From Home Application — ${emp.name}`,
             message: `${emp.name} applied for Work From Home (${WFH_TYPE_LABEL[wfhType]}) on ${range(app)}.`,
-            type: 'WFH_SUBMITTED', link: '/hr/leave-management?tab=wfh', entityType: 'WorkFromHome', entityId: app.id, actor,
-            rows: [{ label: 'Employee', value: `${emp.name} (${emp.id})` }, { label: 'Dates', value: `${range(app)} · ${days} day(s)` }, { label: 'Type', value: WFH_TYPE_LABEL[wfhType] }, { label: 'Reason', value: reason }],
+            type: 'WFH_SUBMITTED', link: '/attendance?tab=wfh-applications', entityType: 'WorkFromHome', entityId: app.id, actor,
+            rows: [{ label: 'Employee', value: `${emp.name} (${emp.id})` }, { label: 'Dates', value: `${range(app)} · ${days} day(s)` }, { label: 'Type', value: WFH_TYPE_LABEL[wfhType] }, { label: 'Work location', value: workLocation }, { label: 'Reason', value: reason }],
         });
         return NextResponse.json({ success: true, application: app });
     } catch (error: any) {
@@ -137,7 +146,9 @@ export async function PUT(req: Request) {
                 $push: { history: historyItem(actor, 'Cancelled', 'Cancelled', note) },
             }, { new: true });
             if (!updated) return NextResponse.json({ error: 'The application was changed meanwhile. Refresh and try again.' }, { status: 409 });
-            if (owner) await notifySafe({ recipients: [owner], title: 'Work From Home Application Cancelled', message: `Your Work From Home application for ${range(app)} was cancelled.`, type: 'WFH_CANCELLED', link: '/leave', entityType: 'WorkFromHome', entityId: app.id, actor: { id: '', name: 'GoG OMS' }, email: false });
+            // Attendance already marked under it is kept and goes to HR review
+            await Attendance.updateMany({ wfhApplicationId: id }, { $set: { wfhStatus: 'Cancelled', wfhReviewRequired: true } });
+            if (owner) await notifySafe({ recipients: [owner], title: 'Work From Home Application Cancelled', message: `Your Work From Home application for ${range(app)} was cancelled.`, type: 'WFH_CANCELLED', link: '/attendance', entityType: 'WorkFromHome', entityId: app.id, actor: { id: '', name: 'GoG OMS' }, email: false });
             return NextResponse.json({ success: true, application: updated, message: 'Application cancelled.' });
         }
 
@@ -155,11 +166,13 @@ export async function PUT(req: Request) {
             $push: { history: historyItem(actor, status, status, note) },
         }, { new: true });
         if (!updated) return NextResponse.json({ error: 'This application was already decided by someone else.' }, { status: 409 });
+        // Attendance marked under this application: approved → confirmed; rejected → kept (never deleted) and flagged for HR review
+        await Attendance.updateMany({ wfhApplicationId: id }, { $set: status === 'Approved' ? { wfhStatus: 'Approved', wfhReviewRequired: false } : { wfhStatus: 'Rejected', wfhReviewRequired: true } });
         if (owner) await notifySafe({
             recipients: [owner],
             title: `Work From Home ${status}`,
             message: `Your Work From Home application for ${range(app)} was ${status.toLowerCase()} by ${actor.name}.`,
-            type: status === 'Approved' ? 'WFH_APPROVED' : 'WFH_REJECTED', link: '/leave', entityType: 'WorkFromHome', entityId: app.id, actor,
+            type: status === 'Approved' ? 'WFH_APPROVED' : 'WFH_REJECTED', link: '/attendance', entityType: 'WorkFromHome', entityId: app.id, actor,
             rows: [{ label: 'Dates', value: range(app) }, { label: 'Type', value: WFH_TYPE_LABEL[app.wfhType] || app.wfhType }, { label: 'Decision', value: `${status} by ${actor.name}` }, { label: 'Remarks', value: note }],
         });
         return NextResponse.json({ success: true, application: updated, message: `Application ${status.toLowerCase()}.` });

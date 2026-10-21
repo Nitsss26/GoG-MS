@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Search, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CHECKLIST_ITEMS, itemState } from "@/lib/post-onboarding";
+import { CHECKLIST_ITEMS, CHECKLIST_TOTAL, itemState } from "@/lib/post-onboarding";
 import PostOnboardingChecklist from "@/components/onboarding/PostOnboardingChecklist";
 
 /** HR → Employee Onboarding → Post-Onboarding Checklist: every employee who submitted the onboarding form */
@@ -51,7 +51,7 @@ export default function PostOnboardingDashboard() {
                 </div>
             </div>
             <div className="overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-950/40">
-                <table className="w-full min-w-[1000px] text-xs">
+                <table className="w-full min-w-[1100px] text-xs">
                     <thead className="bg-zinc-950/70"><tr>
                         <th className={th}>Employee</th><th className={th}>Designation</th><th className={th}>Form Submitted</th>
                         {CHECKLIST_ITEMS.map(i => <th key={i.key} className={th}>{i.short}</th>)}
@@ -66,14 +66,14 @@ export default function PostOnboardingDashboard() {
                                 {CHECKLIST_ITEMS.map(i => {
                                     const st = itemState(r.checklist, i.key);
                                     const done = !!r.checklist?.[i.key]?.completed;
-                                    return <td key={i.key} className="py-2.5 px-3"><span className={cn("px-1.5 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap", done ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-zinc-700 bg-zinc-800 text-zinc-400")} data-testid={`poc-cell-${i.key}`}>{done ? (i.kind === "call" ? "Done" : "Verified") : st}</span></td>;
+                                    return <td key={i.key} className="py-2.5 px-3"><span className={cn("px-1.5 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap", done ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-zinc-700 bg-zinc-800 text-zinc-400")} data-testid={`poc-cell-${i.key}`}>{done ? (i.kind === "call" ? "Done" : i.kind === "idcard" ? "Given" : "Verified") : st}</span></td>;
                                 })}
-                                <td className="py-2.5 px-3"><span className={cn("px-2 py-0.5 rounded-md border text-[10px] font-black", STATUS_STYLE[r.summary.status])} data-testid="poc-row-progress">{r.summary.completed}/5</span></td>
+                                <td className="py-2.5 px-3"><span className={cn("px-2 py-0.5 rounded-md border text-[10px] font-black", STATUS_STYLE[r.summary.status])} data-testid="poc-row-progress">{r.summary.completed}/{CHECKLIST_TOTAL}</span></td>
                                 <td className="py-2.5 px-3 text-right"><button onClick={() => setOpen(r.employee.id)} data-testid="poc-manage" className="px-2.5 py-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-bold whitespace-nowrap">Manage Checklist</button></td>
                             </tr>
                         ))}
-                        {rows === null && <tr><td colSpan={10} className="py-10 text-center"><Loader2 className="animate-spin text-primary inline" size={16} /></td></tr>}
-                        {rows !== null && !list.length && <tr><td colSpan={10} className="py-10 text-center text-zinc-500">No employees in this list.</td></tr>}
+                        {rows === null && <tr><td colSpan={11} className="py-10 text-center"><Loader2 className="animate-spin text-primary inline" size={16} /></td></tr>}
+                        {rows !== null && !list.length && <tr><td colSpan={11} className="py-10 text-center text-zinc-500">No employees in this list.</td></tr>}
                     </tbody>
                 </table>
             </div>

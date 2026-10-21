@@ -18,6 +18,15 @@ export function isHashedPassword(stored?: string | null): boolean {
     return typeof stored === 'string' && stored.startsWith(PREFIX + '$') && stored.split('$').length === 3;
 }
 
+/**
+ * Value saved in Employee.password. As requested by the organisation (same as the original GOG portal),
+ * the password is kept in plain text so it can be read in the database. Older scrypt hashes still work for login
+ * and are replaced by the plain password on the next successful login.
+ */
+export function storedPasswordValue(plain: string): string {
+    return String(plain);
+}
+
 export async function hashPassword(plain: string): Promise<string> {
     const salt = randomBytes(16);
     const hash = await scrypt(plain, salt, KEY_LENGTH);

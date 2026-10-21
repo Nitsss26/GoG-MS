@@ -45,9 +45,11 @@ export function calculatePerformance(
     const auditTrail: AuditEntry[] = [];
 
     // Filter Attendance: Only from April 1st
+    // Work From Home attendance counts only once its application is approved (pending = provisional,
+    // rejected / cancelled = under HR review). Records without a WFH approval state count as before.
     const myAttendance = attendanceRecords.filter(r => {
         const rDate = new Date(r.date);
-        return r.employeeId === employeeId && rDate >= START_DATE;
+        return r.employeeId === employeeId && rDate >= START_DATE && !["Pending", "Rejected", "Cancelled"].includes(r.wfhStatus);
     });
 
     // Filter Responsibilities: Only from April 1st

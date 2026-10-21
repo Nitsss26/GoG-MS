@@ -3,16 +3,16 @@ import dbConnect from '@/lib/mongodb';
 import { Employee } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
 import { notifySafe } from '@/lib/academic';
-import { CHECKLIST_ITEMS, SLACK_STATUSES, GOOGLE_STATUSES, SLACK_DONE, GOOGLE_DONE, summarize, statusLabel, type ChecklistItemKey } from '@/lib/post-onboarding';
+import { CHECKLIST_ITEMS, CHECKLIST_TOTAL, SLACK_STATUSES, GOOGLE_STATUSES, ID_CARD_STATUSES, SLACK_DONE, GOOGLE_DONE, ID_CARD_DONE, summarize, statusLabel, type ChecklistItemKey } from '@/lib/post-onboarding';
 import { ensureChecklist, isChecklistApplicable, checkSlack, checkGoogle } from '@/lib/post-onboarding-server';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Post-onboarding checklist (five mandatory activities).
+ * Post-onboarding checklist (six mandatory activities).
  *   GET  ?employeeId=   — one checklist (the employee themself, or HR / Founder)
  *   GET               — HR / Founder: every applicable employee (missing checklists are created once, safely)
- *   PUT  { employeeId, item, completed? | status?, remarks? }       — HR / Founder only
+ *   PUT  { employeeId, item, completed? | status?, reason?, remarks? } — HR / Founder only (idCard: status YES / NO, NO needs a reason)
  *   POST { employeeId, item: "slackWorkspace" | "googleWorkspace" } — HR / Founder: read the integration status (if configured)
  * The employee can only read; every change is recorded in checklist.history with who and when (server time).
  */
@@ -61,7 +61,7 @@ export async function PUT(req: Request) {
         const actor: any = await getSessionUser();
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         if (!isHR(actor)) return NextResponse.json({ error: 'Only HR can update the post-onboarding checklist.' }, { status: 403 });
-        const { employeeId, item, completed, status, remarks } = await req.json().catch(() => ({}));
+        const { employeeId, item, completed, status, reason, remarks } = await req.json().catch(() => ({}));
         if (employeeId === actor.id) return NextResponse.json({ error: 'You cannot verify your own checklist.' }, { status: 403 });
         const def = CHECKLIST_ITEMS.find(i => i.key === item);
         if (!def) return NextResponse.json({ error: 'Unknown checklist item.' }, { status: 400 });
@@ -87,6 +87,16 @@ export async function PUT(req: Request) {
             set[`postOnboardingChecklist.${item}`] = completed
                 ? { completed: true, completedBy: by.id, completedByName: by.name, completedAt: now }
                 : { completed: false, completedBy: null, completedByName: null, completedAt: null };
+        } else if (def.kind === 'idcard') {
+            if (!ID_CARD_STATUSES.some(s => s.value === status)) return NextResponse.json({ error: 'Select whether the ID card was given (Yes / No).' }, { status: 400 });
+            const why = String(reason || '').trim();
+            if (status === 'NO' && why.length < 3) return NextResponse.json({ error: 'Enter the reason why the ID card was not given.' }, { status: 400 });
+            const newReason = status === 'NO' ? why : null;
+            if ((cur.status || 'NOT_UPDATED') === status && (cur.reason || null) === newReason) return NextResponse.json({ ...view(fresh), unchanged: true });
+            const done = status === ID_CARD_DONE;
+            from = statusLabel(ID_CARD_STATUSES, cur.status || 'NOT_UPDATED') + (cur.reason ? ` (${cur.reason})` : '');
+            to = statusLabel(ID_CARD_STATUSES, status) + (newReason ? ` (${newReason})` : '');
+            set[`postOnboardingChecklist.${item}`] = { status, completed: done, reason: newReason, updatedBy: by.id, updatedByName: by.name, updatedAt: now };
         } else {
             const list = def.kind === 'slack' ? SLACK_STATUSES : GOOGLE_STATUSES;
             if (!list.some(s => s.value === status)) return NextResponse.json({ error: 'Select a valid status.' }, { status: 400 });
@@ -112,9 +122,12 @@ export async function PUT(req: Request) {
         const history = { item, label: def.label, from, to, by: by.id, byName: by.name, role: by.role, at: now, remarks: note };
         // progress after this change
         const after = JSON.parse(JSON.stringify(c));
-        if (def.kind === 'call') after[item].completed = completed; else after[item].completed = set[`postOnboardingChecklist.${item}.completed`];
+        after[item] = after[item] || {};
+        if (def.kind === 'call') after[item].completed = completed;
+        else if (def.kind === 'idcard') after[item].completed = set[`postOnboardingChecklist.${item}`].completed;
+        else after[item].completed = set[`postOnboardingChecklist.${item}.completed`];
         const sum = summarize(after);
-        set['postOnboardingChecklist.progress'] = { completed: sum.completed, total: 5 };
+        set['postOnboardingChecklist.progress'] = { completed: sum.completed, total: CHECKLIST_TOTAL };
         set['postOnboardingChecklist.status'] = sum.status;
         set['postOnboardingChecklist.updatedAt'] = now;
         if (sum.status === 'Completed' && !c.completedAt) set['postOnboardingChecklist.completedAt'] = now;
@@ -122,15 +135,16 @@ export async function PUT(req: Request) {
         await Employee.updateOne({ id: employeeId }, { $set: set, $push: { 'postOnboardingChecklist.history': history } });
         const updated: any = await Employee.findOne({ id: employeeId }).select(FIELDS).lean();
 
-        // Notify the employee (in-app) when an item becomes completed, and once when all five are done
-        const nowDone = def.kind === 'call' ? completed === true : !!set[`postOnboardingChecklist.${item}.completed`];
+        // Notify the employee (in-app) when an item becomes completed, and once when all are done
+        const nowDone = def.kind === 'call' ? completed === true : def.kind === 'idcard' ? !!after[item].completed && !cur.completed : !!set[`postOnboardingChecklist.${item}.completed`];
         if (nowDone) {
             const message = def.kind === 'slack' ? 'Your Slack workspace membership has been verified.'
                 : def.kind === 'google' ? 'Your Google Workspace account activation has been verified.'
-                    : `Your ${def.label.replace(' (HOI)', '')} has been marked as completed.`;
+                    : def.kind === 'idcard' ? 'Your ID card has been marked as given.'
+                        : `Your ${def.label} has been marked as completed.`;
             await notifySafe({ recipients: [emp], title: 'Post-onboarding activity completed', message, type: 'POST_ONBOARDING', link: '/', entityType: 'Employee', entityId: emp.id, actor: by, email: false });
             if (sum.status === 'Completed' && !c.completedAt) {
-                await notifySafe({ recipients: [emp], title: 'Post-onboarding checklist completed', message: 'Congratulations! All five mandatory post-onboarding activities have been completed.', type: 'POST_ONBOARDING', link: '/', entityType: 'Employee', entityId: emp.id, actor: by, email: false });
+                await notifySafe({ recipients: [emp], title: 'Post-onboarding checklist completed', message: 'Congratulations! All six mandatory post-onboarding activities have been completed.', type: 'POST_ONBOARDING', link: '/', entityType: 'Employee', entityId: emp.id, actor: by, email: false });
             }
         }
         return NextResponse.json(view(updated));

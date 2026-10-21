@@ -23,10 +23,26 @@ if (!MONGODB_URI) {
 let cached = (global as any).mongoose;
 
 if (!cached) {
-    cached = (global as any).mongoose = { conn: null, promise: null };
+    cached = (global as any).mongoose = { conn: null, promise: null, uri: null };
 }
 
+/** Database name in the URI ("" when none is given — MongoDB then uses "test"). Never logs the URI itself. */
+const dbNameInUri = (uri: string) => {
+    const m = uri.match(/^mongodb(?:\+srv)?:\/\/[^/]+\/([^?]*)/);
+    return m ? decodeURIComponent(m[1] || '') : '';
+};
+
 async function dbConnect() {
+    // Read the URI on every call: when .env.local changes, `next dev` reloads it, and the old
+    // cached connection (to the previous database) must not keep being used.
+    const uri = process.env.MONGODB_URI || MONGODB_URI!;
+    if (cached.uri && cached.uri !== uri && (cached.conn || cached.promise)) {
+        console.warn("[DB] MONGODB_URI changed — reconnecting to the new database.");
+        try { await (cached.conn || (await cached.promise))?.disconnect(); } catch { /* old connection already closed */ }
+        cached.conn = null;
+        cached.promise = null;
+    }
+
     // If we have a cached connection, verify it's still alive
     if (cached.conn) {
         try {
@@ -54,8 +70,12 @@ async function dbConnect() {
             connectTimeoutMS: 10000,
         };
 
-        cached.promise = mongoose.connect(MONGODB_URI!, opts).then(async (mongoose) => {
-            console.log("[DB] Connected successfully.");
+        cached.uri = uri;
+        if (!dbNameInUri(uri)) {
+            console.warn('[DB] MONGODB_URI has no database name, so MongoDB uses the default database "test". If your data is in another database, add "/<database-name>" before "?" in the URI.');
+        }
+        cached.promise = mongoose.connect(uri, opts).then(async (mongoose) => {
+            console.log(`[DB] Connected successfully to database "${mongoose.connection.db?.databaseName}".`);
             await onDbConnected(mongoose.connection.db);
             return mongoose;
         });

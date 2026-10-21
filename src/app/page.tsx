@@ -1,4 +1,5 @@
 "use client";
+import { ddmmyyyy, ddmmyyyyText } from "@/lib/date-display";
 import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect, useMemo } from "react";
 import { cn, resolveImageUrl } from "@/lib/utils";
@@ -7,7 +8,7 @@ import { calculatePerformance, LEADERBOARD_START_DATE, getLeaderboardStats } fro
 import {
     Calendar, Star, Megaphone, FileText, MessageSquare, Send, X, Clock, AlertTriangle, Users,
     ChevronRight, Gift, Trophy, Receipt, Ticket, Shield, Bot, Cake, Flag, Bell, Eye, ExternalLink, Activity,
-    PartyPopper, AlertCircle, UserPlus, MapPin
+    PartyPopper, AlertCircle, UserPlus, MapPin, Building2, Home as HomeIcon
 } from "lucide-react";
 import Link from "next/link";
 import PostOnboardingChecklist from "@/components/onboarding/PostOnboardingChecklist";
@@ -238,7 +239,7 @@ export default function Home() {
         user, employees, notices, sops, attendanceRecords, 
         holidays, performanceStars, leaves, pipRecords, 
         reimbursements, tickets, getReportees, sopNotifications, 
-        getExpectedTiming, additionalResponsibilities, ratings 
+        getExpectedTiming, additionalResponsibilities, ratings, colleges 
     } = useAuth();
     const [mounted, setMounted] = useState(false);
     const [todayStr, setTodayStr] = useState("");
@@ -354,54 +355,57 @@ export default function Home() {
             )}
 
             {/* Welcome */}
-            <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3 sm:gap-0">
-                <div>
+            <header className="lg:hidden flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3 sm:gap-0">
+                <div className="lg:hidden">
                     <p className="text-[9px] sm:text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
                         {role === "HR" ? ((user as any).hrExecutive ? "HR Executive" : "HR Administration") : role === "FOUNDER" ? "Founder" : ["AD", "HOI", "TL"].includes(role) ? `${role} · ${emp.designation || ""}` : "Employee"} Dashboard
                     </p>
-                    <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight mt-0.5 sm:mt-1">Welcome back, {user.name}</h1>
+                    <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight mt-0.5 sm:mt-1">Welcome back, {user.name}</h1>
+                    {todayStr && <p className="text-[11px] text-zinc-400 mt-0.5">{todayStr}</p>}
                 </div>
-                <span className="text-[8px] sm:text-[9px] text-zinc-500">{todayStr}</span>
             </header>
 
-            {/* Today's Schedule Banner */}
-            {!isManagerRole && role !== "HR" && role !== "FOUNDER" && (
-                <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl sm:rounded-3xl p-4 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6 animate-in fade-in slide-in-from-top-4 duration-700">
-                    <div className="flex items-center gap-4 sm:gap-5">
-                        <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-primary/10 flex items-center justify-center text-primary shadow-inner shrink-0">
-                            <Clock size={24} className="sm:w-7 sm:h-7" />
+            {/* Today's Schedule: shift · work location · campus presence (same data as before, new layout) */}
+            {!isManagerRole && role !== "HR" && role !== "FOUNDER" && (() => {
+                const isWfh = expected.location === "WFH";
+                const loc: any = (colleges || []).find((c: any) => [c.id, c.name, c.shortName].includes(expected.location));
+                const locName = isWfh ? "Work From Home" : (loc?.shortName || loc?.name || expected.location);
+                const locSub = isWfh ? "Remote work today" : loc ? [loc.name !== locName ? loc.name : "", loc.city].filter(Boolean).join(", ") : "";
+                const now = new Date(); const hm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+                const shift = !expected.in || !expected.out ? null : hm < expected.in ? { t: `Starts at ${expected.in}`, c: "text-sky-300 bg-sky-500/10 border-sky-500/25" } : hm <= expected.out ? { t: "Shift Ongoing", c: "text-emerald-300 bg-emerald-500/10 border-emerald-500/25" } : { t: "Shift Ended", c: "text-zinc-400 bg-zinc-800 border-zinc-700" };
+                return (
+                    <div className="rounded-2xl sm:rounded-3xl border border-zinc-800 bg-gradient-to-br from-zinc-900/70 via-zinc-950 to-zinc-950 p-3 sm:p-4 grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-0 items-stretch animate-in fade-in slide-in-from-top-4 duration-700" data-testid="today-schedule">
+                        <div className="flex items-center gap-4 p-3 sm:p-4 md:pr-6">
+                            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 flex items-center justify-center text-emerald-400 shrink-0"><Clock size={28} /></div>
+                            <div className="min-w-0">
+                                <p className="text-[10px] sm:text-[11px] text-zinc-400 uppercase tracking-wider font-semibold">Shift Duration Today</p>
+                                <p className="text-xl sm:text-2xl font-bold text-white tracking-tight">{expected.in} — {expected.out}</p>
+                                {shift && <span className={cn("inline-flex items-center gap-1.5 mt-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full border", shift.c)} data-testid="shift-state"><span className="w-1.5 h-1.5 rounded-full bg-current" />{shift.t}</span>}
+                            </div>
                         </div>
-                        <div>
-                            <p className="text-[9px] sm:text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-0.5 sm:mb-1">Shift Duration Today</p>
-                            <p className="text-lg sm:text-xl font-bold text-white tracking-tight">{expected.in} — {expected.out}</p>
+                        <div className="flex items-center gap-4 p-3 sm:p-4 md:px-6 border-t md:border-t-0 md:border-l border-zinc-800/80 md:my-3">
+                            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl border border-sky-500/20 bg-sky-500/10 flex items-center justify-center text-sky-400 shrink-0"><MapPin size={28} /></div>
+                            <div className="min-w-0">
+                                <p className="text-[10px] sm:text-[11px] text-zinc-400 uppercase tracking-wider font-semibold">Assigned Work Location</p>
+                                <p className="text-xl sm:text-2xl font-bold text-white tracking-tight truncate">{locName}</p>
+                                {locSub && <p className="text-[11px] sm:text-xs text-zinc-400 truncate flex items-center gap-1.5 mt-0.5"><Building2 size={12} className="shrink-0" /> {locSub}</p>}
+                            </div>
                         </div>
+                        <Link href="/attendance" data-testid="presence-card"
+                            className={cn("group flex items-center gap-4 rounded-2xl border p-4 md:ml-2 transition-colors", isWfh ? "border-amber-500/40 bg-gradient-to-r from-amber-500/15 to-amber-900/10 hover:border-amber-400/60" : "border-emerald-500/40 bg-gradient-to-r from-emerald-500/20 to-emerald-900/10 hover:border-emerald-400/60")}>
+                            <div className={cn("w-14 h-14 rounded-xl flex items-center justify-center shrink-0", isWfh ? "bg-amber-500/20 text-amber-300" : "bg-emerald-500/20 text-emerald-400")}>{isWfh ? <HomeIcon size={28} /> : <Building2 size={28} />}</div>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-[11px] sm:text-xs uppercase tracking-wider font-bold text-white">{isWfh ? "Remote Work" : "Campus Presence"}</p>
+                                <p className="text-[11px] text-zinc-300 mt-0.5">{isWfh ? "Mark your attendance for today" : "Mark your daily office presence"}</p>
+                            </div>
+                            <span className={cn("w-8 h-8 rounded-full border flex items-center justify-center group-hover:translate-x-0.5 transition-transform shrink-0", isWfh ? "border-amber-400/60 text-amber-300" : "border-emerald-400/60 text-emerald-300")}><ChevronRight size={16} /></span>
+                        </Link>
                     </div>
-
-                    <div className="h-10 w-px bg-zinc-800 hidden md:block" />
-
-                    <div className="flex items-center gap-4 sm:gap-5">
-                        <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-400 shadow-inner shrink-0">
-                            <MapPin size={24} className="sm:w-7 sm:h-7" />
-                        </div>
-                        <div>
-                            <p className="text-[9px] sm:text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-0.5 sm:mb-1">Assigned Work Location</p>
-                            <p className="text-lg sm:text-xl font-bold text-white tracking-tight">{expected.location}</p>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-row sm:flex-col items-center sm:items-end w-full sm:w-auto justify-between sm:justify-center gap-2">
-                        <span className={cn("text-[9px] sm:text-[10px] font-bold px-2.5 sm:px-3 py-1 rounded-full uppercase tracking-widest border",
-                            expected.location === "WFH" ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : "text-green-400 bg-green-500/10 border-green-500/20"
-                        )}>
-                            {expected.location === "WFH" ? "Remote Work" : "Campus Presence"}
-                        </span>
-                        {/* <p className="text-[10px] text-zinc-500 italic">Grace period: 2 mins</p> */}
-                    </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* Post-onboarding checklist (after the onboarding form is submitted; read-only for the employee) */}
-            <PostOnboardingChecklist employeeId={user.id} mode="employee" />
+            <PostOnboardingChecklist employeeId={user.id} mode="employee" hideWhenComplete variant="strip" />
 
             {/* Quick Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -611,7 +615,7 @@ export default function Home() {
                                                                                     "text-zinc-300 bg-zinc-700/40 border-zinc-600/30"
                                             )}>{n.category}</span>
                                         </div>
-                                        <p className="text-[9px] text-zinc-500 truncate">{n.content}</p>
+                                        <p className="text-[9px] text-zinc-500 truncate">{ddmmyyyyText(n.content)}</p>
                                     </div>
                                     <button onClick={() => setSelectedNotice(n)} className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-600 hover:text-primary shrink-0 transition-colors" title="View">
                                         <Eye size={11} />
@@ -773,12 +777,12 @@ export default function Home() {
                                                         selectedNotice.category === "Event" ? "text-purple-300 bg-purple-500/20 border-purple-500/30" :
                                                             "text-emerald-300 bg-emerald-500/20 border-emerald-500/30"
                                         )}>{selectedNotice.category}</span>
-                                        {selectedNotice.isEdited && <span className="text-[7px] font-bold text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700/50">edited {selectedNotice.editedAt}</span>}
+                                        {selectedNotice.isEdited && <span className="text-[7px] font-bold text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700/50">edited {ddmmyyyy(selectedNotice.editedAt)}</span>}
                                     </div>
                                     <button onClick={() => setSelectedNotice(null)} className="text-zinc-500 hover:text-white transition-colors"><X size={16} /></button>
                                 </div>
                                 <h2 className="text-lg font-bold text-white leading-tight">{selectedNotice.title}</h2>
-                                <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">{selectedNotice.content}</p>
+                                <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">{ddmmyyyyText(selectedNotice.content)}</p>
                                 {selectedNotice.imageUrls && selectedNotice.imageUrls.length > 0 && (
                                     <div className="grid grid-cols-2 gap-2">
                                         {selectedNotice.imageUrls.map((url: string, i: number) => (
@@ -789,7 +793,7 @@ export default function Home() {
                                 <div className="pt-3 border-t border-zinc-800 flex items-center gap-2">
                                     <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-400">{selectedNotice.createdBy?.[0]}</div>
                                     <span className="text-[10px] font-bold text-zinc-500">{selectedNotice.createdBy}</span>
-                                    <span className="text-[9px] text-zinc-600 ml-auto">{selectedNotice.createdAt}</span>
+                                    <span className="text-[9px] text-zinc-600 ml-auto">{ddmmyyyy(selectedNotice.createdAt)}</span>
                                 </div>
                             </div>
                         </motion.div>

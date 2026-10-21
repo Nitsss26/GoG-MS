@@ -15,7 +15,7 @@
 import { LectureReport, SprintPlan, Employee, JobRun, Attendance } from '@/models/Schemas';
 import {
     getClassStatus, getPlanStatus, PROFESSOR_ROLES, CL_CH_ROLES, PROFESSOR_EDITABLE_CLASS_STATUSES,
-    CLASS_STATUS_LABEL, DEFAULT_CLASS_STRENGTH, roleShort,
+    CLASS_STATUS_LABEL, DEFAULT_CLASS_STRENGTH, roleShort, OM_TIME_GRACE_MINUTES, NOTES_GROUP_TYPES, notesGroupLabel,
 } from '@/lib/academic-status';
 import {
     getAcademicScope, scopeAllowsProfessor, collegeRecipients, employeesByIds, notifySafe, nowISO, newId,
@@ -160,33 +160,41 @@ const shortClass = (r: any) => `${r.courseName} · ${r.date}${r.timeStart ? ' ' 
 function omCheckFrom(record: any, input: any, actor: Actor): { error: string } | { set: any; entry: string; exit: string; summary: string } {
     const prev = record.omCheck?.toObject ? record.omCheck.toObject() : (record.omCheck || {});
     const pick = (k: string, legacy?: string) => (input[k] !== undefined ? String(input[k] || '').trim() : String(prev[k] || (legacy ? record[legacy] : '') || ''));
+    // Professor's entry / exit time as seen by the OM
     const entry = input.actualInTime !== undefined ? String(input.actualInTime || '').trim() : pick('entryTime', 'actualInTime');
     const exit = input.actualOutTime !== undefined ? String(input.actualOutTime || '').trim() : pick('exitTime', 'actualOutTime');
-    const actualStart = pick('actualStart'); const actualEnd = pick('actualEnd');
-    for (const [label, v] of [['Entry time', entry], ['Exit time', exit], ['Actual start', actualStart], ['Actual end', actualEnd]] as [string, string][]) {
+    for (const [label, v] of [['Entry time', entry], ['Exit time', exit]] as [string, string][]) {
         if (v && !TIME_RE.test(v)) return { error: `${label} must be HH:MM.` };
     }
     const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
     if (entry && exit && toMin(exit) <= toMin(entry)) return { error: 'Exit time must be after entry time.' };
-    if (actualStart && actualEnd && toMin(actualEnd) <= toMin(actualStart)) return { error: 'Actual end must be after actual start.' };
     const scheduledStart = record.timeStart || record.classStartTime || '';
     const scheduledEnd = record.timeStop || record.classEndTime || '';
-    const startUsed = actualStart || entry;
-    const delayMinutes = scheduledStart && startUsed && TIME_RE.test(scheduledStart) ? Math.max(0, toMin(startUsed) - toMin(scheduledStart)) : 0;
-    const isDelayed = input.isLate !== undefined ? Boolean(input.isLate) || delayMinutes > 0 : delayMinutes > 0;
-    const delayReason = input.delayReason !== undefined ? String(input.delayReason || '').trim() : input.remarksWhyLate !== undefined ? String(input.remarksWhyLate || '').trim() : String(prev.delayReason || record.remarksWhyLate || '');
+    // Late entry / early exit against the scheduled time; more than the grace minutes needs a reason
+    const lateMin = scheduledStart && entry && TIME_RE.test(scheduledStart) ? Math.max(0, toMin(entry) - toMin(scheduledStart)) : 0;
+    const earlyMin = scheduledEnd && exit && TIME_RE.test(scheduledEnd) ? Math.max(0, toMin(scheduledEnd) - toMin(exit)) : 0;
+    const isDelayed = lateMin > OM_TIME_GRACE_MINUTES;
+    const isEarlyExit = earlyMin > OM_TIME_GRACE_MINUTES;
+    const delayReason = !isDelayed ? '' : input.delayReason !== undefined ? String(input.delayReason || '').trim() : input.remarksWhyLate !== undefined ? String(input.remarksWhyLate || '').trim() : String(prev.delayReason || record.remarksWhyLate || '');
+    const earlyExitReason = !isEarlyExit ? '' : input.earlyExitReason !== undefined ? String(input.earlyExitReason || '').trim() : String(prev.earlyExitReason || '');
+    if (isDelayed && delayReason.length < 3) return { error: `The professor entered ${lateMin} min late. Select the reason for the late entry.` };
+    if (isEarlyExit && earlyExitReason.length < 3) return { error: `The professor left ${earlyMin} min early. Select the reason for the early exit.` };
     const remarks = input.omRemarks !== undefined ? String(input.omRemarks || '').trim() : String(prev.remarks || '');
     const now = nowISO();
     const set: any = {
-        'omCheck.entryTime': entry, 'omCheck.exitTime': exit, 'omCheck.actualStart': actualStart, 'omCheck.actualEnd': actualEnd,
-        'omCheck.scheduledStart': scheduledStart, 'omCheck.scheduledEnd': scheduledEnd, 'omCheck.delayMinutes': delayMinutes,
-        'omCheck.isDelayed': isDelayed, 'omCheck.delayReason': delayReason, 'omCheck.remarks': remarks,
+        'omCheck.entryTime': entry, 'omCheck.exitTime': exit,
+        'omCheck.scheduledStart': scheduledStart, 'omCheck.scheduledEnd': scheduledEnd,
+        'omCheck.delayMinutes': lateMin, 'omCheck.isDelayed': isDelayed, 'omCheck.delayReason': delayReason,
+        'omCheck.earlyExitMinutes': earlyMin, 'omCheck.isEarlyExit': isEarlyExit, 'omCheck.earlyExitReason': earlyExitReason,
+        'omCheck.remarks': remarks,
         'omCheck.by': actor.id, 'omCheck.byName': actor.name, 'omCheck.at': now,
         // existing fields used by Daily Lecture Timings and the reports (OM-entered, not the professor's)
         actualInTime: entry, actualOutTime: exit, isLate: isDelayed, remarksWhyLate: delayReason,
         omTimesUpdatedBy: actor.id, omTimesUpdatedByName: actor.name, omTimesUpdatedAt: now,
     };
-    const summary = `Entry/exit recorded (${entry || '—'} / ${exit || '—'})${isDelayed ? ` · delayed ${delayMinutes} min${delayReason ? ': ' + delayReason : ''}` : ''}`;
+    const summary = `Professor entry/exit recorded (${entry || '—'} / ${exit || '—'})`
+        + (isDelayed ? ` · late ${lateMin} min: ${delayReason}` : '')
+        + (isEarlyExit ? ` · left ${earlyMin} min early: ${earlyExitReason}` : '');
     return { set, entry, exit, summary };
 }
 
@@ -265,6 +273,10 @@ export async function submitClassRecord(actor: Actor, input: SubmitInput): Promi
     const legacy = !record.pipelineStatus && record.status === 'Completed';
     if (!PROFESSOR_EDITABLE_CLASS_STATUSES.includes(before) && !legacy) {
         return fail(409, `This class record is already submitted (${CLASS_STATUS_LABEL[before]}). It can be changed only if it is reverted to you.`);
+    }
+    // Class snapshots are compulsory (a new upload, or the ones already on this record when re-submitting)
+    if (!snapshots.length && !(record.snapshotUrls || []).length && !record.classPhotoUrl) {
+        return fail(400, 'Upload at least one class snapshot (photo of the class) before submitting.');
     }
 
     const now = nowISO();
@@ -408,7 +420,11 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
     // AD: organisation-wide academic authority — same final-stage actions as HOI and CL/CH
     const isAD = actor.role === 'AD';
     const id = record._id;
-    const atomic = async (from: string[], ops: any) => LectureReport.findOneAndUpdate({ _id: id, pipelineStatus: { $in: from } }, ops, { new: true });
+    // Older-flow records have no pipelineStatus (status "Completed" ⇒ PENDING_OM, see getClassStatus) — match them too
+    const atomic = async (from: string[], ops: any) => LectureReport.findOneAndUpdate({
+        _id: id,
+        $or: [{ pipelineStatus: { $in: from } }, ...(from.includes('PENDING_OM') ? [{ pipelineStatus: { $exists: false }, status: 'Completed' }] : [])],
+    }, ops, { new: true });
     const changed = () => fail(409, 'The record was changed by someone else. Refresh and try again.');
 
     switch (input.action) {
@@ -445,6 +461,10 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
             if (!isOM) return fail(403, 'Only the OM can verify at this stage.');
             if (status !== 'PENDING_OM') return fail(409, `This record is not waiting for OM (${CLASS_STATUS_LABEL[status]}).`);
             if (record.notesMissing && record.notesReasonStatus !== 'VERIFIED') return fail(409, 'Verify the missing-notes reason first (or revert it).');
+            // Notes must be shared to the students' group before forwarding (not needed when notes were not submitted — reason verified)
+            // read the raw stored value too (works even if the running server still has an older LectureReport schema)
+            const groupType = record.submittedToGroupType || (record.toObject ? record.toObject() : record).submittedToGroupType || '';
+            if (!record.notesMissing && (!record.submittedToGroup || !groupType)) return fail(409, 'Tick "Notes Submitted to Groups" and choose the group (Telegram / WhatsApp) before forwarding.');
             // Verify & Forward: the entry / exit details may come with this request; both times are required
             const c = omCheckFrom(record, input, actor);
             if ('error' in c) return fail(400, c.error);
@@ -463,9 +483,10 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
                 entityType: 'LectureReport', entityId: String(r._id), college: r.college, actor,
                 rows: [...(await classLabel(r)), { label: 'Attendance', value: `${r.numberOfAttendees}/${r.totalStudents}` },
                 { label: 'Notes', value: r.notesMissing ? `Not submitted (reason verified): ${r.notesMissingReason}` : 'Submitted' },
-                { label: 'Submitted to Groups', value: r.submittedToGroup ? 'Yes' : 'No' },
-                { label: 'OM Entry / Exit', value: `${r.omCheck?.entryTime || r.actualInTime || '—'} / ${r.omCheck?.exitTime || r.actualOutTime || '—'}` },
-                { label: 'Delay', value: r.omCheck?.isDelayed ? `${r.omCheck.delayMinutes} min — ${r.omCheck.delayReason || 'no reason given'}` : 'On time' },
+                { label: 'Submitted to Groups', value: r.submittedToGroup ? `Yes — ${notesGroupLabel(r.submittedToGroupType) || 'group'}` : 'No' },
+                { label: 'Professor Entry / Exit', value: `${r.omCheck?.entryTime || r.actualInTime || '—'} / ${r.omCheck?.exitTime || r.actualOutTime || '—'}` },
+                { label: 'Late Entry', value: r.omCheck?.isDelayed ? `${r.omCheck.delayMinutes} min — ${r.omCheck.delayReason || 'no reason given'}` : 'On time' },
+                { label: 'Early Exit', value: r.omCheck?.isEarlyExit ? `${r.omCheck.earlyExitMinutes} min — ${r.omCheck.earlyExitReason || 'no reason given'}` : 'No' },
                 { label: 'OM Comment', value: comment || r.omCheck?.remarks || '' }],
             });
             return { ok: true, record: r, message: 'Verified. Sent for final verification (CL / CH / HOI).' };
@@ -475,15 +496,17 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
             if (!isOM) return fail(403, 'Only the OM can mark "Submitted to Groups".');
             if (status === 'PENDING_PROFESSOR') return fail(409, 'The professor has not submitted this class record yet.');
             const value = input.value !== false;
+            const groupType = value ? String((input as any).groupType || '').toUpperCase() : '';
+            if (value && !NOTES_GROUP_TYPES.some(g => g.value === groupType)) return fail(400, 'Choose where the notes were shared: Telegram Group or WhatsApp Group.');
             const r = await LectureReport.findOneAndUpdate({ _id: id }, {
                 // also the existing "notes shared" tick used by Daily Lecture Timings
                 $set: {
-                    submittedToGroup: value, submittedToGroupBy: actor.id, submittedToGroupByName: actor.name, submittedToGroupAt: nowISO(),
+                    submittedToGroup: value, submittedToGroupType: groupType, submittedToGroupBy: actor.id, submittedToGroupByName: actor.name, submittedToGroupAt: nowISO(),
                     'lectureNotes.isSharedWithStudents': value, 'lectureNotes.sharedWithStudentsTickedBy': actor.name,
                 },
-                $push: { pipelineHistory: historyItem(actor, value ? 'Marked "Submitted to Groups"' : 'Unmarked "Submitted to Groups"', status, status) },
-            }, { new: true });
-            return { ok: true, record: r, message: value ? 'Marked as submitted to groups.' : 'Unmarked.' };
+                $push: { pipelineHistory: historyItem(actor, value ? `Notes submitted to groups (${notesGroupLabel(groupType)})` : 'Unmarked "Submitted to Groups"', status, status) },
+            }, { new: true, strict: false });
+            return { ok: true, record: r, message: value ? `Notes marked as submitted to ${notesGroupLabel(groupType)}.` : 'Unmarked.' };
         }
         // ── OM: entry / exit time, actual start / end, delay (Module 13) ──
         case 'om_times': {

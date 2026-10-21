@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import dbConnect from '@/lib/mongodb';
 import { Employee } from '@/models/Schemas';
 import { verifySessionToken, COOKIE_NAME } from '@/lib/session';
-import { hashPassword } from '@/lib/password';
+import { storedPasswordValue } from '@/lib/password';
 import { sendMailInternal } from '@/lib/mail-server';
 
 export const dynamic = 'force-dynamic';
@@ -158,7 +158,7 @@ export async function PUT(request: Request) {
             const PROTECTED = ["role", "location", "reportsTo", "status", "isRemoved", "removedAt", "removedBy", "removedByName", "removalSnapshot", "email", "salary", "employeeId", "_id",
                 // HR verification and ratings are never set by the employee themselves
                 "isOnboarded", "onboardingChecklist", "onboardingChecklistMeta", "onboardingActivity", "onboardingRemarks", "onboardingApprovedAt",
-                "onboardingApprovedBy", "onboardingApprovedByName", "monthlyScores"];
+                "onboardingApprovedBy", "onboardingApprovedByName", "monthlyScores", "slackInviteLink"];
             if (isSelf) {
                 PROTECTED.forEach(k => delete updates[k]);
                 // The employee can only submit the form (→ Verification Pending), never approve themselves
@@ -252,6 +252,12 @@ export async function POST(request: Request) {
         delete data.isRemoved;
         delete data.postOnboardingChecklist; delete data.attendanceLocations;
         delete data.removedAt; delete data.removedBy; delete data.removedByName; delete data.removalSnapshot;
+        // Optional Slack invite link (shown to the joinee before the onboarding form): only http(s) links are stored
+        if (data.slackInviteLink !== undefined) {
+            const link = String(data.slackInviteLink || '').trim();
+            if (link && !/^https?:\/\/\S+$/i.test(link)) return NextResponse.json({ error: 'Enter a valid Slack link (starting with https://).' }, { status: 400 });
+            data.slackInviteLink = link;
+        }
 
         const email = String(data.email || '').trim();
         const role = String(data.role || '').trim();
@@ -289,11 +295,11 @@ export async function POST(request: Request) {
             // one password for the person: reuse the existing login's hash (HR's new password is not applied)
             const withPassword = sameEmail.find(e => e.password);
             if (withPassword) data.password = withPassword.password;
-            else if (data.password) data.password = await hashPassword(String(data.password));
+            else if (data.password) data.password = storedPasswordValue(String(data.password));
             data.linkedEmployeeIds = sameEmail.map(e => e.id);
         } else if (data.password) {
-            // Never store a plain-text password, and never accept a ready-made hash from the browser
-            data.password = await hashPassword(String(data.password));
+            // Saved as plain text (as in the original portal)
+            data.password = storedPasswordValue(String(data.password));
         }
 
         const newEmployee = await Employee.create(data);

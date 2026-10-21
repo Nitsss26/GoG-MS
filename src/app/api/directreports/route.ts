@@ -9,7 +9,7 @@ import os from 'os';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
 
-export const maxDuration = 900; // 15 mins
+export const maxDuration = 300; // Vercel Hobby plan limit (max 300 s)
 
 export async function POST(req: Request) {
     let rawAudioPath = "";

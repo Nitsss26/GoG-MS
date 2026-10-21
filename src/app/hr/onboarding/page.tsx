@@ -167,10 +167,12 @@ export default function OnboardingHRPage() {
             designation: formData.get("designation") as string,
             location: formData.get("location") as string,
             reportsTo: (formData.getAll("reportsTo") as string[]).filter(Boolean),
+            slackInviteLink: String(formData.get("slackInviteLink") || "").trim(),
         };
 
         setCreateError("");
         if (!newEmp.password || newEmp.password.length < 8) { setCreateError("Password must be at least 8 characters."); return; }
+        if (newEmp.slackInviteLink && !/^https?:\/\/\S+$/i.test(newEmp.slackInviteLink)) { setCreateError("Enter a valid Slack link (starting with https://)."); return; }
         if (!clockIn || !clockOut || clockOut <= clockIn) { setCreateError("Clock-out time must be after clock-in time."); return; }
         if (!workDays.length) { setCreateError("Select at least one working day."); return; }
         setCreating(true);
@@ -660,6 +662,12 @@ export default function OnboardingHRPage() {
                                 <FormField label="Clock-Out Time" required icon={<LogOut size={17} className="text-rose-400" />}>
                                     <input type="time" required value={clockOut} onChange={e => setClockOut(e.target.value)} className={`${fieldInput} [color-scheme:dark]`} data-testid="emp-clock-out" />
                                 </FormField>
+                                <div className="sm:col-span-2">
+                                    <FormField label="Slack Invite Link" optional icon={<Hash size={17} className="text-pink-400" />}>
+                                        <input name="slackInviteLink" type="url" placeholder="https://join.slack.com/t/…" autoComplete="off" className={fieldInput} data-testid="emp-slack-link" />
+                                    </FormField>
+                                    <p className="text-[9px] text-zinc-500 mt-0.5">The new employee must open this link to join Slack before the onboarding form opens.</p>
+                                </div>
                                 <div className="sm:col-span-2 space-y-1">
                                     <label className="flex items-center gap-1.5 text-[9px] font-black text-zinc-400 uppercase tracking-[0.12em]">Working Days <span className="text-red-500">*</span></label>
                                     <div className="flex flex-wrap gap-1" data-testid="emp-days">

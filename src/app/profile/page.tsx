@@ -11,6 +11,7 @@ import {
     Landmark, Fingerprint, Wallet
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import PostOnboardingChecklist from "@/components/onboarding/PostOnboardingChecklist";
 
 export default function ProfilePage() {
     const { user, updateProfile, attendanceRecords } = useAuth();
@@ -62,6 +63,11 @@ export default function ProfilePage() {
                     </div>
                 </div>
             </header>
+
+            {/* Post-onboarding checklist: full width under the heading, summary only — activities open from a dropdown */}
+            <div className="empty:hidden" data-testid="profile-post-onboarding">
+                <PostOnboardingChecklist employeeId={user.id} mode="employee" collapsible />
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
 

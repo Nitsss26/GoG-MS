@@ -443,36 +443,57 @@ export default function TicketsPage() {
                                         <option value="ATTENDANCE">Attendance / Clock-In &amp; Clock-Out Ticket</option>
                                     </select>
                                 </div>
-                                <div className="space-y-1.5 col-span-2">
-                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest">{ticketForm.ticketType === "ATTENDANCE" ? "Select Attendance Issue" : "Ticket Category"}</label>
-                                    <select
-                                        data-testid="ticket-category-select"
-                                        required
-                                        className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary cursor-pointer hover:border-primary/50 transition-colors"
-                                        value={ticketForm.issueCategory ? `${ticketForm.targetCategory}||${ticketForm.issueCategory}` : ""}
-                                        onChange={e => {
-                                            const [cat, issue] = e.target.value.split("||");
-                                            setTicketForm({ ...ticketForm, targetCategory: cat || "HR Desk", issueCategory: issue || "" });
-                                        }}
-                                    >
-                                        <option value="">{ticketForm.ticketType === "ATTENDANCE" ? "Select Attendance Issue" : "Select Category"}</option>
-                                        {ticketForm.ticketType === "NORMAL" ? (
-                                            <>
-                                                <optgroup label="Issue">
-                                                    {NORMAL_ISSUES.map(i => <option key={i.label} value={`${i.route}||${i.label}`}>{i.label}</option>)}
-                                                </optgroup>
-                                                <optgroup label="Desk / Category">
-                                                    {EXISTING_CATEGORIES.map(c => <option key={c.value} value={`${c.value}||${c.value}`}>{c.label}</option>)}
-                                                </optgroup>
-                                            </>
-                                        ) : (
-                                            <>
-                                                {ATTENDANCE_ISSUES.map(i => <option key={i} value={`${ATTENDANCE_TICKET_CATEGORY}||${i}`}>{i}</option>)}
-                                                <option value={`${ATTENDANCE_OVERRIDE_CATEGORY}||${ATTENDANCE_OVERRIDE_CATEGORY}`}>{ATTENDANCE_OVERRIDE_CATEGORY}</option>
-                                            </>
-                                        )}
-                                    </select>
-                                </div>
+                                {ticketForm.ticketType === "NORMAL" ? (
+                                    <>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Ticket Category</label>
+                                            <select
+                                                data-testid="ticket-category-select"
+                                                required
+                                                className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary cursor-pointer hover:border-primary/50 transition-colors"
+                                                value={ticketForm.issueCategory}
+                                                onChange={e => {
+                                                    const issue = NORMAL_ISSUES.find(i => i.label === e.target.value);
+                                                    // choosing an issue pre-selects the desk that handles it (the desk can still be changed)
+                                                    setTicketForm({ ...ticketForm, issueCategory: e.target.value, targetCategory: issue?.route || ticketForm.targetCategory || "HR Desk" });
+                                                }}
+                                            >
+                                                <option value="">Select Category</option>
+                                                {NORMAL_ISSUES.map(i => <option key={i.label} value={i.label}>{i.label}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Desk</label>
+                                            <select
+                                                data-testid="ticket-desk-select"
+                                                required
+                                                className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary cursor-pointer hover:border-primary/50 transition-colors"
+                                                value={ticketForm.targetCategory}
+                                                onChange={e => setTicketForm({ ...ticketForm, targetCategory: e.target.value })}
+                                            >
+                                                {EXISTING_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                                            </select>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="space-y-1.5 col-span-2">
+                                        <label className="text-[10px] font-bold text-muted uppercase tracking-widest">Select Attendance Issue</label>
+                                        <select
+                                            data-testid="ticket-category-select"
+                                            required
+                                            className="w-full bg-surface-light border border-border rounded-lg p-3 text-xs text-white outline-none focus:border-primary cursor-pointer hover:border-primary/50 transition-colors"
+                                            value={ticketForm.issueCategory ? `${ticketForm.targetCategory}||${ticketForm.issueCategory}` : ""}
+                                            onChange={e => {
+                                                const [cat, issue] = e.target.value.split("||");
+                                                setTicketForm({ ...ticketForm, targetCategory: cat || ATTENDANCE_TICKET_CATEGORY, issueCategory: issue || "" });
+                                            }}
+                                        >
+                                            <option value="">Select Attendance Issue</option>
+                                            {ATTENDANCE_ISSUES.map(i => <option key={i} value={`${ATTENDANCE_TICKET_CATEGORY}||${i}`}>{i}</option>)}
+                                            <option value={`${ATTENDANCE_OVERRIDE_CATEGORY}||${ATTENDANCE_OVERRIDE_CATEGORY}`}>{ATTENDANCE_OVERRIDE_CATEGORY}</option>
+                                        </select>
+                                    </div>
+                                )}
 
                                 {ticketForm.ticketType === "ATTENDANCE" && ticketForm.targetCategory !== ATTENDANCE_OVERRIDE_CATEGORY && (
                                     <>

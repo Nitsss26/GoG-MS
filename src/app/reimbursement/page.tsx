@@ -1,5 +1,4 @@
 "use client";
-import ReimbursementBlocked, { useIsHrExecutive } from "@/components/hr/ReimbursementBlocked";
 
 import { useState, useRef, useEffect } from "react";
 import { useAuth, ReimbursementClaim } from "@/context/AuthContext";
@@ -8,6 +7,26 @@ import { Receipt, Plus, Clock, CheckCircle2, XCircle, ExternalLink, Upload, Load
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
+
+import { ShieldOff } from "lucide-react";
+
+/** HR Executive: Reimbursements are not available (the API refuses this role too). */
+function useIsHrExecutive() {
+    const { user } = useAuth();
+    return !!(user as any)?.hrExecutive;
+}
+function ReimbursementBlocked() {
+    return (
+        <div className="flex items-center justify-center h-[70vh] p-6" data-testid="reimbursement-blocked">
+            <div className="max-w-sm text-center space-y-3">
+                <div className="w-12 h-12 mx-auto rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center"><ShieldOff size={20} className="text-red-400" /></div>
+                <h2 className="text-base font-bold text-white">Access restricted</h2>
+                <p className="text-xs text-zinc-400">Reimbursements are not available for the HR Executive role.</p>
+            </div>
+        </div>
+    );
+}
+
 
 const EXPENSE_TYPES = ["Travel", "Food", "Internet", "Equipment", "Medical", "Stationery", "Books & Certification", "Phone & Data", "Fuel", "Accommodation", "Training", "Software", "Other"];
 

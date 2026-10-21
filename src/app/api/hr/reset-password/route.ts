@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { Employee } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
-import { hashPassword, generateTemporaryPassword, validateNewPassword } from '@/lib/password';
+import { storedPasswordValue, generateTemporaryPassword, validateNewPassword } from '@/lib/password';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
  * Body: { employeeId, mode: "generate" }                                  -> a strong temporary password is created
  *       { employeeId, mode: "manual", newPassword, confirmPassword }     -> HR types the temporary password
  *
- * Only the scrypt hash is saved. The plain password is returned ONCE in this response (so HR can hand it over)
+ * The password is saved as plain text (as in the original portal). The plain password is returned ONCE in this response (so HR can hand it over)
  * and is never logged or stored. The old password stops working immediately.
  */
 export async function POST(request: Request) {
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
             { email: { $regex: new RegExp(`^${escapedEmail}$`, 'i') } },
             {
                 $set: {
-                    password: await hashPassword(plain),
+                    password: storedPasswordValue(plain),
                     passwordChangedAt: now,
                     passwordResetAt: now,
                     passwordResetBy: actor.id,

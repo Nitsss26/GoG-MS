@@ -6,8 +6,6 @@ import { uploadToCloudinary } from "@/lib/cloudinary";
 import { motion, AnimatePresence } from "framer-motion";
 import { Calendar, Plus, CheckCircle2, XCircle, X, Clock, HelpCircle, AlertCircle, Upload, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import WorkFromHomeSection from "@/components/wfh/WorkFromHomeSection";
-import { Home } from "lucide-react";
 
 const formatDate = (dateStr: string) => {
     if (!dateStr) return "";
@@ -19,7 +17,6 @@ const formatDate = (dateStr: string) => {
 export default function LeavePage() {
     const { user, leaves, employees, addLeaveRequest, approveLeave, rejectLeave, getReportees } = useAuth();
     const [showModal, setShowModal] = useState(false);
-    const [showWfh, setShowWfh] = useState(false); // Work From Home application form
     const [decisionModal, setDecisionModal] = useState<{ show: boolean, type: 'approve' | 'reject', leaveId: string, leaveName: string } | null>(null);
     const [remarks, setRemarks] = useState("");
     const [isSubmittingDecision, setIsSubmittingDecision] = useState(false);
@@ -124,10 +121,6 @@ export default function LeavePage() {
                             <Plus size={14} /> Apply for Leave
                         </button>
                     )}
-                    {/* Work From Home — every role, including Founder, HR, HR Executive, Tech Lead and Tech Team */}
-                    <button onClick={() => setShowWfh(true)} className="btn-outline flex items-center gap-1.5 h-9 px-4 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" data-testid="apply-wfh">
-                        <Home size={14} /> Apply for Work From Home
-                    </button>
                 </div>
             </header>
 
@@ -302,9 +295,6 @@ export default function LeavePage() {
                     </table>
                 </div>
             </div>
-
-            {/* Work From Home: application form + own history (separate from leave) */}
-            <WorkFromHomeSection open={showWfh} onClose={() => setShowWfh(false)} />
 
             {/* Application Modal */}
             <AnimatePresence>

@@ -1,8 +1,9 @@
 "use client";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { MapPin, Save, Clock } from "lucide-react";
+import { MapPin, Save, Clock, Building2, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
+import LocationAssignmentTab from "@/components/hr/LocationAssignmentTab";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -12,7 +13,10 @@ export default function WorkLocationPage() {
     const [schedule, setSchedule] = useState<Record<string, { location: string; clockInTime: string; clockOutTime: string }>>(
         DAYS.reduce((acc, d) => ({ ...acc, [d]: { location: (colleges && colleges[0]?.id) || "", clockInTime: "09:00", clockOutTime: "18:00" } }), {})
     );
+    // HOI only: "Location Assignment" — Original Location of the people under the HOI
+    const [view, setView] = useState<"schedule" | "assignment">("schedule");
     if (!user || !["FOUNDER", "AD", "HOI", "HR", "OM"].includes(user.role)) return null;
+    const isHoi = user.role === "HOI";
     const reportees = getReportees(user.id) || [];
 
     const handleSelect = (id: string) => {
@@ -66,7 +70,15 @@ export default function WorkLocationPage() {
             <header><h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2"><MapPin size={20} className="text-blue-400" /> Work Location Assignment</h1>
                 <p className="text-xs text-zinc-400 mt-1">Assign daily work location and clock times for employees. Locations auto-map to college geo-coordinates for attendance tracking.</p></header>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {isHoi && (
+                <div className="flex gap-1 bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-1 w-fit">
+                    <button onClick={() => setView("schedule")} data-testid="tab-weekly-schedule" className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5", view === "schedule" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}><CalendarDays size={12} /> Weekly Schedule</button>
+                    <button onClick={() => setView("assignment")} data-testid="tab-location-assignment" className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5", view === "assignment" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}><Building2 size={12} /> Location Assignment</button>
+                </div>
+            )}
+            {isHoi && view === "assignment" && <LocationAssignmentTab mode="hoi" />}
+
+            {!(isHoi && view === "assignment") && <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl overflow-hidden">
                     <div className="p-3 border-b border-zinc-800/50"><p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Select Reportee</p></div>
                     <div className="divide-y divide-zinc-800/50">
@@ -112,7 +124,7 @@ export default function WorkLocationPage() {
                         </>
                     )}
                 </div>
-            </div>
+            </div>}
         </div>
     );
 }

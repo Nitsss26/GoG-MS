@@ -11,7 +11,7 @@ import os from 'os';
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY || "");
 
-export const maxDuration = 900; // 15 minutes extension for ultra-long files
+export const maxDuration = 300; // Vercel Hobby plan limit (max 300 s)
 
 export async function POST(req: Request) {
     const startTime = Date.now();

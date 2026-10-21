@@ -512,6 +512,7 @@ import {
     UserPlus, Upload, Eye, Trash2, Loader2
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { ddmmyyyy, ddmmyyyyText } from "@/lib/date-display";
 import { cn } from "@/lib/utils";
 
 export default function AnnouncementsPage() {
@@ -746,7 +747,7 @@ export default function AnnouncementsPage() {
                                         {notice.isEdited && <span className="text-[7px] font-bold text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700/50">edited</span>}
                                     </div>
                                     <div className="flex items-center gap-1">
-                                        <span className="text-[9px] font-bold text-zinc-600 font-mono">{notice.createdAt}</span>
+                                        <span className="text-[9px] font-bold text-zinc-600 font-mono">{ddmmyyyy(notice.createdAt)}</span>
                                         {isHROrFounder && (
                                             <button onClick={() => openEdit(notice)} className="p-1 rounded-lg hover:bg-zinc-800 text-zinc-600 hover:text-primary transition-colors" title="Edit">
                                                 <Edit3 size={11} />
@@ -760,7 +761,7 @@ export default function AnnouncementsPage() {
                                     {((notice as any).collegeIds?.length || (notice as any).status) ? (
                                         <p className="text-[10px] text-zinc-500" data-testid="ann-meta">{(notice as any).collegeIds?.length ? `College: ${collegeNames(notice)}` : "All employees"}{(notice as any).status ? ` · ${(notice as any).status}` : ""}</p>
                                     ) : null}
-                                    <p className="text-[11px] text-zinc-400 leading-relaxed line-clamp-3">{notice.content}</p>
+                                    <p className="text-[11px] text-zinc-400 leading-relaxed line-clamp-3">{ddmmyyyyText(notice.content)}</p>
                                 </div>
 
                                 {notice.imageUrls && notice.imageUrls.length > 0 && (
@@ -825,7 +826,7 @@ export default function AnnouncementsPage() {
                                 <div className="flex justify-between items-start">
                                     <div className="flex items-center gap-2">
                                         <span className={cn("text-[8px] font-bold px-2 py-0.5 rounded-full border uppercase", catBadge(viewNotice.category))}>{viewNotice.category}</span>
-                                        {viewNotice.isEdited && <span className="text-[7px] font-bold text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700/50">edited {viewNotice.editedAt}</span>}
+                                        {viewNotice.isEdited && <span className="text-[7px] font-bold text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700/50">edited {ddmmyyyy(viewNotice.editedAt)}</span>}
                                     </div>
                                     <button onClick={() => setViewNotice(null)} className="text-zinc-500 hover:text-white transition-colors"><X size={16} /></button>
                                 </div>
@@ -833,10 +834,10 @@ export default function AnnouncementsPage() {
                                 <div className="grid grid-cols-[7rem_1fr] gap-y-1 text-[11px]" data-testid="ann-detail-meta">
                                     <span className="text-zinc-500">Audience</span><span className="text-zinc-300">{(viewNotice as any).collegeIds?.length ? collegeNames(viewNotice) : "All employees"}</span>
                                     <span className="text-zinc-500">Published By</span><span className="text-zinc-300">{viewNotice.createdBy || "Unknown"}{(viewNotice as any).createdByRole ? ` (${(viewNotice as any).createdByRole})` : ""}</span>
-                                    <span className="text-zinc-500">Published On</span><span className="text-zinc-300">{viewNotice.createdAt}</span>
+                                    <span className="text-zinc-500">Published On</span><span className="text-zinc-300">{ddmmyyyy(viewNotice.createdAt)}</span>
                                     <span className="text-zinc-500">Status</span><span className="text-zinc-300">{(viewNotice as any).status || "Published"}</span>
                                 </div>
-                                <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">{viewNotice.content}</p>
+                                <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">{ddmmyyyyText(viewNotice.content)}</p>
                                 {viewNotice.imageUrls && viewNotice.imageUrls.length > 0 && (
                                     <div className="space-y-2">
                                         {viewNotice.imageUrls.map((url, i) => (
@@ -847,7 +848,7 @@ export default function AnnouncementsPage() {
                                 <div className="pt-3 border-t border-zinc-800 flex items-center gap-2">
                                     <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-400">{(viewNotice?.createdBy || "U")[0]}</div>
                                     <span className="text-[10px] font-bold text-zinc-500">{viewNotice?.createdBy || "Unknown"}</span>
-                                    <span className="text-[9px] text-zinc-600 ml-auto">{viewNotice?.createdAt}</span>
+                                    <span className="text-[9px] text-zinc-600 ml-auto">{ddmmyyyy(viewNotice?.createdAt)}</span>
                                 </div>
                             </div>
                         </motion.div>
