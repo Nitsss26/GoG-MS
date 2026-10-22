@@ -24,7 +24,7 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 export default function AttendancePage() {
-    const { user, employees, clockIn, clockOut, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests, colleges, resolveDressCodeCheck, getExpectedTiming, getScheduledTiming, holidays, getReportees, leaves, overrideAttendance } = useAuth();
+    const { user, employees, clockIn, clockOut, locationClockIn, attendanceRecords, workSchedules, addMarkAsPresentRequest, markAsPresentRequests, colleges, resolveDressCodeCheck, getExpectedTiming, getScheduledTiming, holidays, getReportees, leaves, overrideAttendance } = useAuth();
     const searchParams = useSearchParams();
     const [currentTime, setCurrentTime] = useState<string | null>(null);
     const [currentDate, setCurrentDate] = useState<string | null>(null);
@@ -59,6 +59,8 @@ export default function AttendancePage() {
     const [officeChoice, setOfficeChoice] = useState("");
     const [wfhFormOpen, setWfhFormOpen] = useState(false);
     const [clockBusy, setClockBusy] = useState(false);
+    // HOI / OM: clock-in at another assigned location (detect → confirm → record)
+    const [visit, setVisit] = useState<{ busy?: boolean; detected?: { id: string; name: string; ambiguous?: { id: string; name: string }[] } | null; coords?: { lat: number; lng: number; accuracy?: number }; error?: string | null; unassigned?: boolean; info?: string | null }>({});
     // Attendance Log: Attendance (office) / Work From Home / All, 10 rows per page
     const [logTab, setLogTab] = useState<"office" | "wfh" | "all">("office");
     const [logPage, setLogPage] = useState(0);
@@ -264,7 +266,7 @@ export default function AttendancePage() {
     };
     // Office options in the clock-in location dropdown: an HOI's authorised attendance locations, otherwise the
     // assigned (scheduled) location. Choosing one keeps the normal office flow (geofence + dress code) unchanged.
-    const hoiAllowedLocs: string[] = emp.role === "HOI" ? ((emp as any).attendanceLocations || []) : [];
+    const hoiAllowedLocs: string[] = emp.role === "HOI" || emp.role === "OM" ? ((emp as any).attendanceLocations || []) : [];
     const officeOptions = (hoiAllowedLocs.length ? hoiAllowedLocs : [getScheduledTiming(user.id).location])
         .filter(l => l && l.toLowerCase() !== "wfh")
         .map(l => ({ id: l, label: locName(l) }));
@@ -292,7 +294,7 @@ export default function AttendancePage() {
                 let dist = 999999;
 
                 // HOI with authorised attendance locations: only those count (HR → Work Location → Clock-In Locations)
-                const hoiAllowed: string[] = emp.role === "HOI" ? ((emp as any).attendanceLocations || []) : [];
+                const hoiAllowed: string[] = emp.role === "HOI" || emp.role === "OM" ? ((emp as any).attendanceLocations || []) : [];
                 const candidates = hoiAllowed.length ? colleges.filter(c => hoiAllowed.includes(c.id)) : colleges;
                 if ((emp.role === "HOI" || emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM") && candidates.length > 0) {
                     let closestCollege = candidates[0];
@@ -478,6 +480,27 @@ export default function AttendancePage() {
             .finally(() => setClockBusy(false));
     };
 
+    // HOI / OM with assigned locations: clock in again at another assigned location (same attendance day)
+    const multiLocation = hoiAllowedLocs.length > 0 && !isWFH && !((todaysRecord as any)?.workMode === "WFH");
+    const detectVisitLocation = () => {
+        setVisit({ busy: true });
+        if (!navigator.geolocation) { setVisit({ error: "Location is not supported on this device." }); return; }
+        navigator.geolocation.getCurrentPosition(async pos => {
+            const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+            const d = await locationClockIn(coords.lat, coords.lng, coords.accuracy, true);
+            if (!d.ok) { setVisit({ error: d.error || "Could not detect your location.", unassigned: !!d.unassignedLocation }); return; }
+            if (d.sameAsCurrent) { setVisit({ info: `You are already clocked in at ${d.detected?.name}.` }); return; }
+            setVisit({ detected: d.detected, coords });
+        }, () => setVisit({ error: "Location permission denied. Allow location access and try again." }), { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    };
+    const confirmVisit = async () => {
+        if (!visit.coords) return;
+        setVisit(v => ({ ...v, busy: true }));
+        const d = await locationClockIn(visit.coords.lat, visit.coords.lng, visit.coords.accuracy, false);
+        if (!d.ok) { setVisit({ error: d.error || "Clock-in failed.", unassigned: !!d.unassignedLocation }); return; }
+        setVisit({ info: d.message || "Location change recorded." });
+    };
+
     const handleMarkAsPresent = () => {
         if (!mapReason || mapProofUrls.length === 0) { alert("Reason and proofs are mandatory."); return; }
 
@@ -519,7 +542,7 @@ export default function AttendancePage() {
             }
 
             // HOI with authorised attendance locations: the clock-out location is checked too (any authorised college)
-            const hoiAllowed: string[] = emp.role === "HOI" ? ((emp as any).attendanceLocations || []) : [];
+            const hoiAllowed: string[] = emp.role === "HOI" || emp.role === "OM" ? ((emp as any).attendanceLocations || []) : [];
             if (hoiAllowed.length && !isWFH && navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     pos => clockOut(timeNow, isShortLeave, pos.coords.latitude, pos.coords.longitude),
@@ -942,6 +965,36 @@ export default function AttendancePage() {
                             {todaysRecord?.dressCodeImageUrl && <img src={todaysRecord.dressCodeImageUrl} alt="Dress" className="w-10 h-10 rounded-lg object-cover border border-zinc-700" />}
                             <div><p className="text-xs font-bold text-green-400">Clocked in at {todaysRecord?.clockIn}</p><p className="text-[9px] text-zinc-500">Location: {locName(todaysRecord?.location)}</p></div>
                         </div>
+                        {multiLocation && (
+                            <div className="p-3 rounded-xl border border-sky-500/20 bg-sky-500/[0.04] space-y-2" data-testid="att-visits">
+                                <VisitTimeline rec={todaysRecord} title="Today's Location Visits" />
+                                {visit.detected ? (
+                                    <div className="p-2.5 rounded-lg bg-zinc-950/60 border border-zinc-800 space-y-1" data-testid="att-visit-confirm">
+                                        <p className="text-[11px] text-white"><span className="text-zinc-500">Detected Location:</span> <b>{visit.detected.name}</b></p>
+                                        <p className="text-[11px] text-white"><span className="text-zinc-500">Clock-In Location:</span> <b>{visit.detected.name}</b></p>
+                                        <p className="text-[11px] text-white"><span className="text-zinc-500">Current Time:</span> <b>{istHHMM(serverNow() || new Date())}</b></p>
+                                        {!!visit.detected.ambiguous?.length && <p className="text-[10px] text-amber-300">You are also inside: {visit.detected.ambiguous.map(a => a.name).join(", ")}. The nearest location is used.</p>}
+                                        <div className="flex gap-2 pt-1">
+                                            <button onClick={confirmVisit} disabled={visit.busy} data-testid="att-visit-confirm-btn"
+                                                className="flex-1 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-zinc-950 text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50">{visit.busy ? <Loader2 size={13} className="animate-spin" /> : <LogIn size={13} />} Confirm Clock-In</button>
+                                            <button onClick={() => setVisit({})} className="px-3 py-2 rounded-lg border border-zinc-700 text-zinc-300 text-xs font-bold">Cancel</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <button onClick={detectVisitLocation} disabled={visit.busy} data-testid="att-visit-btn"
+                                        className="w-full py-2.5 rounded-lg border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50">
+                                        {visit.busy ? <Loader2 size={13} className="animate-spin" /> : <Navigation size={13} />} Clock In at Another Location
+                                    </button>
+                                )}
+                                {visit.info && <p className="text-[10px] text-sky-300" data-testid="att-visit-info">{visit.info}</p>}
+                                {visit.error && (
+                                    <div className="text-[10px] text-red-400 space-y-1" data-testid="att-visit-error">
+                                        <p>{visit.error}</p>
+                                        {visit.unassigned && <a href="/tickets" className="inline-block text-sky-300 underline">Request location access</a>}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         <button onClick={handleCheckOut} className="w-full py-3.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all">
                             <LogOut size={16} /> Clock Out
                         </button>
@@ -964,6 +1017,9 @@ export default function AttendancePage() {
                         <div><p className="text-xs font-bold text-blue-400">Day Complete</p><p className="text-[9px] text-zinc-500">{todaysRecord?.clockIn} → {todaysRecord?.clockOut} · {locName(todaysRecord?.location)}</p></div>
                         {todaysRecord?.flags.earlyOut && <span className="text-[8px] font-bold text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20 ml-auto">🟡 Early Out</span>}
                     </div>
+                )}
+                {hasCheckedOut && !!(todaysRecord as any)?.locationVisits?.length && (
+                    <div className="mt-2 p-3 rounded-xl border border-sky-500/20 bg-sky-500/[0.04]"><VisitTimeline rec={todaysRecord} title="Today's Location Visits" /></div>
                 )}
             </div>
 
@@ -1023,7 +1079,7 @@ export default function AttendancePage() {
                                         <td className="px-3 py-3 text-zinc-400 whitespace-nowrap" data-testid="att-marked-by">{markedBy(log)}</td>
                                         <td className="px-3 py-3 text-zinc-300">{log.clockIn || "—"}</td>
                                         <td className="px-3 py-3 text-zinc-300">{log.clockOut || "—"}</td>
-                                        <td className="px-3 py-3 text-zinc-400">{locName(log.location)}{(log as any).clockOutLocation && (log as any).clockOutLocation !== log.location ? <span className="block text-[10px] text-zinc-500">Out: {locName((log as any).clockOutLocation)}</span> : null}</td>
+                                        <td className="px-3 py-3 text-zinc-400">{locName(log.location)}{(log as any).clockOutLocation && (log as any).clockOutLocation !== log.location ? <span className="block text-[10px] text-zinc-500">Out: {locName((log as any).clockOutLocation)}</span> : null}<VisitList rec={log} /></td>
                                         <td className="px-3 py-3">
                                             {log.dressCodeImageUrl || (log as any).clockOutImageUrl ? (
                                                 <div className="flex flex-col gap-0.5" data-testid="att-photos">
@@ -1164,7 +1220,7 @@ export default function AttendancePage() {
                                                 <p className="text-[10px] text-zinc-500">{employee.designation || employee.role}</p>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold border",
+                                                <span className={cn("inline-block whitespace-nowrap px-2 py-0.5 rounded-full text-[9px] font-bold border",
                                                     status === "Working" ? "bg-green-500/10 text-green-400 border-green-500/20" :
                                                         status === "Clocked Out" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
                                                             status === "Holiday" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
@@ -1186,7 +1242,7 @@ export default function AttendancePage() {
                                             </td>
                                             <td className="px-4 py-3 text-[10px]">
                                                 {record ? (
-                                                    <span className="text-zinc-400">{locName(record.location)} <WfhBadge rec={record} /></span>
+                                                    <span className="text-zinc-400">{locName(record.location)} <WfhBadge rec={record} /><VisitList rec={record} /></span>
                                                 ) : (
                                                     <span className="text-zinc-500 italic">Scheduled: {scheduledLocation || "—"}</span>
                                                 )}
@@ -1292,5 +1348,38 @@ export default function AttendancePage() {
                 <p className="text-[9px] text-zinc-600 italic">Note: Fines are automatically deducted from the monthly payout. For disputes, please raise a ticket.</p>
             </div>
         </div>
+    );
+}
+
+/* HOI / OM multiple-location attendance: the day's location visits (one attendance day, many locations) */
+const VISIT_LABEL: Record<string, string> = { CLOCK_IN: "Clock-In", LOCATION_CLOCK_IN: "Location Clock-In", CLOCK_OUT: "Clock-Out" };
+const hm = (t?: string) => (t || "").slice(0, 5);
+function VisitTimeline({ rec, title }: { rec: any; title: string }) {
+    const visits: any[] = rec?.locationVisits || [];
+    if (!visits.length) return null;
+    const places = new Set(visits.filter(v => v.event !== "CLOCK_OUT").map(v => v.locationId)).size;
+    return (
+        <div data-testid="att-visit-timeline">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-sky-300 mb-1.5">{title} · {places} location{places === 1 ? "" : "s"}</p>
+            <ol className="space-y-1">
+                {visits.map((v, i) => (
+                    <li key={v.id || i} className="flex items-center gap-2 text-[11px]" data-testid="att-visit-row">
+                        <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", v.event === "CLOCK_OUT" ? "bg-red-400" : "bg-sky-400")} />
+                        <span className="text-white font-semibold tabular-nums w-11">{hm(v.time)}</span>
+                        <span className="text-zinc-300 truncate">{v.locationName || v.locationId}</span>
+                        <span className="text-[9px] text-zinc-500 ml-auto whitespace-nowrap">{VISIT_LABEL[v.event] || v.event}</span>
+                    </li>
+                ))}
+            </ol>
+        </div>
+    );
+}
+function VisitList({ rec }: { rec: any }) {
+    const visits: any[] = rec?.locationVisits || [];
+    if (visits.length < 2) return null;
+    return (
+        <span className="block mt-0.5 text-[10px] text-zinc-500" data-testid="att-visit-list">
+            {visits.map(v => `${hm(v.time)} ${v.event === "CLOCK_OUT" ? "Out" : v.locationName || v.locationId}`).join(" → ")}
+        </span>
     );
 }

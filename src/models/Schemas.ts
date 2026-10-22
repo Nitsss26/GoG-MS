@@ -28,8 +28,10 @@ const EmployeeSchema = new Schema({
     // Unique per (email, role) among active records — see src/lib/db-startup.ts
     email: { type: String, required: true },
     role: { type: String, required: true },
-    // HOI: authorised clock-in / clock-out locations (Location ids) — separate from Original Location (`location`)
+    // HOI / OM: authorised clock-in / clock-out locations (Location ids) — separate from Original Location (`location`)
     attendanceLocations: [String],
+    // HR changes to attendanceLocations, oldest first (audit log)
+    attendanceLocationLog: [{ at: { type: String }, by: { type: String }, byName: { type: String }, from: [String], to: [String] }],
     // Slack workspace invite link entered by HR when onboarding; shown to the joinee before the onboarding form
     slackInviteLink: { type: String, default: "" },
     // Five mandatory post-onboarding activities (created when the onboarding form is submitted)
@@ -230,6 +232,14 @@ const AttendanceSchema = new Schema({
     }],
     // HOI multi-location attendance: where the clock-out happened (clock-in place stays in `location`)
     clockOutLocation: { type: String },
+    // HOI / OM multiple-location attendance: every location clock-in of the day, in order (one record = one payable day)
+    currentLocationId: { type: String },
+    locationVisits: [{
+        id: { type: String }, event: { type: String }, // CLOCK_IN | LOCATION_CLOCK_IN | CLOCK_OUT
+        locationId: { type: String }, locationName: { type: String },
+        time: { type: String }, at: { type: Date },
+        lat: { type: Number }, lng: { type: Number }, accuracyMeters: { type: Number }
+    }],
     // Work From Home attendance: approval state of the linked application (Pending = provisional,
     // Approved = confirmed, Rejected / Cancelled = kept for HR review), the remote place and the
     // approximate position captured at clock-in (only shown to HR)

@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
  * them in the reporting hierarchy. Reads and saves through /api/hoi/location-assignment, which checks that scope
  * on the server. HOI clock-in locations stay HR-only.
  */
-type Emp = { id: string; name: string; designation?: string; role: string; location?: string; reportsTo?: string[] | string; attendanceLocations?: string[] };
+type Emp = { id: string; name: string; designation?: string; role: string; location?: string; reportsTo?: string[] | string; attendanceLocations?: string[]; attendanceLocationLog?: { at?: string; byName?: string; from?: string[]; to?: string[] }[] };
 
 export default function LocationAssignmentTab({ mode = "hr" }: { mode?: "hr" | "hoi" }) {
     const { employees, hrAssignEmployee } = useAuth();
@@ -217,8 +217,8 @@ export default function LocationAssignmentTab({ mode = "hr" }: { mode?: "hr" | "
                                 )}
                             </div>
 
-                            {/* HOI only: allowed clock-in / clock-out locations */}
-                            {!isHoi && editing.role === "HOI" && (
+                            {/* HOI / OM: allowed clock-in / clock-out locations */}
+                            {!isHoi && (editing.role === "HOI" || editing.role === "OM") && (
                                 <div className="rounded-xl border border-sky-500/20 bg-sky-500/[0.04] p-3 space-y-2" data-testid="loc-att-section">
                                     <div className="flex items-center justify-between gap-2">
                                         <p className="text-[11px] font-bold text-sky-300 flex items-center gap-1.5"><Navigation size={12} /> Allowed Clock-In / Clock-Out Locations ({attSel.length} selected)</p>
@@ -240,7 +240,17 @@ export default function LocationAssignmentTab({ mode = "hr" }: { mode?: "hr" | "
                                         ))}
                                         {!locations.length && <p className="px-2 py-3 text-[11px] text-zinc-500">No locations yet — add them on the Locations page first.</p>}
                                     </div>
-                                    <p className="text-[9px] text-zinc-500 italic">The HOI can clock in and clock out inside the geofence of any selected location. This does not change the Original Location, HOI mappings or which colleges the HOI manages.</p>
+                                    <p className="text-[9px] text-zinc-500 italic">The {editing.role === "OM" ? "OM" : "HOI"} can clock in and clock out inside the geofence of any selected location, and clock in again at another selected location during the same day (one attendance day). This does not change the Original Location, HOI mappings or which colleges the HOI manages.</p>
+                                    {!!editing.attendanceLocationLog?.length && (
+                                        <div className="pt-1 border-t border-sky-500/10 space-y-0.5" data-testid="loc-att-history">
+                                            <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Assignment history</p>
+                                            {editing.attendanceLocationLog.slice(-5).reverse().map((h, i) => (
+                                                <p key={i} className="text-[9px] text-zinc-400">
+                                                    {h.at ? new Date(h.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }) : "—"} · {h.byName || "HR"}: {(h.from || []).length} → {(h.to || []).map(id => locations.find(l => l.id === id)?.name || id).join(", ") || "none"}
+                                                </p>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </>

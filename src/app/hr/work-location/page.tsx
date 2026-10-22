@@ -195,10 +195,10 @@ export default function HRWorkLocationPage() {
                                     {existingSchedule.approvedByHR && existingSchedule.hrReadByName ? ` · Read by ${existingSchedule.hrReadByName} (HR)${existingSchedule.hrReadAt ? ` on ${new Date(existingSchedule.hrReadAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}` : ""}
                                 </p>
                             )}
-                            {selectedEmployee?.role === "HOI" && (
+                            {(selectedEmployee?.role === "HOI" || selectedEmployee?.role === "OM") && (
                                 <div className="rounded-xl border border-sky-500/20 bg-sky-500/[0.04] p-3 space-y-2" data-testid="wl-hoi-att">
                                     <div className="flex items-center justify-between gap-2">
-                                        <p className="text-[11px] font-bold text-sky-300 flex items-center gap-1.5"><Navigation size={12} /> HOI Clock-In Locations ({attSel.length} selected)</p>
+                                        <p className="text-[11px] font-bold text-sky-300 flex items-center gap-1.5"><Navigation size={12} /> {selectedEmployee?.role === "OM" ? "OM" : "HOI"} Clock-In Locations ({attSel.length} selected)</p>
                                         <button onClick={handleSaveAtt} disabled={isSavingAtt} data-testid="wl-hoi-att-save" className="bg-sky-500 hover:bg-sky-400 text-zinc-950 text-[10px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 disabled:opacity-50"><Save size={11} /> {isSavingAtt ? "Saving..." : "Save Locations"}</button>
                                     </div>
                                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-40 overflow-y-auto custom-scrollbar">
@@ -210,7 +210,7 @@ export default function HRWorkLocationPage() {
                                             </label>
                                         ))}
                                     </div>
-                                    <p className="text-[9px] text-zinc-500 italic">The HOI can clock in / clock out at any ticked college (geofence checked). Original Location is not changed. None ticked = existing behaviour.</p>
+                                    <p className="text-[9px] text-zinc-500 italic">The {selectedEmployee?.role === "OM" ? "OM" : "HOI"} can clock in / clock out at any ticked college (geofence checked), and clock in again at another ticked college on the same day. Original Location is not changed. None ticked = existing behaviour.</p>
                                 </div>
                             )}
                             <div className="space-y-2">

@@ -699,6 +699,8 @@ interface AuthContextType {
     updateProfile: (data: Partial<Employee>) => void; // Added updateProfile
     clockIn: (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number, isShortLeave?: boolean, mode?: "WFH" | "OFFICE") => Promise<void>;
     clockOut: (time: string, isShortLeave?: boolean, lat?: number, lng?: number, clockOutImageUrl?: string) => Promise<void>;
+    /** HOI / OM: detect (preview) or record a clock-in at another assigned location of the same day */
+    locationClockIn: (lat: number, lng: number, accuracy?: number, preview?: boolean) => Promise<any>;
     raiseTicket: (targetCategory: string, subject: string, content: string, routeTo?: string, cc?: string[], proofUrls?: string[], targetEmployeeId?: string, targetDate?: string, extra?: TicketExtra) => Promise<void>;
     resolveTicket: (id: string, notes: string) => Promise<void>;
     /** Generic ticket update (e.g. status "In Progress"); permissions are checked on the server */
@@ -1483,6 +1485,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Show exactly what the server saved
             if (d.record) upsertAttendanceRecord(d.record);
         } catch (err) { console.error(err); alert("Could not reach the server. Clock-out was not recorded — please try again."); }
+    };
+
+    // HOI / OM multiple-location attendance: same clock-in endpoint, a second clock-in at another assigned location
+    const locationClockIn = async (lat: number, lng: number, accuracy?: number, preview?: boolean) => {
+        if (!user) return { error: "Not logged in." };
+        try {
+            const res = await fetch("/api/attendance/clock-in", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ employeeId: user.id, lat, lng, accuracy, preview: !!preview })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (data.record) upsertAttendanceRecord(data.record);
+            return { ok: res.ok, status: res.status, ...data };
+        } catch (err) {
+            console.error(err);
+            return { ok: false, error: "Could not reach the server. The clock-in was not recorded — please try again." };
+        }
     };
 
     const markAttendanceOverride = (employeeId: string, date: string, reason: string) => {
@@ -3006,7 +3026,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const updated = await res.json();
             if (!res.ok || !updated.id) return { success: false, msg: updated.error || "Failed to save assignment." };
 
-            setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, location: updated.location, reportsTo: updated.reportsTo, attendanceLocations: updated.attendanceLocations } as any : e));
+            setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, location: updated.location, reportsTo: updated.reportsTo, attendanceLocations: updated.attendanceLocations, attendanceLocationLog: updated.attendanceLocationLog } as any : e));
             return { success: true };
         } catch (err) {
             console.error(err);
@@ -3183,7 +3203,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             resignationRequests: resignationRequests.filter(r => empExists(r.employeeId)), 
             assets, 
             assetRequests: assetRequests.filter(a => empExists(a.employeeId)),
-            login, logout, addNotice, addAnnouncement, editNotice, markAnnouncementRead, updateProfile, clockIn, clockOut, raiseTicket, resolveTicket, updateTicket, addADRemarks, forwardTicket,
+            login, logout, addNotice, addAnnouncement, editNotice, markAnnouncementRead, updateProfile, clockIn, clockOut, locationClockIn, raiseTicket, resolveTicket, updateTicket, addADRemarks, forwardTicket,
             addLeaveRequest, approveLeave, rejectLeave, hrProcessLeave, hrAssignEmployee, addReimbursement, updateReimbursementStatus,
             proposeHoliday, approveHoliday, rejectHoliday, removeEmployee, submitEmployeeExit, updateSOP, deleteSOP, addToPIP, markAttendanceOverride, overrideAttendance,
             sopNotifications, masterSopContent, updateMasterSop, markSOPNotificationRead, markAllSOPNotificationsRead,

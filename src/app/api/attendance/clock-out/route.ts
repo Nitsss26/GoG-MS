@@ -6,11 +6,12 @@ import { getExpectedTimingInternal } from '@/lib/attendance-utils';
 import { getSessionUser } from '@/lib/session-user';
 import { recordViolation } from '@/lib/attendance-violations';
 import { AttendanceViolation } from '@/models/Schemas';
+import { assignedLocationsOf, matchAssignedLocation, makeVisit } from '@/lib/multi-location-attendance';
 
 export async function POST(req: Request) {
     try {
         await dbConnect();
-        const { employeeId, isShortLeave, lat, lng, clockOutImageUrl } = await req.json();
+        const { employeeId, isShortLeave, lat, lng, clockOutImageUrl, accuracy } = await req.json();
         // Official time and date come only from this server's clock: a time / date sent by the browser is ignored
         const overrideDate: string | undefined = undefined;
         const actor: any = await getSessionUser({ ignoreDelegation: true });
@@ -69,10 +70,11 @@ export async function POST(req: Request) {
         const isEarly = outTotalMins < schedTotalMins;
         const points = isEarly ? -5 : 2;
 
-        // HOI with authorised attendance locations: the clock-out must be inside any one of them (it may differ from
+        // HOI / OM with assigned attendance locations: the clock-out must be inside any one of them (it may differ from
         // the clock-in college); the actual clock-out location is stored separately. Other roles: unchanged.
         let clockOutLocation: string | null = null;
-        const hoiAllowed: string[] = employee.role === "HOI" && Array.isArray(employee.attendanceLocations) ? employee.attendanceLocations.filter(Boolean) : [];
+        let clockOutLoc: any = null;
+        const hoiAllowed: string[] = assignedLocationsOf(employee);
         if (hoiAllowed.length && !overrideDate) {
             const dayRec: any = await Attendance.findOne({ employeeId, date: today }).select('location workMode').lean();
             const remote = String(dayRec?.location || '').toLowerCase() === 'wfh';
@@ -80,12 +82,12 @@ export async function POST(req: Request) {
                 if (typeof lat !== 'number' || typeof lng !== 'number') {
                     return NextResponse.json({ error: "Location coordinates missing from request." }, { status: 400 });
                 }
-                const allowed = await Location.find({ id: { $in: hoiAllowed } });
-                const inside = allowed.find((c: any) => getDistance(lat, lng, c.lat, c.lng) <= (c.radiusKm || 2));
-                if (!inside) {
-                    return NextResponse.json({ error: "Not in geofence of any of your authorised attendance locations." }, { status: 403 });
+                const match = await matchAssignedLocation(lat, lng, hoiAllowed);
+                if (!match) {
+                    return NextResponse.json({ error: "Clock-Out Not Allowed: You are currently outside your assigned work locations. Please contact HR if you require access to this location.", unassignedLocation: true }, { status: 403 });
                 }
-                clockOutLocation = inside.id;
+                clockOutLoc = match.location;
+                clockOutLocation = match.location.id;
             }
         }
 
@@ -100,10 +102,16 @@ export async function POST(req: Request) {
             updateFields["flags.shortLeave"] = true;
         }
 
+        // HOI / OM location timeline: the final clock-out closes the day's visits
+        const timelineOps: any = clockOutLoc
+            ? { $push: { locationVisits: makeVisit('CLOCK_OUT', clockOutLoc, now, time, lat, lng, typeof accuracy === 'number' ? accuracy : undefined) } }
+            : {};
+        if (clockOutLoc) updateFields.currentLocationId = clockOutLoc.id;
+
         // Only a record that is not clocked out yet (two clicks cannot overwrite the first clock-out)
         const record = await Attendance.findOneAndUpdate(
             { employeeId, date: today, $or: [{ clockOut: { $exists: false } }, { clockOut: null }, { clockOut: '' }] },
-            { $set: updateFields },
+            { $set: updateFields, ...timelineOps },
             { new: true }
         );
 

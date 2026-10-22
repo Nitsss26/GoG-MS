@@ -60,10 +60,11 @@ export async function PUT(request: Request) {
             updates.location = location;
         }
 
-        // HOI only: authorised clock-in / clock-out locations (separate from the Original Location above)
+        // HOI / OM only: authorised clock-in / clock-out locations (separate from the Original Location above)
+        let locationLogEntry: any = null;
         if (attendanceLocations !== undefined) {
-            if (employee.role !== "HOI") {
-                return NextResponse.json({ error: 'Multiple attendance locations are available for the HOI role only.' }, { status: 400 });
+            if (employee.role !== "HOI" && employee.role !== "OM") {
+                return NextResponse.json({ error: 'Multiple attendance locations are available for the HOI and OM roles only.' }, { status: 400 });
             }
             if (!Array.isArray(attendanceLocations) || attendanceLocations.some((v: any) => typeof v !== 'string' || !v)) {
                 return NextResponse.json({ error: 'attendanceLocations must be a list of location ids.' }, { status: 400 });
@@ -75,6 +76,11 @@ export async function PUT(request: Request) {
                 return NextResponse.json({ error: `Unknown location(s): ${missing.join(', ')}` }, { status: 400 });
             }
             updates.attendanceLocations = ids;
+            const before: string[] = Array.isArray(employee.attendanceLocations) ? employee.attendanceLocations : [];
+            if (before.length !== ids.length || before.some(id => !ids.includes(id))) {
+                const actor: any = await Employee.findById(session.userId).select('id name').lean().catch(() => null);
+                locationLogEntry = { at: new Date().toISOString(), by: actor?.id || session.userId || '', byName: actor?.name || '', from: before, to: ids };
+            }
         }
 
         if (hoiId !== undefined) {
@@ -99,7 +105,7 @@ export async function PUT(request: Request) {
 
         const updated = await Employee.findOneAndUpdate(
             { id: employeeId },
-            { $set: updates },
+            { $set: updates, ...(locationLogEntry ? { $push: { attendanceLocationLog: locationLogEntry } } : {}) },
             { new: true }
         );
 

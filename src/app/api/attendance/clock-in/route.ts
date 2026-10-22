@@ -6,11 +6,12 @@ import { getExpectedTimingInternal } from '@/lib/attendance-utils';
 import { COLLEGES } from '@/lib/colleges';
 import { getSessionUser } from '@/lib/session-user';
 import { recordViolation } from '@/lib/attendance-violations';
+import { assignedLocationsOf, matchAssignedLocation, makeVisit, locationLabel, MAX_VISIT_ACCURACY_M, UNASSIGNED_LOCATION_ERROR } from '@/lib/multi-location-attendance';
 
 export async function POST(req: Request) {
     try {
         await dbConnect();
-        const { employeeId, lat, lng, dressCodeImageUrl, isShortLeave, mode } = await req.json();
+        const { employeeId, lat, lng, dressCodeImageUrl, isShortLeave, mode, accuracy, preview } = await req.json();
         // Official time and date come only from this server's clock: any time / date / override sent by the browser is ignored
         const isOverride = false, overrideDate: string | undefined = undefined;
         // Only the logged-in employee can clock in for themself
@@ -73,14 +74,67 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: `Too early to clock-in. Window opens at ${Math.floor((schedTime - 30) / 60).toString().padStart(2, '0')}:${((schedTime - 30) % 60).toString().padStart(2, '0')}` }, { status: 403 });
         }
 
+        // HOI / OM with assigned attendance locations: detect the assigned location from the device position
+        const assignedLocs = assignedLocationsOf(employee);
+        const hasCoords = typeof lat === 'number' && typeof lng === 'number';
+        const gpsAccuracy = typeof accuracy === 'number' && isFinite(accuracy) ? accuracy : undefined;
+
         // One attendance session per day: an existing clock-in is never overwritten or duplicated
         // (a double click / two tabs used to create a second record for the same date)
         if (!isOverride) {
-            const existing: any = await Attendance.findOne({ employeeId, date: today }).select('clockIn status').lean();
+            const existing: any = await Attendance.findOne({ employeeId, date: today }).select('clockIn clockInAt clockOut status location currentLocationId locationVisits workMode').lean();
             if (existing?.clockIn && existing.status !== 'Absent') {
+                // HOI / OM: a clock-in at ANOTHER assigned location while the day is open is a location visit
+                // (same daily record, same payable day, no new late check / points)
+                const remoteDay = existing.workMode === 'WFH' || String(existing.location || '').toLowerCase() === 'wfh';
+                if (assignedLocs.length && !existing.clockOut && !remoteDay) {
+                    if (!hasCoords) return NextResponse.json({ error: "Location coordinates missing from request." }, { status: 400 });
+                    if (gpsAccuracy !== undefined && gpsAccuracy > MAX_VISIT_ACCURACY_M) {
+                        return NextResponse.json({ error: `GPS accuracy is too low (±${Math.round(gpsAccuracy)} m). Move to an open area and try again.`, gpsAccuracyLow: true }, { status: 422 });
+                    }
+                    const match = await matchAssignedLocation(lat, lng, assignedLocs);
+                    if (!match) return NextResponse.json({ error: UNASSIGNED_LOCATION_ERROR, unassignedLocation: true }, { status: 403 });
+                    const currentId = existing.currentLocationId || existing.location;
+                    const detected = { id: match.location.id, name: locationLabel(match.location), distanceKm: match.distanceKm, ambiguous: match.ambiguous };
+                    if (preview) return NextResponse.json({ preview: true, detected, currentLocationId: currentId, sameAsCurrent: currentId === match.location.id });
+                    if (currentId === match.location.id) {
+                        return NextResponse.json({ error: `You are already clocked in at ${detected.name}.`, record: existing, alreadyClockedIn: true, duplicate: true }, { status: 409 });
+                    }
+                    const time = istTime.getHours().toString().padStart(2, '0') + ":" + istTime.getMinutes().toString().padStart(2, '0') + ":" + istTime.getSeconds().toString().padStart(2, '0');
+                    const visits: any[] = [];
+                    // Day started before this feature: keep its first clock-in as the first visit
+                    if (!existing.locationVisits?.length) {
+                        const firstLoc: any = await Location.findOne({ id: existing.location }).lean();
+                        visits.push(makeVisit('CLOCK_IN', firstLoc || { id: existing.location }, existing.clockInAt ? new Date(existing.clockInAt) : now, existing.clockIn));
+                    }
+                    visits.push(makeVisit('LOCATION_CLOCK_IN', match.location, now, time, lat, lng, gpsAccuracy));
+                    // Only if nothing changed since it was read (two quick requests cannot both add a visit)
+                    const updated = await Attendance.findOneAndUpdate(
+                        {
+                            _id: existing._id, $or: [{ clockOut: { $exists: false } }, { clockOut: null }, { clockOut: '' }],
+                            ...(existing.currentLocationId ? { currentLocationId: existing.currentLocationId } : { currentLocationId: { $exists: false } }),
+                        },
+                        { $set: { currentLocationId: match.location.id }, $push: { locationVisits: { $each: visits } } },
+                        { new: true }
+                    );
+                    const ownVisitId = visits[visits.length - 1].id;
+                    if (!updated || !(updated.locationVisits || []).some((v: any) => v.id === ownVisitId)) {
+                        const latest: any = await Attendance.findById(existing._id).lean();
+                        return NextResponse.json({ error: "This clock-in was already recorded.", record: latest, alreadyClockedIn: true, duplicate: true }, { status: 409 });
+                    }
+                    return NextResponse.json({ message: `Location change recorded: ${detected.name}`, record: updated, locationVisit: true, detected });
+                }
                 return NextResponse.json({ error: "You have already clocked in today.", record: existing, alreadyClockedIn: true }, { status: 409 });
             }
+            // Preview before the first clock-in of the day (HOI / OM with assigned locations)
+            if (preview && assignedLocs.length) {
+                if (!hasCoords) return NextResponse.json({ error: "Location coordinates missing from request." }, { status: 400 });
+                const match = await matchAssignedLocation(lat, lng, assignedLocs);
+                if (!match) return NextResponse.json({ error: UNASSIGNED_LOCATION_ERROR, unassignedLocation: true }, { status: 403 });
+                return NextResponse.json({ preview: true, firstClockIn: true, detected: { id: match.location.id, name: locationLabel(match.location), distanceKm: match.distanceKm, ambiguous: match.ambiguous } });
+            }
         }
+        if (preview) return NextResponse.json({ preview: true, detected: null });
 
         // Work From Home: an application covering today (approved, or still pending — then the attendance is provisional).
         // mode "WFH" = remote attendance, "OFFICE" = normal office attendance; without a mode an approved application means remote.
@@ -105,15 +159,14 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: "Location coordinates missing from request." }, { status: 400 });
             }
 
-            const hoiAllowed: string[] = employee.role === "HOI" && Array.isArray(employee.attendanceLocations) ? employee.attendanceLocations.filter(Boolean) : [];
-            if (hoiAllowed.length) {
-                // HOI with authorised attendance locations (HR → Work Location): inside any ONE of them; nowhere else
-                const allowed = await Location.find({ id: { $in: hoiAllowed } });
-                const inside = allowed.find((c: any) => getDistance(lat, lng, c.lat, c.lng) <= (c.radiusKm || 2));
-                if (!inside) {
-                    return NextResponse.json({ error: "Not in geofence of any of your authorised attendance locations." }, { status: 403 });
+            if (assignedLocs.length) {
+                // HOI / OM with assigned attendance locations (HR → Work Location): the nearest assigned one whose
+                // geofence contains the device; nowhere else
+                const match = await matchAssignedLocation(lat, lng, assignedLocs);
+                if (!match) {
+                    return NextResponse.json({ error: UNASSIGNED_LOCATION_ERROR, unassignedLocation: true }, { status: 403 });
                 }
-                campus = inside;
+                campus = match.location;
             } else if (employee.role === "HOI" || employee.role === "OM" || employee.role === "MARKETING_TEAM" || employee.role === "TECH_TEAM") {
                 const dbCampuses = await Location.find({});
                 const map = new Map();
@@ -168,6 +221,11 @@ export async function POST(req: Request) {
         };
         if (isShortLeave) {
             updateData["flags.shortLeave"] = true;
+        }
+        // HOI / OM with assigned locations: the first clock-in opens the day's location timeline
+        if (assignedLocs.length && campus && !isWFH && !useWfhApp) {
+            updateData.currentLocationId = campus.id;
+            updateData.locationVisits = [makeVisit('CLOCK_IN', campus, now, updateData.clockIn, lat, lng, gpsAccuracy)];
         }
 
         let attendance = await Attendance.findOneAndUpdate(
