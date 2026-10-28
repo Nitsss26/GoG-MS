@@ -1,134 +1,114 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { CheckCircle2, XCircle, Loader2, AlertTriangle, CalendarDays, ShieldCheck } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CheckCircle2, XCircle, Loader2, AlertTriangle, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Confirmation page for the "Accept Leave / Reject Leave" buttons in the leave-application e-mail.
- * Opening it changes nothing; the leave is decided only when the approver confirms here.
+ * Page behind the "Accept Leave / Reject Leave" buttons in the leave-application e-mail.
+ * It opens in GOG OMS (the login page first, then back here); the decision is saved straight away (POST) —
+ * one click — and the leave then shows its new status everywhere in GOG OMS.
  */
 const dmy = (s?: string) => {
     if (!s) return "—";
-    const d = new Date(s);
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s.split("-").reverse().join("-");
+    const d = new Date(s);
     return isNaN(d.getTime()) ? s : d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Asia/Kolkata" }).replace(/\//g, "-");
 };
 const statusLabel = (s: string) => (s === "Pending HOI Approval" ? "Awaiting HOI" : s === "Pending" ? "Awaiting HR" : s);
 
 export default function LeaveActionPage() {
-    const [token, setToken] = useState("");
     const [action, setAction] = useState<"approve" | "reject">("approve");
-    const [data, setData] = useState<any>(null);
-    const [error, setError] = useState("");
-    const [reason, setReason] = useState("");
-    const [applyLOP, setApplyLOP] = useState(false);
-    const [busy, setBusy] = useState(false);
-    const [done, setDone] = useState<{ message: string; leave: any } | null>(null);
+    const [state, setState] = useState<"loading" | "saving" | "done" | "blocked" | "error">("loading");
+    const [leave, setLeave] = useState<any>(null);
+    const [message, setMessage] = useState("");
+    const [by, setBy] = useState("");
+    const [link, setLink] = useState<{ t: string; a: "approve" | "reject" } | null>(null);
+    const [wrongUser, setWrongUser] = useState(false);
+    // Logged in with another account: log out, then log in with the right one and come back here
+    const switchAccount = async () => {
+        try { sessionStorage.setItem("gog_after_login", window.location.pathname + window.location.search); } catch { /* ignore */ }
+        await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+        window.location.href = "/login";
+    };
+    const ran = useRef(false);
 
-    useEffect(() => {
-        const q = new URLSearchParams(window.location.search);
-        const t = q.get("t") || "";
-        setToken(t);
-        if (q.get("a") === "reject") setAction("reject");
-        if (!t) { setError("This link is not valid."); return; }
-        fetch(`/api/leaves/email-action?t=${encodeURIComponent(t)}`, { cache: "no-store" })
-            .then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || "Could not open this leave request."); setData(d); })
-            .catch(e => setError(e.message));
-    }, []);
-
-    const confirm = async () => {
-        setBusy(true); setError("");
+    const decide = async (t: string, a: "approve" | "reject") => {
+        setState("saving");
         try {
-            const r = await fetch("/api/leaves/email-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: token, action, reason: reason.trim() || undefined, applyLOP: action === "reject" && applyLOP }) });
+            const r = await fetch("/api/leaves/email-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t, action: a }) });
             const d = await r.json().catch(() => ({}));
-            if (!r.ok) {
-                setError(d.error || "Could not save the decision.");
-                if (d.leave) setData((prev: any) => ({ ...prev, leave: { ...prev?.leave, ...d.leave }, canDecide: false, processedBy: d.processedBy || "" }));
-                return;
-            }
-            setDone({ message: d.message, leave: d.leave });
-        } finally { setBusy(false); }
+            if (d.leave) setLeave((p: any) => ({ ...p, ...d.leave }));
+            if (r.ok) { setMessage(d.message); setState("done"); return; }
+            setMessage(d.error || "Could not save the decision."); setBy(d.processedBy || "");
+            setState(r.status === 409 || r.status === 403 || r.status === 410 ? "blocked" : "error");
+        } catch { setMessage("Could not reach GOG OMS. Please try again."); setState("error"); }
     };
 
-    const leave = done?.leave || data?.leave;
+    useEffect(() => {
+        if (ran.current) return; ran.current = true;
+        const q = new URLSearchParams(window.location.search);
+        const t = q.get("t") || "";
+        const a: "approve" | "reject" = q.get("a") === "reject" ? "reject" : "approve";
+        setAction(a); setLink({ t, a });
+        if (!t) { setMessage("This link is not valid."); setState("blocked"); return; }
+        fetch(`/api/leaves/email-action?t=${encodeURIComponent(t)}`, { cache: "no-store" })
+            .then(async r => {
+                const d = await r.json().catch(() => ({}));
+                if (r.status === 401) { switchAccount(); return; }
+                if (!r.ok) { setMessage(d.error || "Could not open this leave request."); setWrongUser(d.code === "wrong-user"); setState("blocked"); return; }
+                setLeave(d.leave);
+                if (d.canDecide) decide(t, a);   // one click: the button in the e-mail is the decision
+                else { setMessage(d.message); setBy(d.processedBy || ""); setState("blocked"); }
+            })
+            .catch(() => { setMessage("Could not reach GOG OMS. Please try again."); setState("error"); });
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
     const isReject = action === "reject";
+    const ok = state === "done";
     return (
-        <div className="p-4 sm:p-6 max-w-2xl mx-auto w-full space-y-5" data-testid="leave-action">
-            <header>
-                <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2"><ShieldCheck size={20} className="text-emerald-400" /> Leave Request — {isReject ? "Reject" : "Accept"}</h1>
-                <p className="text-xs text-zinc-400 mt-1">Opened from the leave e-mail. Nothing changes until you confirm below.</p>
-            </header>
+        <div className="min-h-[80vh] flex items-start sm:items-center justify-center p-4 sm:p-8" data-testid="leave-action">
+            <div className="w-full max-w-md space-y-4">
+                <p className="text-center text-[11px] font-bold uppercase tracking-[0.2em] text-zinc-500">GOG OMS · Leave Request</p>
 
-            {!data && !error && <div className="flex justify-center py-16"><Loader2 className="animate-spin text-zinc-500" /></div>}
+                <div className={cn("rounded-2xl border p-6 text-center space-y-2",
+                    ok ? (leave?.status === "Rejected" ? "border-red-500/30 bg-red-500/10" : "border-emerald-500/30 bg-emerald-500/10")
+                        : state === "blocked" ? "border-amber-500/30 bg-amber-500/10" : state === "error" ? "border-red-500/30 bg-red-500/10" : "border-zinc-800 bg-zinc-900/70")}
+                    data-testid={ok ? "leave-action-done" : state === "blocked" ? "leave-action-blocked" : state === "error" ? "leave-action-error" : "leave-action-saving"}>
+                    {state === "loading" || state === "saving"
+                        ? <><Loader2 className="mx-auto animate-spin text-zinc-400" size={36} /><p className="text-base font-bold text-white">{isReject ? "Rejecting" : "Approving"} the leave…</p></>
+                        : ok ? <>
+                            {leave?.status === "Rejected" ? <XCircle className="mx-auto text-red-400" size={44} /> : <CheckCircle2 className="mx-auto text-emerald-400" size={44} />}
+                            <p className="text-xl font-bold text-white">{message}</p>
+                            <p className="text-xs text-zinc-300">Updated in GOG OMS. The employee has been informed by e-mail.</p>
+                        </> : <>
+                            <AlertTriangle className={cn("mx-auto", state === "error" ? "text-red-400" : "text-amber-400")} size={40} />
+                            <p className="text-base font-bold text-white">{message}</p>
+                            {by && <p className="text-xs text-zinc-300">Decided by {by}.</p>}
+                            {wrongUser && <button onClick={switchAccount} data-testid="leave-action-switch" className="mt-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold">Switch account</button>}
+                            {state === "error" && link?.t && <button onClick={() => decide(link.t, link.a)} className="mt-2 px-4 py-2 rounded-lg bg-zinc-800 text-white text-xs font-bold">Try again</button>}
+                        </>}
+                </div>
 
-            {leave && (
-                <section className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5 space-y-3" data-testid="leave-action-details">
-                    <div className="flex items-start justify-between gap-3">
-                        <div>
-                            <p className="text-base font-bold text-white">{leave.employeeName}</p>
-                            <p className="text-[11px] text-zinc-500">{leave.employeeId}{leave.designation ? ` · ${leave.designation}` : ""}{leave.dept ? ` · ${leave.dept}` : ""}</p>
+                {leave && (
+                    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5 space-y-3" data-testid="leave-action-details">
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <p className="text-sm font-bold text-white">{leave.employeeName}</p>
+                                <p className="text-[11px] text-zinc-500">{leave.employeeId}{leave.designation ? ` · ${leave.designation}` : ""}{leave.dept ? ` · ${leave.dept}` : ""}</p>
+                            </div>
+                            <span data-testid="leave-action-status" className={cn("px-2.5 py-1 rounded-full border text-[10px] font-bold whitespace-nowrap",
+                                leave.status === "Approved" ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/30" : leave.status === "Rejected" ? "text-red-300 bg-red-500/10 border-red-500/30" : "text-amber-300 bg-amber-500/10 border-amber-500/30")}>{statusLabel(leave.status)}</span>
                         </div>
-                        <span data-testid="leave-action-status" className={cn("px-2.5 py-1 rounded-full border text-[10px] font-bold whitespace-nowrap",
-                            leave.status === "Approved" ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/30" : leave.status === "Rejected" ? "text-red-300 bg-red-500/10 border-red-500/30" : "text-amber-300 bg-amber-500/10 border-amber-500/30")}>{statusLabel(leave.status)}</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
-                        {([
-                            ["Leave type", `${leave.type}${leave.leaveType ? ` (${leave.leaveType})` : ""}`],
-                            ["Total days", String(leave.days)],
-                            ["From", dmy(leave.startDate)],
-                            ["To", dmy(leave.endDate)],
-                            ["Applied on", dmy(leave.appliedAt)],
-                            ["Proof attached", leave.proofCount ? `${leave.proofCount} file(s)` : "None"],
-                        ] as [string, string][]).map(([k, v]) => <div key={k}><p className="text-[10px] uppercase tracking-widest text-zinc-500">{k}</p><p className="text-zinc-200 mt-0.5 flex items-center gap-1">{k === "From" || k === "To" ? <CalendarDays size={11} className="text-zinc-500" /> : null}{v}</p></div>)}
-                    </div>
-                    <div className="text-xs"><p className="text-[10px] uppercase tracking-widest text-zinc-500">Reason</p><p className="text-zinc-200 mt-0.5 whitespace-pre-wrap">{leave.reason || "—"}</p></div>
-                    {leave.reasonForAction && !leave.status?.startsWith("Pending") && <div className="text-xs"><p className="text-[10px] uppercase tracking-widest text-zinc-500">Decision remarks</p><p className="text-zinc-300 mt-0.5">{leave.reasonForAction}</p></div>}
-                </section>
-            )}
-
-            {done ? (
-                <div className={cn("rounded-2xl border p-5 flex items-start gap-3", done.leave.status === "Rejected" ? "border-red-500/30 bg-red-500/10" : "border-emerald-500/30 bg-emerald-500/10")} data-testid="leave-action-done">
-                    {done.leave.status === "Rejected" ? <XCircle className="text-red-400 shrink-0" size={20} /> : <CheckCircle2 className="text-emerald-400 shrink-0" size={20} />}
-                    <div><p className="text-sm font-bold text-white">{done.message}</p><p className="text-xs text-zinc-400 mt-1">The leave is updated in GOG OMS and the employee has been informed.</p>
-                        <Link href="/leave" className="inline-block mt-3 text-xs font-bold text-emerald-300 hover:underline">Open Leave in GOG OMS →</Link></div>
-                </div>
-            ) : data && !data.canDecide ? (
-                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5 flex items-start gap-3" data-testid="leave-action-blocked">
-                    <AlertTriangle className="text-amber-400 shrink-0" size={20} />
-                    <div><p className="text-sm font-bold text-white">{error || data.message}</p>
-                        {data.processedBy && <p className="text-xs text-zinc-400 mt-1">Decided by {data.processedBy}.</p>}
-                        <Link href="/leave" className="inline-block mt-3 text-xs font-bold text-emerald-300 hover:underline">Open Leave in GOG OMS →</Link></div>
-                </div>
-            ) : data?.canDecide ? (
-                <section className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5 space-y-4" data-testid="leave-action-confirm">
-                    <div className="flex gap-1 p-1 rounded-xl bg-zinc-950 border border-zinc-800 w-fit">
-                        <button onClick={() => setAction("approve")} data-testid="choose-approve" className={cn("px-4 py-1.5 rounded-lg text-xs font-bold", !isReject ? "bg-emerald-600 text-white" : "text-zinc-400")}>Accept</button>
-                        <button onClick={() => setAction("reject")} data-testid="choose-reject" className={cn("px-4 py-1.5 rounded-lg text-xs font-bold", isReject ? "bg-red-600 text-white" : "text-zinc-400")}>Reject</button>
-                    </div>
-                    <p className="text-xs text-zinc-300">
-                        {isReject ? "Reject" : "Approve"} this leave as <span className="font-bold text-white">{data.approver?.name}</span> ({data.approver?.role})
-                        {data.step === "hoi" ? (isReject ? " — the request is closed as rejected." : " — this approves the HOI step; the request then goes to HR for the final approval.") : (isReject ? "." : " — final approval.")}
-                    </p>
-                    <textarea value={reason} onChange={e => setReason(e.target.value)} data-testid="leave-action-reason" maxLength={1000}
-                        placeholder={isReject ? "Reason for rejection (optional)" : "Remarks (optional)"}
-                        className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white placeholder:text-zinc-600 outline-none focus:border-emerald-500/50 resize-none h-20" />
-                    {isReject && data.step === "hoi" && (
-                        <label className="flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" checked={applyLOP} onChange={e => setApplyLOP(e.target.checked)} className="w-4 h-4" /> Invalid proof — apply 2-day Loss of Pay{leave?.leaveType === "Emergency" ? " (applied automatically for an emergency leave)" : ""}</label>
-                    )}
-                    {error && <p className="text-xs text-red-400 flex items-center gap-1.5" data-testid="leave-action-error"><AlertTriangle size={12} /> {error}</p>}
-                    <button disabled={busy} onClick={confirm} data-testid="leave-action-submit"
-                        className={cn("w-full py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50", isReject ? "bg-red-600 hover:bg-red-500" : "bg-emerald-600 hover:bg-emerald-500")}>
-                        {busy ? <Loader2 size={15} className="animate-spin" /> : isReject ? <XCircle size={15} /> : <CheckCircle2 size={15} />} Confirm {isReject ? "Rejection" : "Approval"}
-                    </button>
-                </section>
-            ) : error ? (
-                <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-5 flex items-start gap-3" data-testid="leave-action-error-box">
-                    <AlertTriangle className="text-red-400 shrink-0" size={20} />
-                    <div><p className="text-sm font-bold text-white">{error}</p><Link href="/leave" className="inline-block mt-3 text-xs font-bold text-emerald-300 hover:underline">Open Leave in GOG OMS →</Link></div>
-                </div>
-            ) : null}
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                            {([["Leave type", `${leave.type}${leave.leaveType ? ` (${leave.leaveType})` : ""}`], ["Total days", String(leave.days)], ["From", dmy(leave.startDate)], ["To", dmy(leave.endDate)]] as [string, string][])
+                                .map(([k, v]) => <div key={k}><p className="text-[10px] uppercase tracking-widest text-zinc-500">{k}</p><p className="text-zinc-200 mt-0.5 flex items-center gap-1">{k === "From" || k === "To" ? <CalendarDays size={11} className="text-zinc-500" /> : null}{v}</p></div>)}
+                        </div>
+                        {leave.reason && <div className="text-xs"><p className="text-[10px] uppercase tracking-widest text-zinc-500">Reason</p><p className="text-zinc-200 mt-0.5 whitespace-pre-wrap">{leave.reason}</p></div>}
+                    </section>
+                )}
+                <p className="text-center text-[11px] text-zinc-500">You can close this page or continue in GOG OMS.</p>
+            </div>
         </div>
     );
 }

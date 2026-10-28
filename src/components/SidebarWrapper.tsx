@@ -54,7 +54,7 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
         
         setIsMobileOpen(false); // Close sidebar on route change
         if (!user && !isAuthPage) {
-            // Leave e-mail link opened while logged out: come back to it after login
+            // Leave e-mail Accept / Reject link opened while logged out: come back to it right after login
             if (pathname === "/leave-action") { try { sessionStorage.setItem("gog_after_login", window.location.pathname + window.location.search); } catch { /* ignore */ } }
             router.push("/login");
             return;

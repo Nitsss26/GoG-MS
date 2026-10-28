@@ -277,8 +277,7 @@ const LeaveActionButtons = (approveUrl: string, rejectUrl: string) => `
         If the buttons do not work, use these links: <a href="${escHtml(approveUrl)}" style="color: #16a34a;">Accept Leave</a> &middot; <a href="${escHtml(rejectUrl)}" style="color: #dc2626;">Reject Leave</a>
     </p>
     <p style="font-size: 11px; color: #9ca3af; margin: 6px 0 0 0;">
-        The link opens a confirmation page in GOG OMS (log in if asked). Nothing changes until you confirm there. This link is for you only &mdash; please do not forward this e-mail.
-    </p>`;
+        One click: the button opens GOG OMS (log in if asked) and saves your decision straight away. This link is for you only and works once, for 48 hours &mdash; please do not forward this e-mail.</p>`;
 
 export const getLeaveTemplate = (leave: any, status: 'Pending' | 'Approved' | 'Rejected' | 'Pending HOI Approval', opts?: { employee?: any; actions?: { approveUrl: string; rejectUrl: string } }) => {
     const statusColor = status === 'Approved' ? '#10b981' : status === 'Rejected' ? '#ef4444' : '#f59e0b';

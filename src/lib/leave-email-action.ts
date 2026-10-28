@@ -2,12 +2,12 @@
  * SERVER-ONLY: "Accept Leave / Reject Leave" from the leave-application e-mail.
  *
  *  - Each authorised approver gets their own e-mail with a signed link (HMAC-SHA256) bound to
- *    that approver and that leave, valid for LINK_VALID_DAYS. Other recipients get the same e-mail
+ *    that approver and that leave, valid for LINK_VALID_HOURS. Other recipients get the same e-mail
  *    without buttons — being on the mail never gives permission.
- *  - Opening the link only shows a confirmation page (GET is read-only, so mail scanners that open
- *    links change nothing). The decision is a POST from the logged-in approver (the session must be
- *    the same employee the link was sent to), and goes through the same decision steps as the OMS
- *    (src/lib/leave-decision.ts), so a leave already processed cannot be decided again.
+ *  - The link opens GOG OMS; after login (if needed) the /leave-action page saves the decision right away
+ *    (one click). The logged-in user must be the approver the link was sent to (checked by the API route);
+ *    a plain GET of the link changes nothing. The approver's authority is checked again at that moment,
+ *    and the decision goes through the same steps as the OMS (src/lib/leave-decision.ts).
  *  - Every e-mail decision is written to the LeaveEmailAction audit log; a link can be used once.
  */
 import crypto from 'crypto';
@@ -18,7 +18,9 @@ import { sendMailInternal } from '@/lib/mail-server';
 import { hrDecideLeave, managerDecideLeave, managerCanDecide, LEAVE_FINAL_ROLES, PENDING_LEAVE_STATUSES } from '@/lib/leave-decision';
 import { LEAVE_MANAGER_ROLES } from '@/lib/leave-scope';
 
-export const LINK_VALID_DAYS = 7;
+export const LINK_VALID_HOURS = 48;
+const HR_EXECUTIVE_ROLE = 'HR_EXECUTIVE';
+const decidesFinally = (role: string) => LEAVE_FINAL_ROLES.includes(role) || role === HR_EXECUTIVE_ROLE;
 
 // Same server secret as the login session (src/lib/session.ts), with its own purpose label
 const KEY = crypto.createHmac('sha256', process.env.JWT_SECRET || process.env.MONGODB_URI || 'gog-oms-fallback-secret-change-in-production')
@@ -30,7 +32,7 @@ const b64 = (s: string) => Buffer.from(s).toString('base64url');
 const sign = (body: string) => crypto.createHmac('sha256', KEY).update(body).digest('base64url');
 
 export function createActionToken(leaveId: string, approverId: string) {
-    const payload: LinkPayload = { l: leaveId, u: approverId, n: crypto.randomBytes(12).toString('base64url'), exp: Date.now() + LINK_VALID_DAYS * 86400000 };
+    const payload: LinkPayload = { l: leaveId, u: approverId, n: crypto.randomBytes(12).toString('base64url'), exp: Date.now() + LINK_VALID_HOURS * 3600000 };
     const body = b64(JSON.stringify(payload));
     return `${body}.${sign(body)}`;
 }
@@ -43,14 +45,15 @@ export function verifyActionToken(token: unknown): { ok: true; payload: LinkPayl
     let payload: LinkPayload;
     try { payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); } catch { return { ok: false, status: 400, error: 'This link is not valid.' }; }
     if (!payload?.l || !payload?.u || !payload?.n || typeof payload.exp !== 'number') return { ok: false, status: 400, error: 'This link is not valid.' };
-    if (Date.now() > payload.exp) return { ok: false, status: 410, error: `This link has expired (links are valid for ${LINK_VALID_DAYS} days). Please open the leave in GOG OMS → Leave.` };
+    if (Date.now() > payload.exp) return { ok: false, status: 410, error: `This link has expired (links are valid for ${LINK_VALID_HOURS} hours). Please open the leave in GOG OMS → Leave.` };
     return { ok: true, payload };
 }
 
 /** The step this person may take on the leave right now: final (HR / Founder), HOI step, or none */
 export async function stepFor(person: { id: string; role: string; employee?: any }, leave: any): Promise<'final' | 'hoi' | null> {
     if (!leave || !PENDING_LEAVE_STATUSES.includes(leave.status) || leave.employeeId === person.id) return null;
-    if (LEAVE_FINAL_ROLES.includes(person.role)) return 'final';
+    // HR Executive decides leave like HR (same final step as in the OMS)
+    if (LEAVE_FINAL_ROLES.includes(person.role) || person.role === HR_EXECUTIVE_ROLE) return 'final';
     if (LEAVE_MANAGER_ROLES.includes(person.role) && leave.status === 'Pending HOI Approval' && (await managerCanDecide(person, leave))) return 'hoi';
     return null;
 }
@@ -82,11 +85,14 @@ export async function sendLeaveApplicationEmails(leave: any, recipients: string[
     const byEmail = new Map<string, any[]>();
     (await Employee.find({ isRemoved: { $ne: true }, email: { $exists: true, $ne: '' } }).select('id name email role location reportsTo').lean() as any[])
         .forEach(e => { const k = String(e.email).toLowerCase(); if (!byEmail.has(k)) byEmail.set(k, []); byEmail.get(k)!.push(e); });
-    for (const email of recipients) {
+    // HR Executives decide leave like HR, so they get their own copy with the buttons as well
+    const hrExecutives = Array.from(byEmail.entries()).filter(([e, recs]) => !e.endsWith('@gog.com') && recs.some(r => r.role === HR_EXECUTIVE_ROLE)).map(([e]) => e);
+    const allRecipients = Array.from(new Set([...recipients.map(e => e.toLowerCase()), ...hrExecutives]));
+    for (const email of allRecipients) {
         // the link goes to a record of this address that may decide the leave now
         const records: any[] = byEmail.get(email.toLowerCase()) || [];
         let approver: any = null;
-        for (const r of records.sort((a, b) => Number(LEAVE_FINAL_ROLES.includes(b.role)) - Number(LEAVE_FINAL_ROLES.includes(a.role)))) {
+        for (const r of records.sort((a, b) => Number(decidesFinally(b.role)) - Number(decidesFinally(a.role)))) {
             if (await stepFor({ id: r.id, role: r.role, employee: r }, leave)) { approver = r; break; }
         }
         if (approver) personal.push({ email, approver }); else plain.push(email);
@@ -95,14 +101,15 @@ export async function sendLeaveApplicationEmails(leave: any, recipients: string[
     const results: any[] = [];
     if (plain.length) {
         const { subject, html } = getLeaveTemplate(leave, status, { employee: applicant || {} });
-        results.push(await sendMailInternal({ to: plain, subject, html }));
+        results.push(await sendMailInternal({ to: plain, subject, html, ccExclude: personal.map(p => p.email) }));
     }
     // personal copies, a few at a time
     for (let i = 0; i < personal.length; i += 5) {
         results.push(...await Promise.all(personal.slice(i, i + 5).map(p => {
             const token = createActionToken(leave.id, p.approver.id);
             const { subject, html } = getLeaveTemplate(leave, status, { employee: applicant || {}, actions: { approveUrl: actionUrl(base, token, 'approve'), rejectUrl: actionUrl(base, token, 'reject') } });
-            return sendMailInternal({ to: p.email, subject, html });
+            // personal link: only to its approver (a copy would let others decide); the CC copies go with the plain mail
+            return sendMailInternal({ to: p.email, subject, html, noAutoCc: true });
         })));
     }
     await LeaveEmailAction.updateOne({ key: `mail:${leave.id}` }, { $set: { actionLinks: personal.length } }).catch(() => {});
@@ -138,9 +145,19 @@ export async function notifyEmployeeOfDecision(leave: any) {
     }
 }
 
-/** Approve / reject from an e-mail link (after the approver confirmed on the page) */
-export async function decideFromEmail(actor: any, payload: LinkPayload, input: { action: string; reason?: string; applyLOP?: boolean }) {
-    if (actor.id !== payload.u) return { ok: false as const, status: 403, error: 'This link was sent to another approver. Log in with the account the e-mail was sent to.' };
+/** The approver a link was sent to (the link is their identity — no login needed) */
+export async function linkApprover(payload: LinkPayload) {
+    const emp: any = await Employee.findOne({ id: payload.u, isRemoved: { $ne: true } }).lean();
+    if (!emp) return null;
+    // HR Executive works with the HR permissions (same as their OMS login)
+    if (emp.role === HR_EXECUTIVE_ROLE) return { id: emp.id, name: emp.name, role: 'HR', hrExecutive: true, employee: emp };
+    return { id: emp.id, name: emp.name, role: emp.role, employee: emp };
+}
+
+/** Approve / reject from an e-mail link — one click, as the approver the link was sent to */
+export async function decideFromEmail(payload: LinkPayload, input: { action: string; reason?: string; applyLOP?: boolean }) {
+    const actor: any = await linkApprover(payload);
+    if (!actor) return { ok: false as const, status: 403, error: 'This link is no longer valid for your account.' };
     if (input.action !== 'approve' && input.action !== 'reject') return { ok: false as const, status: 400, error: 'Choose Accept or Reject.' };
     const used = await LeaveEmailAction.findOne({ key: `action:${payload.n}` }).lean();
     if (used) return { ok: false as const, status: 409, error: 'This link has already been used.' };
@@ -167,7 +184,7 @@ export async function decideFromEmail(actor: any, payload: LinkPayload, input: {
     const updated: any = result.leave.toObject ? result.leave.toObject() : result.leave;
     await LeaveEmailAction.create({
         key: `action:${payload.n}`, kind: 'DECISION', leaveId: leave.id, employeeId: leave.employeeId,
-        approverId: actor.id, approverName: actor.name, approverRole: actor.role,
+        approverId: actor.id, approverName: actor.name, approverRole: actor.hrExecutive ? 'HR Executive' : actor.role,
         action: input.action === 'approve' ? 'Approved' : 'Rejected', source: 'Email',
         previousStatus: result.previousStatus, updatedStatus: updated.status,
         ...(reason ? { reason } : {}), ...(typeof updated.lossOfPayDays === 'number' && updated.lossOfPayDays ? { lossOfPayDays: updated.lossOfPayDays } : {}),
