@@ -238,7 +238,10 @@ const AttendanceSchema = new Schema({
         id: { type: String }, event: { type: String }, // CLOCK_IN | LOCATION_CLOCK_IN | CLOCK_OUT
         locationId: { type: String }, locationName: { type: String },
         time: { type: String }, at: { type: Date },
-        lat: { type: Number }, lng: { type: Number }, accuracyMeters: { type: Number }
+        lat: { type: Number }, lng: { type: Number }, accuracyMeters: { type: Number },
+        // HOI: whether the GPS position matched an assigned location, and the reverse-geocoded address
+        locationMatchStatus: { type: String }, // matched | unmatched
+        detectedAddress: { type: String }
     }],
     // Work From Home attendance: approval state of the linked application (Pending = provisional,
     // Approved = confirmed, Rejected / Cancelled = kept for HR review), the remote place and the
@@ -1062,3 +1065,19 @@ export const ExitRecord = mongoose.models.ExitRecord || mongoose.model('ExitReco
 export const AccessGrant = mongoose.models.AccessGrant || mongoose.model('AccessGrant', AccessGrantSchema);
 export const AccessManager = mongoose.models.AccessManager || mongoose.model('AccessManager', AccessManagerSchema);
 export const AttendanceViolation = mongoose.models.AttendanceViolation || mongoose.model('AttendanceViolation', AttendanceViolationSchema);
+
+// HOI clock-in attempts outside every assigned location (refused by the geofence rule) — kept for HR review
+const LocationClockInAttemptSchema = new Schema({
+    id: { type: String, required: true, unique: true },
+    employeeId: { type: String, required: true },
+    employeeName: { type: String },
+    date: { type: String, required: true },   // IST attendance date
+    time: { type: String },                   // IST HH:MM:SS
+    at: { type: Date },
+    lat: { type: Number }, lng: { type: Number }, accuracyMeters: { type: Number },
+    detectedAddress: { type: String },
+    locationMatchStatus: { type: String, default: 'unmatched' },
+    nearestLocationId: { type: String }, nearestLocationName: { type: String }, nearestDistanceKm: { type: Number },
+    reviewStatus: { type: String, default: 'Pending' }
+}, { timestamps: true });
+export const LocationClockInAttempt = mongoose.models.LocationClockInAttempt || mongoose.model('LocationClockInAttempt', LocationClockInAttemptSchema);

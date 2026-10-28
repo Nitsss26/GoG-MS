@@ -16,6 +16,8 @@ const daysAgo = (n: number) => { const d = todayIST(); d.setDate(d.getDate() - n
 
 /** Submitted and waiting for OM or for the final verification (CL / CH / HOI) */
 const PENDING_VERIFICATION = ["PENDING_OM", "PENDING_CL_CH", "PENDING_HOI"];
+/** Completed class whose assignment was added later and waits for the HOI */
+const assignmentPending = (r: any) => r.pipelineStatus === "COMPLETED" && r.assignment?.hasAssignment && r.assignment?.addedLater && r.assignment?.verificationStatus === "Pending";
 
 export default function ClassVerificationPage() {
     const { user } = useAuth();
@@ -86,7 +88,7 @@ export default function ClassVerificationPage() {
 
     const visible = useMemo(() => {
         let list = records;
-        if (tab === "QUEUE" && queue) list = list.filter(r => queue.keys.includes(r.pipelineStatus));
+        if (tab === "QUEUE" && queue) list = list.filter(r => queue.keys.includes(r.pipelineStatus) || (role === "HOI" && assignmentPending(r)));
         if (tab === "ALL" && quick !== "ALL") list = list.filter(r => (quick === "VERIFIED" ? r.pipelineStatus === "COMPLETED" : PENDING_VERIFICATION.includes(r.pipelineStatus)));
         if (tab === "ALL" && statusFilter !== "All") {
             list = statusFilter === "DELAYED"
@@ -109,7 +111,7 @@ export default function ClassVerificationPage() {
         return <div className="flex items-center justify-center h-[80vh] text-zinc-400">Class verification is available for OM, CL, CH, HOI and AD.</div>;
     }
 
-    const queueCount = queue ? records.filter(r => queue.keys.includes(r.pipelineStatus)).length : 0;
+    const queueCount = queue ? records.filter(r => queue.keys.includes(r.pipelineStatus) || (role === "HOI" && assignmentPending(r))).length : 0;
     const quickCounts = {
         ALL: records.length,
         PENDING: records.filter(r => PENDING_VERIFICATION.includes(r.pipelineStatus)).length,
@@ -207,6 +209,7 @@ export default function ClassVerificationPage() {
                                     </div>
                                     <div className="flex items-center gap-2 flex-wrap">
                                         {r.notesMissing && <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">Notes missing</span>}
+                                        {role === "HOI" && assignmentPending(r) && <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded" data-testid="assignment-pending-badge">Assignment to verify</span>}
                                         {openFlags > 0 && <span className="text-[10px] font-bold text-amber-400 flex items-center gap-1"><Flag size={10} /> {openFlags}</span>}
                                         {r.virtual && r.classEnded && <span className="text-[10px] font-bold text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded">No record yet</span>}
                                         <ClassStatusBadge status={r.pipelineStatus} />

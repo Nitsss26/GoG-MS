@@ -54,11 +54,16 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
         
         setIsMobileOpen(false); // Close sidebar on route change
         if (!user && !isAuthPage) {
+            // Leave e-mail link opened while logged out: come back to it after login
+            if (pathname === "/leave-action") { try { sessionStorage.setItem("gog_after_login", window.location.pathname + window.location.search); } catch { /* ignore */ } }
             router.push("/login");
             return;
         }
         if (user && isAuthPage) {
-            router.push("/");
+            // (same target as login(): a leave e-mail link opened before logging in)
+            let next = "/";
+            try { const s = sessionStorage.getItem("gog_after_login") || ""; sessionStorage.removeItem("gog_after_login"); if (s.startsWith("/leave-action?")) next = s; } catch { /* ignore */ }
+            router.push(next);
             return;
         }
     }, [user, authLoading, pathname, router, isAuthPage]);

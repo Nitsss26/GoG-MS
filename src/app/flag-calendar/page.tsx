@@ -127,7 +127,11 @@ export default function FlagCalendarPage() {
     if (!user) return null;
 
     // Hierarchy visibility logic using getReportees — sorted alphabetically
-    const reportees = getReportees(user.id);
+    // HR Executive sees the same employees as HR (their employee record keeps the HR_EXECUTIVE role,
+    // so the HR rule is applied here by role list instead of by the record's role)
+    const reportees = (user as any).hrExecutive
+        ? employees.filter(e => e.id !== user.id && ["AD", "HOI", "FACULTY", "PROFESSOR", "OM", "CURRICULUM_HEAD", "CURRICULUM_LEAD"].includes(e.role))
+        : getReportees(user.id);
     const viewableEmployees = [user, ...reportees].sort((a, b) => {
         if (a.id === user.id) return -1; // Keep self at top
         if (b.id === user.id) return 1;

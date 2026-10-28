@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { LeaveRequest } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
-import { LEAVE_ADMIN_ROLES, LEAVE_MANAGER_ROLES, managedEmployeeIds } from '@/lib/leave-scope';
+import { LEAVE_ADMIN_ROLES, managedEmployeeIds } from '@/lib/leave-scope';
+import { managerDecideLeave } from '@/lib/leave-decision';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,28 +83,10 @@ export async function PUT(req: Request) {
             return NextResponse.json(updated);
         }
 
-        if (!LEAVE_MANAGER_ROLES.includes(actor.role) || leave.employeeId === actor.id || !(await managedEmployeeIds(actor)).has(leave.employeeId)) {
-            return NextResponse.json({ error: 'You can only decide leave requests of your reportees.' }, { status: 403 });
-        }
-        if (leave.status !== 'Pending HOI Approval') {
-            return NextResponse.json({ error: `This request is "${leave.status}" — it is no longer waiting for your approval.` }, { status: 409 });
-        }
-        const next = updates.status === 'Rejected' ? 'Rejected' : 'Pending';
-        const set: any = {
-            status: next,
-            hoiApproval: next === 'Rejected' ? 'Rejected' : 'Approved',
-            hoiApproverId: actor.id,
-            hoiApprovedAt: new Date().toISOString(),
-            reasonForAction: typeof updates.reasonForAction === 'string' ? updates.reasonForAction : undefined,
-        };
-        if (next === 'Rejected') {
-            set.rejectedBy = actor.id; set.rejectedByName = actor.name; set.rejectedByRole = actor.role; set.rejectedAt = set.hoiApprovedAt;
-            if (typeof updates.lossOfPayDays === 'number') set.lossOfPayDays = Math.max(0, Math.min(2, updates.lossOfPayDays));
-        }
-        Object.keys(set).forEach(k => set[k] === undefined && delete set[k]);
-        // Atomic: only while it is still waiting for the HOI step (two managers clicking at once)
-        const updated = await LeaveRequest.findOneAndUpdate({ id, status: 'Pending HOI Approval' }, { $set: set }, { new: true });
-        if (!updated) return NextResponse.json({ error: 'This request was already decided by someone else.' }, { status: 409 });
+        // HOI step — same decision step as the e-mail "Accept / Reject Leave" links (src/lib/leave-decision.ts)
+        const result = await managerDecideLeave(actor, leave, updates);
+        if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+        const updated = result.leave;
         return NextResponse.json(updated);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });

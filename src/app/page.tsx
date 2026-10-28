@@ -4,6 +4,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect, useMemo } from "react";
 import { cn, resolveImageUrl } from "@/lib/utils";
 import { INDIAN_HOLIDAYS_2026, FLAG_CONFIG } from "@/lib/colleges";
+/** "No Clock-Out" dot / badge colour (same as the attendance roster) */
+const NO_CLOCK_OUT_DOT = "bg-teal-400";
 import { calculatePerformance, LEADERBOARD_START_DATE, getLeaderboardStats } from "@/lib/performance-utils";
 import {
     Calendar, Star, Megaphone, FileText, MessageSquare, Send, X, Clock, AlertTriangle, Users,
@@ -78,6 +80,8 @@ function AttendanceCalendar({ records, holidays }: { records: any[]; holidays: a
                     const isSunday = new Date(calData.year, calData.month, day).getDay() === 0;
                     const flags = rec?.flags || {};
                     const activeFlags = Object.entries(flags).filter(([_, v]) => v);
+                    // Clocked in but never clocked out (a past day) — shown as a teal dot, like the attendance roster
+                    const noClockOut = !!rec?.clockIn && !rec?.clockOut && rec?.status !== "Absent" && rec?.status !== "On Leave" && dateStr < `${calData.todayYear}-${String(calData.todayMonth + 1).padStart(2, "0")}-${String(calData.todayDate).padStart(2, "0")}`;
 
                     let bg = "bg-zinc-800/50"; let textColor = "text-zinc-500";
                     if (isHoliday) { bg = "bg-purple-500/20"; textColor = "text-purple-400"; }
@@ -90,9 +94,10 @@ function AttendanceCalendar({ records, holidays }: { records: any[]; holidays: a
                     return (
                         <div key={day} title={isHoliday ? `🎉 ${holidayName}` : isSunday ? "Sunday" : rec?.status || ""} className={cn("relative w-full aspect-square rounded-lg flex flex-col items-center justify-center text-[10px] font-bold transition-all group overflow-hidden cursor-default", bg, textColor, ring)}>
                             <span className="z-10">{day}</span>
-                            {activeFlags.length > 0 && (
+                            {(activeFlags.length > 0 || noClockOut) && (
                                 <div className="absolute bottom-1 left-0 right-0 flex items-center justify-center gap-[1px]">
-                                    {activeFlags.slice(0, 3).map(([k]) => (
+                                    {noClockOut && <div title="No Clock-Out" className={cn("w-[9px] h-[9px] rounded-full shrink-0 shadow-sm", NO_CLOCK_OUT_DOT)} />}
+                                    {activeFlags.slice(0, noClockOut ? 2 : 3).map(([k]) => (
                                         <div key={k} title={FLAG_CONFIG[k]?.label || k} className={cn("w-[9px] h-[9px] rounded-full shrink-0 shadow-sm", FLAG_CONFIG[k]?.dotColor || "bg-zinc-500")} />
                                     ))}
                                 </div>
@@ -111,12 +116,18 @@ function AttendanceCalendar({ records, holidays }: { records: any[]; holidays: a
             </div>
             <div className="pt-2 border-t border-zinc-800/50 space-y-1.5">
                 <p className="text-[8px] text-zinc-400 font-bold uppercase tracking-widest">Flag Dots</p>
-                <div className="grid grid-cols-2 gap-1">
-                    <div className="flex items-center gap-2"><span className="text-[8px] text-zinc-500">🟡 Late/Early/Location</span></div>
-                    <div className="flex items-center gap-2"><span className="text-[8px] text-zinc-500">🔴 Misconduct</span></div>
-                    <div className="flex items-center gap-2"><span className="text-[8px] text-zinc-500">🟠 Dress Code</span></div>
-                    <div className="flex items-center gap-2"><span className="text-[8px] text-zinc-500">⚫ Meeting Absent</span></div>
-                    <div className="flex items-center gap-2"><span className="text-[8px] text-zinc-500">🔵 Performance</span></div>
+                <div className="grid grid-cols-2 gap-1" data-testid="flag-dot-legend">
+                    {([
+                        ["Late Clock-In / Location", FLAG_CONFIG.late.dotColor],
+                        ["Early Clock-Out", FLAG_CONFIG.earlyOut.dotColor],
+                        ["No Clock-Out", NO_CLOCK_OUT_DOT],
+                        ["Misconduct", FLAG_CONFIG.misconduct.dotColor],
+                        ["Dress Code", FLAG_CONFIG.dressCode.dotColor],
+                        ["Meeting Absent", FLAG_CONFIG.meetingAbsent.dotColor],
+                        ["Performance", FLAG_CONFIG.performance.dotColor],
+                    ] as [string, string][]).map(([label, dot]) => (
+                        <div key={label} className="flex items-center gap-1.5"><div className={cn("w-2 h-2 rounded-full shrink-0", dot)} /><span className="text-[8px] text-zinc-500">{label}</span></div>
+                    ))}
                 </div>
             </div>
             <Link href="/flag-calendar" className="flex items-center gap-1.5 text-[9px] text-primary font-bold hover:underline pt-1">

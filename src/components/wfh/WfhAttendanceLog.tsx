@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Home, Loader2, Search, X, ExternalLink, MapPin, AlertTriangle } from "lucide-react";
+import { Home, Loader2, Search, X, ExternalLink, MapPin, AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WFH_STATUS_STYLE, WFH_TYPE_LABEL } from "@/lib/wfh-policy";
 
@@ -11,6 +11,16 @@ import { WFH_STATUS_STYLE, WFH_TYPE_LABEL } from "@/lib/wfh-policy";
  * Approve / Reject use the existing PUT /api/wfh (the server checks who may decide).
  */
 const fmtDate = (ymd: string) => (ymd ? ymd.split("-").reverse().join("-") : "—");
+const PAGE_SIZE = 10;
+/** Same roles and names as the login page's role dropdown */
+const ROLE_OPTIONS: [string, string][] = [
+    ["FOUNDER", "Founder"], ["HR", "Human Resources (HR)"], ["HR_EXECUTIVE", "HR Executive"], ["AD", "Associate Director (AD)"],
+    ["TL", "Tech Lead (TL)"], ["HOI", "Head of Institute (HOI)"], ["OM", "Operations Manager / Growth Manager"], ["MARKETING_TEAM", "Marketing Team"],
+    ["TECH_TEAM", "Tech Team"], ["CURRICULUM_HEAD", "Curriculum Head"], ["CURRICULUM_LEAD", "Curriculum Lead"], ["PROFESSOR", "Academic Faculty / Professor"],
+];
+const ROLE_LABEL: Record<string, string> = { ...Object.fromEntries(ROLE_OPTIONS), FACULTY: "Academic Faculty / Professor" };
+/** FACULTY is listed under "Academic Faculty / Professor" */
+const roleKey = (role?: string) => (role === "FACULTY" ? "PROFESSOR" : role || "");
 const STATUS_STYLE: Record<string, string> = { ...WFH_STATUS_STYLE, "Scheduled WFH": "bg-sky-500/10 text-sky-300 border-sky-500/20", Unknown: "bg-zinc-800 text-zinc-400 border-zinc-700" };
 
 export default function WfhAttendanceLog() {
@@ -18,11 +28,12 @@ export default function WfhAttendanceLog() {
     const [error, setError] = useState("");
     const [q, setQ] = useState("");
     const [date, setDate] = useState("");
-    const [dept, setDept] = useState("All");
+    const [role, setRole] = useState("All");
     const [status, setStatus] = useState("All");
     const [open, setOpen] = useState<any | null>(null);
     const [busy, setBusy] = useState("");
     const [msg, setMsg] = useState("");
+    const [page, setPage] = useState(1);
 
     const load = useCallback(async () => {
         try {
@@ -34,12 +45,16 @@ export default function WfhAttendanceLog() {
     }, []);
     useEffect(() => { load(); }, [load]);
 
-    const depts = useMemo(() => Array.from(new Set((rows || []).map(r => r.dept).filter(Boolean))).sort(), [rows]);
     const shown = useMemo(() => (rows || []).filter(r =>
         (!q || `${r.employeeName} ${r.employeeId}`.toLowerCase().includes(q.toLowerCase())) &&
-        (!date || r.date === date) && (dept === "All" || r.dept === dept) &&
+        (!date || r.date === date) && (role === "All" || roleKey(r.role) === role) &&
         (status === "All" || (status === "Review" ? r.reviewRequired : r.approvalStatus === status))
-    ), [rows, q, date, dept, status]);
+    ), [rows, q, date, role, status]);
+    // 10 rows per page; a filter change goes back to page 1
+    useEffect(() => { setPage(1); }, [q, date, role, status]);
+    const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+    const curPage = Math.min(page, pageCount);
+    const pageRows = shown.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
 
     const decide = async (appId: string, action: "approve" | "reject") => {
         let remarks = "";
@@ -65,14 +80,14 @@ export default function WfhAttendanceLog() {
                     <input value={q} onChange={e => setQ(e.target.value)} placeholder="Employee name or ID" className={cn(field, "w-full pl-8")} data-testid="wfh-att-search" />
                 </div>
                 <input type="date" value={date} onChange={e => setDate(e.target.value)} className={field} data-testid="wfh-att-date" />
-                <select value={dept} onChange={e => setDept(e.target.value)} className={field} data-testid="wfh-att-dept">
-                    <option value="All">All departments</option>{depts.map(d => <option key={d} value={d}>{d}</option>)}
+                <select value={role} onChange={e => setRole(e.target.value)} className={field} data-testid="wfh-att-role">
+                    <option value="All">All roles</option>{ROLE_OPTIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                 </select>
                 <select value={status} onChange={e => setStatus(e.target.value)} className={field} data-testid="wfh-att-status">
                     <option value="All">All approval states</option><option value="Pending">Pending</option><option value="Approved">Approved</option>
                     <option value="Rejected">Rejected</option><option value="Cancelled">Cancelled</option><option value="Review">Needs HR review</option><option value="Scheduled WFH">Scheduled WFH</option>
                 </select>
-                {(q || date || dept !== "All" || status !== "All") && <button onClick={() => { setQ(""); setDate(""); setDept("All"); setStatus("All"); }} className="text-[11px] text-zinc-400 hover:text-white px-2 py-2">Clear</button>}
+                {(q || date || role !== "All" || status !== "All") && <button onClick={() => { setQ(""); setDate(""); setRole("All"); setStatus("All"); }} className="text-[11px] text-zinc-400 hover:text-white px-2 py-2">Clear</button>}
             </div>
             {msg && <p className="text-[11px] text-zinc-300" data-testid="wfh-att-msg">{msg}</p>}
             {error && <p className="text-[11px] text-red-400 flex items-center gap-1.5"><AlertTriangle size={12} /> {error}</p>}
@@ -80,19 +95,19 @@ export default function WfhAttendanceLog() {
             <div className="overflow-x-auto rounded-xl border border-zinc-800">
                 <table className="w-full text-xs min-w-[1100px]">
                     <thead><tr className="bg-zinc-800/40 text-[9px] text-zinc-400 uppercase tracking-widest text-left">
-                        {["Employee", "Department", "Date", "Clock In", "Clock Out", "Total Hours", "WFH Application", "Approval", "Attendance", "Work Location", "Actions"].map(h => <th key={h} className="px-3 py-2.5 font-bold">{h}</th>)}
+                        {["Employee", "Role", "Date", "Clock In", "Clock Out", "Total Hours", "WFH Application", "Approval", "Attendance", "Work Location", "Actions"].map(h => <th key={h} className="px-3 py-2.5 font-bold">{h}</th>)}
                     </tr></thead>
                     <tbody className="divide-y divide-zinc-800/60">
                         {rows === null && <tr><td colSpan={11} className="py-8 text-center"><Loader2 size={16} className="animate-spin text-zinc-500 inline" /></td></tr>}
                         {rows !== null && !shown.length && <tr><td colSpan={11} className="py-8 text-center text-zinc-500">No Work From Home attendance found.</td></tr>}
-                        {shown.map(r => (
+                        {pageRows.map(r => (
                             <tr key={`${r.employeeId}-${r.date}`} data-testid="wfh-att-row" data-emp={r.employeeId} data-date={r.date} className="hover:bg-zinc-800/20">
                                 <td className="px-3 py-2.5">
                                     <button onClick={() => setQ(r.employeeId)} title="Show this employee's Work From Home history" className="text-left">
                                         <p className="font-bold text-white hover:text-emerald-300">{r.employeeName}</p><p className="text-[10px] text-zinc-500 font-mono">{r.employeeId}</p>
                                     </button>
                                 </td>
-                                <td className="px-3 py-2.5 text-zinc-400">{r.dept || "—"}</td>
+                                <td className="px-3 py-2.5 text-zinc-400 whitespace-nowrap" data-testid="wfh-att-rolecell">{ROLE_LABEL[r.role] || r.role || "—"}</td>
                                 <td className="px-3 py-2.5 text-white whitespace-nowrap">{fmtDate(r.date)}</td>
                                 <td className="px-3 py-2.5 text-green-400">{r.clockIn || "—"}</td>
                                 <td className="px-3 py-2.5 text-orange-400">{r.clockOut || "—"}</td>
@@ -116,6 +131,16 @@ export default function WfhAttendanceLog() {
                     </tbody>
                 </table>
             </div>
+            {shown.length > PAGE_SIZE && (
+                <div className="flex flex-wrap items-center justify-between gap-2" data-testid="wfh-att-pager">
+                    <p className="text-[11px] text-zinc-500">Showing {(curPage - 1) * PAGE_SIZE + 1}–{Math.min(curPage * PAGE_SIZE, shown.length)} of {shown.length}</p>
+                    <div className="flex items-center gap-1">
+                        <button disabled={curPage <= 1} onClick={() => setPage(curPage - 1)} data-testid="wfh-att-prev" className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-zinc-800 text-[11px] font-bold text-zinc-300 hover:border-zinc-600 disabled:opacity-40"><ChevronLeft size={13} /> Previous</button>
+                        <span className="px-2 text-[11px] text-zinc-400 tabular-nums" data-testid="wfh-att-page">Page {curPage} of {pageCount}</span>
+                        <button disabled={curPage >= pageCount} onClick={() => setPage(curPage + 1)} data-testid="wfh-att-next" className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-zinc-800 text-[11px] font-bold text-zinc-300 hover:border-zinc-600 disabled:opacity-40">Next <ChevronRight size={13} /></button>
+                    </div>
+                </div>
+            )}
 
             {open?.application && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" data-testid="wfh-att-detail">

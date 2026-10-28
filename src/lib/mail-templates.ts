@@ -258,20 +258,54 @@ export const getTicketForwardTemplate = (ticket: any, forwardedToName: string, f
     };
 };
 
-export const getLeaveTemplate = (leave: any, status: 'Pending' | 'Approved' | 'Rejected' | 'Pending HOI Approval') => {
+const escHtml = (v: any) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** Accept / Reject buttons for the leave-application e-mail (table-based, works in Gmail and Outlook) */
+const LeaveActionButtons = (approveUrl: string, rejectUrl: string) => `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 24px 0 8px 0;">
+        <tr>
+            <td style="border-radius: 8px; background-color: #16a34a;" bgcolor="#16a34a">
+                <a href="${escHtml(approveUrl)}" target="_blank" style="display: inline-block; padding: 12px 28px; font-size: 14px; font-weight: 700; color: #ffffff; text-decoration: none; border-radius: 8px; font-family: Helvetica, Arial, sans-serif;">Accept Leave</a>
+            </td>
+            <td style="width: 12px;">&nbsp;</td>
+            <td style="border-radius: 8px; background-color: #dc2626;" bgcolor="#dc2626">
+                <a href="${escHtml(rejectUrl)}" target="_blank" style="display: inline-block; padding: 12px 28px; font-size: 14px; font-weight: 700; color: #ffffff; text-decoration: none; border-radius: 8px; font-family: Helvetica, Arial, sans-serif;">Reject Leave</a>
+            </td>
+        </tr>
+    </table>
+    <p style="font-size: 12px; color: #6b7280; margin: 8px 0 0 0;">
+        If the buttons do not work, use these links: <a href="${escHtml(approveUrl)}" style="color: #16a34a;">Accept Leave</a> &middot; <a href="${escHtml(rejectUrl)}" style="color: #dc2626;">Reject Leave</a>
+    </p>
+    <p style="font-size: 11px; color: #9ca3af; margin: 6px 0 0 0;">
+        The link opens a confirmation page in GOG OMS (log in if asked). Nothing changes until you confirm there. This link is for you only &mdash; please do not forward this e-mail.
+    </p>`;
+
+export const getLeaveTemplate = (leave: any, status: 'Pending' | 'Approved' | 'Rejected' | 'Pending HOI Approval', opts?: { employee?: any; actions?: { approveUrl: string; rejectUrl: string } }) => {
     const statusColor = status === 'Approved' ? '#10b981' : status === 'Rejected' ? '#ef4444' : '#f59e0b';
     const displayStatus = status === 'Pending HOI Approval' ? 'Awaiting HOI' : status === 'Pending' ? 'Awaiting HR' : status;
     const title = `Leave Request: ${displayStatus}`;
 
     const cleanReason = (leave.reason && leave.reason !== "undefined") ? leave.reason : "Professional reason not detailed";
+    // Leave-application e-mail: employee details and the application date as well
+    const emp = opts?.employee;
 
     const content = DataTable([
         { label: "Employee Name", value: leave.employeeName },
+        ...(emp ? [
+            { label: "Employee ID", value: leave.employeeId },
+            { label: "Department", value: emp.dept || emp.department || "—" },
+            { label: "Designation", value: emp.designation || emp.role || "—" },
+        ] : []),
         { label: "Leave Type", value: `${leave.type} (${leave.leaveType})` },
-        { label: "Duration", value: `${formatDate(leave.startDate)} to ${formatDate(leave.endDate)} (${leave.days} days)` },
+        ...(emp ? [
+            { label: "Leave Start Date", value: formatDate(leave.startDate) },
+            { label: "Leave End Date", value: formatDate(leave.endDate) },
+            { label: "Total Leave Days", value: String(leave.days) },
+        ] : [{ label: "Duration", value: `${formatDate(leave.startDate)} to ${formatDate(leave.endDate)} (${leave.days} days)` }]),
         { label: "Reason", value: cleanReason },
+        ...(emp ? [{ label: "Application Date", value: formatDate(leave.appliedAt) }] : []),
         { label: "Current Status", value: displayStatus.toUpperCase(), color: statusColor }
-    ]);
+    ]) + (opts?.actions ? LeaveActionButtons(opts.actions.approveUrl, opts.actions.rejectUrl) : '');
 
     return {
         subject: `[LEAVE REQUEST] ${leave.employeeName} - ${formatDate(leave.startDate)}`,

@@ -1303,7 +1303,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     return updated;
                 });
 
-                router.push("/");
+                // Opened from a leave e-mail link before logging in → back to that page
+                let next = "/";
+                try { const s = sessionStorage.getItem("gog_after_login") || ""; if (s.startsWith("/leave-action?")) next = s; } catch { /* ignore */ }
+                router.push(next);
                 return { success: true };
             } else {
                 return { success: false, msg: data.error || "Authentication failed." };
@@ -1863,10 +1866,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // --- EMAIL NOTIFICATION ---
                 const raiser = employees.find(e => e.id === user.id);
                 const authorities = getAuthorityEmails(raiser, employees);
-                const { subject: mailSub, html: mailHtml } = getLeaveTemplate(data, initialStatus as any);
 
+                // Same recipients as before; the server sends the e-mail so that authorised approvers
+                // get their own secure "Accept Leave / Reject Leave" buttons
                 if (authorities.length > 0) {
-                    sendMail({ to: authorities, subject: mailSub, html: mailHtml });
+                    fetch("/api/leaves/application-email", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ leaveId: data.id, recipients: authorities })
+                    }).catch(err => console.error("Leave e-mail failed:", err));
                 }
             }
         } catch (err) { console.error(err); }

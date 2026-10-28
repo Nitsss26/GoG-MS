@@ -242,7 +242,7 @@ export const INDIAN_HOLIDAYS_2026 = [
 // Flag configuration shared across pages
 export const FLAG_CONFIG: Record<string, { label: string; emoji: string; color: string; dotColor: string }> = {
     late: { label: "Late Clock-In", emoji: "🟡", color: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20", dotColor: "bg-yellow-400" },
-    earlyOut: { label: "Early Clock-Out", emoji: "🟡", color: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20", dotColor: "bg-yellow-400" },
+    earlyOut: { label: "Early Clock-Out", emoji: "🟣", color: "text-purple-400 bg-purple-500/10 border-purple-500/20", dotColor: "bg-purple-400" },
     locationDiff: { label: "Location Diff", emoji: "🟡", color: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20", dotColor: "bg-yellow-400" },
     misconduct: { label: "Misconduct", emoji: "🔴", color: "text-red-400 bg-red-500/10 border-red-500/20", dotColor: "bg-red-500" },
     dressCode: { label: "Dress Code", emoji: "🟠", color: "text-orange-400 bg-orange-500/10 border-orange-500/20", dotColor: "bg-orange-400" },

@@ -6,7 +6,7 @@ import { getExpectedTimingInternal } from '@/lib/attendance-utils';
 import { COLLEGES } from '@/lib/colleges';
 import { getSessionUser } from '@/lib/session-user';
 import { recordViolation } from '@/lib/attendance-violations';
-import { assignedLocationsOf, matchAssignedLocation, makeVisit, locationLabel, MAX_VISIT_ACCURACY_M, UNASSIGNED_LOCATION_ERROR } from '@/lib/multi-location-attendance';
+import { assignedLocationsOf, matchAssignedLocation, makeVisit, locationLabel, MAX_VISIT_ACCURACY_M, UNASSIGNED_LOCATION_ERROR, tracksDetectedAddress, matchedVisitExtras, recordUnmatchedAttempt, unmatchedPlace } from '@/lib/multi-location-attendance';
 
 export async function POST(req: Request) {
     try {
@@ -78,6 +78,14 @@ export async function POST(req: Request) {
         const assignedLocs = assignedLocationsOf(employee);
         const hasCoords = typeof lat === 'number' && typeof lng === 'number';
         const gpsAccuracy = typeof accuracy === 'number' && isFinite(accuracy) ? accuracy : undefined;
+        const nowHMS = istTime.getHours().toString().padStart(2, '0') + ":" + istTime.getMinutes().toString().padStart(2, '0') + ":" + istTime.getSeconds().toString().padStart(2, '0');
+        // HOI outside every assigned location: the clock-in is allowed at the actual GPS position, shown and stored as
+        // "No Location Match" with the reverse-geocoded address (and logged for HR review). Other roles: refused as before.
+        const refusedUnassigned = () => NextResponse.json({ error: UNASSIGNED_LOCATION_ERROR, unassignedLocation: true }, { status: 403 });
+        const unmatchedPreview = (u: any, extra: any = {}) => NextResponse.json({
+            preview: true, unmatched: true, locationMatchStatus: 'unmatched',
+            detected: { id: u.place.id, name: u.place.name, unmatched: true }, detectedAddress: u.detectedAddress || null, attemptTime: nowHMS, ...extra,
+        });
 
         // One attendance session per day: an existing clock-in is never overwritten or duplicated
         // (a double click / two tabs used to create a second record for the same date)
@@ -93,28 +101,44 @@ export async function POST(req: Request) {
                         return NextResponse.json({ error: `GPS accuracy is too low (±${Math.round(gpsAccuracy)} m). Move to an open area and try again.`, gpsAccuracyLow: true }, { status: 422 });
                     }
                     const match = await matchAssignedLocation(lat, lng, assignedLocs);
-                    if (!match) return NextResponse.json({ error: UNASSIGNED_LOCATION_ERROR, unassignedLocation: true }, { status: 403 });
                     const currentId = existing.currentLocationId || existing.location;
-                    const detected = { id: match.location.id, name: locationLabel(match.location), distanceKm: match.distanceKm, ambiguous: match.ambiguous };
-                    if (preview) return NextResponse.json({ preview: true, detected, currentLocationId: currentId, sameAsCurrent: currentId === match.location.id });
-                    if (currentId === match.location.id) {
+                    let place: any, extras: any = {}, unmatched: any = null;
+                    if (match) {
+                        place = match.location;
+                    } else {
+                        if (!tracksDetectedAddress(employee)) return refusedUnassigned();
+                        unmatched = await unmatchedPlace(lat, lng);
+                        place = unmatched.place; extras = unmatched.extras;
+                    }
+                    // same spot again: an assigned location by id; a "No Location Match" place within 300 m of the last one
+                    const lastVisit: any = [...(existing.locationVisits || [])].reverse().find((v: any) => v.event !== 'CLOCK_OUT' && v.event !== 'UNMATCHED_ATTEMPT');
+                    const samePlace = currentId === place.id || (!!unmatched && String(currentId || '').startsWith('GPS:') && typeof lastVisit?.lat === 'number' && getDistance(lat, lng, lastVisit.lat, lastVisit.lng) < 0.3);
+                    if (preview) {
+                        if (unmatched) return unmatchedPreview(unmatched, { currentLocationId: currentId, sameAsCurrent: samePlace });
+                        return NextResponse.json({ preview: true, detected: { id: match!.location.id, name: locationLabel(match!.location), distanceKm: match!.distanceKm, ambiguous: match!.ambiguous }, currentLocationId: currentId, sameAsCurrent: samePlace });
+                    }
+                    const detected = match
+                        ? { id: match.location.id, name: locationLabel(match.location), distanceKm: match.distanceKm, ambiguous: match.ambiguous }
+                        : { id: place.id, name: place.name, unmatched: true };
+                    if (samePlace) {
                         return NextResponse.json({ error: `You are already clocked in at ${detected.name}.`, record: existing, alreadyClockedIn: true, duplicate: true }, { status: 409 });
                     }
                     const time = istTime.getHours().toString().padStart(2, '0') + ":" + istTime.getMinutes().toString().padStart(2, '0') + ":" + istTime.getSeconds().toString().padStart(2, '0');
                     const visits: any[] = [];
                     // Day started before this feature: keep its first clock-in as the first visit
-                    if (!existing.locationVisits?.length) {
+                    if (!(existing.locationVisits || []).some((v: any) => v.event === 'CLOCK_IN')) {
                         const firstLoc: any = await Location.findOne({ id: existing.location }).lean();
                         visits.push(makeVisit('CLOCK_IN', firstLoc || { id: existing.location }, existing.clockInAt ? new Date(existing.clockInAt) : now, existing.clockIn));
                     }
-                    visits.push(makeVisit('LOCATION_CLOCK_IN', match.location, now, time, lat, lng, gpsAccuracy));
+                    if (match) extras = await matchedVisitExtras(employee, lat, lng);
+                    visits.push({ ...makeVisit('LOCATION_CLOCK_IN', place, now, time, lat, lng, gpsAccuracy), ...extras });
                     // Only if nothing changed since it was read (two quick requests cannot both add a visit)
                     const updated = await Attendance.findOneAndUpdate(
                         {
                             _id: existing._id, $or: [{ clockOut: { $exists: false } }, { clockOut: null }, { clockOut: '' }],
                             ...(existing.currentLocationId ? { currentLocationId: existing.currentLocationId } : { currentLocationId: { $exists: false } }),
                         },
-                        { $set: { currentLocationId: match.location.id }, $push: { locationVisits: { $each: visits } } },
+                        { $set: { currentLocationId: place.id }, $push: { locationVisits: { $each: visits } } },
                         { new: true }
                     );
                     const ownVisitId = visits[visits.length - 1].id;
@@ -122,7 +146,11 @@ export async function POST(req: Request) {
                         const latest: any = await Attendance.findById(existing._id).lean();
                         return NextResponse.json({ error: "This clock-in was already recorded.", record: latest, alreadyClockedIn: true, duplicate: true }, { status: 409 });
                     }
-                    return NextResponse.json({ message: `Location change recorded: ${detected.name}`, record: updated, locationVisit: true, detected });
+                    if (unmatched) {
+                        await recordUnmatchedAttempt(employee, today, time, now, lat, lng, gpsAccuracy, assignedLocs, { timeline: false, outcome: 'Clocked In', detectedAddress: unmatched.detectedAddress }).catch(() => {});
+                        return NextResponse.json({ message: `Clock-in recorded at ${detected.name} (No Location Match)`, record: updated, locationVisit: true, detected, locationMatchStatus: 'unmatched', detectedAddress: unmatched.detectedAddress || null });
+                    }
+                    return NextResponse.json({ message: `Location change recorded: ${detected.name}`, record: updated, locationVisit: true, detected, locationMatchStatus: tracksDetectedAddress(employee) ? 'matched' : undefined });
                 }
                 return NextResponse.json({ error: "You have already clocked in today.", record: existing, alreadyClockedIn: true }, { status: 409 });
             }
@@ -130,7 +158,10 @@ export async function POST(req: Request) {
             if (preview && assignedLocs.length) {
                 if (!hasCoords) return NextResponse.json({ error: "Location coordinates missing from request." }, { status: 400 });
                 const match = await matchAssignedLocation(lat, lng, assignedLocs);
-                if (!match) return NextResponse.json({ error: UNASSIGNED_LOCATION_ERROR, unassignedLocation: true }, { status: 403 });
+                if (!match) {
+                    if (!tracksDetectedAddress(employee)) return refusedUnassigned();
+                    return unmatchedPreview(await unmatchedPlace(lat, lng), { firstClockIn: true });
+                }
                 return NextResponse.json({ preview: true, firstClockIn: true, detected: { id: match.location.id, name: locationLabel(match.location), distanceKm: match.distanceKm, ambiguous: match.ambiguous } });
             }
         }
@@ -154,6 +185,7 @@ export async function POST(req: Request) {
         // 5. Geofencing Check (Skip if WFH)
         const isWFH = expectedLocationId.toLowerCase() === "wfh";
         let campus = null;
+        let hoiUnmatched: any = null; // HOI first clock-in outside every assigned location
         if (!isWFH && !isOverride) {
             if (typeof lat !== 'number' || typeof lng !== 'number') {
                 return NextResponse.json({ error: "Location coordinates missing from request." }, { status: 400 });
@@ -163,10 +195,11 @@ export async function POST(req: Request) {
                 // HOI / OM with assigned attendance locations (HR → Work Location): the nearest assigned one whose
                 // geofence contains the device; nowhere else
                 const match = await matchAssignedLocation(lat, lng, assignedLocs);
-                if (!match) {
-                    return NextResponse.json({ error: UNASSIGNED_LOCATION_ERROR, unassignedLocation: true }, { status: 403 });
-                }
-                campus = match.location;
+                if (match) campus = match.location;
+                else if (tracksDetectedAddress(employee)) {
+                    hoiUnmatched = await unmatchedPlace(lat, lng);
+                    campus = hoiUnmatched.place;
+                } else return refusedUnassigned();
             } else if (employee.role === "HOI" || employee.role === "OM" || employee.role === "MARKETING_TEAM" || employee.role === "TECH_TEAM") {
                 const dbCampuses = await Location.find({});
                 const map = new Map();
@@ -204,7 +237,7 @@ export async function POST(req: Request) {
         // 6. Clock-in
         const updateData: any = {
             clockIn: istTime.getHours().toString().padStart(2, '0') + ":" + istTime.getMinutes().toString().padStart(2, '0') + ":" + istTime.getSeconds().toString().padStart(2, '0'),
-            location: isWFH ? "WFH" : (isOverride ? (expectedLocationId || "Office") : campus?.id),
+            location: isWFH ? "WFH" : (isOverride ? (expectedLocationId || "Office") : hoiUnmatched ? hoiUnmatched.place.name : campus?.id),
             clockInAt: now,
             status: "Present",
             dressCodeImageUrl: dressCodeImageUrl,
@@ -225,7 +258,7 @@ export async function POST(req: Request) {
         // HOI / OM with assigned locations: the first clock-in opens the day's location timeline
         if (assignedLocs.length && campus && !isWFH && !useWfhApp) {
             updateData.currentLocationId = campus.id;
-            updateData.locationVisits = [makeVisit('CLOCK_IN', campus, now, updateData.clockIn, lat, lng, gpsAccuracy)];
+            updateData.locationVisits = [{ ...makeVisit('CLOCK_IN', campus, now, updateData.clockIn, lat, lng, gpsAccuracy), ...(hoiUnmatched ? hoiUnmatched.extras : await matchedVisitExtras(employee, lat, lng)) }];
         }
 
         let attendance = await Attendance.findOneAndUpdate(
@@ -238,6 +271,11 @@ export async function POST(req: Request) {
         if (sameDay.length > 1) {
             await Attendance.deleteMany({ _id: { $in: sameDay.slice(1).map(d => d._id) } });
             attendance = await Attendance.findById(sameDay[0]._id);
+        }
+
+        // HOI clock-in outside every assigned location: also logged for HR review
+        if (hoiUnmatched) {
+            await recordUnmatchedAttempt(employee, today, updateData.clockIn, now, lat, lng, gpsAccuracy, assignedLocs, { timeline: false, outcome: 'Clocked In', detectedAddress: hoiUnmatched.detectedAddress }).catch(() => {});
         }
 
         // Late Clock-In → warning / deduction email (once per day; short leave is not counted)

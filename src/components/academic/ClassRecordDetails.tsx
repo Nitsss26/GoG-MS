@@ -334,6 +334,11 @@ export function ClassRecordDetails({ record }: { record: any }) {
                             <p className="text-[13px] font-semibold text-white">{record.assignment.title}</p>
                             {record.assignment.assignmentUrl && <a href={record.assignment.assignmentUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-violet-300 hover:underline flex items-center gap-1.5 break-all"><ExternalLink size={12} className="shrink-0" /> {record.assignment.assignmentUrl}</a>}
                             <p className="text-[11px] text-zinc-500">{record.assignment.addedLater ? "Added later" : "Added with the record"}{record.assignment.addedAt ? ` · ${fmt(record.assignment.addedAt)}` : ""}{record.assignment.deadline ? ` · Due ${dmy(record.assignment.deadline)}` : ""}</p>
+                            {record.assignment.addedLater && (record.pipelineStatus === "COMPLETED" || record.assignment.verificationStatus !== "Pending") && (
+                                <p className="text-[11px] text-zinc-400" data-testid="assignment-verification">Verification: <span className={record.assignment.verificationStatus === "Approved" ? "text-emerald-300" : record.assignment.verificationStatus === "Needs Revision" ? "text-red-300" : "text-amber-300"}>{record.assignment.verificationStatus === "Approved" ? "Verified" : record.assignment.verificationStatus || "Pending"}</span>
+                                    {record.assignment.verifiedByName && record.assignment.verificationStatus !== "Pending" ? ` · ${record.assignment.verifiedByName}${record.assignment.verifiedAt ? `, ${fmt(record.assignment.verifiedAt)}` : ""}` : ""}
+                                    {record.assignment.leadRemarks && record.assignment.verificationStatus === "Needs Revision" ? ` — ${record.assignment.leadRemarks}` : ""}</p>
+                            )}
                         </div>
                     ) : (
                         <div className="relative">
@@ -629,6 +634,20 @@ export function ClassRecordActions({ record, role, userId, onDone }: { record: a
                         <button disabled={!!busy || comment.trim().length < 5} onClick={() => call("final_revert", { revertTo: "OM" })} className={`${btn} bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20`}><RotateCcw size={12} /> Revert to OM</button>
                     </div>
                     <p className="text-[10px] text-zinc-500">Any one of CL, CH, HOI or AD can do the final verification. Once done, it is no longer pending for the others.</p>
+                </div>
+            )}
+
+            {/* HOI: assignment added after the class record was completed */}
+            {role === "HOI" && st === "COMPLETED" && !record.virtual && record.assignment?.hasAssignment && record.assignment?.verificationStatus === "Pending" && (
+                <div className="space-y-2 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5" data-testid="hoi-assignment-review">
+                    <p className="text-[10px] font-black text-amber-300 uppercase tracking-widest">Assignment added later — verify</p>
+                    <textarea value={comment} onChange={e => setComment(e.target.value)} data-testid="assignment-comment"
+                        placeholder="Comment (required for Needs Revision)"
+                        className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white placeholder:text-zinc-600 outline-none focus:border-amber-500/50 resize-none h-14" />
+                    <div className="flex flex-wrap gap-2">
+                        <button disabled={!!busy} onClick={() => call("hoi_assignment_verify")} data-testid="hoi-assignment-verify" className={`${btn} bg-emerald-600 hover:bg-emerald-500 text-white`}><CheckCircle2 size={12} /> Verify Assignment</button>
+                        <button disabled={!!busy || comment.trim().length < 5} title="Write a comment (at least 5 characters)" onClick={() => call("hoi_assignment_revert")} data-testid="hoi-assignment-revert" className={`${btn} bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20`}><RotateCcw size={12} /> Needs Revision</button>
+                    </div>
                 </div>
             )}
 

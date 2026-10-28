@@ -682,7 +682,47 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
                 },
                 $push: { pipelineHistory: historyItem(actor, prev.hasAssignment ? 'Assignment updated' : 'Assignment added', status, status, url) },
             }, { new: true });
+            // Added after the final verification: the HOI of the college verifies it
+            if (r && status === 'COMPLETED') {
+                const prof: any = await Employee.findOne({ id: r.facultyId }).select('location').lean();
+                await notifySafe({
+                    recipients: await collegeRecipients(prof?.location || r.college, ['HOI'], r.facultyId),
+                    title: `Assignment added later — ${r.facultyName}`,
+                    message: `${actor.name} added an assignment after the class record was completed. Please verify it.`,
+                    type: 'CLASS_ASSIGNMENT_ADDED', link: `/academic/verification?record=${r._id}`,
+                    entityType: 'LectureReport', entityId: String(r._id), college: r.college, actor,
+                    rows: [...(await classLabel(r)), { label: 'Assignment', value: r.assignment?.title || '' }, { label: 'Link', value: url },
+                    ...(r.assignment?.deadline ? [{ label: 'Deadline', value: r.assignment.deadline }] : [])],
+                });
+            }
             return { ok: true, record: r, message: 'Assignment saved for this class.' };
+        }
+        // ── HOI: verify an assignment added after the class record was completed ──
+        case 'hoi_assignment_verify':
+        case 'hoi_assignment_revert': {
+            if (!isHOI) return fail(403, 'Only the HOI can verify an assignment added later.');
+            if (status !== 'COMPLETED') return fail(409, 'This assignment is verified with the class record (final verification).');
+            if (!record.assignment?.hasAssignment || record.assignment?.verificationStatus !== 'Pending') return fail(409, 'There is no assignment waiting for verification.');
+            const revert = input.action === 'hoi_assignment_revert';
+            if (revert && comment.length < 5) return fail(400, 'Please write what the professor must correct (at least 5 characters).');
+            const r = await LectureReport.findOneAndUpdate({ _id: id, 'assignment.hasAssignment': true, 'assignment.verificationStatus': 'Pending' }, {
+                $set: {
+                    'assignment.verificationStatus': revert ? 'Needs Revision' : 'Approved',
+                    'assignment.verifiedBy': actor.id, 'assignment.verifiedByName': actor.name, 'assignment.verifiedAt': nowISO(),
+                    'assignment.leadRemarks': comment,
+                },
+                $push: { pipelineHistory: historyItem(actor, revert ? 'Assignment sent back by HOI (needs revision)' : 'Assignment verified by HOI', status, status, comment) },
+            }, { new: true });
+            if (!r) return changed();
+            await notifySafe({
+                recipients: await professorOf(r), email: revert,
+                title: revert ? 'Assignment Needs Revision' : 'Assignment Verified',
+                message: revert ? `${actor.name} (HOI) sent your assignment back. Please correct it and add it again.` : `${actor.name} (HOI) verified your assignment.`,
+                type: revert ? 'CLASS_ASSIGNMENT_REVERTED' : 'CLASS_ASSIGNMENT_VERIFIED', link: `/faculty/lectures?date=${r.date}`,
+                entityType: 'LectureReport', entityId: String(r._id), college: r.college, actor,
+                rows: [...(await classLabel(r)), { label: 'Assignment', value: r.assignment?.title || '' }, ...(comment ? [{ label: 'HOI Comment', value: comment }] : [])],
+            });
+            return { ok: true, record: r, message: revert ? 'Assignment sent back to the professor.' : 'Assignment verified.' };
         }
         // ── Professor: upload notes later (resolves "notes pending") ──
         case 'upload_notes': {

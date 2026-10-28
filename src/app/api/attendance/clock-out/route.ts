@@ -74,7 +74,8 @@ export async function POST(req: Request) {
         // the clock-in college); the actual clock-out location is stored separately. Other roles: unchanged.
         let clockOutLocation: string | null = null;
         let clockOutLoc: any = null;
-        const hoiAllowed: string[] = assignedLocationsOf(employee);
+        // HOI: clock-out from anywhere (no location check); OM with assigned locations: inside any one of them
+        const hoiAllowed: string[] = employee.role === 'HOI' ? [] : assignedLocationsOf(employee);
         if (hoiAllowed.length && !overrideDate) {
             const dayRec: any = await Attendance.findOne({ employeeId, date: today }).select('location workMode').lean();
             const remote = String(dayRec?.location || '').toLowerCase() === 'wfh';
