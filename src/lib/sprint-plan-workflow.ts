@@ -11,7 +11,13 @@
  *
  *   SUBMITTED / RESUBMITTED ──return (reason)──▶ UNLOCKED_FOR_REVISION   (reviewer asks for corrections before locking)
  *
- * Who: professor (owner) — save draft, submit, request unlock.
+ * Professor self-locking (current flow, no HOI approval):
+ *   DRAFT / SUBMITTED ──self_lock──▶ LOCKED ──self_unlock──▶ UNLOCKED_FOR_REVISION ("Unlocked for Editing")
+ *   UNLOCKED_FOR_REVISION ──self_lock──▶ LOCKED_AGAIN ("Updated & Re-Locked")
+ *   HOI is told when the plan is locked; HOI + CL / CH are told when it is unlocked, changed and re-locked
+ *   (with the list of classes added / changed / removed).
+ *
+ * Who: professor (owner) — save draft, lock, unlock (older: submit, request unlock).
  *      HOI / CL / CH / AD (and Founder) in the plan's college scope — lock, unlock, reject an unlock request.
  * Every step is written to plan.history; every submission keeps a copy of the entries in plan.revisions.
  * Transitions are atomic (the update only matches when the plan is still in the expected status).
@@ -26,6 +32,22 @@ import {
 } from '@/lib/academic';
 import { Employee } from '@/models/Schemas';
 import { validateSprintEntries } from '@/lib/time-utils';
+import { checkEntries, collegeOfEmployee, diffEntries, fmtDate } from '@/lib/sprint-plan-rules';
+
+/** "26 October – 1 November 2026" (Mon–Sun) */
+function weekText(start: string, end?: string) {
+    const f = (ymd: string, y: boolean) => new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', ...(y ? { year: 'numeric' } : {}), timeZone: 'UTC' });
+    const sunday = (() => { const d = new Date(`${start}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 6); return d.toISOString().slice(0, 10); })();
+    return `${f(start, false)} – ${f(end && end > sunday ? end : sunday, true)}`;
+}
+const istTime = (iso: string) => new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+const plainEntries = (plan: any) => (plan?.entries || []).map((e: any) => (e.toObject ? e.toObject() : e));
+/** HOI (campus + reporting line) — and CL / CH when `withClCh` */
+async function planRecipients(plan: any, withClCh: boolean) {
+    const prof: any = await Employee.findOne({ id: plan.facultyId }).select('location').lean();
+    const college = prof?.location || plan.college;
+    return { college, recipients: await collegeRecipients(college, withClCh ? ['HOI', 'CURRICULUM_LEAD', 'CURRICULUM_HEAD'] : ['HOI'], plan.facultyId) };
+}
 
 export type Actor = { id: string; name: string; role: string; employee?: any };
 export type PlanActionResult = { ok: true; plan: any; message: string } | { ok: false; status: number; error: string };
@@ -315,6 +337,102 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
             return { ok: true, plan: updated, message: 'Unlock request rejected. The plan stays locked.' };
         }
 
+        // ── Professor: Finalize & Lock / Save & Re-Lock their own plan (no HOI approval) ──
+        case 'self_lock': {
+            if (!isOwner) return fail(403, 'Only the professor who owns this plan can lock it.');
+            if (!['DRAFT', 'SUBMITTED', 'RESUBMITTED', 'UNLOCKED_FOR_REVISION'].includes(status)) {
+                return fail(409, `This plan is already ${PLAN_STATUS_LABEL[status]}.`);
+            }
+            const entries = plainEntries(plan);
+            if (!entries.length) return fail(400, 'Add at least one class before locking the plan.');
+            const v = validateSprintEntries(entries);
+            if (!v.valid) return fail(400, v.error || 'Some classes have invalid times.');
+            const missing = entries.findIndex((e: any) => !e.subjectName || !e.topics);
+            if (missing >= 0) return fail(400, `Class ${missing + 1} (${entries[missing].day} ${fmtDate(entries[missing].date)}) needs a Subject and a Topic before locking.`);
+            const college = await collegeOfEmployee(actor.employee);
+            const chk = await checkEntries({ facultyId: plan.facultyId, college, weekStartDate: plan.weekStartDate, weekEndDate: plan.weekEndDate, entries });
+            if (!chk.ok) return fail(chk.status, chk.error);
+
+            const lean: any = await SprintPlan.findById(plan._id).select('unlockSnapshot history').lean();
+            const relock = status === 'UNLOCKED_FOR_REVISION' || status === 'RESUBMITTED' || !!lean?.unlockSnapshot;
+            const to = relock ? 'LOCKED_AGAIN' : 'LOCKED';
+            const version = relock ? (plan.version || 1) + 1 : (plan.version || 1);
+            const changes = relock ? diffEntries(lean?.unlockSnapshot || [], entries) : [];
+            const updated = await transition(plan._id, [status], {
+                $set: {
+                    status: to, isLocked: true, version, lockedAt: now, lockedBy: actor.name, lockedById: actor.id, lockedByName: actor.name, lockedByRole: actor.role,
+                    approval: { state: 'APPROVED', type: 'SELF_LOCKED', label: 'Locked by Professor', byId: actor.id, byName: actor.name, byRole: actor.role, byDesignation: actor.employee?.designation || actor.role, at: now, remarks: '' },
+                    ...(plan.submittedAt ? {} : { submittedAt: now }),
+                },
+                $unset: { unlockSnapshot: 1 },
+                $push: {
+                    history: historyItem(actor, relock ? 'Updated & Re-Locked' : 'Locked', status, to, relock ? (changes.length ? changes.map(c => c.summary).join('\n') : 'No classes changed') : `${entries.length} class(es)`),
+                    revisions: { version, status: to, entries, savedAt: now, savedBy: actor.id, savedByName: actor.name, note: to },
+                },
+            });
+            if (!updated) return fail(409, 'The plan was changed meanwhile. Refresh and try again.');
+            const { college: col, recipients } = await planRecipients(plan, relock);
+            const rows = [
+                { label: 'Professor', value: plan.facultyName },
+                { label: 'College', value: await collegeName(col) },
+                { label: 'Sprint Week', value: weekText(plan.weekStartDate, plan.weekEndDate) },
+                { label: 'Status', value: relock ? 'Updated & Re-Locked' : 'Locked' },
+                { label: relock ? 'Re-Locked At' : 'Locked At', value: istTime(now) },
+                { label: 'Classes', value: String(entries.length) },
+            ];
+            await notifySafe({
+                recipients,
+                title: relock ? `Sprint Plan Re-Locked — ${plan.facultyName}` : `Sprint Plan Locked — ${plan.facultyName}`,
+                message: relock
+                    ? `${plan.facultyName} finalized the updated sprint plan for ${weekText(plan.weekStartDate, plan.weekEndDate)}.`
+                    : `${plan.facultyName} finalized and locked the sprint plan for ${weekText(plan.weekStartDate, plan.weekEndDate)}. No approval is needed.`,
+                type: relock ? 'SPRINT_RELOCKED' : 'SPRINT_LOCKED',
+                link: `/curriculum/sprint-plans?week=${plan.weekStartDate}&plan=${plan._id}`,
+                entityType: 'SprintPlan', entityId: String(plan._id), college: col, actor, rows,
+                ...(relock ? { listItems: changes.length ? changes.map(c => c.summary) : ['No classes were changed after unlocking.'] } : {}),
+            });
+            return { ok: true, plan: updated, message: relock ? 'Sprint plan updated and re-locked. HOI and CL / CH have been informed.' : 'Sprint plan locked. HOI has been informed.' };
+        }
+
+        // ── Professor: unlock their own locked plan straight away (no request / approval) ──
+        case 'self_unlock': {
+            if (!isOwner) return fail(403, 'Only the professor who owns this plan can unlock it.');
+            if (!LOCKED_PLAN_STATUSES.includes(status)) return fail(409, `This plan is not locked (${PLAN_STATUS_LABEL[status]}).`);
+            const set: any = {
+                status: 'UNLOCKED_FOR_REVISION', isLocked: false, lockedAt: null, lockedBy: null,
+                unlockedAt: now, unlockedBy: actor.id, unlockedByName: actor.name, unlockedByRole: actor.role,
+                unlockSnapshot: plainEntries(plan),
+            };
+            if (plan.approval?.state) set['approval.state'] = 'UNLOCKED';
+            const idx = (plan.changeRequests || []).map((c: any) => c.status).lastIndexOf('Pending');
+            if (idx >= 0) {
+                Object.assign(set, {
+                    [`changeRequests.${idx}.status`]: 'Approved', [`changeRequests.${idx}.approvedBy`]: actor.id, [`changeRequests.${idx}.approvedAt`]: now,
+                    [`changeRequests.${idx}.processedBy`]: actor.id, [`changeRequests.${idx}.processedByName`]: actor.name,
+                    [`changeRequests.${idx}.processedByRole`]: actor.role, [`changeRequests.${idx}.processedAt`]: now,
+                    [`changeRequests.${idx}.decisionNote`]: 'Unlocked by the professor',
+                });
+            }
+            const note = String(payload.note || payload.comment || payload.reason || '').trim().slice(0, 500);
+            const updated = await transition(plan._id, [status], { $set: set, $push: { history: historyItem(actor, 'Unlocked for Editing', status, 'UNLOCKED_FOR_REVISION', note) } });
+            if (!updated) return fail(409, 'The plan was changed meanwhile. Refresh and try again.');
+            const { college: col, recipients } = await planRecipients(plan, true);
+            await notifySafe({
+                recipients,
+                title: `Sprint Plan Unlocked — ${plan.facultyName}`,
+                message: `${plan.facultyName} unlocked the sprint plan for ${weekText(plan.weekStartDate, plan.weekEndDate)} to make changes. You will get the list of changes when they are saved.`,
+                type: 'SPRINT_SELF_UNLOCKED',
+                link: `/curriculum/sprint-plans?week=${plan.weekStartDate}&plan=${plan._id}`,
+                entityType: 'SprintPlan', entityId: String(plan._id), college: col, actor,
+                rows: [
+                    { label: 'Professor', value: plan.facultyName }, { label: 'College', value: await collegeName(col) },
+                    { label: 'Sprint Week', value: weekText(plan.weekStartDate, plan.weekEndDate) }, { label: 'Status', value: 'Unlocked for Editing' },
+                    { label: 'Unlocked At', value: istTime(now) }, ...(note ? [{ label: 'Note', value: note }] : []),
+                ],
+            });
+            return { ok: true, plan: updated, message: 'Sprint plan unlocked. Make your changes, then Save & Re-Lock. HOI and CL / CH have been informed.' };
+        }
+
         default:
             return fail(400, 'Unknown action.');
     }
@@ -331,24 +449,40 @@ export async function saveDraft(actor: Actor, body: { weekStartDate: string; wee
     if (existing && LOCKED_PLAN_STATUSES.includes(status)) {
         return fail(403, status === 'UNLOCK_REQUESTED'
             ? 'Your unlock request is waiting for approval. The plan stays locked until it is unlocked.'
-            : 'Sprint plan is locked. Use "Request Unlock" to ask HOI / CL / CH / AD to unlock it.');
+            : 'Sprint plan is locked. Use "Unlock Sprint Plan" to make changes.');
     }
-    const cleanEntries = (entries || []).map((e: any) => ({
+    const now = nowISO();
+    const before = existing ? plainEntries(existing) : [];
+    const beforeById = new Map(before.filter((e: any) => e._id).map((e: any) => [String(e._id), e]));
+    let cleanEntries = (entries || []).map((e: any) => ({
         day: e.day, date: e.date, timeStart: e.timeStart, timeStop: e.timeStop,
         stream: e.stream || '', year: e.year || '', semester: e.semester || '',
         subjectCode: e.subjectCode || '', subjectName: e.subjectName || '', topics: e.topics || '', section: e.section || '',
         lectureType: e.lectureType || '', unitNumber: e.unitNumber ? String(e.unitNumber) : '', content: e.content || '', className: e.className || '',
         ...(e._id ? { _id: e._id } : {}),
     }));
-    const now = nowISO();
+    // When each class row was really written / changed (the scheduled date & time are not back-dated into these)
+    const changes = diffEntries(before, cleanEntries);
+    const changedIds = new Set(changes.filter(c => c.action === 'class_updated').map(c => c.entryId));
+    cleanEntries = cleanEntries.map((e: any) => {
+        const old: any = e._id ? beforeById.get(String(e._id)) : null;
+        if (!old) return { ...e, createdAt: now, createdBy: actor.id, updatedAt: now, updatedBy: actor.id };
+        const base = { createdAt: old.createdAt || '', createdBy: old.createdBy || '', updatedAt: old.updatedAt || '', updatedBy: old.updatedBy || '' };
+        return changedIds.has(String(e._id)) ? { ...e, ...base, updatedAt: now, updatedBy: actor.id } : { ...e, ...base };
+    });
+    // Scheduling rules: own overlaps, college hours, the same class + section at the same time
     const faculty = actor.employee;
+    const college = await collegeOfEmployee(faculty);
+    const chk = await checkEntries({ facultyId: actor.id, college, weekStartDate, weekEndDate, entries: cleanEntries });
+    if (!chk.ok) return { ...fail(chk.status, chk.error), invalidIndices: chk.invalidIndices } as any;
+    const logItems = changes.map(c => ({ at: now, by: actor.id, byName: actor.name, action: c.action, entryId: c.entryId, previousData: c.previousData, updatedData: c.updatedData, summary: c.summary }));
 
     if (!existing) {
         const plan = await SprintPlan.create({
             facultyId: actor.id, facultyName: actor.name, college: faculty?.location || '',
             weekStartDate, weekEndDate, stream: stream || '', year: year || '',
             entries: cleanEntries, isLocked: false, status: 'DRAFT', createdById: actor.id, version: 1,
-            history: [historyItem(actor, 'Created', '', 'DRAFT')],
+            history: [historyItem(actor, 'Created', '', 'DRAFT')], changeLog: logItems,
         });
         return { ok: true as const, plan, message: 'Sprint plan saved as draft.' };
     }
@@ -362,12 +496,27 @@ export async function saveDraft(actor: Actor, body: { weekStartDate: string; wee
     if (!existing.status) set.status = status;
     const updated = await SprintPlan.findOneAndUpdate(
         { _id: existing._id, $or: [{ status: { $in: ['DRAFT', 'SUBMITTED', 'UNLOCKED_FOR_REVISION', 'RESUBMITTED'] } }, { status: { $exists: false }, isLocked: { $ne: true } }] },
-        { $set: set, $push: { history: historyItem(actor, 'Modified', status, status, `${cleanEntries.length} class(es)`) } },
+        { $set: set, $push: { history: historyItem(actor, 'Modified', status, status, changes.length ? changes.map(c => c.summary).join('\n') : `${cleanEntries.length} class(es) — no change`), changeLog: { $each: logItems } } },
         { new: true }
     );
     if (!updated) return fail(409, 'The plan was locked meanwhile. Refresh the page.');
+    // Unlocked plan changed: HOI + CL / CH get the list of real changes (nothing is sent when nothing changed)
+    if (status === 'UNLOCKED_FOR_REVISION' && changes.length) {
+        const { college: col, recipients } = await planRecipients(existing, true);
+        await notifySafe({
+            recipients,
+            title: `Sprint Plan Updated — ${actor.name}`,
+            message: `${actor.name} changed the unlocked sprint plan for ${weekText(weekStartDate, weekEndDate)}.`,
+            type: 'SPRINT_MODIFIED',
+            link: `/curriculum/sprint-plans?week=${weekStartDate}&plan=${existing._id}`,
+            entityType: 'SprintPlan', entityId: String(existing._id), college: col, actor,
+            rows: [{ label: 'Professor', value: actor.name }, { label: 'College', value: await collegeName(col) }, { label: 'Sprint Week', value: weekText(weekStartDate, weekEndDate) }, { label: 'Updated At', value: istTime(now) }],
+            listItems: changes.map(c => c.summary),
+            note: 'The plan is still unlocked; you will be told again when it is re-locked.',
+        });
+    }
     const message = status === 'DRAFT' ? 'Sprint plan saved as draft.'
-        : status === 'UNLOCKED_FOR_REVISION' ? 'Changes saved. Re-submit the plan when you are done.'
-            : 'Changes saved. The plan stays submitted for locking.';
+        : status === 'UNLOCKED_FOR_REVISION' ? (changes.length ? 'Changes saved. HOI and CL / CH have the list of changes. Use "Save & Re-Lock" when you are done.' : 'Saved (no class changed). Use "Save & Re-Lock" when you are done.')
+            : 'Changes saved.';
     return { ok: true as const, plan: updated, message };
 }

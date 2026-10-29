@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { CalendarDays, Calendar, ArrowLeft, ArrowRight, RefreshCw, X, Filter, LayoutGrid, List, ExternalLink, AlertTriangle, Building2, Network, ChevronDown, Users, BookOpen, GraduationCap, GitBranch, Layers, SlidersHorizontal, RotateCcw, Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { CALENDAR_ROLES, PROFESSOR_ROLES, PLAN_STATUS_LABEL, PROFESSOR_EDITABLE_CLASS_STATUSES, CLASS_STATUS_LABEL, CLASS_STATUS_STYLE } from "@/lib/academic-status";
-import { DEFAULT_TIME_SLOTS, FACULTY_CARD_THEMES } from "@/components/academic/SprintPlanTimetableGrid";
+import { FACULTY_CARD_THEMES } from "@/components/academic/SprintPlanTimetableGrid";
 import { ClassStatusBadge, ClassRecordActions } from "@/components/academic/ClassRecordDetails";
 
 /**
@@ -109,20 +109,45 @@ export default function WeeklyCalendarPage() {
         return DAYS.map((d, i) => { const x = new Date(data.weekStart + "T00:00:00Z"); x.setUTCDate(x.getUTCDate() + i); return { ...d, date: x.toISOString().slice(0, 10) }; });
     }, [data?.weekStart]);
 
-    // Rows = the college's standard time slots (+ one row for classes that fall outside them, so nothing is hidden)
+    // Rows follow the real class times (every start / end time of the shown classes) — no fixed slots.
+    // Classes that overlap on a day share one cell; the cell spans from the earliest start to the latest end,
+    // so a class is never split over several rows. Classes with an invalid time go to an "Other times" row.
+    type GridCell = { span: number; items: any[] } | "covered";
     const rowsFor = (list: any[]) => {
-        const teaching = DEFAULT_TIME_SLOTS.filter(sl => !sl.isLunch);
-        const overlaps = (c: any, a: string, b: string) => toMin(c.timeStart) < toMin(b) && toMin(c.timeStop) > toMin(a);
+        const hm = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
         const sortByTime = (l: any[]) => [...l].sort((x, y) => toMin(x.timeStart) - toMin(y.timeStart));
+        const valid = list.filter(c => toMin(c.timeStop) > toMin(c.timeStart));
+        const invalid = list.filter(c => !(toMin(c.timeStop) > toMin(c.timeStart)));
+        const b = Array.from(new Set(valid.flatMap(c => [toMin(c.timeStart), toMin(c.timeStop)]))).sort((x, y) => x - y);
         const rows: { label: string; isLunch?: boolean; other?: boolean; classesFor: (date: string) => any[] }[] =
-            DEFAULT_TIME_SLOTS.map(sl => ({
-                label: `${sl.start.replace(/^0/, "")} – ${sl.stop.replace(/^0/, "")}`,
-                isLunch: !!sl.isLunch,
-                classesFor: (date: string) => sortByTime(list.filter(c => c.date === date && overlaps(c, sl.start, sl.stop))),
-            }));
-        const outside = list.filter(c => !teaching.some(sl => overlaps(c, sl.start, sl.stop)));
-        if (outside.length) rows.push({ label: "Other times", other: true, classesFor: (date: string) => sortByTime(outside.filter(c => c.date === date)) });
-        return rows;
+            b.slice(0, -1).map((m, i) => ({ label: `${hm(m)} – ${hm(b[i + 1])}`, classesFor: () => [] }));
+        const cells = new Map<string, Map<number, GridCell>>();
+        for (const d of dates) {
+            const m = new Map<number, GridCell>();
+            let open: { row: number; end: number; cell: { span: number; items: any[] } } | null = null;
+            for (const c of sortByTime(valid.filter(x => x.date === d.date))) {
+                if (open && toMin(c.timeStart) < open.end) {
+                    open.cell.items.push(c);
+                    open.end = Math.max(open.end, toMin(c.timeStop));
+                    open.cell.span = b.indexOf(open.end) - open.row;
+                    continue;
+                }
+                const r0 = b.indexOf(toMin(c.timeStart));
+                const cell = { span: b.indexOf(toMin(c.timeStop)) - r0, items: [c] };
+                m.set(r0, cell);
+                open = { row: r0, end: toMin(c.timeStop), cell };
+            }
+            for (const [r, cell] of Array.from(m)) if (cell !== "covered") for (let k = 1; k < cell.span; k++) m.set(r + k, "covered");
+            cells.set(d.date, m);
+        }
+        if (invalid.length) rows.push({ label: "Other times", other: true, classesFor: (date: string) => sortByTime(invalid.filter(c => c.date === date)) });
+        /** the cell that starts at this row (null = free, "covered" = part of a class above) */
+        const cellAt = (rowIdx: number, date: string): GridCell | null => {
+            const row = rows[rowIdx];
+            if (row?.other) { const items = row.classesFor(date); return items.length ? { span: 1, items } : null; }
+            return cells.get(date)?.get(rowIdx) ?? null;
+        };
+        return { rows, cellAt };
     };
 
     // ── Campuses (from the server's college scope) ──
@@ -219,12 +244,19 @@ export default function WeeklyCalendarPage() {
                 doc.setFontSize(9); doc.setTextColor(161, 161, 170);
                 doc.text(`${sec.list.length} class${sec.list.length === 1 ? "" : "es"}`, W - M - 14, M + 25, { align: "right" });
 
-                const rows = rowsFor(sec.list);
-                const cellClasses: any[][][] = rows.map(r => dates.map(d => r.isLunch ? [] : r.classesFor(d.date)));
+                const grid = rowsFor(sec.list);
+                const rows = grid.rows;
+                // classes of the cell that starts at [row][day] (a class spans its rows, never split)
+                const cellClasses: any[][][] = rows.map((r, ri) => dates.map(d => { const at = grid.cellAt(ri, d.date); return at && at !== "covered" ? at.items : []; }));
                 const body = rows.map((r, ri) => [
-                    r.isLunch ? `${r.label}\nLUNCH` : r.other ? `${r.label}\n(outside slots)` : r.label,
-                    ...dates.map((d, di) => r.isLunch ? "LUNCH" : cellClasses[ri][di].map(c =>
-                        `${c.subjectName || c.topics || "Lecture"}\n${view === "college" ? c.facultyName : (c.className || c.branch || "")}${c.section ? ` · Sec ${c.section}` : ""}\n${c.timeStart}–${c.timeStop}`).join("\n\n") || "—"),
+                    r.other ? `${r.label}\n(check time)` : r.label,
+                    ...dates.flatMap((d, di) => {
+                        const at = grid.cellAt(ri, d.date);
+                        if (at === "covered") return [];
+                        const text = cellClasses[ri][di].map(c =>
+                            `${c.subjectName || c.topics || "Lecture"}\n${view === "college" ? c.facultyName : (c.className || c.branch || "")}${c.section ? ` · Sec ${c.section}` : ""}\n${c.timeStart}–${c.timeStop}`).join("\n\n") || "—";
+                        return [at && at.span > 1 ? { content: text, rowSpan: at.span } : text];
+                    }),
                 ]);
                 autoTable(doc, {
                     startY: M + 50,
@@ -286,7 +318,8 @@ export default function WeeklyCalendarPage() {
 
     // ── Timetable (same look and colours as the Sprint Plan timetable). compact = all-campuses overview ──
     const Timetable = ({ list, compact, title, badge }: { list: any[]; compact?: boolean; title?: string; badge?: string }) => {
-        const rows = rowsFor(list);
+        const grid = rowsFor(list);
+        const rows = grid.rows;
         const profsHere = Array.from(new Map(list.map(c => [c.facultyId, c.facultyName])).entries());
         return (
             <div className={`overflow-x-auto [contain:inline-size] ${compact ? "" : "rounded-2xl border-2 border-zinc-800/80 shadow-2xl"} bg-[#0c0d10] p-0.5`} data-testid="calendar-grid">
@@ -320,17 +353,19 @@ export default function WeeklyCalendarPage() {
                     </thead>
                     <tbody className="divide-y divide-zinc-800 text-xs">
                         {rows.map((row, rIdx) => (
-                            <tr key={rIdx} className={`hover:bg-zinc-900/30 ${row.isLunch ? (compact ? "h-7" : "h-10") : (compact ? "" : "h-24")}`}>
+                            <tr key={rIdx} className={`hover:bg-zinc-900/30 ${row.isLunch ? (compact ? "h-7" : "h-10") : (compact ? "" : "h-16")}`}>
                                 <td className={`font-black ${compact ? "text-[10px] py-1.5" : "text-[11px] py-2"} px-2 border-r-2 border-zinc-800 leading-tight ${row.isLunch ? "bg-[#663b14] text-amber-100" : row.other ? "bg-zinc-800 text-zinc-300" : "bg-zinc-900 text-zinc-100"}`}>
                                     {row.label}
                                     {row.isLunch && !compact && <div className="text-[9px] tracking-widest mt-0.5">LUNCH</div>}
-                                    {row.other && <div className="text-[9px] text-zinc-500 tracking-wider mt-0.5">OUTSIDE SLOTS</div>}
+                                    {row.other && <div className="text-[9px] text-zinc-500 tracking-wider mt-0.5">CHECK TIME</div>}
                                 </td>
                                 {dates.map(d => {
                                     if (row.isLunch) return <td key={d.date} className="bg-amber-950/20 text-amber-200/80 font-black text-[9px] border-r border-zinc-800/80 uppercase tracking-widest">Lunch</td>;
-                                    const cell = row.classesFor(d.date);
+                                    const at = grid.cellAt(rIdx, d.date);
+                                    if (at === "covered") return null;
+                                    const cell = at ? at.items : [];
                                     return (
-                                        <td key={d.date} className={`${compact ? "p-1" : "p-1.5"} align-top border-r border-zinc-800 ${d.date === today ? "bg-sky-500/[0.04]" : ""}`}>
+                                        <td key={d.date} rowSpan={at && at.span > 1 ? at.span : undefined} className={`${compact ? "p-1" : "p-1.5"} align-top border-r border-zinc-800 ${d.date === today ? "bg-sky-500/[0.04]" : ""}`}>
                                             {cell.length === 0 ? (
                                                 <div className={`h-full ${compact ? "min-h-[1.75rem]" : "min-h-[3rem]"} flex items-center justify-center text-[10px] text-zinc-700`}>—</div>
                                             ) : (

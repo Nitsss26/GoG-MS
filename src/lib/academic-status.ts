@@ -20,9 +20,9 @@ export const PLAN_STATUS_LABEL: Record<string, string> = {
     SUBMITTED: "Submitted",
     LOCKED: "Locked",
     UNLOCK_REQUESTED: "Unlock Requested",
-    UNLOCKED_FOR_REVISION: "Unlocked for Revision",
+    UNLOCKED_FOR_REVISION: "Unlocked for Editing",
     RESUBMITTED: "Re-submitted",
-    LOCKED_AGAIN: "Locked Again",
+    LOCKED_AGAIN: "Updated & Re-Locked",
 };
 
 export const PLAN_STATUS_STYLE: Record<string, string> = {
@@ -147,6 +147,8 @@ export function approvalTypeForRole(role?: string): string {
     if (role === "HOI") return "HOI_APPROVED";
     if (role === "AD") return "AD_APPROVED";
     if (role === "FOUNDER") return "FOUNDER_APPROVED";
+    // the professor locked their own plan (no HOI approval needed any more)
+    if (role === "PROFESSOR" || role === "FACULTY") return "SELF_LOCKED";
     return "APPROVED";
 }
 export const APPROVAL_LABEL: Record<string, string> = {
@@ -154,6 +156,7 @@ export const APPROVAL_LABEL: Record<string, string> = {
     HOI_APPROVED: "HOI Approved",
     AD_APPROVED: "AD Approved",
     FOUNDER_APPROVED: "Founder Approved",
+    SELF_LOCKED: "Locked by Professor",
     APPROVED: "Approved",
 };
 export const APPROVAL_STYLE: Record<string, string> = {
@@ -161,6 +164,7 @@ export const APPROVAL_STYLE: Record<string, string> = {
     HOI_APPROVED: "bg-purple-500/10 text-purple-300 border-purple-500/30",
     AD_APPROVED: "bg-blue-500/10 text-blue-300 border-blue-500/30",
     FOUNDER_APPROVED: "bg-amber-500/10 text-amber-300 border-amber-500/30",
+    SELF_LOCKED: "bg-sky-500/10 text-sky-300 border-sky-500/30",
     APPROVED: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30",
 };
 /**

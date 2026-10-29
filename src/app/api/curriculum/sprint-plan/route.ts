@@ -52,7 +52,10 @@ export async function GET(req: Request) {
         if (weekStartDate) query.weekStartDate = weekStartDate;
 
         const rawPlans = await SprintPlan.find(query).sort({ weekStartDate: -1 }).lean();
-        const visible = rawPlans.filter((p: any) => getPlanStatus(p) !== 'DRAFT' || p.facultyId === actor.id);
+        // Drafts: private to their professor — except that professors see the drafts of their own college in the
+        // combined college timetable (their scope is their own college only), so clashes are visible while planning.
+        const sameCollegeProf = PROFESSOR_ROLES.includes(actor.role) && !actor.delegation;
+        const visible = rawPlans.filter((p: any) => getPlanStatus(p) !== 'DRAFT' || p.facultyId === actor.id || sameCollegeProf);
         const plans = await Promise.all(visible.map(async (p: any) => ({
             ...p,
             status: getPlanStatus(p),
@@ -67,6 +70,7 @@ export async function GET(req: Request) {
             (plan.entries || []).forEach((e: any) => {
                 allEntries.push({
                     ...e,
+                    planId: String(plan._id),
                     facultyId: plan.facultyId,
                     facultyName: plan.facultyName || fac?.name || "Professor",
                     college: planCollege,

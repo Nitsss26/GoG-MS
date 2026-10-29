@@ -6,7 +6,7 @@ import { PLAN_STATUS_LABEL, PLAN_STATUS_STYLE, getPlanStatus, roleShort, planApp
 
 /**
  * Sprint plan status, history and the lock / unlock actions.
- * mode "professor": Request Unlock (Submit is done by the page, which saves the entries first)
+ * mode "professor": status + history (Finalize & Lock / Unlock / Save & Re-Lock are in the page's action bar)
  * mode "reviewer":  Lock / Unlock / Reject unlock request — shown only when the server says plan.canManage
  */
 export function PlanStatusBadge({ plan, className = "" }: { plan: any; className?: string }) {
@@ -157,11 +157,7 @@ export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact
                     <History size={12} /> History
                 </button>
 
-                {mode === "professor" && ["LOCKED", "LOCKED_AGAIN"].includes(st) && (
-                    <button onClick={() => setDialog("request_unlock")} className={`${btn} bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20`}>
-                        <Send size={12} /> Request Unlock
-                    </button>
-                )}
+                {/* Professors unlock their own plan straight away (button in the page's action bar: "Unlock Sprint Plan") */}
 
                 {mode === "reviewer" && plan.canManage && (
                     <>
@@ -194,7 +190,7 @@ export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact
                     <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest flex items-center gap-1.5"><MessageSquare size={11} /> Unlock requested {pending.requestedAtISO ? `· ${fmt(pending.requestedAtISO)}` : ""}</p>
                     <p className="text-xs text-white mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]"><span className="text-zinc-500">Reason:</span> {pending.reason}</p>
                     {pending.comment && <p className="text-xs text-zinc-300 mt-0.5 whitespace-pre-wrap [overflow-wrap:anywhere]"><span className="text-zinc-500">Details:</span> {pending.comment}</p>}
-                    {mode === "professor" && <p className="text-[11px] text-zinc-500 mt-1">The plan stays locked until HOI / CL / CH / AD unlocks it.</p>}
+                    {mode === "professor" && <p className="text-[11px] text-zinc-500 mt-1">You can unlock the plan yourself with "Unlock Sprint Plan".</p>}
                 </div>
             )}
             {st === "UNLOCKED_FOR_REVISION" && plan.returnNote && (plan.returnedAt || "") >= (plan.submittedAt || "") && (

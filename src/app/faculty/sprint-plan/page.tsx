@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect, useMemo, useRef } from "react";
-import SprintPlanTimetableGrid from "@/components/academic/SprintPlanTimetableGrid";
+import DynamicCollegeTimetable from "@/components/academic/DynamicCollegeTimetable";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     CalendarDays, Plus, Trash2, Lock, Unlock, Save, AlertTriangle,
@@ -157,6 +157,9 @@ export default function SprintPlanPage() {
     const planStatus = plan ? getPlanStatus(plan) : "DRAFT";
     const isFrozen = LOCKED_PLAN_STATUSES.includes(planStatus);
     const [submitting, setSubmitting] = useState(false);
+    const [unlocking, setUnlocking] = useState(false);
+    // bumps the college timetable after a save / lock / unlock so it reloads at once
+    const [ttRefresh, setTtRefresh] = useState(0);
 
     // Open a specific week from a link (?week=YYYY-MM-DD), e.g. from a notification email
     useEffect(() => {
@@ -374,6 +377,7 @@ export default function SprintPlanPage() {
                 setMessage({ type: "success", text: data.message || "Sprint plan saved successfully!" });
                 setPlan(data.plan);
                 setEntries(data.plan?.entries || entries);
+                setTtRefresh(k => k + 1);
                 return data.plan;
             } else {
                 setMessage({ type: "error", text: data.error || "Failed to save" });
@@ -386,15 +390,15 @@ export default function SprintPlanPage() {
         }
     };
 
-    // Save the entries, then submit the complete week for locking (first time or after an unlock)
+    // Save the entries, then lock the week yourself: "Finalize & Lock" (first time) / "Save & Re-Lock" (after unlocking)
     const submitWeek = async () => {
         if (entries.length === 0) {
-            setMessage({ type: "error", text: "Add the classes of the week before submitting." });
+            setMessage({ type: "error", text: "Add the classes of the week before locking." });
             return;
         }
         const missing = entries.findIndex(e => !e.subjectName || !e.topics);
         if (missing >= 0) {
-            setMessage({ type: "error", text: `Class ${missing + 1} (${entries[missing].day}) needs a Subject and a Topic before submitting.` });
+            setMessage({ type: "error", text: `Class ${missing + 1} (${entries[missing].day}) needs a Subject and a Topic before locking.` });
             setInvalidIndices([missing]);
             return;
         }
@@ -405,16 +409,41 @@ export default function SprintPlanPage() {
             const res = await fetch("/api/sprint-plan/action", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ planId: saved._id, action: "submit" })
+                body: JSON.stringify({ planId: saved._id, action: "self_lock" })
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Submit failed");
+            if (!res.ok) throw new Error(data.error || "Locking failed");
             setPlan(data.plan);
+            setEntries(data.plan?.entries || entries);
+            setTtRefresh(k => k + 1);
             setMessage({ type: "success", text: data.message });
         } catch (e: any) {
             setMessage({ type: "error", text: e.message });
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    // Unlock your own locked plan straight away (HOI and CL / CH are informed)
+    const unlockPlan = async () => {
+        if (!plan?._id) return;
+        setUnlocking(true);
+        setMessage(null);
+        try {
+            const res = await fetch("/api/sprint-plan/action", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ planId: plan._id, action: "self_unlock" })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || "Unlock failed");
+            setPlan(data.plan);
+            setEntries(data.plan?.entries || entries);
+            setTtRefresh(k => k + 1);
+            setMessage({ type: "success", text: data.message });
+        } catch (e: any) {
+            setMessage({ type: "error", text: e.message });
+        } finally {
+            setUnlocking(false);
         }
     };
 
@@ -625,14 +654,13 @@ export default function SprintPlanPage() {
             {/* Status Bar — lifecycle, history and Request Unlock */}
             {plan?._id && (
                 <div className="flex flex-col gap-3 bg-zinc-900/60 border border-zinc-800 rounded-2xl px-6 py-4 shadow-lg">
-                    <SprintPlanWorkflowPanel plan={plan} mode="professor" onChanged={(p, msg) => { setPlan(p); setMessage({ type: "success", text: msg }); }} />
-                    <span className="text-xs text-zinc-400 font-medium">
-                        {planStatus === "DRAFT" && "Draft — complete the week, review it and press \"Submit Week for Locking\"."}
-                        {planStatus === "SUBMITTED" && "Submitted — waiting for HOI / CL / CH / AD to lock it. You can still correct it until it is locked."}
-                        {planStatus === "RESUBMITTED" && "Re-submitted — waiting to be locked again."}
-                        {planStatus === "UNLOCKED_FOR_REVISION" && "Unlocked for revision — make your changes and re-submit the week."}
-                        {["LOCKED", "LOCKED_AGAIN"].includes(planStatus) && <>Locked{plan.lockedAt ? ` (since ${new Date(plan.lockedAt).toString() === "Invalid Date" ? plan.lockedAt : new Date(plan.lockedAt).toLocaleString("en-IN")})` : ""}. To change it, use <span className="text-orange-400 font-bold">Request Unlock</span>.</>}
-                        {planStatus === "UNLOCK_REQUESTED" && "Your unlock request is waiting for approval. The plan stays locked."}
+                    <SprintPlanWorkflowPanel plan={plan} mode="professor" onChanged={(p, msg) => { setPlan(p); setEntries(p?.entries || entries); setTtRefresh(k => k + 1); setMessage({ type: "success", text: msg }); }} />
+                    <span className="text-xs text-zinc-400 font-medium" data-testid="plan-status-text">
+                        {planStatus === "DRAFT" && "Draft — complete the week, review it and press \"Finalize & Lock\". No approval is needed; HOI is informed."}
+                        {(planStatus === "SUBMITTED" || planStatus === "RESUBMITTED") && "Submitted earlier — you can now lock it yourself with \"Finalize & Lock\"."}
+                        {planStatus === "UNLOCKED_FOR_REVISION" && "Unlocked for Editing — add, change or remove classes (past classes of this week too), then press \"Save & Re-Lock\". HOI and CL / CH get the list of changes."}
+                        {["LOCKED", "LOCKED_AGAIN"].includes(planStatus) && <>{planStatus === "LOCKED_AGAIN" ? "Updated & Re-Locked" : "Locked"}{plan.lockedAt ? ` (since ${new Date(plan.lockedAt).toString() === "Invalid Date" ? plan.lockedAt : new Date(plan.lockedAt).toLocaleString("en-IN")})` : ""}. To change it, press <span className="text-orange-400 font-bold">Unlock Sprint Plan</span>.</>}
+                        {planStatus === "UNLOCK_REQUESTED" && "Locked — an older unlock request is open. You can unlock the plan yourself with \"Unlock Sprint Plan\"."}
                     </span>
                 </div>
             )}
@@ -657,7 +685,7 @@ export default function SprintPlanPage() {
                                 : "text-zinc-400 hover:text-white hover:bg-zinc-800/60"
                         }`}
                     >
-                        <CalendarDays size={14} /> Campus Timetable Grid (Sheet View)
+                        <CalendarDays size={14} /> My Timetable
                     </button>
                     <button
                         onClick={() => setViewMode("EDITOR")}
@@ -671,7 +699,7 @@ export default function SprintPlanPage() {
                     </button>
                 </div>
                 <div className="text-[11px] text-zinc-500 font-medium px-3 hidden sm:block">
-                    {viewMode === "GRID" ? "Synchronized across all faculty at your campus" : "Customize your individual teaching slots"}
+                    {viewMode === "GRID" ? "Your classes · real class timings" : "Customize your individual teaching slots"}
                 </div>
             </div>
 
@@ -681,15 +709,8 @@ export default function SprintPlanPage() {
                     <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
                 </div>
             ) : viewMode === "GRID" ? (
-                <div className="space-y-4 overflow-x-auto [contain:inline-size] rounded-2xl">
-                    <SprintPlanTimetableGrid
-                        entries={displayGridEntries}
-                        weekRangeText={`${weekInfo.start} to ${weekInfo.end}`}
-
-                        weekDates={weekInfo.dates}
-                        key={plan?.college || user?.location || "All"}
-                        currentCampus={plan?.college || user?.location || "All"}
-                    />
+                <div className="[contain:inline-size]">
+                    <DynamicCollegeTimetable weekStart={weekInfo.start} weekDates={weekInfo.dates} currentUserId={user?.id} refreshKey={ttRefresh} mineOnly />
                 </div>
             ) : (
                 <div className="space-y-4">
@@ -894,17 +915,21 @@ export default function SprintPlanPage() {
                             className="flex-1 sm:flex-none flex items-center justify-center gap-3 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase tracking-wider rounded-2xl transition-all shadow-xl shadow-indigo-500/10 active:scale-95 disabled:opacity-50">
                             <Save size={16} /> {saving ? "Synchronizing..." : planStatus === "DRAFT" || planStatus === "UNLOCKED_FOR_REVISION" ? "Save Draft" : "Save Changes"}
                         </button>
-                        {(planStatus === "DRAFT" || planStatus === "UNLOCKED_FOR_REVISION") && (
-                            <button onClick={submitWeek} disabled={saving || submitting || entries.length === 0} data-testid="submit-week"
-                                className="flex-1 sm:flex-none flex items-center justify-center gap-3 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider rounded-2xl transition-all shadow-xl shadow-emerald-500/10 active:scale-95 disabled:opacity-50">
-                                <Send size={16} /> {submitting ? "Submitting..." : planStatus === "UNLOCKED_FOR_REVISION" ? "Re-submit Week for Locking" : "Submit Week for Locking"}
-                            </button>
-                        )}
+                        <button onClick={submitWeek} disabled={saving || submitting || entries.length === 0} data-testid="submit-week"
+                            className="flex-1 sm:flex-none flex items-center justify-center gap-3 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider rounded-2xl transition-all shadow-xl shadow-emerald-500/10 active:scale-95 disabled:opacity-50">
+                            <Lock size={16} /> {submitting ? "Locking..." : planStatus === "UNLOCKED_FOR_REVISION" ? "Save & Re-Lock" : "Finalize & Lock"}
+                        </button>
                     </>
                 ) : (
-                    <div className="flex-1 flex items-center justify-center gap-3 px-6 py-3 bg-amber-500/5 text-amber-400 text-xs font-black uppercase tracking-wider rounded-2xl border border-amber-500/20">
-                        <Lock size={16} /> {planStatus === "UNLOCK_REQUESTED" ? "Unlock request pending" : "Plan locked — use Request Unlock above"}
-                    </div>
+                    <>
+                        <div className="flex-1 flex items-center justify-center gap-3 px-6 py-3 bg-amber-500/5 text-amber-400 text-xs font-black uppercase tracking-wider rounded-2xl border border-amber-500/20">
+                            <Lock size={16} /> {planStatus === "LOCKED_AGAIN" ? "Updated & Re-Locked" : "Plan locked"}
+                        </div>
+                        <button onClick={unlockPlan} disabled={unlocking} data-testid="unlock-plan"
+                            className="flex-1 sm:flex-none flex items-center justify-center gap-3 px-6 py-3 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 text-xs font-black uppercase tracking-wider rounded-2xl border border-orange-500/30 transition-all active:scale-95 disabled:opacity-50">
+                            <Unlock size={16} /> {unlocking ? "Unlocking..." : "Unlock Sprint Plan"}
+                        </button>
+                    </>
                 )}
             </div>
 

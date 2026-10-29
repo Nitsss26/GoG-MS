@@ -753,45 +753,8 @@ export default function LecturesPage() {
 
                 return (
                     <div className="rounded-2xl bg-zinc-900/40 border border-zinc-800/80 overflow-hidden">
-                        {/* Wide screens: fixed-layout table that always fits the page */}
-                        <table className="hidden xl:table w-full table-fixed text-left border-collapse" data-testid="lectures-table">
-                            <colgroup>
-                                <col className="w-12" />
-                                <col />
-                                <col className="w-[8.5rem]" />
-                                <col className="w-[9rem]" />
-                                <col className="w-[10.5rem]" />
-                                <col className="w-[15.5rem]" />
-                            </colgroup>
-                            <thead>
-                                <tr className="bg-zinc-800/40 text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                    <th className="py-3 px-3 text-center">Lec</th>
-                                    <th className="py-3 px-3">Lesson & Class</th>
-                                    <th className="py-3 px-3">Schedule</th>
-                                    <th className="py-3 px-3">Attendance</th>
-                                    <th className="py-3 px-3">Status</th>
-                                    <th className="py-3 px-3">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-zinc-800/60">
-                                {lectures.map(lec => {
-                                    const i = info(lec);
-                                    return (
-                                        <tr key={i.key} className={`align-top transition-colors ${i.running ? "bg-emerald-500/[0.04]" : "hover:bg-white/[0.02]"}`} data-testid="lecture-row">
-                                            <td className="py-4 px-3 text-center"><span className={`text-xl font-black tabular-nums ${i.running ? "text-emerald-400" : "text-zinc-400"}`}>{lec.lectureNumber || "—"}</span></td>
-                                            <td className="py-4 px-3"><Lesson lec={lec} /></td>
-                                            <td className="py-4 px-3"><Schedule lec={lec} /></td>
-                                            <td className="py-4 px-3"><Attendance lec={lec} /></td>
-                                            <td className="py-4 px-3"><Status lec={lec} /></td>
-                                            <td className="py-4 px-3"><Actions lec={lec} /></td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-
-                        {/* Smaller screens: one card per lecture */}
-                        <div className="xl:hidden grid grid-cols-1 md:grid-cols-2 gap-3 p-3" data-testid="lectures-cards">
+                        {/* One card per lecture — same layout on every screen size (phone, tablet, laptop, full screen) */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3" data-testid="lectures-cards">
                             {lectures.map(lec => {
                                 const i = info(lec);
                                 return (

@@ -523,7 +523,24 @@ const SprintPlanSchema = new Schema({
         lectureType: { type: String },
         unitNumber: { type: String },
         content: { type: String },
-        className: { type: String }
+        className: { type: String },
+        // When the class row was really written / last changed (a class can be added after it took place;
+        // the scheduled date / time above is never back-dated into these)
+        createdAt: { type: String },
+        createdBy: { type: String },
+        updatedAt: { type: String },
+        updatedBy: { type: String }
+    }],
+    // Professor self-unlock: the entries at the moment of unlocking (compared on re-lock for the change summary)
+    unlockSnapshot: { type: Schema.Types.Mixed },
+    // Class-level audit: every added / changed / removed class (never deleted)
+    changeLog: [{
+        at: { type: String }, by: { type: String }, byName: { type: String },
+        action: { type: String },            // class_added | class_updated | class_removed
+        entryId: { type: String },
+        previousData: { type: Schema.Types.Mixed },
+        updatedData: { type: Schema.Types.Mixed },
+        summary: { type: String }
     }],
     changeRequests: [{
         requestedAt: { type: String },
