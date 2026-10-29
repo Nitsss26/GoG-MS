@@ -11,12 +11,13 @@ export default function ManagerAttendanceOverridePage() {
     const [creditReason, setCreditReason] = useState("");
 
     if (!user || !["HOI", "AD", "HR", "FOUNDER", "OM"].includes(user.role)) return null;
+    if (user.role === "OM") return <div className="flex items-center justify-center h-[60vh] text-sm text-zinc-400">This page is not available in the OM portal.</div>;
 
     const todayDate = new Date().toISOString().split("T")[0];
     const reportees = getReportees(user.id) || [];
 
     const mappedEmployees = (() => {
-        return reportees.map(emp => {
+        return reportees.filter(emp => !(emp as any).hideFromAttendance).map(emp => {
             const todayRecord = (attendanceRecords || []).find(r => r.employeeId === emp.id && r.date === todayDate);
             const status = todayRecord ? todayRecord.status : "Absent";
 

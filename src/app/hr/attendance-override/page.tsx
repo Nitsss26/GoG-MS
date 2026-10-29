@@ -15,7 +15,7 @@ export default function AttendanceOverridePage() {
     const todayDate = new Date().toISOString().split("T")[0];
 
     const mappedEmployees = (() => {
-        return employees.map(emp => {
+        return employees.filter(emp => !(emp as any).hideFromAttendance).map(emp => {
             const todayRecord = attendanceRecords.find(r => r.employeeId === emp.id && r.date === todayDate);
             const status = todayRecord ? todayRecord.status : "Absent";
 

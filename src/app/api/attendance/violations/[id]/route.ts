@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { AttendanceViolation, Attendance } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
-import { sendDecisionEmail, sendViolationEmail } from '@/lib/attendance-violations';
+import { sendDecisionEmail, sendViolationEmail, MANUAL_EMAIL_TYPES } from '@/lib/attendance-violations';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +44,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         if (v.employeeId === actor.id && action !== 'resend') return NextResponse.json({ error: 'You cannot decide your own attendance action.' }, { status: 403 });
 
         if (action === 'resend') {
+            if (MANUAL_EMAIL_TYPES.includes(v.type)) return NextResponse.json({ error: 'Send this email from HR → Email Management.' }, { status: 400 });
             if (v.emailStatus === 'Sent') return NextResponse.json({ error: 'The email was already sent.' }, { status: 409 });
             await AttendanceViolation.updateOne({ id, emailStatus: { $ne: 'Sending' } }, { $set: { emailStatus: 'Failed', emailAttempts: 0 } });
             const r = await sendViolationEmail(id);

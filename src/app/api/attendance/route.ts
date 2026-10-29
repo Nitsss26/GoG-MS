@@ -1,68 +1,76 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import dbConnect from '@/lib/mongodb';
-import { WorkFromHome, Employee, Attendance } from '@/models/Schemas';
-import { getSessionUser } from '@/lib/session-user';
-import { managedEmployeeIds } from '@/lib/leave-scope';
-import { WFH_POLICY } from '@/lib/wfh-policy';
+import { Attendance, Employee } from '@/models/Schemas';
+import { verifySessionToken, COOKIE_NAME } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
-/**
- * Work From Home Attendance Log (read-only).
- *   GET  → WFH attendance records with the linked application.
- * HR / HR Executive / Founder see everyone; a reporting manager (HOI / AD / TL / OM) sees their own hierarchy;
- * anybody else gets 403. The captured position is never returned — only whether one was captured.
- */
-const hours = (inT?: string, outT?: string) => {
-    if (!inT || !outT) return null;
-    const toMin = (t: string) => { const [h, m, s] = t.split(':').map(Number); return h * 60 + (m || 0) + (s || 0) / 60; };
-    const d = toMin(outT) - toMin(inT);
-    return d > 0 ? Math.round(d / 6) / 10 : null; // one decimal
-};
-
-export async function GET() {
+export async function GET(req: Request) {
     try {
-        await dbConnect();
-        const actor: any = await getSessionUser();
-        if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        let scope: Set<string> | null = null;
-        if (!WFH_POLICY.adminApproverRoles.includes(actor.role)) {
-            if (!WFH_POLICY.managerApproverRoles.includes(actor.role)) return NextResponse.json({ error: 'Only HR or a reporting manager can view the Work From Home attendance log.' }, { status: 403 });
-            scope = await managedEmployeeIds(actor);
+        // Authenticate session
+        const cookieStore = await cookies();
+        const sessionCookie = cookieStore.get(COOKIE_NAME);
+        if (!sessionCookie?.value) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
-        const query: any = { $or: [{ workMode: 'WFH' }, { location: 'WFH' }] };
-        if (scope) query.employeeId = { $in: Array.from(scope) };
-        const recs: any[] = await Attendance.find(query).sort({ date: -1 }).limit(2000)
-            .select('employeeId date clockIn clockOut status location workMode wfhApplicationId wfhStatus wfhReviewRequired wfhWorkLocation wfhLocation').lean();
+        const session = verifySessionToken(sessionCookie.value);
+        if (!session) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        await dbConnect();
+        const { searchParams } = new URL(req.url);
+        const date = searchParams.get('date');
+        const role = searchParams.get('role');
+        const userId = searchParams.get('userId');
 
-        const empIds = Array.from(new Set(recs.map(r => r.employeeId)));
-        const appIds = Array.from(new Set(recs.map(r => r.wfhApplicationId).filter(Boolean)));
-        const [emps, apps]: [any[], any[]] = await Promise.all([
-            Employee.find({ id: { $in: empIds }, isRemoved: { $in: [true, false, null] } }).select('id name dept designation role').lean(),
-            appIds.length ? WorkFromHome.find({ id: { $in: appIds } }).select('id status startDate endDate wfhType reason workLocation documentUrl approverName decidedAt decisionRemarks createdAt').lean() : Promise.resolve([]),
-        ]);
-        const empById = new Map(emps.map(e => [e.id, e]));
-        const appById = new Map(apps.map(a => [a.id, a]));
+        let query: any = {};
+        if (date) query.date = date;
 
-        // one row per employee per day (older duplicate records are shown once)
-        const seen = new Set<string>();
-        const records = recs.filter(r => { const k = `${r.employeeId}|${r.date}`; if (seen.has(k)) return false; seen.add(k); return true; }).map(r => {
-            const e = empById.get(r.employeeId) || {};
-            const a = r.wfhApplicationId ? appById.get(r.wfhApplicationId) : null;
-            return {
-                employeeId: r.employeeId, employeeName: e.name || r.employeeId, dept: e.dept || '', designation: e.designation || '', role: e.role || '',
-                date: r.date, clockIn: r.clockIn || '', clockOut: r.clockOut || '', totalHours: hours(r.clockIn, r.clockOut),
-                attendanceStatus: r.status,
-                wfhApplicationId: r.wfhApplicationId || '',
-                // older remote days (WFH set in the schedule) have no application
-                approvalStatus: a?.status || r.wfhStatus || (r.wfhApplicationId ? 'Unknown' : 'Scheduled WFH'),
-                reviewRequired: !!r.wfhReviewRequired,
-                workLocation: r.wfhWorkLocation || a?.workLocation || 'Remote',
-                locationCaptured: !!r.wfhLocation,
-                application: a ? { id: a.id, status: a.status, startDate: a.startDate, endDate: a.endDate, wfhType: a.wfhType, reason: a.reason, workLocation: a.workLocation, documentUrl: a.documentUrl || '', approverName: a.approverName || '', decidedAt: a.decidedAt || '', decisionRemarks: a.decisionRemarks || '', createdAt: a.createdAt } : null,
-            };
-        });
-        return NextResponse.json({ records });
+        if (role === "FOUNDER" || role === "HR") {
+            // See everyone
+        } else if (role === "HOI") {
+            // HOIs can see all staff profiles except founders
+            const subordinates = await Employee.find({ role: { $nin: ["FOUNDER", "HR"] } }).select('id');
+            const subIds = subordinates.map(s => s.id);
+            query.employeeId = { $in: subIds };
+        } else if (role === "AD") {
+            // ADs see their reportees
+            const subordinates = await Employee.find({ reportsTo: userId }).select('id');
+            const subIds = subordinates.map(s => s.id);
+            query.employeeId = { $in: subIds };
+        } else {
+            query.employeeId = userId;
+        }
+
+        // Employees HR removed from attendance (Delete Employee → "Remove employee from attendance") are left out
+        const hidden: any[] = await Employee.find({ hideFromAttendance: true } as any).select('id').lean();
+        const hiddenIds = hidden.map(h => h.id).filter(id => id && id !== userId);
+        if (hiddenIds.length) query = { $and: [query, { employeeId: { $nin: hiddenIds } }] };
+
+        const attendance = await Attendance.find(query);
+        return NextResponse.json(attendance);
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
+export async function DELETE(req: Request) {
+    try {
+        // Authenticate session
+        const cookieStore = await cookies();
+        const sessionCookie = cookieStore.get(COOKIE_NAME);
+        if (!sessionCookie?.value) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        const session = verifySessionToken(sessionCookie.value);
+        if (!session || (session.role !== "FOUNDER" && session.role !== "HR")) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        await dbConnect();
+        const { employeeId, date } = await req.json();
+        await Attendance.findOneAndDelete({ employeeId, date });
+        return NextResponse.json({ message: "Record deleted" });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

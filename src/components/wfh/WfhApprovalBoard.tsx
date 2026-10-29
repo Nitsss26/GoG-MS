@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Home, X, Loader2, CheckCircle2, XCircle, AlertTriangle, Search } from "lucide-react";
+import { Home, X, Loader2, CheckCircle2, XCircle, AlertTriangle, Search, ListChecks, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WFH_TYPE_LABEL, WFH_STATUS_STYLE } from "@/lib/wfh-policy";
 import { useAuth } from "@/context/AuthContext";
@@ -40,6 +40,9 @@ export default function WfhApprovalBoard() {
     const rows = (apps || []).filter(a => (status === "All" || a.status === status) && (dept === "All" || a.dept === dept)
         && (!date || (a.startDate <= date && date <= a.endDate)) && (!q.trim() || `${a.employeeName} ${a.employeeId}`.toLowerCase().includes(q.trim().toLowerCase())))
         .sort((x, y) => (x.status === "Pending" ? 0 : 1) - (y.status === "Pending" ? 0 : 1)); // stable: newest first inside each group
+    // summary cards (same as Leave Management): counts of all applications this user can see; a click filters the list
+    const counts: Record<string, number> = { All: (apps || []).length, Pending: 0, Approved: 0, Rejected: 0 };
+    (apps || []).forEach(a => { if (a.status in counts) counts[a.status]++; });
     const history = review ? (apps || []).filter(a => a.employeeId === review.employeeId && a.id !== review.id) : [];
 
     const decide = async (action: "approve" | "reject") => {
@@ -57,6 +60,20 @@ export default function WfhApprovalBoard() {
     return (
         <div className="space-y-4" data-testid="wfh-board">
             {toast && <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-300 text-xs px-4 py-3 flex items-center gap-2" data-testid="wfh-board-toast"><CheckCircle2 size={14} /> {toast}</div>}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="wfh-summary-cards">
+                {([
+                    ["All", "Total Requests", ListChecks, "text-sky-400 bg-sky-500/10 border-sky-500/20"],
+                    ["Pending", "Pending", Clock, "text-amber-400 bg-amber-500/10 border-amber-500/20"],
+                    ["Approved", "Approved", CheckCircle2, "text-green-400 bg-green-500/10 border-green-500/20"],
+                    ["Rejected", "Rejected", XCircle, "text-red-400 bg-red-500/10 border-red-500/20"],
+                ] as [string, string, any, string][]).map(([key, label, Icon, tone]) => (
+                    <button key={key} onClick={() => setStatus(key)} data-testid={`wfh-card-${key.toLowerCase()}`} aria-pressed={status === key}
+                        className={cn("flex items-center gap-3 p-4 rounded-2xl border bg-zinc-900 text-left transition-all", status === key ? "border-primary/40" : "border-zinc-800 hover:border-zinc-700")}>
+                        <span className={cn("w-10 h-10 rounded-xl border flex items-center justify-center shrink-0", tone)}><Icon size={18} /></span>
+                        <span><span className="block text-xl font-bold text-white tabular-nums" data-testid="wfh-card-count">{apps === null ? "—" : counts[key]}</span><span className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{label}</span></span>
+                    </button>
+                ))}
+            </div>
             <div className="flex flex-wrap gap-2">
                 <div className="relative flex-1 min-w-[12rem]">
                     <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
@@ -70,31 +87,38 @@ export default function WfhApprovalBoard() {
                 </select>
                 <input type="date" value={date} onChange={e => setDate(e.target.value)} className={cn(sel, "[color-scheme:dark]")} title="Applications covering this date" data-testid="wfh-board-date" />
             </div>
-            <div className="overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-950/40">
-                <table className="w-full min-w-[900px] text-xs">
-                    <thead className="bg-zinc-950/70"><tr className="text-[9px] text-zinc-500 uppercase tracking-widest text-left">
-                        <th className="py-2.5 px-3">Employee</th><th className="py-2.5 px-3">Role</th><th className="py-2.5 px-3">WFH Dates</th><th className="py-2.5 px-3">Type</th><th className="py-2.5 px-3">Reason</th><th className="py-2.5 px-3">Status</th><th className="py-2.5 px-3">Approved / Rejected By</th><th className="py-2.5 px-3 text-right">Action</th>
+            {/* fixed layout: fits the page width (no sideways scrolling) */}
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/40 overflow-hidden">
+                <table className="w-full table-fixed text-xs">
+                    <thead className="bg-zinc-950/70"><tr className="text-[10px] text-zinc-500 uppercase tracking-wider text-left border-b border-zinc-800">
+                        <th className="py-2.5 px-3 font-semibold">Employee</th>
+                        <th className="py-2.5 px-3 font-semibold w-[150px]">WFH Dates</th>
+                        <th className="py-2.5 px-3 font-semibold w-[22%] hidden md:table-cell">Reason</th>
+                        <th className="py-2.5 px-3 font-semibold w-[100px]">Status</th>
+                        <th className="py-2.5 px-3 font-semibold w-[160px] hidden lg:table-cell">Approved / Rejected By</th>
+                        <th className="py-2.5 px-3 font-semibold w-[90px] text-right">Action</th>
                     </tr></thead>
                     <tbody className="divide-y divide-zinc-800/60">
                         {rows.map(a => (
-                            <tr key={a.id} data-testid="wfh-board-row" data-id={a.id}>
-                                <td className="py-2.5 px-3"><p className="font-bold text-white">{a.employeeName}</p><p className="text-[10px] text-zinc-500 font-mono">{a.employeeId}{a.dept ? ` · ${a.dept}` : ""}</p></td>
-                                <td className="py-2.5 px-3 text-zinc-300">{ROLE_LABEL[a.employeeRole] || a.employeeRole}</td>
-                                <td className="py-2.5 px-3 text-zinc-200">{a.startDate === a.endDate ? fmt(a.startDate) : `${fmt(a.startDate)} – ${fmt(a.endDate)}`}</td>
-                                <td className="py-2.5 px-3 text-zinc-300">{WFH_TYPE_LABEL[a.wfhType]}</td>
-                                <td className="py-2.5 px-3 text-zinc-400 max-w-[220px] truncate" title={a.reason}>{a.reason}</td>
-                                <td className="py-2.5 px-3"><span className={cn("px-2 py-0.5 rounded border text-[10px] font-bold", WFH_STATUS_STYLE[a.status])}>{a.status}</span></td>
-                                <td className="py-2.5 px-3" data-testid="wfh-board-decider">{a.approverName && a.status !== "Pending"
-                                    ? <><p className="text-zinc-200 font-semibold">{a.approverName}</p><p className="text-[10px] text-zinc-500">{ROLE_LABEL[a.approverRole] || a.approverRole || ""}{a.decidedAt ? ` · ${fmtTs(a.decidedAt)}` : ""}</p></>
+                            <tr key={a.id} data-testid="wfh-board-row" data-id={a.id} className="hover:bg-zinc-800/20">
+                                <td className="py-3 px-3 max-w-0">
+                                    <p className="font-semibold text-white truncate">{a.employeeName}</p>
+                                    <p className="text-[10px] text-zinc-500 truncate"><span className="font-mono">{a.employeeId}</span> · {ROLE_LABEL[a.employeeRole] || a.employeeRole}{a.dept ? ` · ${a.dept}` : ""}</p>
+                                </td>
+                                <td className="py-3 px-3"><p className="text-zinc-200">{a.startDate === a.endDate ? fmt(a.startDate) : `${fmt(a.startDate)} – ${fmt(a.endDate)}`}</p><p className="text-[10px] text-zinc-500">{WFH_TYPE_LABEL[a.wfhType]}</p></td>
+                                <td className="py-3 px-3 text-zinc-400 hidden md:table-cell max-w-0"><p className="truncate" title={a.reason}>{a.reason}</p></td>
+                                <td className="py-3 px-3"><span className={cn("px-2 py-0.5 rounded border text-[10px] font-bold", WFH_STATUS_STYLE[a.status])}>{a.status}</span></td>
+                                <td className="py-3 px-3 hidden lg:table-cell max-w-0" data-testid="wfh-board-decider">{a.approverName && a.status !== "Pending"
+                                    ? <><p className="text-zinc-200 font-semibold truncate">{a.approverName}</p><p className="text-[10px] text-zinc-500 truncate">{ROLE_LABEL[a.approverRole] || a.approverRole || ""}{a.decidedAt ? ` · ${fmtTs(a.decidedAt)}` : ""}</p></>
                                     : <span className="text-zinc-600">—</span>}</td>
-                                <td className="py-2.5 px-3 text-right">
+                                <td className="py-3 px-3 text-right">
                                     <button onClick={() => { setReview(a); setRemarks(""); setError(""); }} data-testid="wfh-review"
                                         className="px-2.5 py-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-bold">{a.canDecide ? "Review" : "View"}</button>
                                 </td>
                             </tr>
                         ))}
-                        {apps === null && <tr><td colSpan={8} className="py-10 text-center"><Loader2 className="animate-spin text-primary inline" size={16} /></td></tr>}
-                        {apps !== null && !rows.length && <tr><td colSpan={8} className="py-10 text-center text-zinc-500">No Work From Home applications.</td></tr>}
+                        {apps === null && <tr><td colSpan={6} className="py-10 text-center"><Loader2 className="animate-spin text-primary inline" size={16} /></td></tr>}
+                        {apps !== null && !rows.length && <tr><td colSpan={6} className="py-10 text-center text-zinc-500">No Work From Home applications.</td></tr>}
                     </tbody>
                 </table>
             </div>

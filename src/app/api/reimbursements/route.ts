@@ -126,7 +126,17 @@ export async function PUT(req: Request) {
         const existing: any = await ReimbursementClaim.findOne({ id }).lean();
         if (!existing) return NextResponse.json({ error: 'Claim not found' }, { status: 404 });
         if (existing.employeeId === actor.id) return NextResponse.json({ error: 'You cannot decide your own claim.' }, { status: 403 });
-        const claim = await ReimbursementClaim.findOneAndUpdate({ id }, updates, { new: true });
+        // Amount approved by HR (can differ from the claimed amount). The claim schema has no field for it, so it is
+        // stored separately (strict: false) — before, it was dropped and the e-mail could not show it.
+        const approvedAmount = updates.approvedAmount;
+        delete updates.approvedAmount;
+        if (approvedAmount !== undefined && approvedAmount !== null && approvedAmount !== '') {
+            const n = Number(approvedAmount);
+            if (!isFinite(n) || n < 0) return NextResponse.json({ error: 'Enter a valid approved amount.' }, { status: 400 });
+            await ReimbursementClaim.updateOne({ id }, { $set: { approvedAmount: Math.round(n * 100) / 100 } }, { strict: false });
+        }
+        let claim = await ReimbursementClaim.findOneAndUpdate({ id }, updates, { new: true });
+        if (claim) claim = await ReimbursementClaim.findOne({ id }).lean();
 
         if (claim) {
             // Trigger n8n on status update (Approved/Rejected)

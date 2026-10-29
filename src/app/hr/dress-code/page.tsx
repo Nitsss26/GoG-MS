@@ -1,8 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { Shirt, CheckCircle, XCircle, Search, Filter, AlertTriangle, User as UserIcon, Calendar } from "lucide-react";
+import { Shirt, CheckCircle, XCircle, Search, Filter, AlertTriangle, User as UserIcon, Calendar, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
+import DressCodeRejectDialog from "@/components/DressCodeRejectDialog";
+import SendEmailButton from "@/components/email-management/SendEmailButton";
+import { dressReasonText } from "@/lib/dress-code-reasons";
 
 export default function DressCodeVerificationPage() {
     const { user, attendanceRecords, employees, resolveDressCodeCheck } = useAuth();
@@ -10,6 +14,16 @@ export default function DressCodeVerificationPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState<"All" | "Pending" | "Approved" | "Rejected">("Pending");
     const [dateFilter, setDateFilter] = useState(today);
+    // Reject → reason dialog; the rejection email is sent by hand (Send Email / Email Management)
+    const [rejecting, setRejecting] = useState<any>(null);
+    const [emailStatus, setEmailStatus] = useState<Record<string, any>>({});
+    const [emailMsg, setEmailMsg] = useState("");
+    const rejectedIds = attendanceRecords.filter(r => r.dressCodeStatus === "Rejected" && (r as any).dressCodeRejectionReasons?.length).map(r => String((r as any)._id || r.id)).sort().join(",");
+    useEffect(() => {
+        if (!rejectedIds || !user || (user.role !== "HR" && user.role !== "FOUNDER")) return;
+        fetch(`/api/hr/email-management?tab=status&category=dress_code&ids=${encodeURIComponent(rejectedIds)}`, { cache: "no-store" })
+            .then(r => (r.ok ? r.json() : null)).then(d => { if (d?.statuses) setEmailStatus(d.statuses); }).catch(() => {});
+    }, [rejectedIds, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return null;
 
@@ -90,6 +104,8 @@ export default function DressCodeVerificationPage() {
                 </div>
             </header>
 
+            {emailMsg && <p className="text-xs text-zinc-300 flex items-center gap-1.5" data-testid="dress-email-msg"><Mail size={12} className="text-emerald-400" /> {emailMsg} <Link href="/hr/email-management" className="text-emerald-400 underline ml-1">Email Management</Link></p>}
+
             <div className="flex items-center gap-4 bg-zinc-900/50 border border-zinc-800/50 p-3 rounded-2xl w-full max-w-md backdrop-blur-sm">
                 <Search size={16} className="text-zinc-500 ml-2" />
                 <input
@@ -167,10 +183,31 @@ export default function DressCodeVerificationPage() {
                                     <span className="text-zinc-500">Last Updated</span><span className="text-zinc-300" data-testid="dress-updated">{((record as any).dressCodeReviewedAt || (record as any).updatedAt) ? fmtTs((record as any).dressCodeReviewedAt || (record as any).updatedAt) : `${fmtDate(record.date)}, ${fmtTime(record.clockIn)}`}</span>
                                 </div>
 
+                                {record.dressCodeStatus === "Rejected" && (() => {
+                                    const rid = String((record as any)._id || record.id);
+                                    const reasons: string[] = (record as any).dressCodeRejectionReasons || [];
+                                    const es = emailStatus[rid];
+                                    const st = !reasons.length ? "auto" : es ? (es.emailStatus === "sending" && Date.now() - Date.parse(es.sendingAt || 0) > 120000 ? "failed" : es.emailStatus) : "not_sent";
+                                    return (
+                                        <div className="px-4 py-3 border-t border-zinc-800 space-y-1.5 text-[11px]" data-testid="dress-rejection">
+                                            {reasons.length > 0 && <p className="text-zinc-300"><span className="text-zinc-500">Reason:</span> <span data-testid="dress-rejection-reason">{dressReasonText(reasons, (record as any).dressCodeRejectionOther)}</span></p>}
+                                            {(record as any).dressCodeRejectionRemarks && <p className="text-zinc-400"><span className="text-zinc-500">Remarks:</span> {(record as any).dressCodeRejectionRemarks}</p>}
+                                            {(record as any).dressCodeRejectionPhoto && <a href={(record as any).dressCodeRejectionPhoto} target="_blank" rel="noreferrer" className="text-emerald-400 underline" data-testid="dress-rejection-photo">Rejection photo</a>}
+                                            <div className="flex items-center justify-between gap-2 pt-1">
+                                                <span className="text-zinc-500 flex items-center gap-1"><Mail size={11} /> Email: <span className="text-zinc-300" data-testid="dress-email-status">{st === "auto" ? "Sent (automatic)" : st === "sent" ? `Sent${es?.by ? ` by ${es.by} (${es.role})` : ""}` : st === "failed" ? "Failed" : st === "sending" ? "Sending" : "Not Sent"}</span></span>
+                                                {st !== "auto" && <SendEmailButton small category="dress_code" relatedRecordId={rid} status={st} onDone={r => {
+                                                    setEmailMsg(r.ok ? (r.message || "Email sent.") : (r.error || "Email could not be sent."));
+                                                    if (r.row) setEmailStatus(p => ({ ...p, [rid]: { emailStatus: r.row.status, by: r.row.sentBy, role: r.row.sentByRole } }));
+                                                }} />}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
                                 {record.dressCodeStatus === "Pending" && (
                                     <div className="grid grid-cols-2 divide-x divide-zinc-800 border-t border-zinc-800">
                                         <button
-                                            onClick={() => resolveDressCodeCheck(record.id || (record as any)._id, "Rejected")}
+                                            onClick={() => setRejecting({ id: record.id || (record as any)._id, name: emp?.name, date: record.date })}
                                             className="p-3 flex items-center justify-center gap-2 hover:bg-red-500/10 text-zinc-400 hover:text-red-400 transition-colors font-bold text-xs group/btn"
                                         >
                                             <XCircle size={16} className="group-hover/btn:scale-110 transition-transform" /> Reject
@@ -188,6 +225,8 @@ export default function DressCodeVerificationPage() {
                     })
                 )}
             </div>
+            {rejecting && <DressCodeRejectDialog employeeName={rejecting.name} date={rejecting.date} onCancel={() => setRejecting(null)}
+                onConfirm={async r => { const res = await resolveDressCodeCheck(rejecting.id, "Rejected", r); if (!res || res.ok) setRejecting(null); return res; }} />}
         </div>
     );
 }

@@ -54,6 +54,33 @@ async function autoCcList(): Promise<string[]> {
     return ccCache.list;
 }
 
+/**
+ * Employees HR stopped mails for (Delete Employee → "Stop sending any mails to employee") and employees removed
+ * from the portal get no OMS e-mail at all — neither To nor CC. An address that still belongs to another active
+ * designation record of the same person keeps getting mail. Cached for 5 minutes; cleared on every change.
+ */
+const blockCache: { at: number; set: Set<string> } = ((globalThis as any).__gogMailBlock ||= { at: 0, set: new Set<string>() });
+export function refreshMailBlocklist() { blockCache.at = 0; }
+async function blockedEmails(): Promise<Set<string>> {
+    if (Date.now() - blockCache.at < 5 * 60000) return blockCache.set;
+    const set = new Set<string>();
+    try {
+        await dbConnect();
+        const rows: any[] = await Employee.find({ isRemoved: { $in: [true, false, null] }, $or: [{ isRemoved: true }, { mailsStopped: true }] } as any).select('email').lean();
+        const emails = Array.from(new Set(rows.map(r => String(r.email || '').trim().toLowerCase()).filter(Boolean)));
+        if (emails.length) {
+            const active: any[] = await Employee.find({ isRemoved: { $ne: true }, mailsStopped: { $ne: true }, email: { $in: rows.map(r => r.email).filter(Boolean) } } as any).select('email').lean();
+            const stillActive = new Set(active.map(a => String(a.email || '').trim().toLowerCase()));
+            emails.forEach(e => { if (!stillActive.has(e)) set.add(e); });
+        }
+    } catch (e: any) {
+        console.error('[mail] could not load the stopped-mail list:', e?.message);
+        return blockCache.set; // keep the last known list
+    }
+    blockCache.set = set; blockCache.at = Date.now();
+    return set;
+}
+
 const asList = (v?: string | string[]) => (Array.isArray(v) ? v : v ? String(v).split(',') : []).map(e => e.trim()).filter(Boolean);
 
 /** to / cc with the standard copies added */
@@ -77,7 +104,14 @@ async function withAutoCc(o: MailOptions) {
 export const sendMailInternal = async (options: MailOptions) => {
     const { subject, text, html, attachments, inReplyTo, references } = options;
     try {
-        const { to, cc } = await withAutoCc(options);
+        const withCc = await withAutoCc(options);
+        // never to employees whose mails are stopped / who were removed
+        const blocked = await blockedEmails();
+        const keep = (v?: string | string[]) => asList(v).filter(e => !blocked.has(e.toLowerCase()));
+        let to: string[] = keep(withCc.to);
+        let cc: string[] = keep(withCc.cc);
+        if (!to.length && cc.length) { to = cc; cc = []; }       // the copies still reach HR / admin
+        if (!to.length) return { success: true, messageId: 'skipped-mails-stopped' };
         const info = await transporter.sendMail({
             from: `"GoG OMS" <${process.env.SMTP_USER}>`,
             to,

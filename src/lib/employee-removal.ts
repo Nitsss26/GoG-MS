@@ -110,3 +110,27 @@ export async function purgeEmployeeData(employeeId: string): Promise<Record<stri
     }
     return deleted;
 }
+
+/** Removed employees stay in "Deleted Employees" this long, then everything of theirs is deleted automatically */
+export const AUTO_DELETE_DAYS = 60;
+export const autoDeleteDate = (from: Date = new Date()) => new Date(from.getTime() + AUTO_DELETE_DAYS * 86400000).toISOString();
+
+/**
+ * SERVER-ONLY: permanent delete of employees whose 2-month keep period is over (set when HR completed the exit:
+ * removalSnapshot.autoDeleteAt). Employees removed before this rule existed have no date and are never touched.
+ * Safe to run often (each run deletes only what is due). Returns the ids that were deleted.
+ */
+export async function purgeExpiredRemovedEmployees(now: Date = new Date()) {
+    const due: any[] = await Employee.find({ isRemoved: true, 'removalSnapshot.autoDeleteAt': { $lte: now.toISOString() } } as any).select('id name').limit(20).lean();
+    const done: string[] = [];
+    for (const e of due) {
+        try {
+            const deleted = await purgeEmployeeData(e.id);
+            console.log(`[employee-removal] ${e.id} (${e.name}) deleted automatically ${AUTO_DELETE_DAYS} days after removal:`, deleted);
+            done.push(e.id);
+        } catch (err: any) {
+            console.error(`[employee-removal] automatic delete of ${e.id} failed:`, err?.message);
+        }
+    }
+    return done;
+}

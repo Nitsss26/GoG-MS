@@ -743,7 +743,7 @@ interface AuthContextType {
     approveAdditionalResponsibility: (id: string, status: "Approved" | "Rejected", rejectionReason?: string) => Promise<void>;
     addMarkAsPresentRequest: (req: Omit<MarkAsPresentRequest, "id" | "status" | "appliedAt" | "employeeName">) => Promise<void>;
     resolveMarkAsPresentRequest: (id: string, status: "Approved" | "Rejected") => void;
-    resolveDressCodeCheck: (recordId: string, status: "Approved" | "Rejected") => Promise<void>;
+    resolveDressCodeCheck: (recordId: string, status: "Approved" | "Rejected", rejection?: { reasons: string[]; other?: string; remarks?: string; photoUrl?: string }) => Promise<{ ok: boolean; error?: string } | void>;
     addMonthlyRating: (employeeId: string, score: number, period: string, screenshotUrl?: string, points?: number, comment?: string) => Promise<void>;
     updateMonthlyFeedback: (employeeId: string, period: string, score: number, points: number, comment: string, screenshotUrl: string) => Promise<{ success: boolean; unchanged?: boolean; msg?: string }>;
     overrideAttendance: (employeeId: string, date: string, status: "Present" | "Absent") => Promise<void>;
@@ -1581,20 +1581,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
     };
 
-    const resolveDressCodeCheck = async (recordId: string, status: "Approved" | "Rejected") => {
+    const resolveDressCodeCheck = async (recordId: string, status: "Approved" | "Rejected", rejection?: { reasons: string[]; other?: string; remarks?: string; photoUrl?: string }) => {
         try {
             const res = await fetch("/api/attendance/validate-dress", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ attendanceId: recordId, status, validatorId: user?.id })
+                body: JSON.stringify({ attendanceId: recordId, status, validatorId: user?.id, ...(rejection ? { rejection } : {}) })
             });
             const data = await res.json();
+            if (!res.ok) return { ok: false, error: data?.error || "Could not save the dress code review." };
             if (data.attendance) {
                 const a = data.attendance;
                 setAttendanceRecords(prev => prev.map(r => (r.id === recordId || (r as any)._id === recordId) ? {
                     ...r, dressCodeStatus: status, flags: { ...r.flags, dressCode: status === "Rejected" },
                     // saved review details (shown on the Dress Code page)
                     dressCodeReviewedAt: a.dressCodeReviewedAt, dressCodeReviewedByName: a.dressCodeReviewedByName, dressCodeReviewedByRole: a.dressCodeReviewedByRole, updatedAt: a.updatedAt,
+                    ...(status === "Rejected" ? { dressCodeRejectionReasons: a.dressCodeRejectionReasons || [], dressCodeRejectionOther: a.dressCodeRejectionOther || "", dressCodeRejectionRemarks: a.dressCodeRejectionRemarks || "", dressCodeRejectionPhoto: a.dressCodeRejectionPhoto || "" } : {}),
                 } as any : r));
 
                 const points = status === "Approved" ? 2 : -5;
@@ -1622,7 +1624,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     }));
                 }
             }
-        } catch (err) { console.error(err); }
+            return { ok: true };
+        } catch (err) { console.error(err); return { ok: false, error: "Could not reach GOG OMS. Please try again." }; }
     };
 
     // ─── BIRTHDAY AUTOMATION ───

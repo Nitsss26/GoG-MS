@@ -7,6 +7,13 @@ import LocationAssignmentTab from "@/components/hr/LocationAssignmentTab";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+/** Designation shown under the name: designation → designation from the onboarding form → role (never "No Designation" when the role is known) */
+const ROLE_TITLE: Record<string, string> = {
+    FOUNDER: "Founder", HR: "HR", HR_EXECUTIVE: "HR Executive", AD: "AD", TL: "Tech Lead", HOI: "HOI", OM: "Operations Manager", FACULTY: "Professor", PROFESSOR: "Professor",
+    MARKETING_TEAM: "Marketing Team", TECH_TEAM: "Tech Team", CURRICULUM_HEAD: "Curriculum Head", CURRICULUM_LEAD: "Curriculum Lead",
+};
+const designationOf = (e: any) => String(e?.designation || e?.current_designation_at_gog || "").trim() || ROLE_TITLE[e?.role] || e?.role || "No Designation";
+
 export default function WorkLocationPage() {
     const { user, getReportees, workSchedules, assignWorkSchedule, colleges, getExpectedTiming } = useAuth();
     const [selectedEmp, setSelectedEmp] = useState("");
@@ -16,6 +23,7 @@ export default function WorkLocationPage() {
     // HOI only: "Location Assignment" — Original Location of the people under the HOI
     const [view, setView] = useState<"schedule" | "assignment">("schedule");
     if (!user || !["FOUNDER", "AD", "HOI", "HR", "OM"].includes(user.role)) return null;
+    if (user.role === "OM") return <div className="flex items-center justify-center h-[60vh] text-sm text-zinc-400">This page is not available in the OM portal.</div>;
     const isHoi = user.role === "HOI";
     const reportees = getReportees(user.id) || [];
 
@@ -86,7 +94,7 @@ export default function WorkLocationPage() {
                             <button key={r.id} onClick={() => handleSelect(r.id)}
                                 className={cn("w-full p-3 flex items-center gap-2 text-left transition-colors", selectedEmp === r.id ? "bg-primary/10 border-l-2 border-primary" : "hover:bg-zinc-800/30")}>
                                 <div className="w-6 h-6 rounded-md bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-white">{(r.name || "?")[0]}</div>
-                                <div className="min-w-0"><p className="text-[11px] font-bold text-white truncate">{r.name || "Unknown"}</p><p className="text-[9px] text-zinc-500 truncate">{r.designation || "No Designation"}</p></div>
+                                <div className="min-w-0"><p className="text-[11px] font-bold text-white truncate">{r.name || "Unknown"}</p><p className="text-[9px] text-zinc-500 truncate">{designationOf(r)}</p></div>
                             </button>
                         ))}
                         {reportees.length === 0 && <div className="p-6 text-center text-xs text-zinc-500 italic">No reportees.</div>}

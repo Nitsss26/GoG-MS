@@ -132,7 +132,8 @@ export default function FlagCalendarPage() {
     const reportees = (user as any).hrExecutive
         ? employees.filter(e => e.id !== user.id && ["AD", "HOI", "FACULTY", "PROFESSOR", "OM", "CURRICULUM_HEAD", "CURRICULUM_LEAD"].includes(e.role))
         : getReportees(user.id);
-    const viewableEmployees = [user, ...reportees].sort((a, b) => {
+    // employees HR removed from attendance are not listed
+    const viewableEmployees = [user, ...reportees.filter(e => !(e as any).hideFromAttendance)].sort((a, b) => {
         if (a.id === user.id) return -1; // Keep self at top
         if (b.id === user.id) return 1;
         return (a.name || "").localeCompare(b.name || "");

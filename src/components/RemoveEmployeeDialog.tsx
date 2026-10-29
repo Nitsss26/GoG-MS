@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
     Trash2, X, AlertTriangle, CheckCircle2, Loader2, FileText, Wallet, CalendarDays, LogOut, Package, Receipt,
-    MessageSquare, User, Mail, Building2, Briefcase, MapPin, BadgeCheck, Save,
+    MessageSquare, User, Mail, Building2, Briefcase, MapPin, BadgeCheck, Save, MailX, CalendarX,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import type { Employee } from "@/context/AuthContext";
@@ -39,6 +39,30 @@ export default function RemoveEmployeeDialog({ employee, onClose, onRemoved }: {
     const [triedSubmit, setTriedSubmit] = useState(false);
     const [confirming, setConfirming] = useState(false);
     const [done, setDone] = useState<string>("");
+    // Step 1: stop every OMS e-mail to the employee (works right away, before the checklist is finished)
+    const [mailBusy, setMailBusy] = useState(false);
+    const toggleMails = async (stop: boolean) => {
+        setMailBusy(true); setError("");
+        try {
+            const r = await fetch("/api/hr/exit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeId: employee.id, action: stop ? "stop-mails" : "resume-mails" }) });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(d.error || "Could not update the e-mail setting.");
+            setInfo((p: any) => ({ ...p, employee: { ...p.employee, mailsStopped: stop, mailsStoppedAt: stop ? new Date().toISOString() : "" } }));
+            setNotice(d.message || "");
+        } catch (e: any) { setError(e.message); } finally { setMailBusy(false); }
+    };
+    // Remove the employee from attendance: their attendance no longer shows for HR or anyone else
+    const [attBusy, setAttBusy] = useState(false);
+    const toggleAttendance = async (hide: boolean) => {
+        setAttBusy(true); setError("");
+        try {
+            const r = await fetch("/api/hr/exit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeId: employee.id, action: hide ? "hide-attendance" : "show-attendance" }) });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(d.error || "Could not update the attendance setting.");
+            setInfo((p: any) => ({ ...p, employee: { ...p.employee, hideFromAttendance: hide, hiddenFromAttendanceAt: hide ? new Date().toISOString() : "" } }));
+            setNotice(d.message || "");
+        } catch (e: any) { setError(e.message); } finally { setAttBusy(false); }
+    };
 
     useEffect(() => {
         let cancelled = false;
@@ -141,7 +165,7 @@ export default function RemoveEmployeeDialog({ employee, onClose, onRemoved }: {
                             <CheckCircle2 size={20} className="text-emerald-400 shrink-0" />
                             <p className="text-sm text-emerald-300 font-semibold">{done}</p>
                         </div>
-                        <p className="text-xs text-zinc-400">The exit checklist is saved with your name and time. {employee.name} can no longer log in; past records (attendance, leaves, reports) are kept.</p>
+                        <p className="text-xs text-zinc-400">The exit checklist is saved with your name and time. {employee.name} can no longer log in and gets no more mails. Their details are in Workforce → Deleted Employees for 2 months.</p>
                         <button onClick={onClose} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-3 rounded-xl border border-zinc-700">Close</button>
                     </div>
                 ) : loading ? (
@@ -169,6 +193,28 @@ export default function RemoveEmployeeDialog({ employee, onClose, onRemoved }: {
                                         <p className="flex items-center gap-2 text-zinc-300 min-w-0"><Briefcase size={12} className="text-zinc-500 shrink-0" /><span className="truncate">{emp.designation || "—"} <span className="text-zinc-500">({emp.role})</span></span></p>
                                         <p className="flex items-center gap-2 text-zinc-300 min-w-0"><MapPin size={12} className="text-zinc-500 shrink-0" /><span className="truncate">{emp.location || "Not assigned"}</span></p>
                                     </div>
+                                </div>
+                                <div className={`p-3 rounded-xl border flex items-center gap-3 ${emp.mailsStopped ? "border-emerald-500/30 bg-emerald-500/[0.06]" : "border-red-500/30 bg-red-500/[0.05]"}`} data-testid="exit-stop-mails">
+                                    <span className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${emp.mailsStopped ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-300"}`}>{emp.mailsStopped ? <CheckCircle2 size={15} /> : <MailX size={15} />}</span>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-bold text-white">{emp.mailsStopped ? "Mails to this employee are stopped" : "Stop sending any mails to employee"}</p>
+                                        <p className="text-[10px] text-zinc-400 leading-snug">{emp.mailsStopped ? `No GOG OMS e-mail (To or CC) goes to ${emp.email}${emp.mailsStoppedAt ? ` · since ${new Date(emp.mailsStoppedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}.` : `Works immediately — no GOG OMS e-mail (To or CC) will go to ${emp.email}.`}</p>
+                                    </div>
+                                    <button onClick={() => toggleMails(!emp.mailsStopped)} disabled={mailBusy || !!busy} data-testid={emp.mailsStopped ? "exit-resume-mails" : "exit-stop-mails-btn"}
+                                        className={`shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-bold border disabled:opacity-50 ${emp.mailsStopped ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-red-500/40 bg-red-600 text-white hover:bg-red-500"}`}>
+                                        {mailBusy ? <Loader2 size={12} className="animate-spin" /> : emp.mailsStopped ? "Resume mails" : "Stop mails"}
+                                    </button>
+                                </div>
+                                <div className={`p-3 rounded-xl border flex items-center gap-3 ${emp.hideFromAttendance ? "border-emerald-500/30 bg-emerald-500/[0.06]" : "border-red-500/30 bg-red-500/[0.05]"}`} data-testid="exit-hide-attendance">
+                                    <span className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${emp.hideFromAttendance ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-300"}`}>{emp.hideFromAttendance ? <CheckCircle2 size={15} /> : <CalendarX size={15} />}</span>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-bold text-white">{emp.hideFromAttendance ? "Removed from attendance" : "Remove employee from attendance"}</p>
+                                        <p className="text-[10px] text-zinc-400 leading-snug">{emp.hideFromAttendance ? `Their attendance is not shown to HR or anyone else (roster, logs, calendars, alerts)${emp.hiddenFromAttendanceAt ? ` · since ${new Date(emp.hiddenFromAttendanceAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}.` : "Their attendance will no longer show for HR or anyone else (roster, logs, calendars, alerts)."}</p>
+                                    </div>
+                                    <button onClick={() => toggleAttendance(!emp.hideFromAttendance)} disabled={attBusy || !!busy} data-testid={emp.hideFromAttendance ? "exit-show-attendance" : "exit-hide-attendance-btn"}
+                                        className={`shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-bold border disabled:opacity-50 ${emp.hideFromAttendance ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-red-500/40 bg-red-600 text-white hover:bg-red-500"}`}>
+                                        {attBusy ? <Loader2 size={12} className="animate-spin" /> : emp.hideFromAttendance ? "Show again" : "Remove"}
+                                    </button>
                                 </div>
                                 <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5 pt-0.5"><BadgeCheck size={12} /> Mandatory completion checklist</p>
                                 <Radio k="documentsSent" icon={FileText} q="Has the required offer letter or experience letter been sent to the employee?" />
@@ -221,7 +267,7 @@ export default function RemoveEmployeeDialog({ employee, onClose, onRemoved }: {
 
                                 <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10">
                                     <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5" />
-                                    <p className="text-[11px] text-amber-200 leading-relaxed">This action will permanently delete the employee and all of their records (attendance, leaves, WFH, tickets, reimbursements, reports) from the database. This cannot be undone. Please ensure all required exit formalities have been completed.</p>
+                                    <p className="text-[11px] text-amber-200 leading-relaxed">The employee is removed from the portal at once (no login, no mails). All their details and records stay in Workforce → Deleted Employees for 2 months; after that the employee and all their records (attendance, leaves, WFH, tickets, reimbursements, reports) are deleted from the database automatically. Please ensure all required exit formalities have been completed.</p>
                                 </div>
                                 {error && <p className="text-xs text-red-400" data-testid="exit-error">{error}</p>}
                             </div>
@@ -247,7 +293,7 @@ export default function RemoveEmployeeDialog({ employee, onClose, onRemoved }: {
                 <div className="fixed inset-0 z-[120] bg-black/70 flex items-center justify-center p-4" data-testid="exit-confirm">
                     <div className="bg-zinc-900 border border-red-500/30 rounded-2xl w-full max-w-sm p-6 space-y-4">
                         <h3 className="text-base font-bold text-white flex items-center gap-2"><AlertTriangle size={18} className="text-red-400" /> Confirm deletion</h3>
-                        <p className="text-sm text-zinc-300">Remove <span className="font-bold text-white">{employee.name}</span> ({employee.id}) from the portal? They will lose access immediately. This cannot be undone from the portal.</p>
+                        <p className="text-sm text-zinc-300">Remove <span className="font-bold text-white">{employee.name}</span> ({employee.id}) from the portal? They will lose access immediately. Their details stay in Deleted Employees for 2 months, then everything is deleted automatically.</p>
                         <div className="flex gap-2">
                             <button onClick={() => setConfirming(false)} disabled={!!busy} className="flex-1 px-4 py-2.5 text-sm font-bold text-zinc-300 border border-zinc-700 rounded-xl hover:bg-zinc-800">Back</button>
                             <button onClick={() => send("complete")} disabled={!!busy} className="flex-1 px-4 py-2.5 text-sm font-bold bg-red-600 hover:bg-red-500 text-white rounded-xl flex items-center justify-center gap-2" data-testid="exit-confirm-yes">

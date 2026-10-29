@@ -200,7 +200,8 @@ export async function POST(req: Request) {
                     hoiUnmatched = await unmatchedPlace(lat, lng);
                     campus = hoiUnmatched.place;
                 } else return refusedUnassigned();
-            } else if (employee.role === "HOI" || employee.role === "OM" || employee.role === "MARKETING_TEAM" || employee.role === "TECH_TEAM") {
+            } else if (employee.role === "HOI" || employee.role === "MARKETING_TEAM" || employee.role === "TECH_TEAM") {
+                // (OM without allotted Clock-In Locations: only the scheduled / assigned location — the branch below)
                 const dbCampuses = await Location.find({});
                 const map = new Map();
                 for (const c of COLLEGES) map.set(c.id, c);

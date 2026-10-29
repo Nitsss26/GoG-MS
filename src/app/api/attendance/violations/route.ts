@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
-import { AttendanceViolation } from '@/models/Schemas';
+import { AttendanceViolation, Employee } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
 import { istNow } from '@/lib/attendance-violations';
 
@@ -21,7 +21,9 @@ export async function GET(req: Request) {
 
         if (searchParams.get('view') === 'all') {
             if (actor.role !== 'HR' && actor.role !== 'FOUNDER') return NextResponse.json({ error: 'Only HR can view all attendance violations.' }, { status: 403 });
-            const rows: any[] = await AttendanceViolation.find({ period }).sort({ date: -1, createdAt: -1 }).limit(3000).select('-__v').lean();
+            // employees HR removed from attendance are left out
+            const hidden: any[] = await Employee.find({ hideFromAttendance: true } as any).select('id').lean();
+            const rows: any[] = await AttendanceViolation.find({ period, ...(hidden.length ? { employeeId: { $nin: hidden.map(h => h.id) } } : {}) }).sort({ date: -1, createdAt: -1 }).limit(3000).select('-__v').lean();
             const summary = new Map<string, any>();
             for (const v of rows) {
                 const s = summary.get(v.employeeId) || { employeeId: v.employeeId, employeeName: v.employeeName, email: v.email, LATE_IN: 0, EARLY_OUT: 0, MISSING_OUT: 0, lateLevel: '', earlyLevel: '', proposed: [] as string[], pendingHr: 0, emailFailed: 0, lastEmailStatus: '' };

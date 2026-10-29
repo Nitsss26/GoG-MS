@@ -1,6 +1,6 @@
 "use client";
 import { useAuth } from "@/context/AuthContext";
-import { UserCog, Calendar, ClipboardList, FileText, Receipt, ChevronRight, Users, Shield, MapPin, AlertTriangle, ShieldAlert } from "lucide-react";
+import { UserCog, Calendar, ClipboardList, FileText, Receipt, ChevronRight, Users, Shield, MapPin, AlertTriangle, ShieldAlert, Home } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +26,7 @@ export default function HRHub() {
 
     const quickLinks = [
         { label: "Holiday Approval", desc: `${pendingHolidays} pending`, icon: Calendar, path: "/hr/holiday-approval", color: "text-blue-400" },
+        { label: "Attendance Log", desc: "Full attendance of all employees", icon: ClipboardList, path: "/hr/attendance-log", color: "text-sky-400" },
         { label: "Attendance Override", desc: "Review overrides", icon: ClipboardList, path: "/hr/attendance-override", color: "text-green-400" },
         { label: "SOP Management", desc: "Update policies", icon: FileText, path: "/hr/sop", color: "text-purple-400" },
         ...(isHrExecutive ? [] : [{ label: "Reimbursements", desc: `${pendingReimbursements} pending`, icon: Receipt, path: "/hr/reimbursements", color: "text-amber-400" }]),
@@ -33,6 +34,7 @@ export default function HRHub() {
         { label: "Work Location", desc: "Assign daily location & timings", icon: MapPin, path: "/hr/work-location", color: "text-blue-400" },
         { label: "Workforce", desc: `${totalEmployees} employees`, icon: Users, path: "/employees", color: "text-cyan-400" },
         { label: "Leave Management", desc: `${pendingLeaves} pending`, icon: Calendar, path: "/hr/leave-management", color: "text-pink-400" },
+        { label: "WFH Management", desc: "Work From Home applications", icon: Home, path: "/hr/wfh-management", color: "text-emerald-400" },
         { label: "PIP Management", desc: "Manage active PIPs", icon: ShieldAlert, path: "/hr/pip", color: "text-red-400" },
         { label: "Report Misbehaviour", desc: "Report issues", icon: AlertTriangle, path: "/manager/misbehaviour", color: "text-orange-400" },
     ];

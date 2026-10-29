@@ -32,13 +32,16 @@ export async function GET() {
         }
         const query: any = { $or: [{ workMode: 'WFH' }, { location: 'WFH' }] };
         if (scope) query.employeeId = { $in: Array.from(scope) };
+        // employees HR removed from attendance are left out
+        const hidden: any[] = await Employee.find({ hideFromAttendance: true } as any).select('id').lean();
+        if (hidden.length) query.$and = [{ employeeId: { $nin: hidden.map(h => h.id) } }];
         const recs: any[] = await Attendance.find(query).sort({ date: -1 }).limit(2000)
             .select('employeeId date clockIn clockOut status location workMode wfhApplicationId wfhStatus wfhReviewRequired wfhWorkLocation wfhLocation').lean();
 
         const empIds = Array.from(new Set(recs.map(r => r.employeeId)));
         const appIds = Array.from(new Set(recs.map(r => r.wfhApplicationId).filter(Boolean)));
         const [emps, apps]: [any[], any[]] = await Promise.all([
-            Employee.find({ id: { $in: empIds }, isRemoved: { $in: [true, false, null] } }).select('id name dept designation').lean(),
+            Employee.find({ id: { $in: empIds }, isRemoved: { $in: [true, false, null] } }).select('id name dept designation role').lean(),
             appIds.length ? WorkFromHome.find({ id: { $in: appIds } }).select('id status startDate endDate wfhType reason workLocation documentUrl approverName decidedAt decisionRemarks createdAt').lean() : Promise.resolve([]),
         ]);
         const empById = new Map(emps.map(e => [e.id, e]));
@@ -50,7 +53,7 @@ export async function GET() {
             const e = empById.get(r.employeeId) || {};
             const a = r.wfhApplicationId ? appById.get(r.wfhApplicationId) : null;
             return {
-                employeeId: r.employeeId, employeeName: e.name || r.employeeId, dept: e.dept || '', designation: e.designation || '',
+                employeeId: r.employeeId, employeeName: e.name || r.employeeId, dept: e.dept || '', designation: e.designation || '', role: e.role || '',
                 date: r.date, clockIn: r.clockIn || '', clockOut: r.clockOut || '', totalHours: hours(r.clockIn, r.clockOut),
                 attendanceStatus: r.status,
                 wfhApplicationId: r.wfhApplicationId || '',

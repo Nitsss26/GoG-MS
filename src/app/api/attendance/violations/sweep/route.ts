@@ -4,6 +4,7 @@ import { JobRun } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
 import { runAttendanceSweep } from '@/lib/attendance-violations';
 import { runTicketEscalations } from '@/lib/ticket-emails';
+import { purgeExpiredRemovedEmployees } from '@/lib/employee-removal';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,8 @@ export async function GET() {
         catch (e: any) { if (e?.code === 11000) return NextResponse.json({ skipped: true }); throw e; }
         const result: any = await runAttendanceSweep();
         result.tickets = await runTicketEscalations(); // 48-hour ticket reminders run with the same periodic check
+        // Removed employees whose 2-month keep period is over are deleted with all their records
+        result.removedEmployeesDeleted = await purgeExpiredRemovedEmployees().catch((e: any) => { console.error('[sweep] auto delete failed:', e?.message); return []; });
         await JobRun.updateOne({ key: `attendance-sweep:${bucket}` }, { $set: { status: 'DONE', finishedAt: new Date().toISOString(), result } });
         return NextResponse.json({ success: true, ...result });
     } catch (e: any) {

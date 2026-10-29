@@ -22,7 +22,13 @@ export const MISSING_GRACE_MINS = 30;
 const MAX_ATTEMPTS = 3;
 const TZ = 'Asia/Kolkata';
 /** HR statuses that remove a violation from the instance count */
-const NOT_COUNTED = ['Waived', 'Approved'];
+export const NOT_COUNTED = ['Waived', 'Approved'];
+/**
+ * Late Clock-In and Missing Clock-Out emails are no longer sent automatically: HR / HR Executive send them from
+ * Email Management (src/lib/email-management.ts). The violation itself is still recorded exactly as before.
+ * Early Clock-Out emails stay automatic.
+ */
+export const MANUAL_EMAIL_TYPES: ViolationType[] = ['LATE_IN', 'MISSING_OUT'];
 
 const appUrl = (path: string) => (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/+$/, '') + path;
 const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[c]);
@@ -131,6 +137,13 @@ function renderText(name: string, empId: string, violation: string, m: Mail) {
     return [`Dear ${name},`, '', m.paragraphs[0], '', ...rows.map(([k, v]) => `${k}: ${v}`), '', ...m.paragraphs.slice(1).flatMap(p => [p, '']), `Required action: ${m.action}`, '', 'Regards,', 'HR Department', 'Geeks of Gurukul'].join('\n');
 }
 
+/** The existing violation email (same templates / escalation wording), for a manual send from Email Management */
+export function composeViolationMail(v: any) {
+    const m = buildMail(v);
+    const label = VIOLATION_LABEL[v.type as ViolationType];
+    return { subject: m.subject, html: renderHtml(v.employeeName, v.employeeId, label, m), text: renderText(v.employeeName, v.employeeId, label, m) };
+}
+
 /** Sends (or retries) the email of a violation. Atomic claim → never two sends at the same time. */
 export async function sendViolationEmail(id: string) {
     const v: any = await AttendanceViolation.findOneAndUpdate(
@@ -172,11 +185,11 @@ export async function recordViolation(input: { emp: any; type: ViolationType; da
             id: `AV-${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`.toUpperCase(), key,
             employeeId: emp.id, employeeName: emp.name, email: emp.email || '', type, date, period,
             scheduledTime: input.scheduledTime || '', actualTime: input.actualTime || '', durationMins: input.durationMins,
-            instance, ...lvl, emailStatus: 'Pending', emailAttempts: 0, createdAt: new Date().toISOString(),
+            instance, ...lvl, emailStatus: MANUAL_EMAIL_TYPES.includes(type) ? 'Not Sent' : 'Pending', emailAttempts: 0, createdAt: new Date().toISOString(),
         };
         try { await AttendanceViolation.create(doc); }
         catch (e: any) { if (e?.code === 11000) return null; throw e; } // same event recorded by a parallel request
-        await sendViolationEmail(doc.id);
+        if (!MANUAL_EMAIL_TYPES.includes(type)) await sendViolationEmail(doc.id); // Late / Missing: sent from Email Management
         return doc;
     } catch (e: any) {
         console.error('[attendance-violations] could not record', input.type, input.emp?.id, e?.message);
@@ -212,9 +225,9 @@ export async function runAttendanceSweep(at: Date = new Date()) {
             if (await recordViolation({ emp, type: 'MISSING_OUT', date: r.date, scheduledTime: t.out, actualTime: r.clockIn })) alerts++;
         }
     }
-    // retry failed / stuck emails
+    // retry failed / stuck emails (automatic emails only — Late / Missing are sent from Email Management)
     const stale = new Date(at.getTime() - 2 * 60000).toISOString();
-    const retry: any[] = await AttendanceViolation.find({ emailAttempts: { $lt: MAX_ATTEMPTS }, $or: [{ emailStatus: 'Failed' }, { emailStatus: 'Pending', createdAt: { $lt: stale } }] }).select('id').limit(50).lean();
+    const retry: any[] = await AttendanceViolation.find({ type: { $nin: MANUAL_EMAIL_TYPES }, emailAttempts: { $lt: MAX_ATTEMPTS }, $or: [{ emailStatus: 'Failed' }, { emailStatus: 'Pending', createdAt: { $lt: stale } }] }).select('id').limit(50).lean();
     let retried = 0;
     for (const v of retry) if ((await sendViolationEmail(v.id)).sent) retried++;
     return { checked: open.length, alerts, retried };

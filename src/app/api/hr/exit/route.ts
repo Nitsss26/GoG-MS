@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { Employee, ExitRecord, ReimbursementClaim, Location } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
-import { removeEmployeeFromPortal, purgeEmployeeData } from '@/lib/employee-removal';
+import { removeEmployeeFromPortal, autoDeleteDate, AUTO_DELETE_DAYS } from '@/lib/employee-removal';
+import { refreshMailBlocklist } from '@/lib/mail-server';
 import { newId } from '@/lib/academic';
 
 export const dynamic = 'force-dynamic';
@@ -12,7 +13,11 @@ export const dynamic = 'force-dynamic';
  *   GET  ?employeeId=…                     employee details (database), saved checklist, outstanding obligations
  *   POST { employeeId, action: "save" }    save the checklist as pending (any answers)
  *   POST { employeeId, action: "complete" } every mandatory item answered "Yes", no pending reimbursements
- *                                          in the database → checklist COMPLETED + soft removal
+ *                                          in the database → checklist COMPLETED + removal from the portal; all
+ *                                          records are kept for AUTO_DELETE_DAYS (Workforce → Deleted Employees),
+ *                                          then deleted automatically
+ *   POST { employeeId, action: "stop-mails" | "resume-mails" }  no OMS e-mail to this employee (To or CC) / again
+ *   POST { employeeId, action: "hide-attendance" | "show-attendance" }  employee left out of every attendance view / back
  */
 const LEAVING_REASONS = ['Resigned', 'Terminated', 'Contract Completed', 'Retirement', 'Employee Record Created by Mistake', 'Other'];
 const FINAL_STATUS: Record<string, string> = {
@@ -34,6 +39,8 @@ async function details(employeeId: string) {
     return {
         id: emp.id, name: emp.name, email: emp.email, role: emp.role, dept: emp.dept || '', designation: emp.designation || '',
         location: loc?.name || emp.location || '', status: emp.status || 'Active',
+        mailsStopped: !!emp.mailsStopped, mailsStoppedAt: emp.mailsStoppedAt || '', mailsStoppedByName: emp.mailsStoppedByName || '',
+        hideFromAttendance: !!emp.hideFromAttendance, hiddenFromAttendanceAt: emp.hiddenFromAttendanceAt || '',
     };
 }
 async function dbOutstanding(employeeId: string) {
@@ -81,11 +88,32 @@ export async function POST(req: Request) {
         const b = await req.json().catch(() => ({}));
         const employeeId = String(b.employeeId || '');
         const action = String(b.action || '');
-        if (!['save', 'complete'].includes(action)) return NextResponse.json({ error: 'Invalid action.' }, { status: 400 });
+        if (!['save', 'complete', 'stop-mails', 'resume-mails', 'hide-attendance', 'show-attendance'].includes(action)) return NextResponse.json({ error: 'Invalid action.' }, { status: 400 });
         const employee = await details(employeeId);
         if (!employee) return NextResponse.json({ error: 'Active employee not found (already removed?).' }, { status: 404 });
         if (employeeId === actor.id) return NextResponse.json({ error: 'You cannot remove your own account.' }, { status: 400 });
         if (employee.role === 'FOUNDER' && actor.role !== 'FOUNDER') return NextResponse.json({ error: 'Only a Founder can remove a Founder account.' }, { status: 403 });
+
+        // Delete Employee: take the employee out of every attendance view (roster, logs, calendars) — or back in
+        if (action === 'hide-attendance' || action === 'show-attendance') {
+            const hide = action === 'hide-attendance';
+            const at = new Date().toISOString();
+            await Employee.updateOne({ id: employeeId }, { $set: hide
+                ? { hideFromAttendance: true, hiddenFromAttendanceAt: at, hiddenFromAttendanceBy: actor.id, hiddenFromAttendanceByName: actor.name }
+                : { hideFromAttendance: false, shownInAttendanceAt: at, shownInAttendanceBy: actor.id, shownInAttendanceByName: actor.name } }, { strict: false });
+            return NextResponse.json({ success: true, hideFromAttendance: hide, message: hide ? `${employee.name} is removed from attendance.` : `${employee.name} is shown in attendance again.` });
+        }
+
+        // First step of Delete Employee: stop (or resume) every OMS e-mail to this employee right away
+        if (action === 'stop-mails' || action === 'resume-mails') {
+            const stop = action === 'stop-mails';
+            const at = new Date().toISOString();
+            await Employee.updateOne({ id: employeeId }, { $set: stop
+                ? { mailsStopped: true, mailsStoppedAt: at, mailsStoppedBy: actor.id, mailsStoppedByName: actor.name }
+                : { mailsStopped: false, mailsResumedAt: at, mailsResumedBy: actor.id, mailsResumedByName: actor.name } }, { strict: false });
+            refreshMailBlocklist();
+            return NextResponse.json({ success: true, mailsStopped: stop, message: stop ? `Mails to ${employee.name} are stopped.` : `Mails to ${employee.name} are sent again.` });
+        }
 
         const answers = {
             documentsSent: YN.includes(b.documentsSent) ? b.documentsSent : undefined,
@@ -135,10 +163,13 @@ export async function POST(req: Request) {
         });
         record.history.push({ action: 'Exit completed — employee removed', by: actor.id, byName: actor.name, role: actor.role, at: now, note: `Last working day ${answers.lastWorkingDay}; reason ${answers.leavingReason}${answers.leavingReasonOther ? ` (${answers.leavingReasonOther})` : ''}` });
         await record.save();
-        // Permanent delete: the employee and all of their records are removed from the database (cannot be undone)
-        const deleted = await purgeEmployeeData(employeeId);
-        console.log(`[exit] ${employeeId} permanently deleted by ${actor.id}:`, deleted);
-        return NextResponse.json({ success: true, message: `${employee.name} was permanently deleted from the portal and the database.`, record, cleaned: removal.cleaned, deleted });
+        // Kept for AUTO_DELETE_DAYS (Workforce → Deleted Employees), then deleted automatically with all records.
+        // No more e-mails to the removed employee.
+        const deleteOn = autoDeleteDate();
+        await Employee.updateOne({ id: employeeId, isRemoved: true } as any, { $set: { 'removalSnapshot.autoDeleteAt': deleteOn, 'removalSnapshot.exitRecordId': record.id, mailsStopped: true } }, { strict: false });
+        refreshMailBlocklist();
+        const onDate = new Date(deleteOn).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+        return NextResponse.json({ success: true, message: `${employee.name} was removed from the portal. All details are kept in Workforce → Deleted Employees for ${AUTO_DELETE_DAYS} days and will be deleted automatically on ${onDate}.`, record, cleaned: removal.cleaned, autoDeleteAt: deleteOn });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

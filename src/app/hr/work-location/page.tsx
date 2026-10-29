@@ -12,6 +12,13 @@ const HOI_ASSIGNABLE_ROLES = ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "T
 // HR version of the manager "Work Location Assignment" screen (src/app/manager/work-location).
 // Same UI and same save logic; the only difference is that HR can pick any employee.
 // The second tab, "Assign HOI", lets HR put an employee under an HOI.
+/** Designation shown under the name: designation → designation from the onboarding form → role (never "No Designation" when the role is known) */
+const ROLE_TITLE: Record<string, string> = {
+    FOUNDER: "Founder", HR: "HR", HR_EXECUTIVE: "HR Executive", AD: "AD", TL: "Tech Lead", HOI: "HOI", OM: "Operations Manager", FACULTY: "Professor", PROFESSOR: "Professor",
+    MARKETING_TEAM: "Marketing Team", TECH_TEAM: "Tech Team", CURRICULUM_HEAD: "Curriculum Head", CURRICULUM_LEAD: "Curriculum Lead",
+};
+const designationOf = (e: any) => String(e?.designation || e?.current_designation_at_gog || "").trim() || ROLE_TITLE[e?.role] || e?.role || "No Designation";
+
 export default function HRWorkLocationPage() {
     const { user, employees, workSchedules, assignWorkSchedule, approveWorkSchedule, colleges, getExpectedTiming, hrAssignEmployee } = useAuth();
     const [tab, setTab] = useState<"location" | "hoi" | "assignment">("location");
@@ -139,7 +146,7 @@ export default function HRWorkLocationPage() {
                             <button key={r.id} onClick={() => handleSelect(r.id)}
                                 className={cn("w-full p-3 flex items-center gap-2 text-left transition-colors", selectedEmp === r.id ? "bg-primary/10 border-l-2 border-primary" : "hover:bg-zinc-800/30")}>
                                 <div className="w-6 h-6 rounded-md bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-white">{(r.name || "?")[0]}</div>
-                                <div className="min-w-0"><p className="text-[11px] font-bold text-white truncate">{r.name || "Unknown"}</p><p className="text-[9px] text-zinc-500 truncate">{tab === "hoi" ? `HOI: ${getAssignedHOI(r.id)?.name || "Not Assigned"}` : (r.designation || "No Designation")}</p></div>
+                                <div className="min-w-0"><p className="text-[11px] font-bold text-white truncate">{r.name || "Unknown"}</p><p className="text-[9px] text-zinc-500 truncate">{tab === "hoi" ? `HOI: ${getAssignedHOI(r.id)?.name || "Not Assigned"}` : designationOf(r)}</p></div>
                             </button>
                         ))}
                         {visibleEmployees.length === 0 && <div className="p-6 text-center text-xs text-zinc-500 italic">No employees found.</div>}

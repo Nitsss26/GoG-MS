@@ -6,7 +6,8 @@ import {
     Briefcase, Award, Network, Megaphone, Ticket, Receipt,
     FileText, CalendarCheck, AlertTriangle, UserCog, Star, MapPin, ClipboardList,
     Crown, Bell, Activity, Flag, ShieldAlert, Trophy, TrendingUp, Shirt,
-    BookOpen, Timer, Mic, GraduationCap, Video, Download, CalendarDays, BadgeCheck, CalendarRange, KeySquare, Layers
+    BookOpen, Timer, Mic, GraduationCap, Video, Download, CalendarDays, BadgeCheck, CalendarRange, KeySquare, Layers,
+    Mail, Home,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -41,25 +42,27 @@ const managerMenu = [
     { label: "Weekly Calendar", icon: CalendarDays, path: "/academic/weekly-calendar", roles: ["OM", "HOI", "AD", "FOUNDER"] as Role[] },
     { label: "Class Verification", icon: BadgeCheck, path: "/academic/verification", roles: ["OM", "HOI", "AD", "FOUNDER"] as Role[] },
     { label: "Sprint Plan Approvals", icon: CalendarCheck, path: "/curriculum/sprint-plans", roles: ["HOI"] as Role[] },
-    { label: "Leave Approval", icon: CalendarCheck, path: "/manager/leave-approval" },
+    { label: "Leave Approval", icon: CalendarCheck, path: "/manager/leave-approval", hideFor: ["OM"] as Role[] },
     { label: "Leave Summary", icon: CalendarRange, path: "/leave-summary", roles: ["HOI", "AD"] as Role[] },
     { label: "Responsibility Approvals", icon: Award, path: "/manager/responsibility-approvals", roles: ["AD", "FOUNDER"] as Role[] },
     { label: "Report Misbehaviour", icon: AlertTriangle, path: "/manager/misbehaviour" },
     { label: "Ratings", icon: Star, path: "/manager/ratings" },
-    { label: "Work Location", icon: MapPin, path: "/manager/work-location" },
+    { label: "Work Location", icon: MapPin, path: "/manager/work-location", hideFor: ["OM"] as Role[] },
     { label: "Monthly Feedback", icon: TrendingUp, path: "/management/monthly", roles: ["FOUNDER", "AD", "HOI"] as Role[] },
     { label: "Holidays", icon: CalendarCheck, path: "/manager/holidays" },
-    { label: "Attendance Override", icon: ClipboardList, path: "/manager/attendance-override" },
-    { label: "Locations Map", icon: MapPin, path: "/locations" },
+    { label: "Attendance Override", icon: ClipboardList, path: "/manager/attendance-override", hideFor: ["OM"] as Role[] },
+    { label: "Locations Map", icon: MapPin, path: "/locations", hideFor: ["OM"] as Role[] },
 ];
 
 const hrMenu = [
     { label: "HR Hub", icon: UserCog, path: "/hr" },
     { label: "Workforce", icon: Users, path: "/employees" },
     { label: "Leave Management", icon: CalendarCheck, path: "/hr/leave-management" },
+    { label: "WFH Management", icon: Home, path: "/hr/wfh-management" },
     { label: "Leave Summary", icon: CalendarRange, path: "/leave-summary" },
     { label: "Work Location", icon: MapPin, path: "/hr/work-location" },
     { label: "Holiday Approval", icon: CalendarCheck, path: "/hr/holiday-approval" },
+    { label: "Attendance Log", icon: Clock, path: "/hr/attendance-log" },
     { label: "Attendance Override", icon: ClipboardList, path: "/hr/attendance-override" },
     { label: "Dress Code", icon: Shirt, path: "/hr/dress-code" },
     { label: "SOP Management", icon: FileText, path: "/hr/sop" },
@@ -70,6 +73,11 @@ const hrMenu = [
     { label: "Schedule Changes", icon: MapPin, path: "/hr/schedule-approval" },
     { label: "Engagement", icon: Award, path: "/engagement" },
     { label: "Onboarding", icon: UserCog, path: "/hr/onboarding" },
+];
+
+// Email Management (HR, HR Executive, Founder): dress code / late / no clock-in / no clock-out emails sent by hand
+const emailMenu = [
+    { label: "Email Management", icon: Mail, path: "/hr/email-management" },
 ];
 
 const founderMenu = [
@@ -114,7 +122,7 @@ const FACULTY_ROLES: Role[] = ["FACULTY", "PROFESSOR"];
 // Roles that can see Tech Support
 const TECH_LEAD_ROLES: Role[] = ["TL", "FOUNDER"];
 
-type NavItem = { label: string; icon: typeof LayoutDashboard; path: string; roles?: Role[]; badge?: number };
+type NavItem = { label: string; icon: typeof LayoutDashboard; path: string; roles?: Role[]; hideFor?: Role[]; badge?: number };
 
 function NavSection({ title, items, pathname, onNavigate, inHub }: { title: string; items: NavItem[]; pathname: string; onNavigate?: () => void; inHub?: boolean }) {
     return (
@@ -221,12 +229,17 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
 
                 {/* Manager Suite: Visible to FOUNDER, AD, HOI */}
                 {role && MANAGER_ROLES.includes(role) && (
-                    <NavSection title="Manager Suite" items={managerMenu.filter(i => !i.roles || i.roles.includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
+                    <NavSection title="Manager Suite" items={managerMenu.filter((i: any) => (!i.roles || i.roles.includes(role)) && !(i.hideFor || []).includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
                 )}
 
                 {/* HR Administration: Visible to FOUNDER, HR */}
                 {role && HR_ROLES.includes(role) && (
                     <NavSection title={(user as any)?.hrExecutive ? "HR Executive Portal" : "HR Administration"} items={NO_REIMBURSEMENT(hrMenu.map(i => i.path === "/hr/schedule-approval" ? { ...i, badge: unreadScheduleChanges } : i), user)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
+                )}
+
+                {/* Email Management: HR, HR Executive, Founder */}
+                {role && HR_ROLES.includes(role) && (
+                    <NavSection title="Email Management" items={emailMenu} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
                 )}
 
                 {/* Faculty Suite: Visible to FACULTY, PROFESSOR */}

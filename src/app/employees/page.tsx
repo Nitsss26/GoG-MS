@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth, Role } from "@/context/AuthContext";
 import type { Employee } from "@/context/AuthContext";
 import RemoveEmployeeDialog from "@/components/RemoveEmployeeDialog";
+import DeletedEmployeesDialog from "@/components/DeletedEmployeesDialog";
 import ResetPasswordDialog from "@/components/ResetPasswordDialog";
 import ExportMenu from "@/components/ExportMenu";
 import { fetchReport, tablePdf, tableExcel, fileNames } from "@/lib/report-export";
@@ -20,12 +21,11 @@ const initialsOf = (name: string) => String(name || "?").split(/\s+/).filter(Boo
 export default function EmployeesPage() {
     const { user, employees, addEmployee, getReportees } = useAuth();
     const [searchTerm, setSearchTerm] = useState("");
-    const [activeTab, setActiveTab] = useState("All");
     const [locationFilter, setLocationFilter] = useState("All");
-    const [statusFilter, setStatusFilter] = useState("All");
     const [roleFilter, setRoleFilter] = useState("All");
     const [showModal, setShowModal] = useState(false);
     const [employeeToRemove, setEmployeeToRemove] = useState<Employee | null>(null);
+    const [showDeleted, setShowDeleted] = useState(false); // Workforce → Deleted Employees
     const [employeeToReset, setEmployeeToReset] = useState<Employee | null>(null);
     const [mailFor, setMailFor] = useState<Employee | null>(null);
     const [profileFor, setProfileFor] = useState<Employee | null>(null);
@@ -82,10 +82,8 @@ export default function EmployeesPage() {
     const canRemoveEmployees = user.role === "HR" || user.role === "FOUNDER";
     const viewableEmployees = user.role === "HR" ? employees : getReportees(user.id);
 
-    const categories = ["All", ...new Set(viewableEmployees.map(e => e.dept))];
-    const locations = ["All", ...new Set(viewableEmployees.map(e => e.location))];
-    const statuses = ["All", "Active", "On Leave", "On Site", "Resigned"];
-    const roleLevels = ["All", "Founder", "HR", "AD", "HOI", "OM", "TL", "CH", "CL", "Marketing", "Tech", "Faculty"];
+    const locations = ["All", ...new Set(viewableEmployees.map(e => e.location).filter(Boolean))];
+    const roleLevels = ["All", "Founder", "HR", "HR Executive", "AD", "HOI", "OM", "TL", "CH", "CL", "Marketing", "Tech", "Faculty"];
 
     // Role shown in the table: the account's real role (older records may carry a managerLevel)
     const ROLE_LEVEL: Record<string, string> = { FOUNDER: "Founder", HR: "HR", AD: "AD", HOI: "HOI", OM: "OM", TL: "TL", CURRICULUM_HEAD: "CH", CURRICULUM_LEAD: "CL", MARKETING_TEAM: "Marketing", TECH_TEAM: "Tech", HR_EXECUTIVE: "HR Executive" };
@@ -96,14 +94,11 @@ export default function EmployeesPage() {
     };
 
     const filteredEmployees = viewableEmployees.filter(emp => {
-        const matchesSearch = emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            emp.dept.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            emp.designation.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesTab = activeTab === "All" || emp.dept === activeTab;
+        // Filters: name search, location and role only (a record without a name never breaks the search)
+        const matchesSearch = !searchTerm.trim() || String(emp.name || "").toLowerCase().includes(searchTerm.trim().toLowerCase());
         const matchesLocation = locationFilter === "All" || emp.location === locationFilter;
-        const matchesStatus = statusFilter === "All" || emp.status === statusFilter;
         const matchesRole = roleFilter === "All" || getRoleLevel(emp) === roleFilter;
-        return matchesSearch && matchesTab && matchesLocation && matchesStatus && matchesRole;
+        return matchesSearch && matchesLocation && matchesRole;
     });
 
     // Export: the server re-checks who may export what; "filtered" sends the ids matching the current filters
@@ -128,7 +123,13 @@ export default function EmployeesPage() {
                         { label: "Download as PDF", hint: "Uses the current search and filters", kind: "pdf", testid: "wf-flt-pdf", run: async () => tablePdf(await workforceReport(true), fileNames.workforce("pdf")) },
                         { label: "Download as Excel (.xlsx)", hint: "Uses the current search and filters", kind: "xlsx", testid: "wf-flt-xlsx", run: async () => tableExcel(await workforceReport(true), "Employee Records", fileNames.workforce("xlsx")) },
                     ]} />
-                    <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-1.5 h-9 px-4 text-xs font-semibold"><Plus size={13} /> Add Record</button>
+                    {(user.role === "HR" || user.role === "FOUNDER") && (
+                        <button onClick={() => setShowDeleted(true)} data-testid="wf-deleted" className="flex items-center gap-1.5 h-9 px-4 text-xs font-semibold rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"><UserX size={13} /> Deleted Employees</button>
+                    )}
+                    {(user.role === "HR" || user.role === "FOUNDER") && (
+                        // New employees are added through HR → Onboarding (role, college, HOI and ID set correctly)
+                        <Link href="/hr/onboarding" data-testid="wf-add" className="btn-primary flex items-center gap-1.5 h-9 px-4 text-xs font-semibold"><Plus size={13} /> Add Record</Link>
+                    )}
                 </div>
             </header>
 
@@ -136,21 +137,15 @@ export default function EmployeesPage() {
             <div className="flex flex-col md:flex-row gap-4 items-center">
                 <div className="relative w-full md:w-80">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={14} />
-                    <input type="text" placeholder="Search by name, ID or role..." className="w-full bg-surface border border-border rounded-lg py-2.5 pl-9 pr-3 text-xs text-white focus:outline-none focus:border-primary/30" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                    <input type="text" placeholder="Search by name..." data-testid="wf-search" className="w-full bg-surface border border-border rounded-lg py-2.5 pl-9 pr-3 text-xs text-white focus:outline-none focus:border-primary/30" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
                     <Filter size={12} className="text-muted mr-1" />
                     <div className="flex flex-wrap gap-2">
-                        <select className="bg-surface-light border border-border rounded-lg px-3 py-1.5 text-[10px] text-white outline-none font-bold" value={activeTab} onChange={e => setActiveTab(e.target.value)}>
-                            {categories.map(c => <option key={c} value={c}>Dept: {c}</option>)}
+                        <select data-testid="wf-location" className="bg-surface-light border border-border rounded-lg px-3 py-1.5 text-[10px] text-white outline-none font-bold" value={locationFilter} onChange={e => setLocationFilter(e.target.value)}>
+                            {locations.map(l => <option key={l} value={l}>Location: {l === "All" ? "All" : locName(l)}</option>)}
                         </select>
-                        <select className="bg-surface-light border border-border rounded-lg px-3 py-1.5 text-[10px] text-white outline-none font-bold" value={locationFilter} onChange={e => setLocationFilter(e.target.value)}>
-                            {locations.map(l => <option key={l} value={l}>Node: {l === "All" ? "All" : locName(l)}</option>)}
-                        </select>
-                        <select className="bg-surface-light border border-border rounded-lg px-3 py-1.5 text-[10px] text-white outline-none font-bold" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-                            {statuses.map(s => <option key={s} value={s}>State: {s}</option>)}
-                        </select>
-                        <select className="bg-surface-light border border-border rounded-lg px-3 py-1.5 text-[10px] text-white outline-none font-bold" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
+                        <select data-testid="wf-role" className="bg-surface-light border border-border rounded-lg px-3 py-1.5 text-[10px] text-white outline-none font-bold" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
                             {roleLevels.map(r => <option key={r} value={r}>Role: {r}</option>)}
                         </select>
                     </div>
@@ -290,6 +285,7 @@ export default function EmployeesPage() {
 
             {/* Delete Employee — mandatory exit checklist first */}
             {employeeToRemove && <RemoveEmployeeDialog employee={employeeToRemove} onClose={() => setEmployeeToRemove(null)} />}
+            {showDeleted && <DeletedEmployeesDialog onClose={() => setShowDeleted(false)} />}
 
             {/* HR: Reset Password (hash saved on the server, temporary password shown once) */}
             {employeeToReset && <ResetPasswordDialog employee={employeeToReset} onClose={() => setEmployeeToReset(null)} />}

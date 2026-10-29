@@ -1,14 +1,16 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { Attendance, Employee } from '@/models/Schemas';
-import { sendMailInternal } from '@/lib/mail-server';
-import { getDressCodeWarningTemplate } from '@/lib/mail-templates';
 import { getSessionUser } from '@/lib/session-user';
+import { parseDressRejection } from '@/lib/email-management';
 
 export async function PATCH(req: Request) {
     try {
         await dbConnect();
-        const { attendanceId, status, validatorId } = await req.json();
+        const { attendanceId, status, validatorId, rejection } = await req.json();
+        // Rejection: reason(s) are required (Footwear / Blazer / Waistcoat / Grooming / Full Attire / Other + text)
+        const parsed = status === "Rejected" ? parseDressRejection(rejection) : null;
+        if (parsed && !parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
 
         const attendance = await Attendance.findById(attendanceId);
         if (!attendance) return NextResponse.json({ error: "Attendance record not found" }, { status: 404 });
@@ -25,22 +27,16 @@ export async function PATCH(req: Request) {
         
         if (status === "Rejected") {
             attendance.flags.dressCode = true;
-            
-            // Send warning email
-            const employee = await Employee.findOne({ id: attendance.employeeId });
-            if (employee && employee.email) {
-                const template = getDressCodeWarningTemplate(employee, 1);
-                await sendMailInternal({
-                    to: employee.email,
-                    subject: template.subject,
-                    html: template.html
-                });
-            }
+            // No automatic email: HR / HR Executive send the rejection email from Email Management (Send Email)
         } else if (status === "Approved") {
             attendance.flags.dressCode = false;
         }
 
         await attendance.save();
+        if (parsed?.ok) {
+            // reasons are stored on the attendance record (fields outside the schema → strict: false)
+            await Attendance.updateOne({ _id: attendance._id }, { $set: parsed.fields }, { strict: false } as any);
+        }
 
         // Update Employee Points
         const currentPeriod = "Mar 01 - Mar 15, 2026";
@@ -66,7 +62,8 @@ export async function PATCH(req: Request) {
             );
         }
 
-        return NextResponse.json({ message: `Dress code ${status}`, attendance, pointsAwarded: points });
+        const saved: any = parsed?.ok ? { ...attendance.toObject(), ...parsed.fields } : attendance;
+        return NextResponse.json({ message: `Dress code ${status}`, attendance: saved, pointsAwarded: points });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

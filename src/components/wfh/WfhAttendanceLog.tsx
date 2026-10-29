@@ -92,39 +92,52 @@ export default function WfhAttendanceLog() {
             {msg && <p className="text-[11px] text-zinc-300" data-testid="wfh-att-msg">{msg}</p>}
             {error && <p className="text-[11px] text-red-400 flex items-center gap-1.5"><AlertTriangle size={12} /> {error}</p>}
 
-            <div className="overflow-x-auto rounded-xl border border-zinc-800">
-                <table className="w-full text-xs min-w-[1100px]">
-                    <thead><tr className="bg-zinc-800/40 text-[9px] text-zinc-400 uppercase tracking-widest text-left">
-                        {["Employee", "Role", "Date", "Clock In", "Clock Out", "Total Hours", "WFH Application", "Approval", "Attendance", "Work Location", "Actions"].map(h => <th key={h} className="px-3 py-2.5 font-bold">{h}</th>)}
+            {/* fixed layout: fits the page width (no sideways scrolling); details in View */}
+            <div className="rounded-xl border border-zinc-800 overflow-hidden">
+                <table className="w-full table-fixed text-xs">
+                    <thead><tr className="bg-zinc-900 border-b border-zinc-800 text-[10px] text-zinc-500 uppercase tracking-wider text-left">
+                        <th className="px-3 py-2.5 font-semibold">Employee</th>
+                        <th className="px-3 py-2.5 font-semibold w-[105px]">Date</th>
+                        <th className="px-3 py-2.5 font-semibold w-[130px]">In / Out</th>
+                        <th className="px-3 py-2.5 font-semibold w-[150px]">Approval</th>
+                        <th className="px-3 py-2.5 font-semibold w-[22%] hidden md:table-cell">Attendance &amp; Location</th>
+                        <th className="px-3 py-2.5 font-semibold w-[150px] text-right">Actions</th>
                     </tr></thead>
-                    <tbody className="divide-y divide-zinc-800/60">
-                        {rows === null && <tr><td colSpan={11} className="py-8 text-center"><Loader2 size={16} className="animate-spin text-zinc-500 inline" /></td></tr>}
-                        {rows !== null && !shown.length && <tr><td colSpan={11} className="py-8 text-center text-zinc-500">No Work From Home attendance found.</td></tr>}
+                    <tbody className="divide-y divide-zinc-800/70">
+                        {rows === null && <tr><td colSpan={6} className="py-10 text-center"><Loader2 size={16} className="animate-spin text-zinc-500 inline" /></td></tr>}
+                        {rows !== null && !shown.length && <tr><td colSpan={6} className="py-10 text-center text-zinc-500">No Work From Home attendance found.</td></tr>}
                         {pageRows.map(r => (
                             <tr key={`${r.employeeId}-${r.date}`} data-testid="wfh-att-row" data-emp={r.employeeId} data-date={r.date} className="hover:bg-zinc-800/20">
-                                <td className="px-3 py-2.5">
-                                    <button onClick={() => setQ(r.employeeId)} title="Show this employee's Work From Home history" className="text-left">
-                                        <p className="font-bold text-white hover:text-emerald-300">{r.employeeName}</p><p className="text-[10px] text-zinc-500 font-mono">{r.employeeId}</p>
+                                <td className="px-3 py-3 max-w-0">
+                                    <button onClick={() => setQ(r.employeeId)} title="Show this employee's Work From Home history" className="text-left block w-full">
+                                        <p className="font-semibold text-white hover:text-emerald-300 truncate">{r.employeeName}</p>
+                                        <p className="text-[10px] text-zinc-500 truncate"><span className="font-mono">{r.employeeId}</span> · <span data-testid="wfh-att-rolecell">{ROLE_LABEL[r.role] || r.role || "—"}</span></p>
                                     </button>
                                 </td>
-                                <td className="px-3 py-2.5 text-zinc-400 whitespace-nowrap" data-testid="wfh-att-rolecell">{ROLE_LABEL[r.role] || r.role || "—"}</td>
-                                <td className="px-3 py-2.5 text-white whitespace-nowrap">{fmtDate(r.date)}</td>
-                                <td className="px-3 py-2.5 text-green-400">{r.clockIn || "—"}</td>
-                                <td className="px-3 py-2.5 text-orange-400">{r.clockOut || "—"}</td>
-                                <td className="px-3 py-2.5 text-zinc-300">{r.totalHours != null ? `${r.totalHours} h` : "—"}</td>
-                                <td className="px-3 py-2.5 font-mono text-[10px] text-zinc-400">{r.wfhApplicationId || "—"}</td>
-                                <td className="px-3 py-2.5">
+                                <td className="px-3 py-3 text-zinc-200 whitespace-nowrap">{fmtDate(r.date)}</td>
+                                <td className="px-3 py-3 whitespace-nowrap">
+                                    <p><span className="text-green-400">{r.clockIn || "—"}</span><span className="text-zinc-600 mx-1">→</span><span className="text-orange-400">{r.clockOut || "—"}</span></p>
+                                    <p className="text-[10px] text-zinc-500">{r.totalHours != null ? `${r.totalHours} h total` : "In progress"}</p>
+                                </td>
+                                <td className="px-3 py-3">
                                     <span className={cn("px-2 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap", STATUS_STYLE[r.approvalStatus] || STATUS_STYLE.Unknown)} data-testid="wfh-att-approval">{r.approvalStatus}</span>
+                                    {r.wfhApplicationId && <p className="text-[9px] text-zinc-500 font-mono mt-1 truncate" title={r.wfhApplicationId}>{r.wfhApplicationId}</p>}
                                     {r.reviewRequired && <p className="text-[9px] text-amber-400 font-bold mt-1" data-testid="wfh-att-review">Needs HR review</p>}
                                 </td>
-                                <td className="px-3 py-2.5 text-zinc-300">{r.approvalStatus === "Pending" ? <span className="text-amber-300">Provisional</span> : r.attendanceStatus}</td>
-                                <td className="px-3 py-2.5 text-zinc-400 max-w-[180px]"><span className="truncate block" title={r.workLocation}>{r.workLocation}</span>{r.locationCaptured && <span className="text-[9px] text-emerald-400 flex items-center gap-0.5"><MapPin size={9} /> Location captured</span>}</td>
-                                <td className="px-3 py-2.5 whitespace-nowrap">
-                                    {r.application && <button onClick={() => setOpen(r)} className="text-[10px] font-bold text-zinc-200 border border-zinc-700 rounded-lg px-2 py-1 hover:border-zinc-500" data-testid="wfh-att-view">View</button>}
-                                    {r.application?.status === "Pending" && <>
-                                        <button disabled={!!busy} onClick={() => decide(r.application.id, "approve")} className="ml-1 text-[10px] font-bold text-emerald-300 border border-emerald-500/30 rounded-lg px-2 py-1 disabled:opacity-50" data-testid="wfh-att-approve">Approve</button>
-                                        <button disabled={!!busy} onClick={() => decide(r.application.id, "reject")} className="ml-1 text-[10px] font-bold text-red-300 border border-red-500/30 rounded-lg px-2 py-1 disabled:opacity-50" data-testid="wfh-att-reject">Reject</button>
-                                    </>}
+                                <td className="px-3 py-3 hidden md:table-cell max-w-0">
+                                    <p className="text-zinc-300 truncate">{r.approvalStatus === "Pending" ? <span className="text-amber-300">Provisional</span> : r.attendanceStatus}</p>
+                                    <p className="text-[10px] text-zinc-500 truncate" title={r.workLocation}>{r.workLocation || "—"}</p>
+                                    {r.locationCaptured && <span className="text-[9px] text-emerald-400 flex items-center gap-0.5"><MapPin size={9} /> Location captured</span>}
+                                </td>
+                                <td className="px-3 py-3 text-right">
+                                    <div className="inline-flex flex-wrap justify-end gap-1">
+                                        {r.application && <button onClick={() => setOpen(r)} className="text-[10px] font-semibold text-zinc-200 border border-zinc-700 rounded-lg px-2 py-1 hover:border-zinc-500" data-testid="wfh-att-view">View</button>}
+                                        {r.application?.status === "Pending" && <>
+                                            <button disabled={!!busy} onClick={() => decide(r.application.id, "approve")} className="text-[10px] font-semibold text-emerald-300 border border-emerald-500/30 rounded-lg px-2 py-1 disabled:opacity-50" data-testid="wfh-att-approve">Approve</button>
+                                            <button disabled={!!busy} onClick={() => decide(r.application.id, "reject")} className="text-[10px] font-semibold text-red-300 border border-red-500/30 rounded-lg px-2 py-1 disabled:opacity-50" data-testid="wfh-att-reject">Reject</button>
+                                        </>}
+                                        {!r.application && <span className="text-zinc-600">—</span>}
+                                    </div>
                                 </td>
                             </tr>
                         ))}
