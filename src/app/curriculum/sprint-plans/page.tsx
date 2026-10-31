@@ -294,11 +294,11 @@ export default function CurriculumSprintPlansPage() {
                                     ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                                     : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                             }`}>
-                                {isCampusFullyVerified ? "All plans locked" : "Pending lock"}
+                                {isCampusFullyVerified ? "All plans locked" : "Not all locked yet"}
                             </span>
                         </div>
                         <p className="text-[11px] text-zinc-400 mt-0.5">
-                            {plans.length} submitted sprint plan(s) for this week · {plans.filter(p => p.status === "UNLOCK_REQUESTED").length} unlock request(s) waiting.
+                            {plans.length} sprint plan(s) for this week · {plans.filter(p => p.status === "UNLOCK_REQUESTED").length} unlock request(s) waiting.
                         </p>
                     </div>
                 </div>
@@ -312,15 +312,8 @@ export default function CurriculumSprintPlansPage() {
                             onChange={(e) => setRemarks(e.target.value)}
                             className="px-3 py-2 bg-zinc-800/80 border border-zinc-700/60 rounded-xl text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-amber-400"
                         />
-                        {!isCampusFullyVerified ? (
-                            <button
-                                onClick={() => handleCampusLockToggle(true)}
-                                disabled={actionLoading || plans.length === 0}
-                                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-emerald-600/20 active:scale-95 disabled:opacity-50"
-                            >
-                                <Lock size={14} /> Lock All Submitted Plans
-                            </button>
-                        ) : (
+                        {/* "Lock All Submitted Plans" removed — professors lock their own plans */}
+                        {isCampusFullyVerified && (
                             <button
                                 onClick={() => handleCampusLockToggle(false)}
                                 disabled={actionLoading}
@@ -337,12 +330,12 @@ export default function CurriculumSprintPlansPage() {
             <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/80 space-y-3" data-testid="approval-queue">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
-                        <ShieldCheck size={14} className="text-amber-400" /> Awaiting Review <span className="text-zinc-500">({queue.length})</span>
+                        <ShieldCheck size={14} className="text-amber-400" /> Awaiting Review{queue.some((q: any) => q.toRead) ? " / To Read" : ""} <span className="text-zinc-500">({queue.length})</span>
                     </h3>
                     <span className="text-[10px] text-zinc-500">All weeks · {selectedCampus === "All" ? "all your campuses" : collegeLabel(selectedCampus)}</span>
                 </div>
                 {queue.length === 0 ? (
-                    <p className="text-xs text-zinc-500">No sprint plans are waiting for review.</p>
+                    <p className="text-xs text-zinc-500">No sprint plans are waiting for review or to be read.</p>
                 ) : (
                     <div className="overflow-x-auto [contain:inline-size]">
                         <table className="w-full min-w-[900px] text-xs">
@@ -359,7 +352,7 @@ export default function CurriculumSprintPlansPage() {
                                         <td className="py-2.5 pr-3 font-mono text-zinc-400">{q.facultyId}</td>
                                         <td className="py-2.5 pr-3 text-zinc-300">{collegeLabel(q.college)}</td>
                                         <td className="py-2.5 pr-3 text-zinc-300 whitespace-nowrap">{dmyDate(q.weekStartDate)} → {dmyDate(q.weekEndDate)}</td>
-                                        <td className="py-2.5 pr-3 text-zinc-400 whitespace-nowrap">{q.submittedAt ? new Date(q.submittedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                                        <td className="py-2.5 pr-3 text-zinc-400 whitespace-nowrap">{q.toRead && <span data-testid="queue-to-read" className={`block mb-0.5 text-[9px] font-black uppercase tracking-wider ${q.status === "LOCKED_AGAIN" ? "text-sky-300" : "text-teal-300"}`}>{q.status === "LOCKED_AGAIN" ? "Re-Locked · To Read" : "Locked · To Read"}</span>}{q.submittedAt ? new Date(q.submittedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
                                         {/* Status + Lock / Return for Correction / Unlock — right here, whatever week the plan is for */}
                                         <td className="py-2.5 pr-3 min-w-[16rem]" data-testid="queue-actions">
                                             <SprintPlanWorkflowPanel plan={q} mode="reviewer" compact

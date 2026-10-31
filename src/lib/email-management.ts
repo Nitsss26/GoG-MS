@@ -19,6 +19,14 @@ import { LateJustification } from '@/models/LateJustification';
 import { ManualEmail, ManualEmailLock } from '@/models/ManualEmail';
 import { sendMailInternal } from '@/lib/mail-server';
 import { composeViolationMail, escalation, fmtDuration, istNow, NOT_COUNTED } from '@/lib/attendance-violations';
+import { FlagRemoval } from '@/models/SalaryModule';
+
+/** Late clock-in violation ids removed through Flag Removal (they no longer count and need no email) */
+async function removedLateIds(employeeIds: string[]) {
+    if (!employeeIds.length) return new Set<string>();
+    const rows: any[] = await FlagRemoval.find({ employeeId: { $in: employeeIds }, source: 'VIOLATION', flagType: 'LATE_IN' }).select('sourceId').lean();
+    return new Set(rows.map(r => String(r.sourceId)));
+}
 import { getExpectedTimingInternal } from '@/lib/attendance-utils';
 import { DRESS_CODE_REASONS, dressReasonText } from '@/lib/dress-code-reasons';
 
@@ -210,12 +218,13 @@ async function dressRows(f: Filters, locs: Map<string, string>) {
  * justification is not waiting for HR review.
  */
 async function lateLevel(v: any) {
-    const [earlier, pending]: [any[], any[]] = await Promise.all([
-        AttendanceViolation.find({ employeeId: v.employeeId, type: 'LATE_IN', period: v.period, date: { $lt: v.date }, hrStatus: { $nin: NOT_COUNTED } }).select('date').lean() as Promise<any[]>,
+    const [earlier, pending, removed]: [any[], any[], Set<string>] = await Promise.all([
+        AttendanceViolation.find({ employeeId: v.employeeId, type: 'LATE_IN', period: v.period, date: { $lt: v.date }, hrStatus: { $nin: NOT_COUNTED } }).select('id date').lean() as Promise<any[]>,
         LateJustification.find({ employeeId: v.employeeId, date: { $gte: `${v.period}-01`, $lt: v.date }, justificationStatus: 'pending' }).select('date').lean() as Promise<any[]>,
+        removedLateIds([v.employeeId]),
     ]);
     const onHold = new Set(pending.map(j => j.date));
-    return earlier.filter(x => !onHold.has(x.date)).length + 1;
+    return earlier.filter(x => !onHold.has(x.date) && !removed.has(String(x.id))).length + 1;
 }
 
 async function lateRows(f: Filters, locs: Map<string, string>) {
@@ -231,8 +240,9 @@ async function lateRows(f: Filters, locs: Map<string, string>) {
         Attendance.find({ employeeId: { $in: empIds }, date: { $gte: f.from, $lte: f.to } }).select('employeeId date clockIn flags status').lean() as Promise<any[]>,
         manualDocs(vs.map(v => `late_clock_in:${v.id}`)),
         // all late clock-ins of these months, for the warning level
-        AttendanceViolation.find({ type: 'LATE_IN', employeeId: { $in: empIds }, period: { $in: Array.from(new Set(vs.map(v => v.period))) } }).select('employeeId date period hrStatus').lean() as Promise<any[]>,
+        AttendanceViolation.find({ type: 'LATE_IN', employeeId: { $in: empIds }, period: { $in: Array.from(new Set(vs.map(v => v.period))) } }).select('id employeeId date period hrStatus').lean() as Promise<any[]>,
     ]);
+    const removed = await removedLateIds(empIds);
     const jBy = new Map(js.map(j => [j.key, j]));
     const recBy = new Map(recs.map(r => [`${r.employeeId}:${r.date}`, r]));
     const out: any[] = [];
@@ -243,7 +253,7 @@ async function lateRows(f: Filters, locs: Map<string, string>) {
         const rec = recBy.get(`${v.employeeId}:${v.date}`);
         const doc = docs.get(`late_clock_in:${v.id}`);
         const level = 1 + all.filter(x => x.employeeId === v.employeeId && x.period === v.period && x.date < v.date && !NOT_COUNTED.includes(x.hrStatus)
-            && jBy.get(`${x.employeeId}:${x.date}`)?.justificationStatus !== 'pending').length;
+            && !removed.has(String(x.id)) && jBy.get(`${x.employeeId}:${x.date}`)?.justificationStatus !== 'pending').length;
         const details = {
             clockIn: v.actualTime || rec?.clockIn || '', scheduled: v.scheduledTime || '', lateMinutes: v.durationMins, lateText: fmtDuration(v.durationMins),
             justificationStatus: j?.justificationStatus || 'not_submitted', justificationReason: j?.justificationReason || '', supportingDocument: j?.supportingDocument || '',
@@ -254,7 +264,7 @@ async function lateRows(f: Filters, locs: Map<string, string>) {
         const sentLevel = doc?.warningLevel;
         if (doc?.emailStatus === 'sent') { out.push(withEmail(row, 'sent', doc, { details, warningLevel: sentLevel, warningLabel: lateCategoryLabel(sentLevel || level) })); continue; }
         // excused: justification approved / violation waived / late flag removed (e.g. HR attendance override)
-        const excused = j?.justificationStatus === 'approved' || NOT_COUNTED.includes(v.hrStatus) || (rec && rec.flags?.late === false) || rec?.status === 'Absent' || rec?.status === 'On Leave';
+        const excused = j?.justificationStatus === 'approved' || NOT_COUNTED.includes(v.hrStatus) || removed.has(String(v.id)) || (rec && rec.flags?.late === false) || rec?.status === 'Absent' || rec?.status === 'On Leave';
         if (excused) { out.push(withEmail(row, 'not_required', doc, { details, warningLevel: null, warningLabel: '—' })); continue; }
         // emailed automatically before Email Management existed
         if (v.emailStatus === 'Sent') { out.push(withEmail(row, 'sent', null, { details, warningLevel: v.instance, warningLabel: lateCategoryLabel(v.instance || 1), sentAt: v.emailSentAt || '', sentBy: 'System (automatic)', sentByRole: 'Automatic', canSend: false, statusLabel: 'Sent (automatic)' })); continue; }

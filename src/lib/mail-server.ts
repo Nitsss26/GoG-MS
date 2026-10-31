@@ -33,7 +33,7 @@ interface MailOptions {
  * The list is read from the employee records (cached for 5 minutes). Addresses already on the mail are not
  * repeated, and the same mail sent to many people one by one (e.g. an announcement) is copied only once.
  */
-const MAIN_ADMIN_EMAIL = 'tech@geeksofgurukul.com';
+export const MAIN_ADMIN_EMAIL = 'tech@geeksofgurukul.com';
 const AUTO_CC_ROLES = ['HR', 'HR_EXECUTIVE', 'AD'];
 const EMAIL_RE = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
 const ccCache: { at: number; list: string[] } = ((globalThis as any).__gogAutoCc ||= { at: 0, list: [] });

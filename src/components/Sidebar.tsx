@@ -7,7 +7,7 @@ import {
     FileText, CalendarCheck, AlertTriangle, UserCog, Star, MapPin, ClipboardList,
     Crown, Bell, Activity, Flag, ShieldAlert, Trophy, TrendingUp, Shirt,
     BookOpen, Timer, Mic, GraduationCap, Video, Download, CalendarDays, BadgeCheck, CalendarRange, KeySquare, Layers,
-    Mail, Home,
+    Wallet, Mail, Home,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -33,6 +33,7 @@ const personalMenu = [
     { label: "SOP", icon: FileText, path: "/sop" },
     { label: "Flag Calendar", icon: Flag, path: "/flag-calendar" },
     { label: "Change Password", icon: ShieldCheck, path: "/change-password" },
+    { label: "My Salary & Payable Days", icon: Wallet, path: "/my-payable-days" },
     // Notifications moved to the bell at the top right (NotificationBell)
 ];
 
@@ -73,6 +74,8 @@ const hrMenu = [
     { label: "Schedule Changes", icon: MapPin, path: "/hr/schedule-approval" },
     { label: "Engagement", icon: Award, path: "/engagement" },
     { label: "Onboarding", icon: UserCog, path: "/hr/onboarding" },
+    { label: "Flag Removal", icon: Flag, path: "/hr/flag-removal" },
+    { label: "Employee Salary Management", icon: Wallet, path: "/hr/salary-management" },
 ];
 
 // Email Management (HR, HR Executive, Founder): dress code / late / no clock-in / no clock-out emails sent by hand

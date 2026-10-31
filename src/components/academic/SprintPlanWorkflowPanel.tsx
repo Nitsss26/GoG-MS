@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Lock, Unlock, Send, History, X, AlertTriangle, Check, RefreshCw, MessageSquare, RotateCcw } from "lucide-react";
+import { Lock, Unlock, Send, History, X, AlertTriangle, Check, CheckCheck, RefreshCw, MessageSquare, RotateCcw, Eye, FileEdit } from "lucide-react";
 import { PLAN_STATUS_LABEL, PLAN_STATUS_STYLE, getPlanStatus, roleShort, planApproval, APPROVAL_STYLE } from "@/lib/academic-status";
 
 /**
@@ -36,6 +36,59 @@ const fmt = (iso?: string) => {
     const d = new Date(iso);
     return isNaN(d.getTime()) ? iso : d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 };
+
+/** HOI "Mark as Read" acknowledgements for the plan's current version */
+export function planReads(plan: any) {
+    const v = plan?.version || 1;
+    return (plan?.hoiReads || []).filter((r: any) => (r.version || 1) === v);
+}
+
+/** Latest "Updated & Re-Locked" entry (what the professor changed after unlocking) */
+export function latestRelock(plan: any) {
+    const h = (plan?.history || []).filter((x: any) => x.action === "Updated & Re-Locked");
+    const last = h[h.length - 1];
+    if (!last) return null;
+    const changes = String(last.note || "").split("\n").map(t => t.trim()).filter(Boolean).filter(t => t !== "No classes changed");
+    return { ...last, changes };
+}
+
+const CHANGE_STYLE = (t: string) => t.startsWith("Added") ? { tag: "Added", cls: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" }
+    : t.startsWith("Removed") ? { tag: "Removed", cls: "bg-red-500/10 text-red-300 border-red-500/20" }
+        : { tag: "Changed", cls: "bg-amber-500/10 text-amber-300 border-amber-500/20" };
+
+export function RelockChanges({ plan, compact = false }: { plan: any; compact?: boolean }) {
+    const r = latestRelock(plan);
+    if (!r || getPlanStatus(plan) !== "LOCKED_AGAIN") return null;
+    const strip = (t: string) => t.replace(/^(Added|Removed|Changed)\s*/, "");
+    const body = (
+        <div className="mt-2 space-y-1.5">
+            {r.changes.length === 0 ? <p className="text-[11px] text-zinc-400">No classes were changed after unlocking.</p> : r.changes.map((c: string, i: number) => {
+                const s = CHANGE_STYLE(c);
+                return (
+                    <div key={i} className="flex items-start gap-2" data-testid="relock-change">
+                        <span className={`shrink-0 mt-px px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wider ${s.cls}`}>{s.tag}</span>
+                        <span className="text-[11px] text-zinc-200 [overflow-wrap:anywhere]">{strip(c)}</span>
+                    </div>
+                );
+            })}
+        </div>
+    );
+    return (
+        <div className="p-3 rounded-xl bg-sky-500/5 border border-sky-500/20" data-testid="relock-card">
+            <p className="text-[10px] font-black text-sky-300 uppercase tracking-widest flex items-center gap-1.5 flex-wrap">
+                <FileEdit size={11} /> Updated &amp; Re-Locked · Version {plan.version || 1}
+                <span className="normal-case tracking-normal font-semibold text-zinc-400">by {r.byName}{r.at ? ` · ${fmt(r.at)}` : ""}</span>
+            </p>
+            <p className="text-[10px] text-zinc-500 mt-0.5">{r.changes.length} change{r.changes.length === 1 ? "" : "s"} since the plan was unlocked</p>
+            {compact && r.changes.length > 2 ? (
+                <details className="group">
+                    <summary className="text-[10px] text-sky-300 cursor-pointer mt-1 font-bold">Show changes</summary>
+                    {body}
+                </details>
+            ) : body}
+        </div>
+    );
+}
 
 export function PlanHistoryModal({ plan, onClose }: { plan: any; onClose: () => void }) {
     const history = [...(plan.history || [])].reverse();
@@ -132,7 +185,7 @@ export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || "Action failed");
             setDialog(null); setReason(""); setComment("");
-            onChanged({ ...data.plan, canManage: plan.canManage }, data.message);
+            onChanged({ ...data.plan, status: data.plan?.status || plan.status, canManage: plan.canManage, canMarkRead: action === "mark_read" ? false : plan.canMarkRead }, data.message);
         } catch (e: any) {
             setError(e.message);
         } finally {
@@ -157,20 +210,34 @@ export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact
                     <History size={12} /> History
                 </button>
 
+                {/* HOI acknowledgement — no approval, the plan stays as it is */}
+                {["LOCKED", "LOCKED_AGAIN"].includes(st) && planReads(plan).length > 0 && (
+                    <span data-testid="plan-read" className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[10px] font-black uppercase tracking-wider bg-teal-500/10 text-teal-300 border-teal-500/20 ${compact ? "" : ""}`}
+                        title={planReads(plan).map((r: any) => `${r.byName} · ${fmt(r.at)}`).join("\n")}>
+                        <CheckCheck size={11} /> Read by HOI
+                    </span>
+                )}
+                {mode === "professor" && ["LOCKED", "LOCKED_AGAIN"].includes(st) && planReads(plan).length === 0 && (
+                    <span data-testid="plan-unread" className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[10px] font-black uppercase tracking-wider bg-zinc-800 text-zinc-400 border-zinc-700">
+                        <Eye size={11} /> Not yet read by HOI
+                    </span>
+                )}
+                {mode === "reviewer" && plan.canMarkRead && (
+                    <button disabled={busy} onClick={() => act("mark_read")} data-testid="mark-read" className={`${btn} bg-teal-600 hover:bg-teal-500 text-white`}>
+                        <CheckCheck size={12} /> Mark as Read
+                    </button>
+                )}
+                {["LOCKED", "LOCKED_AGAIN"].includes(st) && planReads(plan).length > 0 && (
+                    <span className={`text-[10px] text-zinc-500 ${compact ? "basis-full order-last" : ""}`} data-testid="plan-read-by">
+                        Read by {planReads(plan).map((r: any) => `${r.byName}${r.at ? ` · ${fmt(r.at)}` : ""}`).join(", ")}
+                    </span>
+                )}
+
                 {/* Professors unlock their own plan straight away (button in the page's action bar: "Unlock Sprint Plan") */}
 
                 {mode === "reviewer" && plan.canManage && (
                     <>
-                        {["SUBMITTED", "RESUBMITTED"].includes(st) && (
-                            <button disabled={busy} onClick={() => act("lock")} className={`${btn} bg-emerald-600 hover:bg-emerald-500 text-white`}>
-                                <Lock size={12} /> {st === "RESUBMITTED" ? "Lock Again" : "Lock"}
-                            </button>
-                        )}
-                        {["SUBMITTED", "RESUBMITTED"].includes(st) && (
-                            <button disabled={busy} onClick={() => setDialog("return")} data-testid="return-plan" className={`${btn} bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20`}>
-                                <RotateCcw size={12} /> {compact ? "Return" : "Return for Correction"}
-                            </button>
-                        )}
+                        {/* No Lock / Return here — professors finalize & lock their own plan; HOI uses "Mark as Read" */}
                         {["LOCKED", "LOCKED_AGAIN", "UNLOCK_REQUESTED"].includes(st) && (
                             <button disabled={busy} onClick={() => setDialog("unlock")} className={`${btn} bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/20`}>
                                 <Unlock size={12} /> {compact ? "Unlock" : "Unlock for Revision"}
@@ -184,6 +251,8 @@ export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact
                     </>
                 )}
             </div>
+
+            {mode === "reviewer" && <RelockChanges plan={plan} compact={compact} />}
 
             {st === "UNLOCK_REQUESTED" && pending && (
                 <div className="p-3 rounded-xl bg-orange-500/5 border border-orange-500/20">

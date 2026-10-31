@@ -13,6 +13,7 @@
  */
 import { randomBytes } from 'crypto';
 import { AttendanceViolation, Attendance, Employee, WorkSchedule } from '@/models/Schemas';
+import { FlagRemoval } from '@/models/SalaryModule';
 import { sendMailInternal } from '@/lib/mail-server';
 import { getExpectedTimingInternal } from '@/lib/attendance-utils';
 
@@ -176,7 +177,9 @@ export async function recordViolation(input: { emp: any; type: ViolationType; da
         const key = `${type}:${emp.id}:${date}`;
         if (await AttendanceViolation.exists({ key })) return null;
         const period = date.slice(0, 7);
-        const previous = await AttendanceViolation.countDocuments({ employeeId: emp.id, type, period, date: { $lt: date }, hrStatus: { $nin: NOT_COUNTED } });
+        // flags removed by HR / HR Executive / Founder (Flag Removal) no longer count towards the warning ladder
+        const removedIds = ((await FlagRemoval.find({ employeeId: emp.id, source: 'VIOLATION', flagType: type, flagDate: { $gte: `${period}-01`, $lt: date } }).select('sourceId').lean()) as any[]).map(r => r.sourceId);
+        const previous = await AttendanceViolation.countDocuments({ employeeId: emp.id, type, period, date: { $lt: date }, hrStatus: { $nin: NOT_COUNTED }, ...(removedIds.length ? { id: { $nin: removedIds } } : {}) });
         const instance = previous + 1;
         const lvl = type === 'MISSING_OUT'
             ? { level: 'MISSING_ALERT', proposedDeduction: 'Half-Day (if not justified)', hrStatus: 'Awaiting Explanation' }

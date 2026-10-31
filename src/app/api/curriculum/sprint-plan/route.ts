@@ -33,9 +33,15 @@ export async function GET(req: Request) {
 
         // Approval queue: every plan waiting for a reviewer, whatever its week (professors plan ahead)
         if (searchParams.get('queue') === '1') {
-            const waiting = ['SUBMITTED', 'RESUBMITTED', 'UNLOCK_REQUESTED'];
+            const waiting = ['UNLOCK_REQUESTED'];   // professors lock their own plans — no SUBMITTED review step
             const raw = await SprintPlan.find({ facultyId: { $in: ids } }).select('-revisions').sort({ weekStartDate: 1 }).lean();
-            const queue = await Promise.all(raw.filter((p: any) => waiting.includes(getPlanStatus(p))).map(async (p: any) => {
+            // HOI: locked / re-locked plans they have not marked as read yet (current version; weeks not older than 7 days)
+            const isHoi = actor.role === 'HOI';
+            const recent = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+            const unread = (p: any) => isHoi && ['LOCKED', 'LOCKED_AGAIN'].includes(getPlanStatus(p))
+                && (p.weekEndDate || p.weekStartDate || '') >= recent
+                && !(p.hoiReads || []).some((r: any) => r.byId === actor.id && r.version === (p.version || 1));
+            const queue = await Promise.all(raw.filter((p: any) => waiting.includes(getPlanStatus(p)) || unread(p)).map(async (p: any) => {
                 const fac = facultyMap.get(p.facultyId);
                 // full plan (without old revisions): the page shows the plan and Lock / Return / Unlock right in the queue
                 return {
@@ -43,6 +49,8 @@ export async function GET(req: Request) {
                     status: getPlanStatus(p),
                     submittedAt: p.resubmittedAt || p.submittedAt || p.unlockRequestedAt || null,
                     classes: (p.entries || []).length, canManage: await canManagePlan(actor, p),
+                    toRead: unread(p), canMarkRead: unread(p),
+                    ...(unread(p) ? { submittedAt: p.lockedAt || p.submittedAt || null } : {}),
                 };
             }));
             return NextResponse.json({ success: true, queue, colleges: await selectableColleges(scope) });
@@ -60,6 +68,8 @@ export async function GET(req: Request) {
             ...p,
             status: getPlanStatus(p),
             canManage: await canManagePlan(actor, p),
+            canMarkRead: actor.role === 'HOI' && ['LOCKED', 'LOCKED_AGAIN'].includes(getPlanStatus(p))
+                && !(p.hoiReads || []).some((r: any) => r.byId === actor.id && r.version === (p.version || 1)),
         })));
 
         // Flatten entries for the campus timetable grid

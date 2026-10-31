@@ -149,6 +149,8 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
 
         // ── HOI / CL / CH / AD: lock a submitted plan ──
         case 'lock': {
+            // Professors finalize & lock their own plan; HOI / CL / CH / AD no longer lock (HOI marks it as read)
+            return fail(403, 'Sprint plans are locked by the professor. HOI / CL / CH do not lock them — use "Mark as Read".');
             if (!(await canManagePlan(actor, plan))) return fail(403, 'You are not allowed to lock this sprint plan.');
             if (!['SUBMITTED', 'RESUBMITTED'].includes(status)) {
                 if (status === 'DRAFT') return fail(409, 'The professor has not submitted this plan yet.');
@@ -184,6 +186,8 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
 
         // ── HOI / CL / CH / AD: return a submitted plan for correction (before locking) ──
         case 'return': {
+            // No reviewer approval step any more (the professor locks the plan)
+            return fail(403, 'Sprint plans are locked by the professor; there is no review / return step.');
             if (!(await canManagePlan(actor, plan))) return fail(403, 'You are not allowed to review this sprint plan.');
             if (!['SUBMITTED', 'RESUBMITTED'].includes(status)) return fail(409, `Only a submitted plan can be returned (this plan is ${PLAN_STATUS_LABEL[status]}).`);
             const note = String(payload.note || payload.comment || '').trim();
@@ -431,6 +435,40 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
                 ],
             });
             return { ok: true, plan: updated, message: 'Sprint plan unlocked. Make your changes, then Save & Re-Lock. HOI and CL / CH have been informed.' };
+        }
+
+        // ── HOI: acknowledge a locked / re-locked plan ("Mark as Read") — no approval, the status does not change ──
+        case 'mark_read': {
+            if (actor.role !== 'HOI') return fail(403, 'Only the HOI can mark a sprint plan as read.');
+            if (!(await canViewPlan(actor, plan))) return fail(403, 'This sprint plan is outside your scope.');
+            if (!['LOCKED', 'LOCKED_AGAIN'].includes(status)) return fail(409, `Only a locked sprint plan can be marked as read (this one is ${PLAN_STATUS_LABEL[status]}).`);
+            const version = plan.version || 1;
+            const lean: any = await SprintPlan.findById(plan._id).select('hoiReads').lean();
+            if ((lean?.hoiReads || []).some((r: any) => r.byId === actor.id && r.version === version)) return fail(409, 'You have already marked this version of the plan as read.');
+            const read = { byId: actor.id, byName: actor.name, byRole: actor.role, byDesignation: actor.employee?.designation || 'HOI', at: now, version, status };
+            // Stored next to the plan (raw update — the plan schema and its other fields are untouched)
+            const res = await SprintPlan.collection.updateOne(
+                { _id: plan._id, status } as any,
+                { $push: { hoiReads: read, history: historyItem(actor, 'Read by HOI', status, status, `Version ${version}`) } } as any,
+            );
+            if (!res.modifiedCount) return fail(409, 'The plan was changed meanwhile. Refresh and try again.');
+            const prof = await employeesByIds([plan.facultyId]);
+            await notifySafe({
+                recipients: prof,
+                title: `Sprint Plan Read by HOI — ${weekText(plan.weekStartDate, plan.weekEndDate)}`,
+                message: `${actor.name} (HOI) has read your ${status === 'LOCKED_AGAIN' ? 'updated ' : ''}sprint plan for ${weekText(plan.weekStartDate, plan.weekEndDate)}.`,
+                type: 'SPRINT_READ_BY_HOI',
+                link: `/faculty/sprint-plan?week=${plan.weekStartDate}`,
+                entityType: 'SprintPlan', entityId: String(plan._id), college: plan.college, actor,
+                rows: [
+                    { label: 'Sprint Week', value: weekText(plan.weekStartDate, plan.weekEndDate) },
+                    { label: 'Status', value: PLAN_STATUS_LABEL[status] },
+                    { label: 'Read By', value: `${actor.name} (HOI)` },
+                    { label: 'Read At', value: istTime(now) },
+                ],
+            });
+            const fresh = await SprintPlan.findById(plan._id).lean();
+            return { ok: true, plan: fresh, message: 'Marked as read. The professor has been informed.' };
         }
 
         default:

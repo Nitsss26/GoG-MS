@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth, ReimbursementClaim } from "@/context/AuthContext";
-import { Receipt, Clock, CheckCircle2, XCircle, Eye, X, Filter, User, Mail, Phone, FileText, Calendar, ExternalLink, Download } from "lucide-react";
+import { Receipt, Clock, CheckCircle2, XCircle, Eye, X, Filter, User, Mail, Phone, FileText, Calendar, ExternalLink, Download, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -48,6 +48,7 @@ function HRReimbursementsPageInner() {
     const [inputAmount, setInputAmount] = useState<string>("");
     const [statusFilter, setStatusFilter] = useState("All");
     const [filterMonth, setFilterMonth] = useState("All");
+    const [search, setSearch] = useState("");
 
     const isHR = user?.role === "HR" || user?.role === "FOUNDER";
     if (!user || !isHR) return null;
@@ -71,6 +72,13 @@ function HRReimbursementsPageInner() {
         .filter(r => filterMonth === "All" || r.monthYear === filterMonth)
         .filter(r => (user?.role === "HR" || user?.role === "FOUNDER") || reporteeIds.includes(r.employeeId))
         .filter(r => statusFilter === "All" || r.status === statusFilter)
+        // search: employee name / ID / email / phone, claim type, description, claim ID or amount
+        .filter(r => {
+            const q = search.trim().toLowerCase();
+            if (!q) return true;
+            return [r.employeeName, r.employeeId, r.email, r.phone, r.type, r.description, r.id, String(r.amount), String(r.approvedAmount ?? "")]
+                .some(v => String(v || "").toLowerCase().includes(q));
+        })
         .sort((a, b) => {
             // Sort by date descending
             const dateA = new Date(a.date).getTime();
@@ -115,6 +123,12 @@ function HRReimbursementsPageInner() {
 
             {/* Filters */}
             <div className="flex items-center gap-3 flex-wrap">
+                <div className="relative w-full sm:w-72">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, ID, email, type, amount…" data-testid="reimb-search"
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder:text-zinc-500 focus:border-primary/50 outline-none" />
+                    {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"><X size={13} /></button>}
+                </div>
                 <Filter size={14} className="text-zinc-500" />
                 <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-white font-bold">
                     <option value="All">All Months</option>
