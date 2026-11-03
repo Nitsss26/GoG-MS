@@ -7,6 +7,12 @@ const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT || '465'),
     secure: process.env.SMTP_SECURE === 'true',
+    // a few reused connections instead of a new one per mail (Gmail drops connections when too many open at once)
+    pool: true,
+    maxConnections: 3,
+    maxMessages: 50,
+    // a mail whose connection closed is tried again at most twice (never endless); supported by nodemailer, not in its type file
+    ...({ maxRequeues: 2 } as {}),
     auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
@@ -81,6 +87,30 @@ async function blockedEmails(): Promise<Set<string>> {
     return set;
 }
 
+/**
+ * Gmail / SMTP sometimes drops a connection ("Unexpected socket close", ECONNRESET, timeouts, 421 / 454 "try again
+ * later"), mostly when many mails go out at the same moment. So: at most 3 mails are sent at the same time, and a
+ * mail that hit such a temporary network error is tried again (up to 3 attempts, short wait in between).
+ * Permanent errors (wrong login, invalid address, rejected message) are not retried.
+ */
+const SEND_CONCURRENCY = 3;
+const sendQueue: { active: number; waiting: (() => void)[] } = ((globalThis as any).__gogMailQueue ||= { active: 0, waiting: [] });
+async function withSendSlot<T>(fn: () => Promise<T>): Promise<T> {
+    if (sendQueue.active >= SEND_CONCURRENCY) await new Promise<void>(res => sendQueue.waiting.push(res));
+    sendQueue.active++;
+    try { return await fn(); }
+    finally { sendQueue.active--; const next = sendQueue.waiting.shift(); if (next) next(); }
+}
+const isTransientMailError = (e: any) => {
+    const code = String(e?.code || ''), msg = String(e?.message || e || ''), rc = Number(e?.responseCode || 0);
+    if (rc === 421 || rc === 450 || rc === 451 || rc === 452 || rc === 454) return true;
+    if (rc >= 500) return false;                       // permanent SMTP rejection
+    if (code === 'EAUTH' || code === 'EENVELOPE' || code === 'EMESSAGE') return false;
+    return ['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'ECONNRESET', 'EPIPE', 'EDNS', 'ECONNREFUSED'].includes(code)
+        || /unexpected socket close|socket hang up|connection closed|timed? ?out|ECONNRESET|EPIPE/i.test(msg);
+};
+const MAIL_RETRY_WAIT_MS = [2000, 5000];
+
 const asList = (v?: string | string[]) => (Array.isArray(v) ? v : v ? String(v).split(',') : []).map(e => e.trim()).filter(Boolean);
 
 /** to / cc with the standard copies added */
@@ -112,7 +142,7 @@ export const sendMailInternal = async (options: MailOptions) => {
         let cc: string[] = keep(withCc.cc);
         if (!to.length && cc.length) { to = cc; cc = []; }       // the copies still reach HR / admin
         if (!to.length) return { success: true, messageId: 'skipped-mails-stopped' };
-        const info = await transporter.sendMail({
+        const message = {
             from: `"GoG OMS" <${process.env.SMTP_USER}>`,
             to,
             cc,
@@ -122,7 +152,18 @@ export const sendMailInternal = async (options: MailOptions) => {
             attachments,
             inReplyTo,
             references,
-        });
+        };
+        let info: any;
+        for (let attempt = 1; ; attempt++) {
+            try {
+                info = await withSendSlot(() => transporter.sendMail(message));
+                break;
+            } catch (e: any) {
+                if (attempt > MAIL_RETRY_WAIT_MS.length || !isTransientMailError(e)) throw e;
+                console.warn(`[mail] attempt ${attempt} failed (${String(e?.message || e).slice(0, 120)}) — trying again`);
+                await new Promise(r => setTimeout(r, MAIL_RETRY_WAIT_MS[attempt - 1]));
+            }
+        }
         console.log("Message sent to %s: %s", to, info.messageId);
         return { success: true, messageId: info.messageId };
     } catch (error) {

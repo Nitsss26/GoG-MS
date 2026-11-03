@@ -10,7 +10,8 @@
  *  - No email is sent automatically: after a rejection the reviewer previews it and sends it by hand.
  */
 import { randomBytes } from 'crypto';
-import { Employee, Location, WorkSchedule } from '@/models/Schemas';
+import { Types } from 'mongoose';
+import { Employee, Location, WorkSchedule, Attendance } from '@/models/Schemas';
 import { LocationJustification, LocationJustificationLock } from '@/models/LocationJustification';
 import { hoisAbove, notifySafe } from '@/lib/academic';
 import { sendMailInternal } from '@/lib/mail-server';
@@ -122,6 +123,11 @@ export async function finishAtClockIn(id: string, attendanceId: string, lateJust
     await LocationJustification.updateOne({ id }, { $set: { attendanceId, ...(lateJustificationId ? { lateJustificationId } : {}) } });
     const j: any = await LocationJustification.findOne({ id }).lean();
     if (!j) return;
+    // The day's attendance shows the change: actual location (attendance.location) + the scheduled (original) one
+    if (/^[0-9a-f]{24}$/i.test(String(attendanceId))) {
+        await Attendance.collection.updateOne({ _id: new Types.ObjectId(String(attendanceId)) },
+            { $set: { locationChanged: true, scheduledLocationId: j.scheduledLocationId || '', scheduledLocationName: j.scheduledLocationName || '', locationJustificationId: id } }).catch(() => {});
+    }
     const roles = j.employeeRole === 'HOI' ? ['HR', 'HR_EXECUTIVE', 'AD'] : ['HR', 'HR_EXECUTIVE'];
     const staff: any[] = await Employee.find({ role: { $in: roles }, isRemoved: { $ne: true }, id: { $ne: j.employeeId } }).select('id name email role').lean();
     // not awaited: the clock-in answer does not wait for the e-mails (in-app + mail are sent in the background)

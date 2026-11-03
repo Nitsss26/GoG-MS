@@ -321,6 +321,13 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
         const c = colleges.find(x => x.id === loc || x.shortName === loc || x.name === loc);
         return c?.shortName || c?.name || loc;
     };
+    /** HOI / OM clocked in at another assigned college than scheduled: "Changed · Scheduled: <original>" */
+    const LocChange = ({ rec }: { rec: any }) => rec?.locationChanged ? (
+        <span className="block text-[10px] font-semibold text-amber-300" data-testid="loc-changed" title="Clocked in at another assigned college than the scheduled one (justification submitted)">
+            Location changed · Scheduled: {rec.scheduledLocationId ? locName(rec.scheduledLocationId) : (rec.scheduledLocationName || "—")}
+        </span>
+    ) : null;
+
     // Office options in the clock-in location dropdown: an HOI's authorised attendance locations, otherwise the
     // assigned (scheduled) location. Choosing one keeps the normal office flow (geofence + dress code) unchanged.
     const hoiAllowedLocs: string[] = emp.role === "HOI" || emp.role === "OM" ? ((emp as any).attendanceLocations || []) : [];
@@ -1087,7 +1094,7 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                     <div className="space-y-3 pt-2">
                         <div className="p-3 bg-green-500/5 border border-green-500/20 rounded-xl flex items-center gap-3">
                             {todaysRecord?.dressCodeImageUrl && <img src={todaysRecord.dressCodeImageUrl} alt="Dress" className="w-10 h-10 rounded-lg object-cover border border-zinc-700" />}
-                            <div><p className="text-xs font-bold text-green-400">Clocked in at {todaysRecord?.clockIn}</p><p className="text-[9px] text-zinc-500">Location: {locName(todaysRecord?.location)}</p>{emp.role === "HOI" && (todaysRecord as any)?.locationVisits?.[0]?.locationMatchStatus && <p className={cn("text-[9px] font-bold", (todaysRecord as any).locationVisits[0].locationMatchStatus === "unmatched" ? "text-red-400" : "text-emerald-400")} data-testid="att-first-status">Location Status: {(todaysRecord as any).locationVisits[0].locationMatchStatus === "unmatched" ? "No Location Match" : "Assigned Location Matched"}</p>}</div>
+                            <div><p className="text-xs font-bold text-green-400">Clocked in at {todaysRecord?.clockIn}</p><p className="text-[9px] text-zinc-500">Location: {locName(todaysRecord?.location)}</p><LocChange rec={todaysRecord} />{emp.role === "HOI" && (todaysRecord as any)?.locationVisits?.[0]?.locationMatchStatus && <p className={cn("text-[9px] font-bold", (todaysRecord as any).locationVisits[0].locationMatchStatus === "unmatched" ? "text-red-400" : "text-emerald-400")} data-testid="att-first-status">Location Status: {(todaysRecord as any).locationVisits[0].locationMatchStatus === "unmatched" ? "No Location Match" : "Assigned Location Matched"}</p>}</div>
                         </div>
                         {multiLocation && (
                             <div className="p-3 rounded-xl border border-sky-500/20 bg-sky-500/[0.04] space-y-2" data-testid="att-visits">
@@ -1140,7 +1147,7 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                 {hasCheckedOut && (
                     <div className="p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl flex items-center gap-3">
                         {todaysRecord?.dressCodeImageUrl && <img src={todaysRecord.dressCodeImageUrl} alt="Dress" className="w-10 h-10 rounded-lg object-cover border border-zinc-700" />}
-                        <div><p className="text-xs font-bold text-blue-400">Day Complete</p><p className="text-[9px] text-zinc-500">{todaysRecord?.clockIn} → {todaysRecord?.clockOut} · {locName(todaysRecord?.location)}</p></div>
+                        <div><p className="text-xs font-bold text-blue-400">Day Complete</p><p className="text-[9px] text-zinc-500">{todaysRecord?.clockIn} → {todaysRecord?.clockOut} · {locName(todaysRecord?.location)}</p><LocChange rec={todaysRecord} /></div>
                         {todaysRecord?.flags.earlyOut && <span className="text-[8px] font-bold text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20 ml-auto">🟡 Early Out</span>}
                     </div>
                 )}
@@ -1205,7 +1212,7 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                                         <td className="px-3 py-3 text-zinc-400 whitespace-nowrap" data-testid="att-marked-by">{markedBy(log)}</td>
                                         <td className="px-3 py-3 text-zinc-300">{log.clockIn || "—"}</td>
                                         <td className="px-3 py-3 text-zinc-300">{log.clockOut || "—"}</td>
-                                        <td className="px-3 py-3 text-zinc-400">{locName(log.location)}{(log as any).clockOutLocation && (log as any).clockOutLocation !== log.location ? <span className="block text-[10px] text-zinc-500">Out: {locName((log as any).clockOutLocation)}</span> : null}<VisitList rec={log} /></td>
+                                        <td className="px-3 py-3 text-zinc-400">{locName(log.location)}<LocChange rec={log} />{(log as any).clockOutLocation && (log as any).clockOutLocation !== log.location ? <span className="block text-[10px] text-zinc-500">Out: {locName((log as any).clockOutLocation)}</span> : null}<VisitList rec={log} /></td>
                                         <td className="px-3 py-3">
                                             {log.dressCodeImageUrl || (log as any).clockOutImageUrl ? (
                                                 <div className="flex flex-col gap-0.5" data-testid="att-photos">
@@ -1392,7 +1399,7 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                                             </td>
                                             <td className="px-4 py-3 text-[10px]">
                                                 {record ? (
-                                                    <span className="text-zinc-400">{locName(record.location)} <WfhBadge rec={record} /><VisitList rec={record} /></span>
+                                                    <span className="text-zinc-400">{locName(record.location)} <WfhBadge rec={record} /><LocChange rec={record} /><VisitList rec={record} /></span>
                                                 ) : (
                                                     <span className="text-zinc-500 italic">Scheduled: {scheduledLocation || "—"}</span>
                                                 )}
