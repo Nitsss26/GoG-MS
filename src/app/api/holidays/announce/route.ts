@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { Holiday, Notice, Employee, Location, Notification } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
+import { hoiColleges } from '@/lib/college-announcements';
 import { getAcademicScope, notifySafe, collegeKeysFor, isValidYmd, zonedNow, addDays, appUrl } from '@/lib/academic';
 import { sendMailInternal } from '@/lib/mail-server';
 import { getAcademicNotificationTemplate } from '@/lib/mail-templates';
@@ -15,14 +16,14 @@ export const dynamic = 'force-dynamic';
  *   POST { title, collegeId, date, holidayType, reason, description }   — HOI only, for a college it manages
  *   PUT  { holidayId, action: "retry_emails" }                          — resend failed e-mails (HOI owner / HR / Founder)
  * "Colleges an HOI manages" = its own campus + campuses it heads (Location.hoiId) — the same scope the academic
- * workflow uses. Authorised attendance locations do NOT grant this.
+ * workflow uses, plus the HOI's assigned (attendance) locations.
  */
 const HOLIDAY_TYPES = ['Public Holiday', 'Institutional Holiday', 'Special Holiday', 'Emergency Closure', 'Other'];
 const fmtLong = (ymd: string) => new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' });
 
+/** Colleges the HOI manages + every location HR assigned to the HOI (Employee.attendanceLocations) */
 async function managedColleges(actor: any) {
-    const scope = await getAcademicScope({ role: 'HOI', employee: actor.employee });
-    return scope.colleges.map(c => ({ id: c.id, name: c.name }));
+    return hoiColleges(actor);
 }
 
 function emailParts(h: any, collegeName: string) {

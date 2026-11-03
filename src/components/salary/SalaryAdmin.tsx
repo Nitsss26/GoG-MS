@@ -6,13 +6,15 @@
  * Every figure comes from the same calculation the employee sees (src/lib/payable-days.ts + HR corrections).
  */
 import { useCallback, useEffect, useState } from "react";
+import MonetaryPenalties from "@/components/salary/MonetaryPenalties";
 import {
     Wallet, Users, CheckCircle2, Ban, MessageSquare, AlertTriangle, Search, X, Loader2, ChevronLeft, ChevronRight,
-    ArrowLeft, Eye, Upload, Clock, RotateCcw, Lock, ArrowUpDown, History, ShieldCheck,
+    ArrowLeft, Eye, Upload, Clock, RotateCcw, Lock, ArrowUpDown, History, ShieldCheck, Home, Laptop,
 } from "lucide-react";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { exportEmployeeMonth, exportEmployeeList } from "@/lib/salary-export";
 import { Download, FileSpreadsheet } from "lucide-react";
+import { useMinWidth } from "@/lib/use-min-width";
 
 /** PDF + Excel buttons */
 function DownloadButtons({ onPdf, onXlsx, disabled }: { onPdf: () => Promise<void>; onXlsx: () => Promise<void>; disabled?: boolean }) {
@@ -43,7 +45,7 @@ const PAY: Record<string, string> = {
 const dmy = (ymd?: string) => (ymd ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }) : "");
 const dt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }) : "");
 const monthText = (m?: string) => { if (!m) return "—"; const [y, mm] = m.split("-").map(Number); return new Date(Date.UTC(y, mm - 1, 1)).toLocaleString("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }); };
-const n = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+const n = (v: number | undefined | null) => { const x = Number(v); return !Number.isFinite(x) ? "0" : Number.isInteger(x) ? String(x) : x.toFixed(1); };
 const months = () => { const out: string[] = []; const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })); for (let i = 0; i < 18; i++) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); out.push(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`); } return out; };
 const Badge = ({ s, map = T_STYLE }: { s: string; map?: Record<string, string> }) => <span className={`inline-block text-[10px] font-black px-2 py-0.5 rounded-md border whitespace-nowrap ${map[s] || "bg-zinc-800 text-zinc-300 border-zinc-700"}`}>{s}</span>;
 const Msg = ({ m, onClose }: { m: { type: string; text: string } | null; onClose: () => void }) => !m ? null : (
@@ -59,6 +61,7 @@ export default function SalaryAdmin() {
     const [employee, setEmployee] = useState<string>("");
     const [ticketCtx, setTicketCtx] = useState<string>("");
     const [openTicket, setOpenTicket] = useState("");
+    const [ticketStatus, setTicketStatus] = useState("All");
     const [msg, setMsg] = useState<{ type: string; text: string } | null>(null);
     useEffect(() => {
         try {
@@ -86,46 +89,50 @@ export default function SalaryAdmin() {
                 </div>
             </div>
             <Msg m={msg} onClose={() => setMsg(null)} />
-            {tab === "employees" && !employee && <EmployeeList month={month} setMonth={setMonth} onView={id => openEmployee(id)} />}
+            {tab === "employees" && !employee && <EmployeeList month={month} setMonth={setMonth} onView={id => openEmployee(id)} onTickets={st => { setTicketStatus(st); setTab("tickets"); window.scrollTo({ top: 0 }); }} />}
             {tab === "employees" && employee && <EmployeeDetail id={employee} month={month} setMonth={setMonth} ticketId={ticketCtx} onBack={() => { setEmployee(""); setTicketCtx(""); }} onMsg={setMsg} onOpenTicket={(t) => { setOpenTicket(t); setTab("tickets"); }} />}
-            {tab === "tickets" && <TicketsPanel openId={openTicket} setOpenId={setOpenTicket} onMsg={setMsg} onOpenEmployee={openEmployee} />}
+            {tab === "tickets" && <TicketsPanel key={ticketStatus} initialStatus={ticketStatus} openId={openTicket} setOpenId={setOpenTicket} onMsg={setMsg} onOpenEmployee={openEmployee} />}
         </div>
     );
 }
 
 // ─────────────────────────── Employees list ───────────────────────────
-function EmployeeList({ month, setMonth, onView }: { month: string; setMonth: (m: string) => void; onView: (id: string) => void }) {
+function EmployeeList({ month, setMonth, onView, onTickets }: { month: string; setMonth: (m: string) => void; onView: (id: string) => void; onTickets: (status: string) => void }) {
+    const wide = useMinWidth(1280); // table on laptop / desktop, cards on phone / tablet
     const [q, setQ] = useState(""); const [dept, setDept] = useState(""); const [college, setCollege] = useState(""); const [desig, setDesig] = useState("");
+    const [penaltyOnly, setPenaltyOnly] = useState(false); const [detail, setDetail] = useState<"" | "applied" | "allotted" | "corrections">("");
     const [pending, setPending] = useState(false); const [sort, setSort] = useState("name"); const [dir, setDir] = useState("asc"); const [page, setPage] = useState(1);
     const [data, setData] = useState<any>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
     const load = useCallback(async () => {
         setLoading(true); setError("");
         try {
             const p = new URLSearchParams({ month, page: String(page), sort, dir });
-            if (q.trim()) p.set("q", q.trim()); if (dept) p.set("dept", dept); if (college) p.set("college", college); if (desig) p.set("designation", desig); if (pending) p.set("tickets", "pending");
+            if (q.trim()) p.set("q", q.trim()); if (dept) p.set("dept", dept); if (college) p.set("college", college); if (desig) p.set("designation", desig); if (pending) p.set("tickets", "pending"); if (penaltyOnly) p.set("penalty", "1");
             const res = await fetch(`/api/hr/salary-management?${p}`, { cache: "no-store" });
             const d = await res.json(); if (!res.ok) throw new Error(d.error || "Could not load"); setData(d);
         } catch (e: any) { setError(e.message); } finally { setLoading(false); }
-    }, [month, page, sort, dir, q, dept, college, desig, pending]);
+    }, [month, page, sort, dir, q, dept, college, desig, pending, penaltyOnly]);
     useEffect(() => { const t = setTimeout(load, q ? 300 : 0); return () => clearTimeout(t); }, [load, q]);
-    useEffect(() => { setPage(1); }, [month, q, dept, college, desig, pending, sort, dir]);
+    useEffect(() => { setPage(1); }, [month, q, dept, college, desig, pending, penaltyOnly, sort, dir]);
     const s = data?.summary;
     // download: every employee that matches the filters (not only this page)
     const downloadList = async (kind: "pdf" | "xlsx") => {
         const p = new URLSearchParams({ month, sort, dir, all: "1" });
-        if (q.trim()) p.set("q", q.trim()); if (dept) p.set("dept", dept); if (college) p.set("college", college); if (desig) p.set("designation", desig); if (pending) p.set("tickets", "pending");
+        if (q.trim()) p.set("q", q.trim()); if (dept) p.set("dept", dept); if (college) p.set("college", college); if (desig) p.set("designation", desig); if (pending) p.set("tickets", "pending"); if (penaltyOnly) p.set("penalty", "1");
         const res = await fetch(`/api/hr/salary-management?${p}`, { cache: "no-store" });
         const d = await res.json(); if (!res.ok) throw new Error(d.error || "Could not load");
         await exportEmployeeList(kind, { rows: d.rows, monthLabel: d.monthLabel, month: d.month, summary: d.summary });
     };
-    const cards = [
-        ["Total Employees", s?.totalEmployees, Users, "border-sky-500/25 bg-sky-500/[0.06] text-sky-300"],
-        ["Total Payable Days", s && n(s.totalPayableDays), CheckCircle2, "border-emerald-500/25 bg-emerald-500/[0.06] text-emerald-300"],
-        ["Total Non-Payable Days", s && n(s.totalNonPayableDays), Ban, "border-red-500/25 bg-red-500/[0.06] text-red-300"],
-        ["Pending Tickets", s?.pendingTickets, MessageSquare, "border-amber-500/25 bg-amber-500/[0.06] text-amber-300"],
-        ["Resolved Tickets", s?.resolvedTickets, CheckCircle2, "border-emerald-500/25 bg-emerald-500/[0.06] text-emerald-300"],
-        ["Penalty Deductions", s && `${n(s.totalPenaltyDays)} d`, AlertTriangle, "border-red-500/25 bg-red-500/[0.06] text-red-300"],
-        ["HR Corrections", s?.corrections, ShieldCheck, "border-violet-500/25 bg-violet-500/[0.06] text-violet-300"],
+    // Every summary card is clickable: it filters the list, switches to the tickets or opens the matching list
+    const resetFilters = () => { setQ(""); setDept(""); setCollege(""); setDesig(""); setPending(false); setPenaltyOnly(false); setSort("name"); setDir("asc"); };
+    const cards: { key: string; label: string; value: any; sub?: string; icon: any; tone: string; active?: boolean; onClick: () => void }[] = [
+        { key: "employees", label: "Total Employees", value: s?.totalEmployees, icon: Users, tone: "border-sky-500/25 bg-sky-500/[0.06] text-sky-300", onClick: resetFilters },
+        { key: "applied", label: "Applied WFH", value: s ? (s.wfhApplied ?? 0) : undefined, sub: s ? `${n(s.wfhAppliedDays)} day(s) this month` : "", icon: Laptop, tone: "border-teal-500/25 bg-teal-500/[0.06] text-teal-300", onClick: () => setDetail("applied") },
+        { key: "allotted", label: "Allotted WFH", value: s && `${n(s.wfhAllotted)} d`, sub: s ? `${s.wfhAllottedEmployees ?? 0} employee(s)` : "", icon: Home, tone: "border-cyan-500/25 bg-cyan-500/[0.06] text-cyan-300", onClick: () => setDetail("allotted") },
+        { key: "pending", label: "Pending Tickets", value: s?.pendingTickets, icon: MessageSquare, tone: "border-amber-500/25 bg-amber-500/[0.06] text-amber-300", onClick: () => onTickets("Pending") },
+        { key: "resolved", label: "Resolved Tickets", value: s?.resolvedTickets, icon: CheckCircle2, tone: "border-emerald-500/25 bg-emerald-500/[0.06] text-emerald-300", onClick: () => onTickets("Resolved") },
+        { key: "penalty", label: "Penalty Deductions", value: s && `${n(s.totalPenaltyDays)} d`, sub: penaltyOnly ? "Showing employees with penalties" : "", icon: AlertTriangle, tone: "border-red-500/25 bg-red-500/[0.06] text-red-300", active: penaltyOnly, onClick: () => { const on = !penaltyOnly; setPenaltyOnly(on); if (on) { setSort("penalty"); setDir("desc"); } } },
+        { key: "corrections", label: "HR Corrections", value: s?.corrections, icon: ShieldCheck, tone: "border-violet-500/25 bg-violet-500/[0.06] text-violet-300", onClick: () => setDetail("corrections") },
     ];
     const field = "bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white min-w-0";
     const th = (k: string, l: string) => (
@@ -136,13 +143,16 @@ function EmployeeList({ month, setMonth, onView }: { month: string; setMonth: (m
     return (
         <div className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3" data-testid="sm-cards">
-                {cards.map(([l, v, I, tone]: any) => (
-                    <div key={l} className={`rounded-2xl border p-3.5 ${tone}`}>
-                        <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest"><I size={12} /> {l}</div>
-                        <p className="text-xl font-black text-white mt-1.5 tabular-nums" data-testid="sm-card-value">{v ?? "—"}</p>
-                    </div>
+                {cards.map(c => (
+                    <button key={c.key} type="button" onClick={c.onClick} data-testid={`sm-card-${c.key}`}
+                        className={`text-left rounded-2xl border p-3.5 transition-all hover:brightness-125 hover:-translate-y-0.5 cursor-pointer ${c.tone} ${c.active ? "ring-2 ring-red-400/60" : ""}`}>
+                        <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest"><c.icon size={12} /> {c.label}</div>
+                        <p className="text-xl font-black text-white mt-1.5 tabular-nums" data-testid="sm-card-value">{c.value ?? "—"}</p>
+                        {c.sub && <p className="text-[9px] text-zinc-400 mt-0.5">{c.sub}</p>}
+                    </button>
                 ))}
             </div>
+            {detail && data && <SummaryDetail kind={detail} data={data} onClose={() => setDetail("")} onView={id => { setDetail(""); onView(id); }} />}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2">
                 <div className="relative lg:col-span-2"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Employee name or ID" className={`${field} w-full pl-8`} data-testid="sm-search" /></div>
                 <select value={month} onChange={e => setMonth(e.target.value)} className={field} data-testid="sm-month">{months().map(m => <option key={m} value={m}>{monthText(m)}</option>)}</select>
@@ -156,7 +166,30 @@ function EmployeeList({ month, setMonth, onView }: { month: string; setMonth: (m
             </div>
             {error && <div className="rounded-xl px-4 py-3 text-xs bg-red-500/10 border border-red-500/20 text-red-400">{error}</div>}
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
-                <div className="overflow-x-auto">
+                {/* Phone / tablet: cards */}
+                <div style={{ display: wide ? "none" : undefined }} className="divide-y divide-zinc-800/70" data-testid="sm-cards">
+                    {loading && !data ? <div className="py-12 flex justify-center"><Loader2 className="animate-spin text-primary" /></div>
+                        : (data?.rows || []).length === 0 ? <p className="py-12 text-center text-xs text-zinc-500">No employees match.</p>
+                            : data.rows.map((r: any) => (
+                                <div key={r.id} className="p-4 space-y-3 text-xs" data-testid="sm-card">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <p className="font-bold text-white [overflow-wrap:anywhere]">{r.name}</p>
+                                            <p className="text-[10px] text-zinc-500 [overflow-wrap:anywhere]">{r.id}{r.designation ? ` · ${r.designation}` : ""}</p>
+                                            <p className="text-[10px] text-zinc-500 [overflow-wrap:anywhere]">{r.dept || "—"} · {r.locationName || "—"}</p>
+                                        </div>
+                                        <button onClick={() => onView(r.id)} className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[10px] font-black uppercase"><Eye size={12} /> View</button>
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        <div><p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Payable</p><p className="font-bold text-emerald-300 tabular-nums">{n(r.payableDays)}</p>{r.correctedDays ? <p className="text-[9px] font-semibold text-violet-300">+{n(r.correctedDays)} HR</p> : null}{r.hrDeductedDays ? <p className="text-[9px] font-semibold text-red-300">−{n(r.hrDeductedDays)} HR</p> : null}</div>
+                                        <div><p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Non-Pay</p><p className="font-bold text-red-300 tabular-nums">{n(r.nonPayableDays)}</p></div>
+                                        <div><p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Penalty</p><p className="text-zinc-300 tabular-nums">{r.penaltyDays ? `${n(r.penaltyDays)} d` : "—"}</p></div>
+                                        <div><p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Tickets</p>{r.tickets.pending ? <p className="text-amber-300 font-bold">{r.tickets.pending} Pending</p> : r.tickets.resolved ? <p className="text-emerald-300">{r.tickets.resolved} Resolved</p> : <p className="text-zinc-600">0</p>}</div>
+                                    </div>
+                                </div>
+                            ))}
+                </div>
+                <div style={{ display: wide ? undefined : "none" }} className="overflow-x-auto">
                     <table className="w-full table-fixed text-xs min-w-[880px]" data-testid="sm-table">
                         <thead><tr className="bg-zinc-800/40 text-[10px] text-zinc-400 text-left">
                             <th className="py-3 px-3 w-[24%]">{th("name", "Employee")}</th><th className="py-3 px-3 w-[13%] uppercase tracking-widest">Department</th><th className="py-3 px-3 w-[14%] uppercase tracking-widest">College</th>
@@ -193,8 +226,45 @@ function EmployeeList({ month, setMonth, onView }: { month: string; setMonth: (m
     );
 }
 
+// ─────────────────────────── Summary card lists (Applied WFH / Allotted WFH / HR Corrections) ───────────────────────────
+function SummaryDetail({ kind, data, onClose, onView }: { kind: "applied" | "allotted" | "corrections"; data: any; onClose: () => void; onView: (id: string) => void }) {
+    const d = data?.details || {}; // empty lists if the server is still the old version
+    const title = kind === "applied" ? "Applied WFH" : kind === "allotted" ? "Allotted WFH" : "HR Corrections";
+    const list: any[] = kind === "applied" ? d.wfhApplied || [] : kind === "allotted" ? d.wfhAllotted || [] : d.corrections || [];
+    const ST: Record<string, string> = { Approved: "text-emerald-300 border-emerald-500/30 bg-emerald-500/10", Pending: "text-amber-300 border-amber-500/30 bg-amber-500/10", Rejected: "text-red-300 border-red-500/30 bg-red-500/10" };
+    return (
+        <div className="fixed inset-0 z-[110] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+            <div className="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl border border-zinc-700 bg-zinc-900" onClick={e => e.stopPropagation()} data-testid={`sm-detail-${kind}`}>
+                <div className="flex items-start justify-between gap-2 p-5 pb-3 border-b border-zinc-800">
+                    <div><p className="text-base font-bold text-white">{title} · {data.monthLabel}</p>
+                        <p className="text-[11px] text-zinc-500">{kind === "applied" ? "Work From Home applications that fall in this month (all statuses except cancelled)." : kind === "allotted" ? "Days set as Work From Home in the employee's work schedule (HR / manager)." : "Active HR payable-day corrections of this month."}</p></div>
+                    <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={18} /></button>
+                </div>
+                <div className="overflow-y-auto p-3 space-y-2">
+                    {!list.length && <p className="py-10 text-center text-xs text-zinc-500">Nothing in {data.monthLabel}.</p>}
+                    {list.map((x: any, i: number) => (
+                        <button key={x.id || `${x.employeeId}-${i}`} onClick={() => onView(x.employeeId)} data-testid="sm-detail-row"
+                            className="w-full text-left rounded-xl border border-zinc-800 bg-zinc-950/60 hover:border-zinc-600 px-3 py-2.5 text-xs">
+                            <div className="flex items-start justify-between gap-2">
+                                <p className="font-bold text-white [overflow-wrap:anywhere]">{x.employeeName} <span className="text-[10px] font-normal text-zinc-500">{x.employeeId}</span></p>
+                                {kind === "applied" && <span className={`shrink-0 text-[9px] font-black px-2 py-0.5 rounded-md border ${ST[x.status] || "text-zinc-300 border-zinc-700"}`}>{x.status}</span>}
+                                {kind === "allotted" && <span className="shrink-0 text-[11px] font-black text-cyan-300">{x.days} day(s)</span>}
+                                {kind === "corrections" && <span className={`shrink-0 text-[9px] font-black px-2 py-0.5 rounded-md border ${x.direction === "TO_NON_PAYABLE" ? "text-red-300 border-red-500/30 bg-red-500/10" : "text-violet-300 border-violet-500/30 bg-violet-500/10"}`}>{x.direction === "TO_NON_PAYABLE" ? "Non-Payable" : "Payable"}</span>}
+                            </div>
+                            {kind === "applied" && <p className="text-zinc-400 mt-0.5">{dmy(x.startDate)}{x.endDate !== x.startDate ? ` → ${dmy(x.endDate)}` : ""} · {x.type} · {n(x.daysInMonth)} day(s) this month{x.approverName ? ` · by ${x.approverName}` : ""}{x.reason ? <span className="block text-zinc-500 [overflow-wrap:anywhere]">{x.reason}</span> : null}</p>}
+                            {kind === "allotted" && <p className="text-zinc-400 mt-0.5 [overflow-wrap:anywhere]">{x.weekdays.length ? `Every ${x.weekdays.join(", ")} · ` : ""}{x.dates.map((t: string) => t.slice(8)).join(", ")}{x.assignedBy ? ` · set by ${x.assignedBy}` : ""}</p>}
+                            {kind === "corrections" && <p className="text-zinc-400 mt-0.5 [overflow-wrap:anywhere]">{dmy(x.date)} · {x.category}{x.by ? ` · ${x.by}` : ""}{x.reason ? <span className="block text-zinc-500">{x.reason}</span> : null}</p>}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─────────────────────────── Employee detail ───────────────────────────
 function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTicket }: { id: string; month: string; setMonth: (m: string) => void; ticketId?: string; onBack: () => void; onMsg: (m: any) => void; onOpenTicket: (t: string) => void }) {
+    const wide = useMinWidth(1280); // table on laptop / desktop, cards on phone / tablet
     const [data, setData] = useState<any>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
     const [onlyIssues, setOnlyIssues] = useState(false); const [dialog, setDialog] = useState<any>(null); const [reverse, setReverse] = useState<any>(null); const [view, setView] = useState<any>(null);
     const load = useCallback(async () => {
@@ -209,6 +279,18 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
     const days = (c?.days || []).filter((d: any) => !onlyIssues || d.correctable || d.correction || ["Non-Payable", "Partly Payable"].includes(d.payableStatus) || d.penalties.length);
     const monthCorr = (data?.corrections || []).filter((x: any) => x.month === month);
     const openTickets = (data?.tickets || []).filter((t: any) => !["Resolved", "Rejected"].includes(t.status));
+    const dayReason = (d: any) => (<>
+                                            {d.correction ? <span className={d.correction.direction === "TO_NON_PAYABLE" ? "text-red-200" : "text-violet-200"}>HR correction ({d.correction.direction === "TO_NON_PAYABLE" ? "non-payable" : "payable"}): {d.correction.correctionCategory} — {d.correction.correctedByName} ({d.correction.correctedByRole}), {dt(d.correction.correctedAt)}<span className="block text-zinc-500">Records: {d.baseReason}</span></span> : d.reason}
+                                            {d.penalties.length > 0 && <span className="block text-[10px] text-amber-300/90 mt-0.5">Flags: {d.penalties.join(" · ")}</span>}
+    </>);
+    const dayActions = (d: any) => (<>
+                                            {d.correctable && data.canEdit && <button onClick={() => setDialog({ day: d, direction: "TO_PAYABLE" })} data-testid="sm-mark" className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase">Mark Payable</button>}
+                                            {d.deductible && !d.correction && data.canEdit && d.payableStatus !== "Upcoming" && <button onClick={() => setDialog({ day: d, direction: "TO_NON_PAYABLE" })} data-testid="sm-mark-np" className="ml-1 px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 text-[10px] font-black uppercase">Mark Non-Payable</button>}
+                                            {d.correction && <>
+                                                <button onClick={() => setView(monthCorr.find((x: any) => x.id === d.correction.id) || d.correction)} className="px-2 py-1.5 rounded-lg bg-zinc-800 text-zinc-200 text-[10px] font-black uppercase mr-1">View</button>
+                                                {data.canEdit && <button onClick={() => setReverse({ correction: d.correction, date: d.date, reason: "", busy: false, error: "" })} data-testid="sm-reverse" className="px-2 py-1.5 rounded-lg bg-red-500/15 text-red-300 border border-red-500/30 text-[10px] font-black uppercase">Reverse</button>}
+                                            </>}
+    </>);
     return (
         <div className="space-y-4" data-testid="sm-detail">
             <div className="flex flex-wrap items-center gap-2 justify-between">
@@ -233,12 +315,28 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
                         </div>
                     ))}
                 </div>
+                <MonetaryPenalties list={c.monetaryPenalties} total={c.monetaryPenaltyTotal} monthLabel={data.monthLabel} testid="sm-money" />
                 <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40">
                     <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-zinc-800">
                         <p className="text-sm font-bold text-white">Payable Day Breakdown</p>
                         <label className="flex items-center gap-1.5 text-[11px] text-zinc-400 cursor-pointer"><input type="checkbox" checked={onlyIssues} onChange={ev => setOnlyIssues(ev.target.checked)} className="accent-emerald-500" /> Only non-payable / corrected / penalty days</label>
                     </div>
-                    <div className="overflow-x-auto">
+                    {/* Phone / tablet: one card per day */}
+                    <div style={{ display: wide ? "none" : undefined }} className="divide-y divide-zinc-800/70" data-testid="sm-day-cards">
+                        {days.map((d: any) => (
+                            <div key={d.date} className={`p-4 space-y-2 text-xs ${d.correction ? (d.correction.direction === "TO_NON_PAYABLE" ? "bg-red-500/[0.04]" : "bg-violet-500/[0.04]") : ""}`} data-testid="sm-day-card">
+                                <div className="flex items-start justify-between gap-2">
+                                    <p><span className="font-semibold text-white">{dmy(d.date)}</span> <span className="text-zinc-500">{d.weekday}</span>{d.holiday && <span className="block text-[10px] text-sky-300">Holiday</span>}</p>
+                                    <div className="text-right"><Badge s={d.payableStatus} map={PAY} /><p className="text-[10px] text-zinc-500 mt-0.5 tabular-nums">Value {d.payableStatus === "Not Employed" ? "—" : n(d.payable)}</p></div>
+                                </div>
+                                <p className="text-zinc-300"><span className="text-zinc-500">In / Out:</span> {d.clockIn || "—"} / {d.clockOut || "—"} · <span className="text-zinc-500">Attendance:</span> {d.attendance}{d.leave ? <> · <span className="text-zinc-500">Leave:</span> {d.leave}</> : null}</p>
+                                {d.correction && <p className="text-[10px] text-zinc-500">Records: {d.basePayableStatus}</p>}
+                                <div className="text-zinc-400 [overflow-wrap:anywhere]">{dayReason(d)}</div>
+                                <div className="flex flex-wrap gap-1.5 [&>button]:ml-0 [&>button]:mr-0">{dayActions(d)}</div>
+                            </div>
+                        ))}
+                    </div>
+                    <div style={{ display: wide ? undefined : "none" }} className="overflow-x-auto">
                         <table className="w-full text-xs min-w-[1000px]" data-testid="sm-breakdown">
                             <thead><tr className="text-[10px] uppercase tracking-widest text-zinc-500 text-left">
                                 <th className="py-2 px-3">Date</th><th className="py-2 px-3">Clock-In / Out</th><th className="py-2 px-3">Attendance</th><th className="py-2 px-3">Leave</th>
@@ -254,16 +352,10 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
                                         <td className="py-2 px-3"><Badge s={d.payableStatus} map={PAY} />{d.correction && <span className="block text-[10px] text-zinc-500 mt-0.5">Records: {d.basePayableStatus}</span>}</td>
                                         <td className="py-2 px-3 tabular-nums text-zinc-200">{d.payableStatus === "Not Employed" ? "—" : n(d.payable)}</td>
                                         <td className="py-2 px-3 text-zinc-400 [overflow-wrap:anywhere]">
-                                            {d.correction ? <span className={d.correction.direction === "TO_NON_PAYABLE" ? "text-red-200" : "text-violet-200"}>HR correction ({d.correction.direction === "TO_NON_PAYABLE" ? "non-payable" : "payable"}): {d.correction.correctionCategory} — {d.correction.correctedByName} ({d.correction.correctedByRole}), {dt(d.correction.correctedAt)}<span className="block text-zinc-500">Records: {d.baseReason}</span></span> : d.reason}
-                                            {d.penalties.length > 0 && <span className="block text-[10px] text-amber-300/90 mt-0.5">Flags: {d.penalties.join(" · ")}</span>}
+                                            {dayReason(d)}
                                         </td>
                                         <td className="py-2 px-3 text-right whitespace-nowrap">
-                                            {d.correctable && data.canEdit && <button onClick={() => setDialog({ day: d, direction: "TO_PAYABLE" })} data-testid="sm-mark" className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase">Mark Payable</button>}
-                                            {d.deductible && !d.correction && data.canEdit && d.payableStatus !== "Upcoming" && <button onClick={() => setDialog({ day: d, direction: "TO_NON_PAYABLE" })} data-testid="sm-mark-np" className="ml-1 px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 text-[10px] font-black uppercase">Mark Non-Payable</button>}
-                                            {d.correction && <>
-                                                <button onClick={() => setView(monthCorr.find((x: any) => x.id === d.correction.id) || d.correction)} className="px-2 py-1.5 rounded-lg bg-zinc-800 text-zinc-200 text-[10px] font-black uppercase mr-1">View</button>
-                                                {data.canEdit && <button onClick={() => setReverse({ correction: d.correction, date: d.date, reason: "", busy: false, error: "" })} data-testid="sm-reverse" className="px-2 py-1.5 rounded-lg bg-red-500/15 text-red-300 border border-red-500/30 text-[10px] font-black uppercase">Reverse</button>}
-                                            </>}
+                                            {dayActions(d)}
                                         </td>
                                     </tr>
                                 ))}
@@ -302,7 +394,7 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
     const [files, setFiles] = useState<string[]>([]);
     const [busy, setBusy] = useState(false); const [uploading, setUploading] = useState(false); const [error, setError] = useState("");
     const [confirm, setConfirm] = useState(false);
-    const okReason = reason.trim().length >= 20 && reason.trim().split(/\s+/).length >= 4;
+    const okReason = reason.trim().length > 0; // reason is required, no minimum length
     const upload = async (fl: FileList | null) => {
         if (!fl?.length) return; setUploading(true); setError("");
         try { const urls: string[] = []; for (const f of Array.from(fl).slice(0, 5 - files.length)) { if (!/^image\/(jpe?g|png|webp)$|^application\/pdf$/.test(f.type)) throw new Error("Upload JPG, PNG, WEBP or PDF files."); urls.push((await uploadToCloudinary(f)).secure_url); } setFiles([...files, ...urls]); }
@@ -336,7 +428,7 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
                     <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Reason for Correction *
                         <textarea value={reason} onChange={ev => setReason(ev.target.value)} rows={5} data-testid="sm-reason" placeholder={toPay ? "e.g. The employee was present at the assigned college on this date, but the clock-in was not recorded due to a technical issue. Attendance was verified through the available records." : "e.g. The employee was not present at the college on this date although a clock-in was recorded; verified with the HOI and the gate register."}
                             className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white normal-case tracking-normal font-normal" />
-                        {!okReason && reason && <span className="normal-case tracking-normal font-normal text-amber-300">Write a full sentence (at least 20 characters).</span>}
+
                     </label>
                     <div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">Supporting Evidence (optional)</p>
@@ -410,8 +502,9 @@ function CorrectionView({ c, onClose }: { c: any; onClose: () => void }) {
 }
 
 // ─────────────────────────── Correction tickets ───────────────────────────
-function TicketsPanel({ openId, setOpenId, onMsg, onOpenEmployee }: { openId: string; setOpenId: (s: string) => void; onMsg: (m: any) => void; onOpenEmployee: (id: string, month?: string, ticketId?: string) => void }) {
-    const [status, setStatus] = useState("All"); const [q, setQ] = useState("");
+function TicketsPanel({ openId, setOpenId, onMsg, onOpenEmployee, initialStatus = "All" }: { initialStatus?: string; openId: string; setOpenId: (s: string) => void; onMsg: (m: any) => void; onOpenEmployee: (id: string, month?: string, ticketId?: string) => void }) {
+    const wide = useMinWidth(1280); // table on laptop / desktop, cards on phone / tablet
+    const [status, setStatus] = useState(initialStatus); const [q, setQ] = useState("");
     const [data, setData] = useState<any>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
     const load = useCallback(async () => {
         setLoading(true); setError("");
@@ -436,7 +529,25 @@ function TicketsPanel({ openId, setOpenId, onMsg, onOpenEmployee }: { openId: st
             </div>
             <div className="relative max-w-sm"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Ticket ID, employee or category" className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-8 pr-3 py-2 text-xs text-white" /></div>
             {error && <div className="rounded-xl px-4 py-3 text-xs bg-red-500/10 border border-red-500/20 text-red-400">{error}</div>}
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden"><div className="overflow-x-auto">
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+            {/* Phone / tablet: cards */}
+            <div style={{ display: wide ? "none" : undefined }} className="divide-y divide-zinc-800/70" data-testid="ct-cards">
+                {loading && !data ? <div className="py-12 flex justify-center"><Loader2 className="animate-spin text-primary" /></div>
+                    : list.length === 0 ? <p className="py-12 text-center text-xs text-zinc-500">No tickets.</p>
+                        : list.map((t: any) => (
+                            <div key={t.id} className="p-4 space-y-2 text-xs" data-testid="ct-card">
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0"><p className="font-mono font-bold text-white [overflow-wrap:anywhere]">{t.id}</p><p className="text-[10px] text-zinc-500">{dt(t.createdAt)}</p></div>
+                                    <Badge s={t.status} />
+                                </div>
+                                <p className="text-zinc-200 font-semibold [overflow-wrap:anywhere]">{t.employee?.name} <span className="text-[10px] font-normal text-zinc-500">{t.employeeId}{t.employee?.locationName ? ` · ${t.employee.locationName}` : ""}</span></p>
+                                <p className="text-zinc-300 [overflow-wrap:anywhere]"><span className="text-zinc-500">Issue:</span> {t.category}</p>
+                                <p className="text-zinc-300 [overflow-wrap:anywhere]"><span className="text-zinc-500">Date(s):</span> {(t.affectedDates || []).length ? t.affectedDates.map((d: string) => d.slice(8) + "/" + d.slice(5, 7)).join(", ") : monthText(t.month)}</p>
+                                <button onClick={() => setOpenId(t.id)} className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[10px] font-black uppercase">{PENDING.includes(t.status) && data?.canEdit ? "Review" : "View"}</button>
+                            </div>
+                        ))}
+            </div>
+            <div style={{ display: wide ? undefined : "none" }} className="overflow-x-auto">
                 <table className="w-full table-fixed text-xs min-w-[820px]" data-testid="ct-table">
                     <thead><tr className="bg-zinc-800/40 text-[10px] uppercase tracking-widest text-zinc-400 text-left">
                         <th className="py-3 px-3 w-[17%]">Ticket</th><th className="py-3 px-3 w-[22%]">Employee</th><th className="py-3 px-3 w-[22%]">Issue</th><th className="py-3 px-3 w-[15%]">Date(s)</th><th className="py-3 px-3 w-[14%]">Status</th><th className="py-3 px-3 w-[10%] text-right">Action</th>
@@ -463,6 +574,7 @@ function TicketsPanel({ openId, setOpenId, onMsg, onOpenEmployee }: { openId: st
 }
 
 function TicketReview({ t, canEdit, onClose, onChanged, onOpenEmployee }: { t: any; canEdit: boolean; onClose: () => void; onChanged: (m: string) => void; onOpenEmployee: (id: string, month?: string, ticketId?: string) => void }) {
+    const wideSm = useMinWidth(640); // table on laptop / desktop, cards on phone / tablet
     const [rec, setRec] = useState<any>(null); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
     const [action, setAction] = useState<"" | "Additional Information Required" | "Rejected" | "Resolved" | "Under Review">(""); const [text, setText] = useState(""); const [comment, setComment] = useState("");
     const [dialog, setDialog] = useState<any>(null);
@@ -504,7 +616,19 @@ function TicketReview({ t, canEdit, onClose, onChanged, onOpenEmployee }: { t: a
                         <button onClick={() => onOpenEmployee(t.employeeId, t.month, t.id)} className="text-[11px] text-primary underline" data-testid="ct-open-employee">Full breakdown →</button>
                     </div>
                     {!rec ? <Loader2 className="animate-spin text-primary" /> : days.length === 0 ? <p className="text-zinc-500">{(t.affectedDates || []).length ? "—" : "No non-payable days in this month."}</p> : (
-                        <div className="overflow-x-auto rounded-lg border border-zinc-800">
+                        <>
+                        <div style={{ display: wideSm ? "none" : undefined }} className="rounded-lg border border-zinc-800 divide-y divide-zinc-800" data-testid="ct-day-cards">
+                            {days.map((d: any) => (
+                                <div key={d.date} className="p-2.5 space-y-1 text-[11px]">
+                                    <div className="flex items-start justify-between gap-2"><p className="text-white">{dmy(d.date)}{d.holiday ? <span className="text-sky-300"> · Holiday</span> : null}</p><Badge s={d.payableStatus} map={PAY} /></div>
+                                    <p className="text-zinc-300">{d.clockIn || "—"} / {d.clockOut || "—"} · {d.attendance}{d.leave ? ` · ${d.leave}` : ""}</p>
+                                    <p className="text-zinc-500 [overflow-wrap:anywhere]">{d.correction ? `HR correction · records: ${d.baseReason}` : d.reason}</p>
+                                    {d.penalties.length ? <p className="text-amber-300 [overflow-wrap:anywhere]">{d.penalties.join(", ")}</p> : null}
+                                    {d.correctable && canEdit && !own && !closed && <button onClick={() => setDialog({ day: d })} className="px-2 py-1 rounded-md bg-emerald-600 text-white text-[10px] font-black uppercase">Mark Payable</button>}
+                                </div>
+                            ))}
+                        </div>
+                        <div style={{ display: wideSm ? undefined : "none" }} className="overflow-x-auto rounded-lg border border-zinc-800">
                             <table className="w-full text-[11px] min-w-[560px]">
                                 <thead><tr className="text-[9px] uppercase tracking-widest text-zinc-500 text-left"><th className="py-1.5 px-2">Date</th><th className="py-1.5 px-2">In / Out</th><th className="py-1.5 px-2">Attendance · Leave</th><th className="py-1.5 px-2">Payable</th><th className="py-1.5 px-2 text-right">Action</th></tr></thead>
                                 <tbody className="divide-y divide-zinc-800">
@@ -520,6 +644,7 @@ function TicketReview({ t, canEdit, onClose, onChanged, onOpenEmployee }: { t: a
                                 </tbody>
                             </table>
                         </div>
+                        </>
                     )}
                 </div>
                 <div>

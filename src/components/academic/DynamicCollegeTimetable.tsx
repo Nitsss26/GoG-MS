@@ -12,6 +12,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clock, Users, Layers, RefreshCw, Save, AlertTriangle, Check, Lock, Pencil, Building2, Download, FileImage } from "lucide-react";
+import { FACULTY_CARD_THEMES } from "@/components/academic/SprintPlanTimetableGrid";
 
 type Entry = {
     _id?: string; planId?: string; facultyId: string; facultyName: string; day: string; date: string;
@@ -35,15 +36,8 @@ const when = (iso?: string) => {
     const d = new Date(iso);
     return isNaN(d.getTime()) ? iso : d.toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
 };
-const STATUS: Record<string, { label: string; cls: string }> = {
-    DRAFT: { label: "Draft", cls: "bg-zinc-700/60 text-zinc-300" },
-    LOCKED: { label: "Locked", cls: "bg-emerald-500/15 text-emerald-300" },
-    LOCKED_AGAIN: { label: "Re-Locked", cls: "bg-emerald-500/15 text-emerald-300" },
-    UNLOCKED_FOR_REVISION: { label: "Editing", cls: "bg-amber-500/15 text-amber-300" },
-    SUBMITTED: { label: "Submitted", cls: "bg-sky-500/15 text-sky-300" },
-    RESUBMITTED: { label: "Submitted", cls: "bg-sky-500/15 text-sky-300" },
-    UNLOCK_REQUESTED: { label: "Locked", cls: "bg-emerald-500/15 text-emerald-300" },
-};
+/** Plan state shown on a class card: only two simple states — Locked (final) or Draft (can still change) */
+const isLockedStatus = (s?: string) => ["LOCKED", "LOCKED_AGAIN", "UNLOCK_REQUESTED"].includes(s || "");
 // Download sheet: the same light, colourful look as the earlier timetable sheet (inline colours so the file keeps them)
 const SHEET_THEMES = [
     { bg: "#e8c4d8", border: "#caa1b8", text: "#18181b", sub: "#3f3f46" },
@@ -52,11 +46,8 @@ const SHEET_THEMES = [
     { bg: "#d5ebd7", border: "#b1d4b4", text: "#18181b", sub: "#3f3f46" },
     { bg: "#ddd5f3", border: "#bfb2e6", text: "#18181b", sub: "#3f3f46" },
     { bg: "#fbd9c4", border: "#eab89a", text: "#18181b", sub: "#3f3f46" },
-];
-const PALETTE = [
-    "border-sky-500/40 bg-sky-500/10", "border-teal-500/40 bg-teal-500/10", "border-violet-500/40 bg-violet-500/10",
-    "border-amber-500/40 bg-amber-500/10", "border-rose-500/40 bg-rose-500/10", "border-lime-500/40 bg-lime-500/10",
-    "border-orange-500/40 bg-orange-500/10", "border-fuchsia-500/40 bg-fuchsia-500/10",
+    { bg: "#c6ece6", border: "#98d3ca", text: "#18181b", sub: "#3f3f46" },
+    { bg: "#e7e2c4", border: "#cfc79a", text: "#18181b", sub: "#3f3f46" },
 ];
 
 export default function DynamicCollegeTimetable({ weekStart, weekDates, currentUserId, refreshKey = 0, mineOnly = false }: {
@@ -174,7 +165,10 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
         return out;
     }, [weekDates, weekEntries, bounds, currentUserId]);
 
-    const colour = (fid: string) => PALETTE[Math.max(0, professors.findIndex(p => p.id === fid)) % PALETTE.length];
+    // One colour per professor (same palette as the HOI / Weekly Calendar timetable and the downloaded sheet)
+    const profTheme = (fid: string) => FACULTY_CARD_THEMES[Math.max(0, professors.findIndex(p => p.id === fid)) % FACULTY_CARD_THEMES.length];
+    const shownProfs = useMemo(() => professors.filter(p => weekEntries.some(e => e.facultyId === p.id)), [professors, weekEntries]);
+    const anyClash = useMemo(() => weekEntries.some(e => clashIds.has(`${e.facultyId}|${e._id}`)), [weekEntries, clashIds]);
 
     const saveTiming = async () => {
         setTMsg(null);
@@ -331,6 +325,33 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
                 </div>
             </div>
 
+            {/* How to read: colour = professor, icon = plan state, red = clash */}
+            {rows.length > 0 && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 rounded-xl bg-zinc-900/40 border border-zinc-800/80 text-xs" data-testid="tt-key">
+                    {mineOnly ? (
+                        <span className="flex items-center gap-1.5">
+                            <span className={`w-3.5 h-3.5 rounded border ${profTheme(currentUserId || "").bg} ${profTheme(currentUserId || "").border}`} />
+                            <span className="font-semibold text-zinc-200">Your classes</span>
+                        </span>
+                    ) : (
+                        <>
+                            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Colour = Professor</span>
+                            {shownProfs.map(p => (
+                                <span key={p.id} className="flex items-center gap-1.5">
+                                    <span className={`w-3.5 h-3.5 rounded border ${profTheme(p.id).bg} ${profTheme(p.id).border}`} />
+                                    <span className="font-semibold text-zinc-200">{p.name}{p.id === currentUserId ? " (You)" : ""}</span>
+                                </span>
+                            ))}
+                        </>
+                    )}
+                    <span className="hidden sm:block w-px h-4 bg-zinc-700" />
+                    <span className="flex items-center gap-1.5 text-zinc-300"><Lock size={12} /> Locked (final)</span>
+                    <span className="flex items-center gap-1.5 text-zinc-300"><Pencil size={12} /> Draft (can change)</span>
+                    {timing && rows.some(m => m < toMin(timing.startTime) || m >= toMin(timing.endTime)) && <span className="flex items-center gap-1.5 text-red-300"><span className="w-3.5 h-3.5 rounded bg-red-950 border border-red-800" /> Red time = outside college hours</span>}
+                    {anyClash && <span className="flex items-center gap-1.5 text-red-300"><span className="w-3.5 h-3.5 rounded border-2 border-red-500" /> Red border = same class booked twice</span>}
+                </div>
+            )}
+
             {/* Grid: time rows × days (all professors of the college together, like the sheet view) */}
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950/40 overflow-x-auto">
                 {loading && !entries.length ? (
@@ -370,20 +391,21 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
                                                     <div className="space-y-1.5">
                                                         {cell.items.map((x, i) => {
                                                             const clash = clashIds.has(`${x.facultyId}|${x._id}`);
-                                                            const st = STATUS[x.planStatus || ""] || null;
+                                                            const th = profTheme(x.facultyId);
+                                                            const locked = isLockedStatus(x.planStatus);
                                                             return (
-                                                                <div key={(x._id || "") + i} className={`rounded-xl border p-2 ${clash ? "border-red-500/60 bg-red-500/10" : colour(x.facultyId)}`} data-testid="tt-card">
-                                                                    <p className="text-[10px] font-bold text-zinc-300">{fmt12(x.timeStart)} – {fmt12(x.timeStop)}</p>
-                                                                    <p className="text-[12px] font-bold text-white leading-snug [overflow-wrap:anywhere]">{x.subjectName || "Class"}</p>
-                                                                    <p className="text-[10px] font-semibold text-amber-200/90 [overflow-wrap:anywhere]">{x.facultyName}{x.facultyId === currentUserId ? " (You)" : ""}</p>
-                                                                    {classLabel(x) && <p className="text-[10px] text-zinc-300 [overflow-wrap:anywhere]">{classLabel(x)}</p>}
-                                                                    {x.topics && <p className="text-[10px] text-zinc-400 line-clamp-2 [overflow-wrap:anywhere]">{x.topics}</p>}
-                                                                    {(st || clash) && (
-                                                                        <div className="mt-1 flex flex-wrap items-center gap-1">
-                                                                            {st && <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${st.cls}`}>{["LOCKED", "LOCKED_AGAIN", "UNLOCK_REQUESTED"].includes(x.planStatus || "") && <Lock size={8} className="inline -mt-0.5 mr-0.5" />}{st.label}</span>}
-                                                                            {clash && <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-500/20 text-red-300">Conflict</span>}
-                                                                        </div>
-                                                                    )}
+                                                                <div key={(x._id || "") + i} data-testid="tt-card"
+                                                                    title={`${fmt12(x.timeStart)} – ${fmt12(x.timeStop)} · ${x.subjectName || "Class"}${classLabel(x) ? ` · ${classLabel(x)}` : ""}${x.topics ? `\nTopic: ${x.topics}` : ""}\n${x.facultyName}${x.facultyId === currentUserId ? " (You)" : ""} · ${locked ? "Locked" : "Draft"}`}
+                                                                    className={`relative rounded-lg border p-2 ${th.bg} ${clash ? "border-red-500 ring-2 ring-red-500/60" : th.border}`}>
+                                                                    <span className={`absolute top-1.5 right-1.5 ${th.subtext}`} title={locked ? "Locked" : "Draft — can still change"}>
+                                                                        {locked ? <Lock size={11} /> : <Pencil size={11} />}
+                                                                    </span>
+                                                                    <p className={`text-[10px] font-bold tabular-nums pr-4 ${th.subtext}`}>{fmt12(x.timeStart)} – {fmt12(x.timeStop)}</p>
+                                                                    <p className={`text-[12px] font-black leading-snug [overflow-wrap:anywhere] ${th.text}`}>{x.subjectName || "Class"}</p>
+                                                                    {classLabel(x) && <p className={`text-[10px] font-semibold [overflow-wrap:anywhere] ${th.subtext}`}>{classLabel(x)}</p>}
+                                                                    {x.topics && <p className={`text-[10px] line-clamp-1 [overflow-wrap:anywhere] opacity-80 ${th.subtext}`}>{x.topics}</p>}
+                                                                    {!mineOnly && <p className={`text-[10px] font-bold mt-0.5 [overflow-wrap:anywhere] ${th.text}`}>{x.facultyName}{x.facultyId === currentUserId ? " (You)" : ""}</p>}
+                                                                    {clash && <span className="mt-1 inline-block text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-600 text-white">Clash</span>}
                                                                 </div>
                                                             );
                                                         })}

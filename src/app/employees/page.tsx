@@ -86,7 +86,7 @@ export default function EmployeesPage() {
     const roleLevels = ["All", "Founder", "HR", "HR Executive", "AD", "HOI", "OM", "TL", "CH", "CL", "Marketing", "Tech", "Faculty"];
 
     // Role shown in the table: the account's real role (older records may carry a managerLevel)
-    const ROLE_LEVEL: Record<string, string> = { FOUNDER: "Founder", HR: "HR", AD: "AD", HOI: "HOI", OM: "OM", TL: "TL", CURRICULUM_HEAD: "CH", CURRICULUM_LEAD: "CL", MARKETING_TEAM: "Marketing", TECH_TEAM: "Tech", HR_EXECUTIVE: "HR Executive" };
+    const ROLE_LEVEL: Record<string, string> = { FOUNDER: "Founder", HR: "HR", AD: "AD", HOI: "HOI", OM: "OM", TL: "TL", CURRICULUM_HEAD: "CH", CURRICULUM_LEAD: "CL", MARKETING_TEAM: "Marketing", TECH_TEAM: "Tech", TECH_INTERN: "Tech Intern", HR_EXECUTIVE: "HR Executive" };
     const getRoleLevel = (emp: any): string => {
         if (ROLE_LEVEL[emp.role]) return ROLE_LEVEL[emp.role];
         if (emp.managerLevel) return emp.managerLevel;

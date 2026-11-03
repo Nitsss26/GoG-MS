@@ -178,3 +178,47 @@ export async function decideJustification(actor: any, id: string, action: string
     }
     return { ok: true as const, justification: view({ ...j, ...set }) };
 }
+
+/* ─────────── mandatory justification BEFORE the late clock-in (clock-in API) ─────────── */
+
+/**
+ * Saved before the attendance is written; `discardLateAtClockIn` removes it again when the attendance cannot be
+ * saved. Same record / same HR review / same Email Management warning flow as a justification given afterwards.
+ */
+export async function createLateAtClockIn(emp: any, input: { date: string; scheduled: string; actual: string; lateMinutes: number; reason: string }) {
+    const now = nowIso();
+    const key = `${emp.id}:${input.date}`;
+    const j = {
+        id: `LJ-${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`.toUpperCase(), key,
+        employeeId: emp.id, employeeName: emp.name, department: emp?.dept || emp?.department || '',
+        attendanceId: '', date: input.date, scheduledClockIn: input.scheduled, actualClockIn: input.actual, lateDurationMinutes: input.lateMinutes,
+        originalIsLate: true, effectiveIsLate: true, justificationReason: input.reason.slice(0, 2000),
+        justificationStatus: 'pending', violationId: '', createdAt: now, updatedAt: now,
+    };
+    await LateJustification.init().catch(() => {});
+    // a leftover from a clock-in that failed after saving (no attendance linked) is replaced
+    await LateJustification.deleteOne({ key, attendanceId: { $in: [null, ''] }, justificationStatus: 'pending' }).catch(() => {});
+    await LateJustification.create(j);
+    return j.id;
+}
+export async function discardLateAtClockIn(id: string) { await LateJustification.deleteOne({ id }).catch(() => {}); }
+
+/** After the attendance + violation are saved: link them and notify HR / HR Executive (as before) */
+export async function finishLateAtClockIn(id: string, attendanceId: string) {
+    const j: any = await LateJustification.findOne({ id }).lean();
+    if (!j) return;
+    const v: any = await AttendanceViolation.findOne({ key: `LATE_IN:${j.employeeId}:${j.date}` }).select('id').lean();
+    await LateJustification.updateOne({ id }, { $set: { attendanceId, ...(v?.id ? { violationId: v.id } : {}) } });
+    const reviewers: any[] = await Employee.find({ role: { $in: ['HR', 'HR_EXECUTIVE'] }, isRemoved: { $ne: true }, id: { $ne: j.employeeId } }).select('id name email role').lean();
+    // not awaited: the clock-in answer does not wait for the e-mails (in-app + mail are sent in the background)
+    void notifySafe({
+        recipients: reviewers, title: 'Late Clock-In Justification Request',
+        message: 'An employee has submitted a late clock-in justification for review.',
+        type: 'LATE_JUSTIFICATION_SUBMITTED', link: '/attendance?tab=late-justifications', entityType: 'LateJustification', entityId: id,
+        actor: { id: j.employeeId, name: j.employeeName },
+        rows: [{ label: 'Employee Name', value: `${j.employeeName} (${j.employeeId})` }, { label: 'Date', value: dmy(j.date) },
+        { label: 'Scheduled / Actual Clock-In', value: `${fmt12(j.scheduledClockIn)} / ${fmt12(j.actualClockIn)}` },
+        { label: 'Late Duration', value: fmtDuration(j.lateDurationMinutes) }, { label: 'Submitted Reason', value: j.justificationReason },
+        { label: 'Supporting Document', value: 'None' }],
+    });
+}

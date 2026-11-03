@@ -34,8 +34,8 @@ export const LEVEL_LABEL: Record<string, string> = {
     FIRST_WARNING: 'First Warning', SECOND_WARNING: 'Second Warning', FINAL_WARNING: 'Final Warning',
     HALF_DAY: 'Half-Day Deduction', FULL_DAY: 'Full-Day Deduction', MISSING_ALERT: 'Missing Clock-Out Alert',
 };
-export const TYPE_LABEL: Record<string, string> = { LATE_IN: 'Late Clock-In', EARLY_OUT: 'Early Clock-Out', MISSING_OUT: 'Missing Clock-Out', DRESS_CODE: 'Dress Code' };
-export const CATEGORY_OF: Record<string, string> = { LATE_IN: 'CLOCK_IN', EARLY_OUT: 'CLOCK_OUT', MISSING_OUT: 'CLOCK_OUT', DRESS_CODE: 'DRESS_CODE' };
+export const TYPE_LABEL: Record<string, string> = { LATE_IN: 'Late Clock-In', EARLY_OUT: 'Early Clock-Out', MISSING_OUT: 'Missing Clock-Out', DRESS_CODE: 'Dress Code', LOCATION_MISMATCH: 'Location Mismatch' };
+export const CATEGORY_OF: Record<string, string> = { LATE_IN: 'CLOCK_IN', EARLY_OUT: 'CLOCK_OUT', MISSING_OUT: 'CLOCK_OUT', DRESS_CODE: 'DRESS_CODE', LOCATION_MISMATCH: 'LOCATION' };
 /** HR statuses that close a violation (existing rule: not counted) */
 export const VIOLATION_CLOSED = ['Waived', 'Approved'];
 

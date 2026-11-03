@@ -16,6 +16,8 @@ export default function HierarchyPage() {
     const { employees, orgHierarchy } = useAuth();
     const [searchQuery, setSearchQuery] = useState("");
     const [live, setLive] = useState<any[] | null>(null);
+    // Assign Manager: employeeId → reporting manager id (Tech Interns are drawn under their assigned manager)
+    const [managerMap, setManagerMap] = useState<Record<string, string>>({});
     const [highlightId, setHighlightId] = useState<string | null>(null);
 
     const load = useCallback(async () => {
@@ -24,6 +26,11 @@ export default function HierarchyPage() {
             const d = await r.json();
             if (r.ok && Array.isArray(d)) setLive(d.filter((e: any) => e?.id && e.id !== "HOI"));
         } catch { /* keep the last good list */ }
+        try {
+            const m = await fetch("/api/hr/manager-assignment?view=map", { cache: "no-store" });
+            const md = await m.json();
+            if (m.ok && md?.map) setManagerMap(md.map);
+        } catch { /* chart still renders without manager links */ }
     }, []);
     useEffect(() => {
         load();
@@ -47,15 +54,16 @@ export default function HierarchyPage() {
                 const fix: { name?: string; designation?: string } = {};
                 if (n && ctx && n.name !== ctx.name) fix.name = n.name;
                 if (n && ctx && n.designation !== (ctx.designation || ctx.role)) fix.designation = n.designation;
-                return toOrgPerson(e, fix);
+                const p = toOrgPerson(e, fix);
+                return managerMap[p.id] ? { ...p, managerId: managerMap[p.id] } : p;
             });
         const status = new Map(src.map(e => [String(e.id), String(e.status || "Active")]));
         return buildOrgChart(people, id => status.get(id) || "Active");
-    }, [live, employees, orgHierarchy]);
+    }, [live, employees, orgHierarchy, managerMap]);
 
     const everyone = useMemo(() => {
         const m = new Map<string, OrgPerson>();
-        [...data.executives, ...data.techLeads, ...data.ads, ...data.hrHeads, ...data.hrExecutives, ...data.techTeam, ...data.marketingTeam,
+        [...data.executives, ...data.techLeads, ...data.ads, ...data.hrHeads, ...data.hrExecutives, ...data.techTeam, ...Object.values(data.techChildren).flat(), ...data.techInterns, ...data.marketingTeam,
             ...data.hois.flatMap(h => [h.person, ...h.members]), ...data.clch, ...data.noHoi].forEach(p => m.set(p.id, p));
         return [...m.values()];
     }, [data]);

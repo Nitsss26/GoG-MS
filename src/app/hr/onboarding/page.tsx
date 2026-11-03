@@ -14,6 +14,7 @@ import PostOnboardingDashboard from "@/components/onboarding/PostOnboardingDashb
 import { fetchReport, tablePdf, tableExcel, employeePdf, employeeExcel, fileNames } from "@/lib/report-export";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import type { Employee, Role } from "@/context/AuthContext";
+import { EmployeeSearchSelect } from "@/components/hr/AssignManagerTab";
 
 /** Onboarding status groups (same rules as the server's export, src/lib/employee-report.ts) */
 type Group = "VERIFICATION" | "FORM" | "APPROVED" | "REMOVED";
@@ -30,7 +31,7 @@ const TABS: { key: "ALL" | Group; label: string }[] = [
 ];
 const ROLE_NAME: Record<string, string> = {
     FOUNDER: "Founder", HR: "HR", AD: "AD", TL: "Tech Lead", HOI: "HOI", OM: "Operation Manager", FACULTY: "Professor", PROFESSOR: "Professor",
-    MARKETING_TEAM: "Marketing", TECH_TEAM: "Tech Team", CURRICULUM_HEAD: "Curriculum Head", CURRICULUM_LEAD: "Curriculum Lead", HR_EXECUTIVE: "HR Executive",
+    MARKETING_TEAM: "Marketing", TECH_TEAM: "Tech Team", TECH_INTERN: "Tech Intern", CURRICULUM_HEAD: "Curriculum Head", CURRICULUM_LEAD: "Curriculum Lead", HR_EXECUTIVE: "HR Executive",
 };
 const AVATAR = ["bg-sky-500/80", "bg-violet-500/80", "bg-teal-500/80", "bg-pink-500/75", "bg-amber-500/80", "bg-emerald-500/80", "bg-orange-500/80", "bg-indigo-500/80", "bg-rose-500/75"];
 const tone = (k: string) => AVATAR[[...String(k)].reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR.length];
@@ -99,6 +100,10 @@ export default function OnboardingHRPage() {
     const [createError, setCreateError] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [newLocation, setNewLocation] = useState("");
+    // Assign Manager: optional reporting manager (any active employee, by name) saved right after the employee is created
+    const [newManager, setNewManager] = useState("");
+    const [newRole, setNewRole] = useState("PROFESSOR");
+    const managerAllowed = !["PROFESSOR", "FACULTY", "OM"].includes(newRole); // Professors / OMs use "Appoint HOI"
     const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
     const [editing, setEditing] = useState<"form" | "bank" | null>(null);
     const [draft, setDraft] = useState<Record<string, string>>({});
@@ -125,6 +130,10 @@ export default function OnboardingHRPage() {
 
     // HOIs for "Appoint HOI" — the selected location's HOIs first
     const locMatch = (loc: any, value?: string) => !!value && !!loc && [loc.id, loc.name, loc.shortName].includes(value);
+    const managerOptions = useMemo(() => (employees || [])
+        .filter((e: any) => e?.id && e.id !== "HOI" && e.isRemoved !== true && !/inactive|terminated|resigned|exited|relieved|left|removed|separated/i.test(String(e.status || "Active")))
+        .map((e: any) => ({ id: e.id, name: e.name || e.id, email: e.email || "", role: e.role, roleLabel: String(e.role || "").replace(/_/g, " "), designation: e.designation || String(e.role || "").replace(/_/g, " "), dept: e.dept || "", location: e.location || "" }))
+        .sort((a: any, b: any) => a.name.localeCompare(b.name)), [employees]);
     const hoiOptions = employees.filter(e => e.role === "HOI").map(h => {
         const loc = locations.find(l => locMatch(l, (h as any).location));
         const sel = locations.find(l => l.name === newLocation);
@@ -196,9 +205,18 @@ export default function OnboardingHRPage() {
                 }).then(r => r.ok).catch(() => false)));
                 if (results.some(ok => !ok)) { setCreateError("Employee created, but the timings could not be saved for every day — set them in Work Location."); return; }
             }
+            // Reporting manager (Assign Manager) — saved and emailed by the server; the employee is already created
+            if (newManager && managerAllowed) {
+                const mr = await fetch("/api/hr/manager-assignment", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ employeeId: id, managerId: newManager, reason: "Assigned at onboarding" }),
+                }).catch(() => null);
+                if (!mr || !mr.ok) { const d = await mr?.json().catch(() => ({})); setCreateError(`Employee created, but the reporting manager could not be saved${d?.error ? `: ${d.error}` : ""} — set it in Work Location → Assign Manager.`); setNewManager(""); return; }
+            }
             setShowCreateModal(false);
             setEmailValue("");
             setNewLocation("");
+            setNewManager(""); setNewRole("PROFESSOR");
             setShowPassword(false);
             setClockIn("09:30"); setClockOut("18:30"); setWorkDays([...WORK_DAYS]);
         } catch (err: any) {
@@ -612,13 +630,14 @@ export default function OnboardingHRPage() {
                                     </p>
                                 )}
                                 <FormField label="Role" required icon={<Users size={17} className="text-sky-400" />} select>
-                                    <select name="role" required defaultValue="PROFESSOR" data-testid="emp-role" className={`${fieldInput} appearance-none pr-10 cursor-pointer`}>
+                                    <select name="role" required defaultValue="PROFESSOR" data-testid="emp-role" onChange={e => { setNewRole(e.target.value); if (["PROFESSOR", "FACULTY", "OM"].includes(e.target.value)) setNewManager(""); }} className={`${fieldInput} appearance-none pr-10 cursor-pointer`}>
                                         <option value="PROFESSOR">Professor / Faculty</option>
                                         <option value="OM">OM</option>
                                         <option value="CURRICULUM_LEAD">Curriculum Lead (CL)</option>
                                         <option value="CURRICULUM_HEAD">Curriculum Head (CH)</option>
                                         <option value="MARKETING_TEAM">Marketing Team</option>
                                         <option value="TECH_TEAM">Tech Team</option>
+                                        <option value="TECH_INTERN">Tech Intern</option>
                                         <option value="TL">Tech Lead (TL)</option>
                                         <option value="HOI">HOI</option>
                                         <option value="AD">AD</option>
@@ -656,6 +675,11 @@ export default function OnboardingHRPage() {
                                         ))}
                                     </select>
                                 </FormField>
+                                {managerAllowed && <div className="sm:col-span-2">
+                                    <label className="flex items-center gap-1.5 text-[9px] font-black text-zinc-400 uppercase tracking-[0.12em] mb-1">Reporting Manager (Assign Manager) <span className="px-1.5 py-px rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-[10px] font-bold normal-case tracking-normal">Optional</span></label>
+                                    <EmployeeSearchSelect people={managerOptions as any} value={newManager} onChange={setNewManager} placeholder="Search manager by name, ID, email or designation" testid="emp-manager" />
+                                    {newManager && <button type="button" onClick={() => setNewManager("")} className="text-[10px] text-zinc-500 hover:text-white mt-0.5">Clear manager</button>}
+                                </div>}
                                 <FormField label="Clock-In Time" required icon={<LogIn size={17} className="text-emerald-400" />}>
                                     <input type="time" required value={clockIn} onChange={e => setClockIn(e.target.value)} className={`${fieldInput} [color-scheme:dark]`} data-testid="emp-clock-in" />
                                 </FormField>

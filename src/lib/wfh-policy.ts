@@ -1,7 +1,7 @@
 /**
  * Work From Home approval policy (shared by API and pages — no server-only imports).
  * Who may APPLY and who may APPROVE are separate permissions.
- *   - Apply: Tech Lead, Tech Team, HR, HR Executive, OM and Owner/Founder (WFH_POLICY.applyRoles).
+ *   - Apply: Tech Lead, Tech Team, Tech Intern, HR, HR Executive, OM and Owner/Founder (WFH_POLICY.applyRoles).
  *     Applications made earlier by other roles stay as they are.
  *   - Approve: HR / Founder for anyone; a reporting manager (HOI / AD / TL / OM) for their own reporting
  *     hierarchy — the same mapping the leave approvals use. Nobody approves their own application.
@@ -9,7 +9,7 @@
  */
 export const WFH_POLICY = {
     /** Roles that may apply for Work From Home (HR Executive works with the HR role) */
-    applyRoles: ["TL", "TECH_TEAM", "HR", "HR_EXECUTIVE", "OM", "FOUNDER"],
+    applyRoles: ["TL", "TECH_TEAM", "TECH_INTERN", "HR", "HR_EXECUTIVE", "OM", "FOUNDER"],
     adminApproverRoles: ["HR", "FOUNDER"],
     managerApproverRoles: ["HOI", "AD", "TL", "OM"],
     allowSelfApproval: false,

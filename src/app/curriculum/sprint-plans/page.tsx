@@ -10,6 +10,7 @@ import {
     ArrowLeft, ArrowRight, RefreshCw, Filter, Building2, ShieldCheck,
     MessageSquare, Check
 } from "lucide-react";
+import { useMinWidth } from "@/lib/use-min-width";
 
 
 function getWeekDates(offset = 0) {
@@ -51,6 +52,7 @@ const STATUS_ACCENT: Record<string, string> = {
 };
 
 export default function CurriculumSprintPlansPage() {
+    const wide = useMinWidth(1280); // table on laptop / desktop, cards on phone / tablet
     const { user } = useAuth();
     const [weekOffset, setWeekOffset] = useState(0);
     // Colleges come from the database (Location), limited by the server to what this user may see
@@ -337,7 +339,27 @@ export default function CurriculumSprintPlansPage() {
                 {queue.length === 0 ? (
                     <p className="text-xs text-zinc-500">No sprint plans are waiting for review or to be read.</p>
                 ) : (
-                    <div className="overflow-x-auto [contain:inline-size]">
+                    <>
+                    {/* Phone / tablet: cards */}
+                    <div style={{ display: wide ? "none" : undefined }} className="divide-y divide-zinc-800/70" data-testid="queue-cards">
+                        {queue.map(q => (
+                            <div key={q._id} className={`py-3 space-y-2 text-xs ${highlightPlan === q._id ? "bg-amber-500/5" : ""}`} data-testid="queue-card">
+                                <div className="min-w-0">
+                                    <p className="font-bold text-white [overflow-wrap:anywhere]">{q.facultyName} <span className="font-mono font-normal text-[10px] text-zinc-500">{q.facultyId}</span></p>
+                                    <p className="text-[11px] text-zinc-400 [overflow-wrap:anywhere]">{collegeLabel(q.college)} · {dmyDate(q.weekStartDate)} → {dmyDate(q.weekEndDate)}</p>
+                                    {q.toRead && <p className={`text-[9px] font-black uppercase tracking-wider mt-0.5 ${q.status === "LOCKED_AGAIN" ? "text-sky-300" : "text-teal-300"}`}>{q.status === "LOCKED_AGAIN" ? "Re-Locked · To Read" : "Locked · To Read"}</p>}
+                                    {q.submittedAt && <p className="text-[10px] text-zinc-500">{new Date(q.submittedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
+                                </div>
+                                <SprintPlanWorkflowPanel plan={q} mode="reviewer" compact
+                                    onChanged={(_, msg) => { setMessage({ type: "success", text: msg }); fetchQueue(); fetchCampusSprintData(); }} />
+                                <div className="flex flex-wrap gap-1.5">
+                                    <button onClick={() => setViewPlan(q)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/20"><Eye size={12} /> View Plan</button>
+                                    <button onClick={() => openQueued(q)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20"><CalendarDays size={12} /> Go to Week</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div style={{ display: wide ? undefined : "none" }} className="overflow-x-auto [contain:inline-size]">
                         <table className="w-full min-w-[900px] text-xs">
                             <thead>
                                 <tr className="text-[9px] text-zinc-500 uppercase tracking-widest text-left">
@@ -373,6 +395,7 @@ export default function CurriculumSprintPlansPage() {
                             </tbody>
                         </table>
                     </div>
+                    </>
                 )}
             </div>
 
@@ -449,6 +472,7 @@ export default function CurriculumSprintPlansPage() {
                             weekDates={weekInfo.dates}
                             key={selectedCampus}
                             currentCampus={selectedCampus}
+                            campusChoices={colleges}
                         />
                     </div>
                 </div>

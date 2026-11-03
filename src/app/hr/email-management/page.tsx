@@ -4,18 +4,20 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Mail, Shirt, Clock, UserX, LogOut, History, Search, Loader2, AlertTriangle, CheckCircle2, XCircle, Eye, ChevronDown, ChevronLeft, ChevronRight, X, FileText, RefreshCw, Inbox, Image as ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useMinWidth } from "@/lib/use-min-width";
 import SendEmailButton from "@/components/email-management/SendEmailButton";
 
 /**
  * HR → Email Management (HR, HR Executive, Founder — same access).
  * Dress Code Rejection, Late Clock-In, No Clock-In and No Clock-Out emails are sent from here only, by hand.
  */
-type Tab = "dress_code" | "late_clock_in" | "no_clock_in" | "no_clock_out" | "history";
+type Tab = "dress_code" | "late_clock_in" | "no_clock_in" | "no_clock_out" | "full_attire" | "history";
 const TABS: { id: Tab; label: string; icon: any; card?: string }[] = [
     { id: "dress_code", label: "Dress Code", icon: Shirt, card: "dress_code" },
     { id: "late_clock_in", label: "Late Clock-In", icon: Clock, card: "late_clock_in" },
     { id: "no_clock_in", label: "No Clock-In", icon: UserX, card: "no_clock_in" },
     { id: "no_clock_out", label: "No Clock-Out", icon: LogOut, card: "no_clock_out" },
+    { id: "full_attire", label: "Full Attire", icon: Shirt, card: "full_attire" },
     { id: "history", label: "Email History", icon: History },
 ];
 const TAB_HINT: Record<Tab, string> = {
@@ -23,6 +25,7 @@ const TAB_HINT: Record<Tab, string> = {
     late_clock_in: "A warning can be sent only after the late clock-in justification is rejected. The level (First / Second / Third…) is worked out when you send, from this month's late clock-ins that still count.",
     no_clock_in: "Employees scheduled to work with no clock-in (today after the 11:59 AM cutoff). Leave, holidays and weekly offs are left out.",
     no_clock_out: "Missing final clock-out of the day. Multi-location visits are not counted — only the last clock-out.",
+    full_attire: "One email per professor after HR accepts or rejects a Full Attire photo (group photos too). Sent only when you click Send Email — to the professor, CC HR, HR Executive, Founders and their HOI.",
     history: "Every email sent from Email Management — who sent it, when, and whether it was delivered.",
 };
 const STATUS_OPTIONS: Record<string, [string, string][]> = {
@@ -30,7 +33,7 @@ const STATUS_OPTIONS: Record<string, [string, string][]> = {
     late_clock_in: [["", "All statuses"], ["not_sent", "Not Sent"], ["sending", "Sending"], ["sent", "Sent"], ["failed", "Failed"], ["not_required", "Not Required"], ["pending_review", "Pending Justification Review"], ["awaiting_justification", "Awaiting Justification"]],
     history: [["", "All statuses"], ["sent", "Sent"], ["failed", "Failed"]],
 };
-const CATEGORY_OPTIONS: [string, string][] = [["", "All categories"], ["dress_code", "Dress Code Rejection"], ["late_clock_in", "Late Clock-In"], ["no_clock_in", "No Clock-In"], ["no_clock_out", "No Clock-Out"]];
+const CATEGORY_OPTIONS: [string, string][] = [["", "All categories"], ["dress_code", "Dress Code Rejection"], ["late_clock_in", "Late Clock-In"], ["no_clock_in", "No Clock-In"], ["no_clock_out", "No Clock-Out"], ["full_attire", "Full Attire"]];
 const PAGE_SIZE = 20;
 
 const TZ = "Asia/Kolkata";
@@ -71,6 +74,7 @@ export default function EmailManagementPage() {
     const { user } = useAuth();
     const allowed = !!user && (user.role === "HR" || user.role === "FOUNDER");
     const [tab, setTab] = useState<Tab>("dress_code");
+    const wide = useMinWidth(1024); // Full Attire: table on laptop / desktop, cards on phone / tablet
     const [from, setFrom] = useState(() => addDays(istToday(), -6));
     const [to, setTo] = useState(istToday);
     const [q, setQ] = useState("");
@@ -149,6 +153,7 @@ export default function EmailManagementPage() {
         ["Pending Late Clock-In", ov?.cards?.late_clock_in, Clock, "text-yellow-300 bg-yellow-500/10", "late_clock_in"],
         ["Pending No Clock-In", ov?.cards?.no_clock_in, UserX, "text-red-300 bg-red-500/10", "no_clock_in"],
         ["Pending No Clock-Out", ov?.cards?.no_clock_out, LogOut, "text-teal-300 bg-teal-500/10", "no_clock_out"],
+        ["Pending Full Attire", ov?.cards?.full_attire, Shirt, "text-sky-300 bg-sky-500/10", "full_attire"],
         ["Total Sent Today", ov?.cards?.sentToday, CheckCircle2, "text-emerald-300 bg-emerald-500/10", "history"],
         ["Failed Emails", ov?.cards?.failed, XCircle, "text-red-400 bg-red-500/10", "history"],
     ];
@@ -214,6 +219,16 @@ export default function EmailManagementPage() {
                         {r.details.hrDecisionBy && <Field k="HR decision">{r.details.hrDecisionBy} ({r.details.hrDecisionRole}) · {tsDate(r.details.hrDecisionAt)}{r.details.rejectionReason ? ` — ${r.details.rejectionReason}` : ""}</Field>}
                         {r.details.supportingDocument && <a href={r.details.supportingDocument} target="_blank" rel="noreferrer" className={cn(link, "text-[11px] pt-1")}><FileText size={11} /> Supporting document</a>}
                     </>}
+                    {r.category === "full_attire" && <>
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Full Attire</p>
+                        <Field k="Decision"><span className={r.details.decision === "accepted" ? "text-emerald-300" : "text-red-300"}>{r.details.decision === "accepted" ? "Accepted" : "Rejected"}</span></Field>
+                        {r.details.decision === "rejected" && <Field k="Reason">{r.details.reasonText || "—"}</Field>}
+                        {r.details.explanation && <Field k="Remarks">{r.details.explanation}</Field>}
+                        <Field k="Submission">{r.details.submissionId}{r.details.submissionType === "group" ? ` · group, position ${r.details.position}` : ""}</Field>
+                        <Field k="Submitted by">{r.details.submittedBy || "—"}</Field>
+                        <Field k="Reviewed by">{r.details.reviewedBy || "—"}{r.details.reviewedByRole ? ` (${r.details.reviewedByRole})` : ""}{r.details.reviewedAt ? ` · ${tsDate(r.details.reviewedAt)} ${tsTime(r.details.reviewedAt)}` : ""}</Field>
+                        {r.details.evidenceUrl && <a href={r.details.evidenceUrl} target="_blank" rel="noreferrer" className={cn(link, "text-[11px] pt-1")}><ImageIcon size={11} /> Supporting evidence</a>}
+                    </>}
                     {r.category === "no_clock_in" && <>
                         <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Attendance</p>
                         <Field k="Status">{r.details.attendanceStatus || "—"}</Field>
@@ -247,6 +262,7 @@ export default function EmailManagementPage() {
         dress_code: [{ h: "Employee" }, { h: "Date", w: "w-[110px]" }, { h: "Rejection Reason", w: "w-[24%]" }, { h: "Rejected By", w: "w-[140px]", cls: "hidden xl:table-cell" }, { h: "Email Status", w: "w-[120px]" }, { h: "", w: "w-[150px]" }],
         late_clock_in: [{ h: "Employee" }, { h: "Date", w: "w-[110px]" }, { h: "Clock-In", w: "w-[130px]" }, { h: "Justification", w: "w-[110px]" }, { h: "Warning", w: "w-[150px]", cls: "hidden lg:table-cell" }, { h: "Email Status", w: "w-[170px]" }, { h: "", w: "w-[160px]" }],
         no_clock_in: [{ h: "Employee" }, { h: "Department", w: "w-[150px]", cls: "hidden lg:table-cell" }, { h: "Date", w: "w-[110px]" }, { h: "Scheduled", w: "w-[100px]" }, { h: "Email Status", w: "w-[120px]" }, { h: "", w: "w-[150px]" }],
+        full_attire: [{ h: "Employee" }, { h: "Verification Date", w: "w-[120px]" }, { h: "Decision", w: "w-[24%]" }, { h: "Reviewed By", w: "w-[140px]", cls: "hidden xl:table-cell" }, { h: "Email Status", w: "w-[120px]" }, { h: "", w: "w-[150px]" }],
         no_clock_out: [{ h: "Employee" }, { h: "Date", w: "w-[110px]" }, { h: "Clock-In", w: "w-[95px]" }, { h: "Expected Out", w: "w-[110px]", cls: "hidden lg:table-cell" }, { h: "Status", w: "w-[150px]", cls: "hidden xl:table-cell" }, { h: "Email Status", w: "w-[120px]" }, { h: "", w: "w-[150px]" }],
         history: [{ h: "Employee" }, { h: "Category", w: "w-[170px]" }, { h: "Subject", w: "w-[26%]", cls: "hidden xl:table-cell" }, { h: "Related Date", w: "w-[110px]", cls: "hidden lg:table-cell" }, { h: "Sent By", w: "w-[150px]" }, { h: "Sent At", w: "w-[120px]" }, { h: "Status", w: "w-[100px]" }, { h: "", w: "w-[120px]" }],
     };
@@ -267,7 +283,7 @@ export default function EmailManagementPage() {
                 <button onClick={() => setReload(x => x + 1)} className="self-start sm:self-auto h-9 text-xs font-semibold text-zinc-300 border border-zinc-800 bg-zinc-900 rounded-lg px-3 hover:border-zinc-600 flex items-center gap-1.5"><RefreshCw size={12} /> Refresh</button>
             </header>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3" data-testid="em-cards">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3" data-testid="em-cards">
                 {cards.map(([label, n, Icon, color, target]) => (
                     <button key={label} onClick={() => setTab(target)} data-testid={`em-card-${label.replace(/\s+/g, "-").toLowerCase()}`}
                         className={cn("text-left rounded-xl border bg-zinc-900/60 p-3.5 transition-colors", tab === target && target !== "history" ? "border-zinc-600" : "border-zinc-800 hover:border-zinc-700")}>
@@ -335,7 +351,29 @@ export default function EmailManagementPage() {
                 {rows && total > rows.length && <p className="px-4 pt-2 text-[11px] text-amber-300">Only the first {rows.length} of {total} records are loaded — narrow the date range or filters to see the rest.</p>}
 
                 {/* table */}
-                <div className="mt-3" data-testid={`em-table-${tab}`}>
+                {/* Full Attire on phone / tablet: one card per professor email */}
+                {tab === "full_attire" && !wide && (
+                    <div className="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800" data-testid="em-fa-cards">
+                        {rows === null && <div className="py-14 text-center"><Loader2 size={18} className="animate-spin text-zinc-500 inline" /></div>}
+                        {rows !== null && !rows.length && <p className="py-14 text-center text-xs text-zinc-500" data-testid="em-empty">Nothing to show for these filters.</p>}
+                        {pageRows.map(r => (
+                            <div key={r.key} className="p-4 space-y-2 text-xs" data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0"><p className="font-semibold text-white [overflow-wrap:anywhere]">{r.employeeName}</p><p className="text-[10px] text-zinc-500 [overflow-wrap:anywhere]">{r.employeeId} · {r.email || "no email"}</p></div>
+                                    <StatusBadge status={r.status} label={r.statusLabel} />
+                                </div>
+                                <p className="text-zinc-300">{shortDate(r.date)} · <span className={r.details.decision === "accepted" ? "text-emerald-300 font-semibold" : "text-red-300 font-semibold"}>{r.details.decision === "accepted" ? "Accepted" : "Rejected"}</span>{r.details.reviewedBy ? <span className="text-zinc-500"> · by {r.details.reviewedBy}</span> : null}</p>
+                                {r.details.decision === "rejected" && <p className="text-zinc-400 [overflow-wrap:anywhere]">{r.details.reasonText}{r.details.explanation ? ` — ${r.details.explanation}` : ""}</p>}
+                                <div className="flex flex-wrap items-center justify-end gap-2">
+                                    {(r.canSend || r.status === "sending" || r.status === "sent") && <SendEmailButton key={`${r.key}:${r.status}:${r.attemptCount}`} category={r.category} relatedRecordId={r.relatedRecordId} status={r.status} label="Send Email" onDone={onSent(r.key)} />}
+                                    <button onClick={() => setOpen(open === r.key ? "" : r.key)} className="h-9 px-3 rounded-lg border border-zinc-800 text-zinc-300 inline-flex items-center gap-1" data-testid="row-view">Details <ChevronDown size={13} className={cn("transition-transform", open === r.key && "rotate-180")} /></button>
+                                </div>
+                                {open === r.key && <table className="w-full"><tbody>{detailsRow(r, 1)}</tbody></table>}
+                            </div>
+                        ))}
+                    </div>
+                )}
+                <div className="mt-3" data-testid={`em-table-${tab}`} style={{ display: tab === "full_attire" && !wide ? "none" : undefined }}>
                     <table className="w-full table-fixed text-xs">
                         <thead><tr className="bg-zinc-900 border-y border-zinc-800 text-[10px] text-zinc-500 uppercase tracking-wider">
                             {cols[tab].map((c, i) => <th key={i} className={cn(th, c.w, c.cls, i === nCols - 1 && "text-right")}>{c.h}</th>)}
@@ -380,6 +418,20 @@ export default function EmailManagementPage() {
                                         <td className={cn(td, "text-zinc-300 truncate", colCls(1))}>{r.dept || r.designation || "—"}</td>
                                         <td className={cn(td, "text-zinc-300 whitespace-nowrap")}>{shortDate(r.date)}</td>
                                         <td className={cn(td, "text-zinc-300 whitespace-nowrap")}>{t12(r.details.scheduled)}</td>
+                                        <td className={td}><StatusBadge status={r.status} label={r.statusLabel} /></td>
+                                        {actionCell(r)}
+                                    </tr>
+                                    {detailsRow(r, nCols)}
+                                </Fragment>
+                            ))}
+
+                            {tab === "full_attire" && wide && pageRows.map(r => (
+                                <Fragment key={r.key}>
+                                    <tr className="hover:bg-zinc-800/20" data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
+                                        {empCell(r)}
+                                        <td className={cn(td, "text-zinc-300 whitespace-nowrap")}>{shortDate(r.date)}</td>
+                                        <td className={cn(td, "text-zinc-200")}><p className={cn("font-semibold", r.details.decision === "accepted" ? "text-emerald-300" : "text-red-300")}>{r.details.decision === "accepted" ? "Accepted" : "Rejected"}</p>{r.details.decision === "rejected" && <p className="text-[10px] text-zinc-500 truncate" title={r.details.reasonText}>{r.details.reasonText}</p>}</td>
+                                        <td className={cn(td, "text-zinc-400 truncate", colCls(3))}>{r.details.reviewedBy || "—"}</td>
                                         <td className={td}><StatusBadge status={r.status} label={r.statusLabel} /></td>
                                         {actionCell(r)}
                                     </tr>

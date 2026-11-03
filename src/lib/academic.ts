@@ -190,7 +190,15 @@ export async function getAcademicScope(user: { role: string; employee?: any; del
         if (colleges.length) return { orgWide: false, colleges, keys: Array.from(new Set(colleges.flatMap(c => c.keys))), facultyIds };
         return { orgWide: false, colleges: [], keys: location ? [location] : [], facultyIds };
     }
-    if (['OM', ...PROFESSOR_ROLES].includes(role)) {
+    if (role === 'OM') {
+        // Own campus + every attendance location HR assigned to this OM (Employee.attendanceLocations)
+        const values = [location, ...(Array.isArray(user.employee?.attendanceLocations) ? user.employee.attendanceLocations : [])].filter(Boolean);
+        const colleges: College[] = [];
+        for (const v of values) { const c = await resolveCollege(v); if (c && !colleges.some(x => x.id === c.id)) colleges.push(c); }
+        if (colleges.length) return { orgWide: false, colleges, keys: Array.from(new Set(colleges.flatMap(c => c.keys))), facultyIds: [] };
+        return { orgWide: false, colleges: [], keys: location ? [location] : [], facultyIds: [] };
+    }
+    if (PROFESSOR_ROLES.includes(role)) {
         const c = await resolveCollege(location);
         if (c) return { orgWide: false, colleges: [c], keys: c.keys, facultyIds: [] };
         return { orgWide: false, colleges: [], keys: location ? [location] : [], facultyIds: [] };
@@ -272,6 +280,8 @@ export async function collegeRecipients(collegeValue: string | null | undefined,
     const or: any[] = [];
     const local = roles.filter(r => ['HOI', 'OM'].includes(r));
     if (local.length && keys.length) or.push({ role: { $in: local }, location: { $in: keys } });
+    // OMs who have this campus among their assigned attendance locations
+    if (roles.includes('OM') && keys.length) or.push({ role: 'OM', attendanceLocations: { $in: keys } });
     // The HOI who heads this campus (Location.hoiId), even when their own location is another campus
     if (roles.includes('HOI') && collegeValue) {
         const loc: any = await Location.findOne({ $or: [{ id: collegeValue }, { name: collegeValue }, { shortName: collegeValue }] }).select('hoiId').lean();

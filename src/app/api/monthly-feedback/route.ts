@@ -42,7 +42,8 @@ export async function PUT(req: Request) {
         const emp: any = await Employee.findOne({ id: employeeId }).select('id name email monthlyScores').lean();
         if (!emp) return NextResponse.json({ error: 'Employee not found.' }, { status: 404 });
         const scores: any[] = Array.isArray(emp.monthlyScores) ? emp.monthlyScores : [];
-        const idx = scores.findIndex(s => s.period === period);
+        // feedback only (attendance-point entries of the same half-month label have no date / rater)
+        const idx = scores.findIndex(s => s.period === period && !!(s.date || s.ratedBy || s.comment));
         if (idx < 0) return NextResponse.json({ error: 'No feedback exists for this month yet — use Give Feedback.' }, { status: 404 });
         const old = scores[idx];
         const changed = Number(old.score) !== score || Number(old.points) !== points || String(old.comment || '') !== comment || String(old.screenshotUrl || '') !== screenshotUrl;

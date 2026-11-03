@@ -514,11 +514,14 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { ddmmyyyy, ddmmyyyyText } from "@/lib/date-display";
 import { cn } from "@/lib/utils";
+import { HoiCreateAnnouncementButton, HoiAnnouncementHistory, HrAnnouncementModal } from "@/components/announcements/HoiCollegeAnnouncements";
 
 export default function AnnouncementsPage() {
-    const { user, notices, employees, addAnnouncement, editNotice, markAnnouncementRead, colleges } = useAuth();
+    const { user, notices, employees, addAnnouncement, editNotice, markAnnouncementRead, colleges, reloadHolidaysAndNotices } = useAuth();
     const [showModal, setShowModal] = useState(false);
-    const [section, setSection] = useState<"all" | "holiday">("all"); // All Announcements | Holiday Announcements
+    const [section, setSection] = useState<"all" | "holiday" | "mine">("all"); // All Announcements | Holiday Announcements | (HOI) My Announcements
+    const [histKey, setHistKey] = useState(0);
+    const [showHrModal, setShowHrModal] = useState(false); // HR / HR Executive / Founder: General or college-wise (incl. Holiday)
     const [search, setSearch] = useState("");
     const [editingNotice, setEditingNotice] = useState<Notice | null>(null);
     const [filter, setFilter] = useState("All");
@@ -686,16 +689,19 @@ export default function AnnouncementsPage() {
                     <p className="text-sm text-zinc-400 mt-1">Stay updated with the latest news, events and important notices.</p>
                 </div>
                 {isHROrFounder && (
-                    <button onClick={openNew} className="btn-primary flex items-center gap-2 px-6 shadow-[0_0_20px_rgba(16,185,129,0.2)]">
+                    <button onClick={() => setShowHrModal(true)} data-testid="hr-ann-add" className="btn-primary flex items-center gap-2 px-6 shadow-[0_0_20px_rgba(16,185,129,0.2)]">
                         <Plus size={16} /> Add Announcement
                     </button>
                 )}
+                {/* HOI: college-wise announcement to the professors of the selected college(s) */}
+                {user.role === "HOI" && <HoiCreateAnnouncementButton onCreated={() => { reloadHolidaysAndNotices(); setHistKey(k => k + 1); }} />}
+                {showHrModal && <HrAnnouncementModal onClose={() => setShowHrModal(false)} onCreated={() => { reloadHolidaysAndNotices(); setHistKey(k => k + 1); }} />}
             </header>
 
             {/* All Announcements | Holiday Announcements + search */}
             <div className="flex flex-wrap items-center gap-3">
                 <div className="flex gap-1 p-1 bg-zinc-900 border border-zinc-800 rounded-2xl" data-testid="ann-sections">
-                    {([["all", "All Announcements"], ["holiday", "Holiday Announcements"]] as const).map(([k, l]) => (
+                    {([["all", "All Announcements"], ["holiday", "Holiday Announcements"], ...(user.role === "HOI" ? [["mine", "My Announcements"]] : isHROrFounder ? [["mine", "College / HR Announcements"]] : [])] as [typeof section, string][]).map(([k, l]) => (
                         <button key={k} onClick={() => setSection(k)} data-testid={`ann-section-${k}`}
                             className={cn("px-4 py-2 rounded-xl text-[11px] font-bold transition-all", section === k ? "bg-zinc-800 text-primary shadow-inner" : "text-zinc-500 hover:text-zinc-300")}>{l}</button>
                     ))}
@@ -707,7 +713,10 @@ export default function AnnouncementsPage() {
                 </div>
             </div>
 
+            {section === "mine" && <HoiAnnouncementHistory reloadKey={histKey} />}
+
             {/* Filter Chips */}
+            {section !== "mine" && <>
             <div className="flex gap-1.5 p-1 bg-zinc-900 border border-zinc-800 rounded-2xl w-fit flex-wrap">
                 {categories.map(cat => (
                     <button key={cat} onClick={() => setFilter(cat)}
@@ -785,6 +794,7 @@ export default function AnnouncementsPage() {
                     ))}
                 </AnimatePresence>
             </div>
+            </>}
 
             {/* Birthday + Joinee Poster Section */}
             {isHROrFounder && (

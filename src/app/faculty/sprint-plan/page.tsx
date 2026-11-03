@@ -213,10 +213,56 @@ export default function SprintPlanPage() {
         }
     };
 
+    // ── Draft kept on this device (browser storage) ──
+    // Every change in the editor is stored at once for this professor + week, so nothing is lost when the page is
+    // left by mistake, reloaded or closed. Opening the week again brings the unsaved changes back. The server copy
+    // changes only with Save Draft / Finalize & Lock (pressed by the professor); a locked plan is never auto-saved.
+    const draftKey = (week: string) => `gog.sprintDraft.v1:${user?.id || ""}:${week}`;
+    const normEntries = (list: SprintEntry[]) => JSON.stringify((list || []).map(e => [e.day, e.date, e.timeStart, e.timeStop, e.stream, e.year, e.semester, e.subjectCode, e.subjectName, e.topics, e.section, e.lectureType || "", e.unitNumber || "", e.content || ""]));
+    const serverEntriesRef = useRef<SprintEntry[]>([]);   // entries as saved on the server for the loaded week
+    const serverSnap = useRef("");
+    const loadedWeek = useRef("");                         // week whose entries are on screen ("" while loading)
+    const lastDraftWrite = useRef("");
+    const [draftInfo, setDraftInfo] = useState<{ savedAt: string; restored: boolean } | null>(null);
+    const readDraft = (week: string): { savedAt?: string; entries?: SprintEntry[] } | null => {
+        try { const raw = window.localStorage.getItem(draftKey(week)); return raw ? JSON.parse(raw) : null; } catch { return null; }
+    };
+    const clearDraft = (week: string) => {
+        try { window.localStorage.removeItem(draftKey(week)); } catch { /* storage unavailable */ }
+        lastDraftWrite.current = "";
+        setDraftInfo(null);
+    };
+    /** After the server copy changed (load / save / lock / unlock) */
+    const setServerEntries = (list: SprintEntry[]) => { serverEntriesRef.current = list || []; serverSnap.current = normEntries(list || []); };
+    const discardDraft = () => {
+        clearDraft(weekInfo.start);
+        setEntries(serverEntriesRef.current);
+        setMessage({ type: "success", text: "Unsaved changes on this device were discarded — showing the saved plan." });
+    };
+
+    // Store every change of an editable week on this device (no delay, so even a quick page change keeps it)
+    useEffect(() => {
+        if (!user?.id || loading || loadedWeek.current !== weekInfo.start || isFrozen) return;
+        const snap = normEntries(entries);
+        if (snap === serverSnap.current) {
+            if (lastDraftWrite.current || draftInfo) clearDraft(weekInfo.start);
+            return;
+        }
+        if (snap === lastDraftWrite.current) return;
+        try {
+            const savedAt = new Date().toISOString();
+            window.localStorage.setItem(draftKey(weekInfo.start), JSON.stringify({ v: 1, week: weekInfo.start, planId: plan?._id || "", savedAt, entries }));
+            lastDraftWrite.current = snap;
+            setDraftInfo(prev => ({ savedAt, restored: !!prev?.restored }));
+        } catch { /* storage full / blocked: the page still works, only the device copy is missing */ }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [entries, loading, isFrozen, weekInfo.start, user?.id]);
+
     // Only the latest request may update the page (week / date can change while a request is running)
     const latestRequest = useRef(0);
     const fetchPlan = async () => {
         const requestNo = ++latestRequest.current;
+        loadedWeek.current = "";
         setLoading(true);
         try {
             const res = await fetch(`/api/faculty/sprint-plan?facultyId=${user?.id}&weekStartDate=${weekInfo.start}`);
@@ -229,14 +275,24 @@ export default function SprintPlanPage() {
 
             setWorkSchedules(fetchedSchedules);
 
-            if (fetchedPlans.length > 0) {
-                const fetchedPlan = fetchedPlans[0];
-                setPlan(fetchedPlan);
-                setEntries(fetchedPlan.entries || []);
+            const fetchedPlan = fetchedPlans.length > 0 ? fetchedPlans[0] : null;
+            setPlan(fetchedPlan);
+            const serverList: SprintEntry[] = fetchedPlan?.entries || [];
+            setServerEntries(serverList);
+            // Unsaved changes kept on this device for this week → brought back (not for a locked plan)
+            const frozenNow = fetchedPlan ? LOCKED_PLAN_STATUSES.includes(getPlanStatus(fetchedPlan)) : false;
+            const draft = readDraft(weekInfo.start);
+            if (draft && Array.isArray(draft.entries) && !frozenNow && normEntries(draft.entries) !== serverSnap.current) {
+                setEntries(draft.entries);
+                lastDraftWrite.current = normEntries(draft.entries);
+                setDraftInfo({ savedAt: draft.savedAt || "", restored: true });
             } else {
-                setPlan(null);
-                setEntries([]);
+                if (draft) clearDraft(weekInfo.start);
+                lastDraftWrite.current = "";
+                setDraftInfo(null);
+                setEntries(serverList);
             }
+            loadedWeek.current = weekInfo.start;
 
             try {
                 const campusRes = await fetch(`/api/curriculum/sprint-plan?weekStartDate=${weekInfo.start}`);
@@ -267,39 +323,42 @@ export default function SprintPlanPage() {
         }));
     }, [allCampusEntries, entries, user, plan]);
 
+    // Copy Previous Week: the previous week's classes are placed on the same weekdays of this week (only the plan
+    // fields — no ids / statuses), shown at once in the editor; the professor edits what is needed, then Save Draft
+    // or Finalize & Lock. Classes already in this week are kept; an identical class is not added twice.
     const copyFromPreviousWeek = async () => {
         setCopying(true);
         setMessage(null);
         try {
-            const prevStart = new Date(weekInfo.start);
-            prevStart.setDate(prevStart.getDate() - 7);
-            const prevStartStr = prevStart.getFullYear() + "-" +
-                (prevStart.getMonth() + 1).toString().padStart(2, '0') + "-" +
-                prevStart.getDate().toString().padStart(2, '0');
+            const prev = new Date(weekInfo.start + "T00:00:00Z");
+            prev.setUTCDate(prev.getUTCDate() - 7);
+            const prevStartStr = prev.toISOString().slice(0, 10);
 
             const res = await fetch(`/api/faculty/sprint-plan?facultyId=${user?.id}&weekStartDate=${prevStartStr}`);
             const data = await res.json();
+            const prevPlan = (data.plans || [])[0];
+            if (!prevPlan) { setMessage({ type: "error", text: "No sprint plan found for the previous week." }); return; }
+            if (!prevPlan.entries?.length) { setMessage({ type: "error", text: "Previous week's plan has no classes." }); return; }
 
-            // Note: Updated to handle results correctly based on the API response structure { plans, schedules }
-            if (data.plans && data.plans.length > 0) {
-                const prevPlan = data.plans[0];
-                if (!prevPlan.entries || prevPlan.entries.length === 0) {
-                    setMessage({ type: "error", text: "Previous week's plan has no entries." });
-                    return;
-                }
-
-                // Map entries to current week corresponding dates
-                const mappedEntries = prevPlan.entries.map((e: SprintEntry) => {
-                    const currentDateForDay = weekInfo.dates.find(d => d.day === e.day)?.date;
-                    return { ...e, _id: undefined, date: currentDateForDay || e.date };
-                });
-
-                // Append to current entries (user can save later)
-                setEntries([...entries, ...mappedEntries]);
-                setMessage({ type: "success", text: `Successfully copied ${mappedEntries.length} entries from previous week.` });
-            } else {
-                setMessage({ type: "error", text: "No sprint plan found for the previous week." });
+            const keyOf = (e: any) => [e.day, e.timeStart, e.timeStop, e.subjectCode || e.subjectName, e.stream, e.semester, e.section].join("|");
+            const have = new Set(entries.map(keyOf));
+            const copied: SprintEntry[] = [];
+            for (const e of prevPlan.entries as SprintEntry[]) {
+                const date = weekInfo.dates.find(d => d.day === e.day)?.date;
+                if (!date) continue;
+                const c: SprintEntry = {
+                    day: e.day, date, timeStart: e.timeStart, timeStop: e.timeStop, stream: e.stream, year: e.year, semester: e.semester,
+                    subjectCode: e.subjectCode, subjectName: e.subjectName, topics: e.topics, section: e.section,
+                    lectureType: e.lectureType, unitNumber: e.unitNumber, content: e.content, className: e.className,
+                };
+                if (have.has(keyOf(c))) continue;
+                have.add(keyOf(c));
+                copied.push(c);
             }
+            if (!copied.length) { setMessage({ type: "error", text: "All of the previous week's classes are already in this week." }); return; }
+            setEntries([...entries, ...copied]);
+            setViewMode("EDITOR");   // show the copied classes at once
+            setMessage({ type: "success", text: `Copied ${copied.length} class${copied.length === 1 ? "" : "es"} from the previous week. Edit what is needed, then Save Draft or Finalize & Lock.` });
         } catch (e: any) {
             setMessage({ type: "error", text: "Failed to copy plan: " + e.message });
         } finally {
@@ -376,6 +435,8 @@ export default function SprintPlanPage() {
             if (res.ok) {
                 setMessage({ type: "success", text: data.message || "Sprint plan saved successfully!" });
                 setPlan(data.plan);
+                setServerEntries(data.plan?.entries || entries);
+                clearDraft(weekInfo.start);   // saved on the server — the device copy is no longer needed
                 setEntries(data.plan?.entries || entries);
                 setTtRefresh(k => k + 1);
                 return data.plan;
@@ -392,10 +453,13 @@ export default function SprintPlanPage() {
 
     // Save the entries, then lock the week yourself: "Finalize & Lock" (first time) / "Save & Re-Lock" (after unlocking)
     const submitWeek = async () => {
-        if (entries.length === 0) {
+        const isRelock = planStatus === "UNLOCKED_FOR_REVISION";
+        if (entries.length === 0 && !isRelock) {
             setMessage({ type: "error", text: "Add the classes of the week before locking." });
             return;
         }
+        // Re-lock with no classes: every class of this week is removed (also from the Weekly Calendar)
+        if (entries.length === 0 && !window.confirm("No classes are left in this week. Re-lock the week with NO classes? They will be removed from the Weekly Calendar.")) return;
         const missing = entries.findIndex(e => !e.subjectName || !e.topics);
         if (missing >= 0) {
             setMessage({ type: "error", text: `Class ${missing + 1} (${entries[missing].day}) needs a Subject and a Topic before locking.` });
@@ -414,6 +478,8 @@ export default function SprintPlanPage() {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || "Locking failed");
             setPlan(data.plan);
+            setServerEntries(data.plan?.entries || entries);
+            clearDraft(weekInfo.start);
             setEntries(data.plan?.entries || entries);
             setTtRefresh(k => k + 1);
             setMessage({ type: "success", text: data.message });
@@ -437,6 +503,7 @@ export default function SprintPlanPage() {
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || "Unlock failed");
             setPlan(data.plan);
+            setServerEntries(data.plan?.entries || entries);
             setEntries(data.plan?.entries || entries);
             setTtRefresh(k => k + 1);
             setMessage({ type: "success", text: data.message });
@@ -640,7 +707,7 @@ export default function SprintPlanPage() {
                         {!isFrozen && (
                             <button
                                 onClick={copyFromPreviousWeek}
-                                disabled={copying}
+                                disabled={copying || loading}
                                 className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[10px] font-black uppercase tracking-widest rounded-xl border border-amber-500/10 transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap"
                             >
                                 <Copy size={14} /> {copying ? "Copying..." : "Copy Previous Week"}
@@ -654,7 +721,7 @@ export default function SprintPlanPage() {
             {/* Status Bar — lifecycle, history and Request Unlock */}
             {plan?._id && (
                 <div className="flex flex-col gap-3 bg-zinc-900/60 border border-zinc-800 rounded-2xl px-6 py-4 shadow-lg">
-                    <SprintPlanWorkflowPanel plan={plan} mode="professor" onChanged={(p, msg) => { setPlan(p); setEntries(p?.entries || entries); setTtRefresh(k => k + 1); setMessage({ type: "success", text: msg }); }} />
+                    <SprintPlanWorkflowPanel plan={plan} mode="professor" onChanged={(p, msg) => { setPlan(p); setServerEntries(p?.entries || entries); setEntries(p?.entries || entries); setTtRefresh(k => k + 1); setMessage({ type: "success", text: msg }); }} />
                     <span className="text-xs text-zinc-400 font-medium" data-testid="plan-status-text">
                         {planStatus === "DRAFT" && "Draft — complete the week, review it and press \"Finalize & Lock\". No approval is needed; HOI is informed."}
                         {(planStatus === "SUBMITTED" || planStatus === "RESUBMITTED") && "Submitted earlier — you can now lock it yourself with \"Finalize & Lock\"."}
@@ -671,6 +738,20 @@ export default function SprintPlanPage() {
                     }`}>
                     {message.type === "success" ? <Check size={14} /> : <AlertTriangle size={14} />}
                     <span className="text-xs font-medium">{message.text}</span>
+                </div>
+            )}
+
+            {/* Unsaved changes kept on this device */}
+            {draftInfo?.restored && !isFrozen && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 bg-sky-500/10 border border-sky-500/25 text-sky-200" data-testid="draft-restored">
+                    <span className="flex items-center gap-2 text-xs font-medium">
+                        <Save size={14} className="shrink-0" />
+                        Your unsaved changes{draftInfo.savedAt ? ` from ${new Date(draftInfo.savedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}` : ""} were brought back from this device. Press Save Draft or Finalize &amp; Lock to keep them.
+                    </span>
+                    <button onClick={discardDraft} data-testid="discard-draft"
+                        className="text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg bg-zinc-900/60 hover:bg-zinc-800 text-zinc-300 border border-zinc-700">
+                        Discard &amp; show saved plan
+                    </button>
                 </div>
             )}
 
@@ -915,10 +996,17 @@ export default function SprintPlanPage() {
                             className="flex-1 sm:flex-none flex items-center justify-center gap-3 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase tracking-wider rounded-2xl transition-all shadow-xl shadow-indigo-500/10 active:scale-95 disabled:opacity-50">
                             <Save size={16} /> {saving ? "Synchronizing..." : planStatus === "DRAFT" || planStatus === "UNLOCKED_FOR_REVISION" ? "Save Draft" : "Save Changes"}
                         </button>
-                        <button onClick={submitWeek} disabled={saving || submitting || entries.length === 0} data-testid="submit-week"
+                        <button onClick={submitWeek} disabled={saving || submitting || (entries.length === 0 && planStatus !== "UNLOCKED_FOR_REVISION")} data-testid="submit-week"
                             className="flex-1 sm:flex-none flex items-center justify-center gap-3 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider rounded-2xl transition-all shadow-xl shadow-emerald-500/10 active:scale-95 disabled:opacity-50">
                             <Lock size={16} /> {submitting ? "Locking..." : planStatus === "UNLOCKED_FOR_REVISION" ? "Save & Re-Lock" : "Finalize & Lock"}
                         </button>
+                        <span className="w-full sm:w-auto sm:ml-auto self-center text-[11px] font-medium flex items-center gap-1.5" data-testid="draft-status">
+                            {draftInfo ? (
+                                <><span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" /><span className="text-amber-200">Unsaved changes — kept safely on this device{draftInfo.savedAt ? ` (${new Date(draftInfo.savedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true })})` : ""}. Not sent until you save.</span></>
+                            ) : (
+                                <><span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" /><span className="text-zinc-400">All changes saved</span></>
+                            )}
+                        </span>
                     </>
                 ) : (
                     <>

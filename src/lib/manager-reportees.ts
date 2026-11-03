@@ -63,5 +63,11 @@ export async function academicReportees(manager: any): Promise<any[]> {
     }
     const or: any[] = [{ reportsTo: manager.id }];
     if (manager.role === 'OM' && manager.location) or.push({ location: manager.location });
+    // OM: professors at every attendance location HR assigned to this OM
+    if (manager.role === 'OM' && Array.isArray(manager.attendanceLocations) && manager.attendanceLocations.length) {
+        const locs: any[] = await Location.find({ id: { $in: manager.attendanceLocations } }).select('id name shortName').lean();
+        const keys = Array.from(new Set([...manager.attendanceLocations, ...locs.flatMap(l => [l.id, l.name, l.shortName])].filter(Boolean).map(String)));
+        or.push({ role: { $in: FACULTY_ROLES }, location: { $in: keys } });
+    }
     return Employee.find({ $or: or }).lean();
 }

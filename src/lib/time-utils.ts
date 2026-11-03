@@ -31,6 +31,7 @@ export function validateSprintEntries<T extends TimeRange>(entries: T[]): {
     invalidIndices?: number[] 
 } {
     const invalidIndices = new Set<number>();
+    const nightIndices = new Set<number>();
     const dateGroups: Record<string, number[]> = {};
 
     // First pass: check formats and basic range validity
@@ -52,10 +53,23 @@ export function validateSprintEntries<T extends TimeRange>(entries: T[]): {
             continue;
         }
 
+        // A class between 12:00 AM and 6:59 AM is almost always a wrong AM / PM (e.g. 1:05 instead of 13:05)
+        if (start < 7 * 60) {
+            nightIndices.add(i);
+            continue;
+        }
+
         if (!dateGroups[e.date]) dateGroups[e.date] = [];
         dateGroups[e.date].push(i);
     }
 
+    if (nightIndices.size > 0 && invalidIndices.size === 0) {
+        return {
+            valid: false,
+            error: "A class time is between 12:00 AM and 6:59 AM — please check AM / PM (e.g. 1:05 PM, not 1:05 AM).",
+            invalidIndices: Array.from(nightIndices)
+        };
+    }
     if (invalidIndices.size > 0) {
         return { 
             valid: false, 

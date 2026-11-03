@@ -80,17 +80,18 @@ export const CLASS_STATUS_LABEL: Record<string, string> = {
     COMPLETED: "Completed",
 };
 
+/** Colours mean one thing each: grey = not submitted · blue = waiting for verification · red = sent back · green = completed */
 export const CLASS_STATUS_STYLE: Record<string, string> = {
     PENDING_PROFESSOR: "bg-zinc-800 text-zinc-300 border-zinc-700",
-    SUBMITTED: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-    PENDING_OM: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-    OM_VERIFIED: "bg-teal-500/10 text-teal-400 border-teal-500/20",
-    OM_REVERTED: "bg-red-500/10 text-red-400 border-red-500/20",
-    PENDING_CL_CH: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
-    CL_CH_VERIFIED: "bg-teal-500/10 text-teal-400 border-teal-500/20",
-    CL_CH_REVERTED: "bg-red-500/10 text-red-400 border-red-500/20",
-    PENDING_HOI: "bg-violet-500/10 text-violet-400 border-violet-500/20",
-    COMPLETED: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+    SUBMITTED: "bg-sky-500/10 text-sky-300 border-sky-500/25",
+    PENDING_OM: "bg-sky-500/10 text-sky-300 border-sky-500/25",
+    OM_VERIFIED: "bg-sky-500/10 text-sky-300 border-sky-500/25",
+    OM_REVERTED: "bg-red-500/10 text-red-400 border-red-500/25",
+    PENDING_CL_CH: "bg-sky-500/10 text-sky-300 border-sky-500/25",
+    CL_CH_VERIFIED: "bg-sky-500/10 text-sky-300 border-sky-500/25",
+    CL_CH_REVERTED: "bg-red-500/10 text-red-400 border-red-500/25",
+    PENDING_HOI: "bg-sky-500/10 text-sky-300 border-sky-500/25",
+    COMPLETED: "bg-emerald-500/10 text-emerald-400 border-emerald-500/25",
 };
 
 /** Records waiting for the final verification — any ONE of CL / CH / HOI can complete them */

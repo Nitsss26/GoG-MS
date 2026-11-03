@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Flag, Shirt, LogIn, LogOut, History, Search, X, Upload, Loader2, AlertTriangle, CheckCircle2, RotateCcw, Eye, ChevronLeft, ChevronRight, Trash2, Mail } from "lucide-react";
 import { uploadToCloudinary } from "@/lib/cloudinary";
+import { useMinWidth } from "@/lib/use-min-width";
 
 /** HR Administration → Flag Removal (HR, HR Executive, Founders). The original flag record is never deleted. */
 const TABS = [
@@ -17,6 +18,7 @@ const dmy = (ymd?: string) => (ymd ? new Date(`${ymd}T00:00:00Z`).toLocaleDateSt
 const dt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }) : "");
 
 export default function FlagRemovalPage() {
+    const wide = useMinWidth(1280); // table on laptop / desktop, cards on phone / tablet
     const { user } = useAuth();
     const [tab, setTab] = useState("ALL");
     const [q, setQ] = useState("");
@@ -65,6 +67,18 @@ export default function FlagRemovalPage() {
     ];
     const field = "bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white";
 
+    // View / Remove / Retry Email — same buttons in the table (desktop) and the cards (phone / tablet)
+    const rowActions = (r: any) => (<>
+                                                <button onClick={() => setView(r)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[10px] font-black uppercase" data-testid="fr-view"><Eye size={12} /> View</button>
+                                                {r.status === "Active" && r.employeeId !== user.id && (
+                                                    <button onClick={() => setRemoving({ row: r, reason: "", imageUrl: "", busy: false, uploading: false, error: "" })} data-testid="fr-remove"
+                                                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 text-[10px] font-black uppercase"><Trash2 size={12} /> Remove</button>
+                                                )}
+                                                {r.status === "Removed" && r.removal?.emailStatus === "FAILED" && (
+                                                    <button onClick={() => retry(r.removal.id)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-black uppercase" data-testid="fr-retry"><RotateCcw size={12} /> Retry Email</button>
+                                                )}
+    </>);
+
     return (
         <div className="p-4 sm:p-6 space-y-5 max-w-6xl mx-auto w-full [contain:inline-size]" data-testid="flag-removal">
             <div>
@@ -110,7 +124,31 @@ export default function FlagRemovalPage() {
             {error && <div className="rounded-xl px-4 py-3 text-xs bg-red-500/10 border border-red-500/20 text-red-400">{error}</div>}
 
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
-                <div className="overflow-x-auto">
+                {/* Phone / tablet: cards */}
+                <div style={{ display: wide ? "none" : undefined }} className="divide-y divide-zinc-800/70" data-testid="fr-cards">
+                    {loading && !data ? <div className="py-12 flex justify-center"><Loader2 className="animate-spin text-primary" /></div>
+                        : (data?.rows || []).length === 0 ? <p className="py-12 text-center text-xs text-zinc-500">{tab === "REMOVED" ? "No flags removed yet." : "No active flags for these filters."}</p>
+                            : data.rows.map((r: any) => (
+                                <div key={r.flagId} className="p-4 space-y-2 text-xs" data-testid="fr-card">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <p className="font-bold text-white [overflow-wrap:anywhere]">{r.employeeName}</p>
+                                            <p className="text-[10px] text-zinc-500 [overflow-wrap:anywhere]">{r.employeeId}{r.dept ? ` · ${r.dept}` : ""}{r.locationName ? ` · ${r.locationName}` : ""}</p>
+                                        </div>
+                                        {r.status === "Removed"
+                                            ? <span className="shrink-0 text-[10px] font-black px-2 py-0.5 rounded-md border bg-emerald-500/10 text-emerald-300 border-emerald-500/30">Removed</span>
+                                            : <span className="shrink-0 text-[10px] font-black px-2 py-0.5 rounded-md border bg-red-500/10 text-red-300 border-red-500/30">Active</span>}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div><p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Flag</p><p className="text-zinc-200 font-semibold">{r.typeLabel}</p><p className="text-[10px] text-zinc-500">{r.levelLabel || "—"}{r.deduction && r.deduction !== "None" ? ` · ${r.deduction}` : ""}</p></div>
+                                        <div><p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Date</p><p className="text-zinc-300">{dmy(r.date)}</p></div>
+                                    </div>
+                                    {r.status === "Removed" && <p className="text-[10px] text-zinc-500">Removed by {r.removal?.removedByName} · {dt(r.removal?.removedAt)}</p>}
+                                    <div className="flex flex-wrap gap-1.5 pt-1">{rowActions(r)}</div>
+                                </div>
+                            ))}
+                </div>
+                <div style={{ display: wide ? undefined : "none" }} className="overflow-x-auto">
                 <table className="w-full table-fixed text-xs min-w-[760px]" data-testid="fr-table">
                     <thead><tr className="bg-zinc-800/40 text-[10px] uppercase tracking-widest text-zinc-400 text-left">
                         <th className="py-3 px-3 w-[30%]">Employee</th>
@@ -142,16 +180,7 @@ export default function FlagRemovalPage() {
                                             ) : <span className="text-[10px] font-black px-2 py-0.5 rounded-md border bg-red-500/10 text-red-300 border-red-500/30">Active</span>}
                                         </td>
                                         <td className="py-3 px-3">
-                                            <div className="flex flex-wrap justify-end gap-1.5">
-                                                <button onClick={() => setView(r)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[10px] font-black uppercase" data-testid="fr-view"><Eye size={12} /> View</button>
-                                                {r.status === "Active" && r.employeeId !== user.id && (
-                                                    <button onClick={() => setRemoving({ row: r, reason: "", imageUrl: "", busy: false, uploading: false, error: "" })} data-testid="fr-remove"
-                                                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 text-[10px] font-black uppercase"><Trash2 size={12} /> Remove</button>
-                                                )}
-                                                {r.status === "Removed" && r.removal?.emailStatus === "FAILED" && (
-                                                    <button onClick={() => retry(r.removal.id)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-black uppercase" data-testid="fr-retry"><RotateCcw size={12} /> Retry Email</button>
-                                                )}
-                                            </div>
+                                            <div className="flex flex-wrap justify-end gap-1.5">{rowActions(r)}</div>
                                         </td>
                                     </tr>
                                 ))}

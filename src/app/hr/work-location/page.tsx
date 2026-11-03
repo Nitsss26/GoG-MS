@@ -4,6 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { MapPin, Save, Search, Briefcase, Building2, Navigation } from "lucide-react";
 import { cn } from "@/lib/utils";
 import LocationAssignmentTab from "@/components/hr/LocationAssignmentTab";
+import AssignManagerTab from "@/components/hr/AssignManagerTab";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // Roles that appear in an HOI's employee/faculty list
@@ -11,11 +12,12 @@ const HOI_ASSIGNABLE_ROLES = ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "T
 
 // HR version of the manager "Work Location Assignment" screen (src/app/manager/work-location).
 // Same UI and same save logic; the only difference is that HR can pick any employee.
-// The second tab, "Assign HOI", lets HR put an employee under an HOI.
+// The second tab, "Assign Manager" (former "Assign HOI"), assigns any employee's manager by name (AssignManagerTab);
+// picking an HOI keeps using the existing HOI mapping, so HOI assignments work as before.
 /** Designation shown under the name: designation → designation from the onboarding form → role (never "No Designation" when the role is known) */
 const ROLE_TITLE: Record<string, string> = {
     FOUNDER: "Founder", HR: "HR", HR_EXECUTIVE: "HR Executive", AD: "AD", TL: "Tech Lead", HOI: "HOI", OM: "Operations Manager", FACULTY: "Professor", PROFESSOR: "Professor",
-    MARKETING_TEAM: "Marketing Team", TECH_TEAM: "Tech Team", CURRICULUM_HEAD: "Curriculum Head", CURRICULUM_LEAD: "Curriculum Lead",
+    MARKETING_TEAM: "Marketing Team", TECH_TEAM: "Tech Team", TECH_INTERN: "Tech Intern", CURRICULUM_HEAD: "Curriculum Head", CURRICULUM_LEAD: "Curriculum Lead",
 };
 const designationOf = (e: any) => String(e?.designation || e?.current_designation_at_gog || "").trim() || ROLE_TITLE[e?.role] || e?.role || "No Designation";
 
@@ -128,13 +130,16 @@ export default function HRWorkLocationPage() {
 
             <div className="flex gap-2 bg-zinc-900/80 border border-zinc-800/50 rounded-xl p-1 w-fit">
                 <button onClick={() => setTab("location")} className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5", tab === "location" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}><MapPin size={12} /> Work Location</button>
-                <button onClick={() => setTab("hoi")} className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5", tab === "hoi" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}><Briefcase size={12} /> Assign HOI</button>
+                <button onClick={() => setTab("hoi")} data-testid="tab-assign-manager" className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5", tab === "hoi" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}><Briefcase size={12} /> Assign Manager</button>
                 <button onClick={() => setTab("assignment")} data-testid="tab-location-assignment" className={cn("px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5", tab === "assignment" ? "bg-primary/10 text-primary" : "text-zinc-500 hover:text-white")}><Building2 size={12} /> Location Assignment</button>
             </div>
 
             {tab === "assignment" && <LocationAssignmentTab />}
 
-            {tab !== "assignment" && <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {tab === "hoi" && <AssignManagerTab />}
+
+            {/* "Assign Manager" (former Assign HOI) is the AssignManagerTab above; this grid is the Work Location tab */}
+            {tab === "location" && <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl overflow-hidden">
                     <div className="p-3 border-b border-zinc-800/50"><p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Select Employee</p>
                         <div className="relative mt-2">
@@ -146,48 +151,12 @@ export default function HRWorkLocationPage() {
                             <button key={r.id} onClick={() => handleSelect(r.id)}
                                 className={cn("w-full p-3 flex items-center gap-2 text-left transition-colors", selectedEmp === r.id ? "bg-primary/10 border-l-2 border-primary" : "hover:bg-zinc-800/30")}>
                                 <div className="w-6 h-6 rounded-md bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-white">{(r.name || "?")[0]}</div>
-                                <div className="min-w-0"><p className="text-[11px] font-bold text-white truncate">{r.name || "Unknown"}</p><p className="text-[9px] text-zinc-500 truncate">{tab === "hoi" ? `HOI: ${getAssignedHOI(r.id)?.name || "Not Assigned"}` : designationOf(r)}</p></div>
+                                <div className="min-w-0"><p className="text-[11px] font-bold text-white truncate">{r.name || "Unknown"}</p><p className="text-[9px] text-zinc-500 truncate">{designationOf(r)}</p></div>
                             </button>
                         ))}
                         {visibleEmployees.length === 0 && <div className="p-6 text-center text-xs text-zinc-500 italic">No employees found.</div>}
                     </div>
                 </div>
-
-                {tab === "hoi" && (
-                    <div className="md:col-span-2 bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-4">
-                        {!canAssignHoi ? <div className="text-center text-xs text-zinc-500 italic py-12">Select an employee to assign an HOI.</div> : (
-                            <>
-                                <div className="flex justify-between items-center">
-                                    <h3 className="text-sm font-bold text-white">Assign HOI</h3>
-                                    <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full border", currentHoi ? "text-green-400 bg-green-500/10 border-green-500/20" : "text-amber-400 bg-amber-500/10 border-amber-500/20")}>{currentHoi ? "HOI Assigned" : "No HOI"}</span>
-                                </div>
-                                <div className="space-y-2">
-                                    <div className="grid grid-cols-4 gap-2 items-center bg-zinc-800/30 rounded-xl p-3 border border-zinc-800/50">
-                                        <span className="text-[11px] font-bold text-zinc-300">Employee</span>
-                                        <span className="col-span-3 text-[11px] text-white">{selectedEmployee?.name} <span className="text-zinc-500">· {selectedEmployee?.id} · {selectedEmployee?.designation || selectedEmployee?.role}</span></span>
-                                    </div>
-                                    <div className="grid grid-cols-4 gap-2 items-center bg-zinc-800/30 rounded-xl p-3 border border-zinc-800/50">
-                                        <span className="text-[11px] font-bold text-zinc-300">Location</span>
-                                        <span className="col-span-3 text-[11px] text-white">{selectedEmployee?.location ? getLocationLabel(selectedEmployee.location) : "Not Assigned"}</span>
-                                    </div>
-                                    <div className="grid grid-cols-4 gap-2 items-center bg-zinc-800/30 rounded-xl p-3 border border-zinc-800/50">
-                                        <span className="text-[11px] font-bold text-zinc-300">Current HOI</span>
-                                        <span className="col-span-3 text-[11px] text-white">{currentHoi ? `${currentHoi.name} (${currentHoi.id})` : "Not Assigned"}</span>
-                                    </div>
-                                    <div className="grid grid-cols-4 gap-2 items-center bg-zinc-800/30 rounded-xl p-3 border border-zinc-800/50">
-                                        <span className="text-[11px] font-bold text-zinc-300">Assign HOI</span>
-                                        <select value={selectedHoi} onChange={e => setSelectedHoi(e.target.value)} className="col-span-3 bg-zinc-800 border border-zinc-700 rounded-lg p-1.5 text-[10px] text-white">
-                                            <option value="">No HOI</option>
-                                            {hois.map(h => <option key={h.id} value={h.id}>{h.name} ({h.id}){h.location ? ` — ${getLocationLabel(h.location)}` : ""}</option>)}
-                                        </select>
-                                    </div>
-                                </div>
-                                <p className="text-[9px] text-zinc-600 italic">💡 The employee will appear in the selected HOI&apos;s employee list. Any previous HOI is replaced.</p>
-                                <button onClick={handleSaveHoi} disabled={isSavingHoi} className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold px-6 py-2.5 rounded-xl flex items-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-50"><Save size={14} /> {isSavingHoi ? "Saving..." : "Save HOI"}</button>
-                            </>
-                        )}
-                    </div>
-                )}
 
                 {tab === "location" && <div className="md:col-span-2 bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 space-y-4">
                     {!selectedEmp ? <div className="text-center text-xs text-zinc-500 italic py-12">Select an employee to assign work schedule.</div> : (

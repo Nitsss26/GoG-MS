@@ -59,7 +59,7 @@ export async function GET(req: Request) {
         } else {
             // HOI: itself + OMs of its campus(es) or appointed under it
             hois = (await Employee.find({ id: actor.id, role: 'HOI' }).select(fields).lean());
-            oms = (await Employee.find({ role: 'OM', $or: [{ location: { $in: scope.keys } }, { reportsTo: actor.id }] }).select(fields).lean()).filter(active);
+            oms = (await Employee.find({ role: 'OM', $or: [{ location: { $in: scope.keys } }, { attendanceLocations: { $in: scope.keys } }, { reportsTo: actor.id }] }).select(fields).lean()).filter(active);
         }
         const clchPeople: any[] = isAdmin ? (await Employee.find({ role: { $in: CL_CH_ROLES } }).select(fields).lean()).filter(active) : [];
         const hoiById = new Map(hois.map(h => [h.id, h]));

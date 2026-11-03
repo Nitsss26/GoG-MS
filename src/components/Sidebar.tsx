@@ -42,6 +42,9 @@ const managerMenu = [
     { label: "Academic Monitoring", icon: BookOpen, path: "/manager/reportees/academic-data" },
     { label: "Weekly Calendar", icon: CalendarDays, path: "/academic/weekly-calendar", roles: ["OM", "HOI", "AD", "FOUNDER"] as Role[] },
     { label: "Class Verification", icon: BadgeCheck, path: "/academic/verification", roles: ["OM", "HOI", "AD", "FOUNDER"] as Role[] },
+    { label: "Full Attire", icon: Shirt, path: "/full-attire", roles: ["OM"] as Role[] },
+    { label: "Location Justifications", icon: MapPin, path: "/attendance/location-justifications", roles: ["OM", "HOI", "AD"] as Role[] },
+    { label: "Location Management", icon: MapPin, path: "/attendance/location-management", roles: ["AD"] as Role[] },
     { label: "Sprint Plan Approvals", icon: CalendarCheck, path: "/curriculum/sprint-plans", roles: ["HOI"] as Role[] },
     { label: "Leave Approval", icon: CalendarCheck, path: "/manager/leave-approval", hideFor: ["OM"] as Role[] },
     { label: "Leave Summary", icon: CalendarRange, path: "/leave-summary", roles: ["HOI", "AD"] as Role[] },
@@ -66,6 +69,9 @@ const hrMenu = [
     { label: "Attendance Log", icon: Clock, path: "/hr/attendance-log" },
     { label: "Attendance Override", icon: ClipboardList, path: "/hr/attendance-override" },
     { label: "Dress Code", icon: Shirt, path: "/hr/dress-code" },
+    { label: "Full Attire", icon: Shirt, path: "/hr/full-attire" },
+    { label: "Location Justifications", icon: MapPin, path: "/attendance/location-justifications" },
+    { label: "Location Management", icon: MapPin, path: "/attendance/location-management" },
     { label: "SOP Management", icon: FileText, path: "/hr/sop" },
     { label: "Reimbursements", icon: Receipt, path: "/hr/reimbursements" },
     { label: "PIP Management", icon: ShieldAlert, path: "/hr/pip" },
@@ -161,14 +167,15 @@ const ROLE_COLORS: Record<Role, { bg: string; text: string; label: string }> = {
     OM: { bg: "bg-cyan-500/20", text: "text-cyan-400", label: "Ops Manager" },
     MARKETING_TEAM: { bg: "bg-indigo-500/20", text: "text-indigo-400", label: "Marketing Team" },
     TECH_TEAM: { bg: "bg-rose-500/20", text: "text-rose-400", label: "Tech Team" },
+    TECH_INTERN: { bg: "bg-rose-500/20", text: "text-rose-300", label: "Tech Intern" },
     FACULTY: { bg: "bg-pink-500/20", text: "text-pink-400", label: "Faculty" },
     PROFESSOR: { bg: "bg-pink-500/20", text: "text-pink-400", label: "Professor" },
     CURRICULUM_HEAD: { bg: "bg-teal-500/20", text: "text-teal-400", label: "Curriculum Head" },
     CURRICULUM_LEAD: { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "Curriculum Lead" },
     HR_EXECUTIVE: { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "HR Executive" },
 };
-/** HR Executive works in the HR portal without Reimbursements */
-const NO_REIMBURSEMENT = (items: NavItem[], u: any) => (u?.hrExecutive ? items.filter(i => i.path !== "/reimbursement" && i.path !== "/hr/reimbursements") : items);
+/** HR Executive works in the HR portal without Reimbursements; the Tech Intern portal has no Reimbursement either */
+const NO_REIMBURSEMENT = (items: NavItem[], u: any) => (u?.hrExecutive || u?.role === "TECH_INTERN" ? items.filter(i => i.path !== "/reimbursement" && i.path !== "/hr/reimbursements") : items);
 
 export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
     const { user: contextUser, realUser, logout, getMyNotifications, workSchedules, hubs = [], activeHub, enterHub, exitHub, canManageAccess } = useAuth();

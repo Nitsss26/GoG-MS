@@ -11,7 +11,10 @@ interface TimePickerProps {
 }
 
 export default function TimePicker({ value, onChange, onClose }: TimePickerProps) {
-    const [hours, setHours] = useState(parseInt(value.split(":")[0]) || 9);
+    // 12-hour clock with an AM / PM switch (stored as 24-hour "HH:mm", e.g. 1:05 PM → "13:05")
+    const h24 = (() => { const h = parseInt(value.split(":")[0]); return isNaN(h) ? 9 : h; })();
+    const [hours, setHours] = useState(h24 % 12 || 12);          // 1..12
+    const [period, setPeriod] = useState<"AM" | "PM">(h24 >= 12 ? "PM" : "AM");
     const [minutes, setMinutes] = useState(parseInt(value.split(":")[1]) || 0);
     const [mode, setMode] = useState<'hours' | 'minutes'>('hours');
 
@@ -25,13 +28,14 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
     };
 
     const confirmSelection = () => {
-        const formattedTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        const hh = (hours % 12) + (period === "PM" ? 12 : 0);
+        const formattedTime = `${hh.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
         onChange(formattedTime);
         onClose();
     };
 
-    // 24-hour clock values
-    const hourValues = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
+    // 12-hour clock values (AM / PM chosen with the switch)
+    const hourValues = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
     const minuteValues = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
     return (
@@ -50,7 +54,7 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
                         <div className="p-2 bg-indigo-500/10 rounded-xl border border-indigo-500/20">
                             <Clock size={18} className="text-indigo-400" />
                         </div>
-                        <h3 className="text-sm font-black text-white uppercase italic tracking-widest">Select Timing (24h)</h3>
+                        <h3 className="text-sm font-black text-white uppercase italic tracking-widest">Select Timing</h3>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full transition-colors text-zinc-500">
                         <X size={18} />
@@ -72,6 +76,15 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
                     >
                         {minutes.toString().padStart(2, '0')}
                     </button>
+                    {/* AM / PM */}
+                    <div className="ml-2 flex flex-col gap-1" role="group" aria-label="AM or PM">
+                        {(["AM", "PM"] as const).map(p => (
+                            <button key={p} type="button" onClick={() => setPeriod(p)} aria-pressed={period === p} data-testid={`tp-${p.toLowerCase()}`}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-black transition-colors ${period === p ? 'bg-indigo-500 text-white' : 'bg-zinc-800 text-zinc-500 hover:text-zinc-300'}`}>
+                                {p}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Clock Face for 24h */}
@@ -83,7 +96,7 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
                     <motion.div 
                         className="absolute bottom-1/2 left-1/2 w-0.5 bg-indigo-500 origin-bottom z-0"
                         animate={{ 
-                            height: mode === 'hours' ? (hours >= 12 ? '65px' : '95px') : '95px',
+                            height: '95px',
                             rotate: mode === 'hours' 
                                 ? (hours % 12) * 30 
                                 : minutes * 6 
@@ -96,9 +109,8 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
                     {/* Numbers */}
                     {mode === 'hours' ? (
                         hourValues.map((val) => {
-                            const isInner = val >= 12;
                             const angle = ((val % 12) * 30) - 90;
-                            const radius = isInner ? 60 : 100;
+                            const radius = 100;
                             const x = Math.cos(angle * (Math.PI / 180)) * radius;
                             const y = Math.sin(angle * (Math.PI / 180)) * radius;
                             
@@ -108,7 +120,8 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
                                 <button
                                     key={val}
                                     onClick={() => handleSelect(val)}
-                                    className={`absolute text-[10px] font-black w-7 h-7 flex items-center justify-center rounded-full transition-all duration-300 ${
+                                    data-testid={`tp-h-${val}`}
+                                    className={`absolute text-[11px] font-black w-8 h-8 flex items-center justify-center rounded-full transition-all duration-300 ${
                                         isSelected 
                                         ? 'text-white bg-indigo-500 ring-2 ring-indigo-400/50 z-20 shadow-lg' 
                                         : 'text-zinc-600 hover:text-zinc-300 hover:bg-white/5'
@@ -169,4 +182,3 @@ export default function TimePicker({ value, onChange, onClose }: TimePickerProps
         </div>
     );
 }
-

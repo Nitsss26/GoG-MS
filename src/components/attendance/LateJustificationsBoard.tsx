@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Clock, Loader2, FileText, X, CheckCircle2, XCircle, AlertTriangle, ExternalLink, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useMinWidth } from "@/lib/use-min-width";
 import { fmtDmy, t12, fmtMins, JUSTIFICATION_LABEL, JUSTIFICATION_STYLE } from "@/components/attendance/LateJustification";
 
 /**
@@ -22,6 +23,7 @@ export default function LateJustificationsBoard() {
     const [reason, setReason] = useState("");
     const [busy, setBusy] = useState("");
     const [q, setQ] = useState("");
+    const wide = useMinWidth(1280); // table on large screens, cards below — no side-scroll anywhere
 
     const load = useCallback(async () => {
         try {
@@ -63,8 +65,36 @@ export default function LateJustificationsBoard() {
             </div>
             {msg && <p className="text-[11px] text-emerald-300" data-testid="lj-msg">{msg}</p>}
             {error && !open && <p className="text-[11px] text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> {error}</p>}
-            <div className="overflow-x-auto rounded-xl border border-zinc-800">
-                <table className="w-full text-xs min-w-[1150px]">
+            {/* Phone / tablet / laptop: one card per request */}
+            <div style={{ display: wide ? "none" : undefined }} className="rounded-xl border border-zinc-800 divide-y divide-zinc-800/60" data-testid="lj-cards">
+                {rows === null && <div className="py-8 text-center"><Loader2 size={16} className="animate-spin text-zinc-500 inline" /></div>}
+                {rows !== null && !shown.length && <p className="py-8 text-center text-xs text-zinc-500">No {tab ? JUSTIFICATION_LABEL[tab]?.toLowerCase() : ""} late clock-in justifications.</p>}
+                {shown.map(r => (
+                    <div key={r.id} className="p-4 space-y-2 text-xs" data-testid="lj-card" data-id={r.id}>
+                        <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0"><p className="font-bold text-white [overflow-wrap:anywhere]">{r.employeeName}</p><p className="text-[10px] text-zinc-500 font-mono">{r.employeeId}{r.department ? ` · ${r.department}` : ""}</p></div>
+                            <span className={cn("shrink-0 text-[9px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap", JUSTIFICATION_STYLE[r.justificationStatus])}>{JUSTIFICATION_LABEL[r.justificationStatus]}</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <div><p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Date</p><p className="text-white">{fmtDmy(r.date)}</p></div>
+                            <div><p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Scheduled</p><p className="text-zinc-300">{t12(r.scheduledClockIn)}</p></div>
+                            <div><p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Actual</p><p className="text-zinc-300">{t12(r.actualClockIn)}</p></div>
+                            <div><p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Late By</p><p className="text-amber-300 font-bold">{fmtMins(r.lateDurationMinutes)}</p></div>
+                        </div>
+                        <p className="text-zinc-300 [overflow-wrap:anywhere]"><span className="text-zinc-500">Reason:</span> {r.justificationReason}</p>
+                        <div className="flex flex-wrap items-center gap-3">
+                            {r.supportingDocument ? <a href={r.supportingDocument} target="_blank" rel="noopener noreferrer" className="text-emerald-300 hover:underline inline-flex items-center gap-1"><FileText size={12} /> Document</a> : <span className="text-zinc-600">No document</span>}
+                            {r.reviewedByName && <span className="text-[10px] text-zinc-500">by {r.reviewedByName} ({r.reviewedByRole})</span>}
+                            <button onClick={() => { setOpen(r); setReason(""); setError(""); setMsg(""); }}
+                                className={cn("ml-auto text-[10px] font-bold rounded-lg px-2.5 py-1 border", r.justificationStatus === "pending" ? "text-amber-200 border-amber-500/40 hover:bg-amber-500/10" : "text-zinc-300 border-zinc-700 hover:border-zinc-500")}>
+                                {r.justificationStatus === "pending" ? "Review" : "View"}
+                            </button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+            <div style={{ display: wide ? undefined : "none" }} className="rounded-xl border border-zinc-800 overflow-hidden">
+                <table className="w-full text-xs">
                     <thead><tr className="bg-zinc-800/40 text-[9px] text-zinc-400 uppercase tracking-widest text-left">
                         {["Employee", "Department", "Attendance Date", "Scheduled Clock-In", "Actual Clock-In", "Late Duration", "Submitted Reason", "Supporting Document", "Request Status", "Action"].map(h => <th key={h} className="px-3 py-2.5 font-bold">{h}</th>)}
                     </tr></thead>

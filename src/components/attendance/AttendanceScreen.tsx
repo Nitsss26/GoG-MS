@@ -91,6 +91,8 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
     // HOI / OM: clock-in at another assigned location (detect → confirm → record)
     const [visit, setVisit] = useState<{ busy?: boolean; detected?: { id: string; name: string; ambiguous?: { id: string; name: string }[] } | null; coords?: { lat: number; lng: number; accuracy?: number }; error?: string | null; unassigned?: boolean; info?: string | null; unmatched?: { address: string | null; time?: string } | null }>({});
     // HOI: result of the location check before the first clock-in (assigned location matched / no match + address)
+    // Justification BEFORE the clock-in (late arrival and / or location change) — nothing is recorded until submitted
+    const [justify, setJustify] = useState<null | { data: any; call: (j?: { lateReason?: string; locationReason?: string }) => Promise<any>; late: string; loc: string; err: string; busy: boolean }>(null);
     const [hoiLocCheck, setHoiLocCheck] = useState<{ matched: boolean; name?: string; address?: string | null; time?: string; loading?: boolean } | null>(null);
     // Attendance Log: Attendance (office) / Work From Home / All, 10 rows per page
     const [logTab, setLogTab] = useState<"office" | "wfh" | "all">("office");
@@ -354,7 +356,7 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                 const candidates = hoiAllowed.length ? colleges.filter(c => hoiAllowed.includes(c.id)) : colleges;
                 // OM without allotted Clock-In Locations is checked against the scheduled location only (like a professor),
                 // never against every location saved in the OMS
-                if ((emp.role === "HOI" || (emp.role === "OM" && hoiAllowed.length > 0) || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM") && candidates.length > 0) {
+                if ((emp.role === "HOI" || (emp.role === "OM" && hoiAllowed.length > 0) || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM" || emp.role === "TECH_INTERN") && candidates.length > 0) {
                     let closestCollege = candidates[0];
                     let minDistance = 999999;
 
@@ -383,13 +385,8 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                 // (from the server, which also records the attempt for HR review)
                 if (emp.role === "HOI" && hoiAllowed.length) {
                     if (dist <= targetCollege!.radiusKm) setHoiLocCheck({ matched: true, name: targetCollege!.shortName });
-                    else {
-                        // HOI outside every assigned location: clock-in is allowed at the live location ("No Location Match")
-                        setHoiLocCheck({ matched: false, address: null, loading: true });
-                        locationClockIn(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, true)
-                            .then(d => setHoiLocCheck({ matched: false, address: d?.detectedAddress || null, time: d?.attemptTime }))
-                            .catch(() => setHoiLocCheck({ matched: false, address: null }));
-                    }
+                    // outside every assigned location: clock-in is blocked (no bypass)
+                    else setHoiLocCheck({ matched: false, address: null });
                 }
             },
             (err) => { const g = geoErrorInfo(err); setGeoStatus("denied"); setGeoErrTitle(g.title); setClockInError(g.message); },
@@ -511,7 +508,7 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
             const timeNow = istHHMM(serverNow() || new Date()); // on-screen checks only — the server sets the official time
             const go = async (lat?: number, lng?: number) => {
                 setClockBusy(true);
-                try { await clockIn("WFH", timeNow, undefined, lat, lng, false, showModeSelector ? "WFH" : undefined); }
+                try { await runClockIn(j => clockIn("WFH", timeNow, undefined, lat, lng, false, showModeSelector ? "WFH" : undefined, j)); }
                 finally { setClockBusy(false); }
             };
             if (!showModeSelector || !navigator.geolocation) { go(); return; }
@@ -528,26 +525,33 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
         if (!dressCodeUrl) { setClockInError("Upload dress code photo first."); return; }
         const timeNow = istHHMM(serverNow() || new Date()); // on-screen checks only — the server sets the official time
         
-        let isShortLeave = false;
-        const locLower = (activeLocation || displayLocation || "").toLowerCase();
-        const isTargetLoc = locLower.includes("kokta") || locLower.includes("indore") || locLower.includes("mandideep") || locLower.includes("sdbc");
-        
-        if (isTargetLoc) {
-            const timeToMins = (t: string) => {
-                const [h, m] = t.split(':').map(Number);
-                return h * 60 + m;
-            };
-            const nowMins = timeToMins(timeNow);
-            const startMins = timeToMins(assignedClockIn);
-            if (nowMins > startMins) {
-                const confirmed = window.confirm("You are clocking in late. Are you on short leave?");
-                isShortLeave = confirmed;
-            }
-        }
+        // Late clock-in follows the same rule for every location: no "short leave" prompt — the late is recorded,
+        // the employee gives a justification and HR sends the 1st / 2nd / 3rd … warning from Email Management.
+        const isShortLeave = false;
         
         setClockBusy(true);
-        clockIn(activeLocation || displayLocation, timeNow, dressCodeUrl, userLat ?? undefined, userLng ?? undefined, isShortLeave, showModeSelector ? "OFFICE" : undefined)
+        runClockIn(j => clockIn(activeLocation || displayLocation, timeNow, dressCodeUrl, userLat ?? undefined, userLng ?? undefined, isShortLeave, showModeSelector ? "OFFICE" : undefined, j))
             .finally(() => setClockBusy(false));
+    };
+    /** First attempt without a justification; the server answers with what it needs (late / location) */
+    async function runClockIn(call: (j?: { lateReason?: string; locationReason?: string }) => Promise<any>) {
+        const d = await call();
+        if (d?.justificationRequired) setJustify({ data: d, call, late: "", loc: "", err: "", busy: false });
+    }
+    const submitJustify = async () => {
+        if (!justify || justify.busy) return;
+        const need: string[] = justify.data.requires || [];
+        if (need.includes("late") && !justify.late.trim()) { setJustify({ ...justify, err: "Please explain the reason for your late arrival." }); return; }
+        if (need.includes("location") && !justify.loc.trim()) { setJustify({ ...justify, err: "Please explain why you are clocking in at a different location." }); return; }
+        setJustify({ ...justify, busy: true, err: "" });
+        setClockBusy(true);
+        try {
+            const d = await justify.call({ ...(need.includes("late") ? { lateReason: justify.late.trim() } : {}), ...(need.includes("location") ? { locationReason: justify.loc.trim() } : {}) });
+            // e.g. the clock-in became late while the form was open → ask for the missing part, keep what was typed
+            if (d?.justificationRequired) setJustify(j => j && ({ ...j, data: d, busy: false, err: d.error || "" }));
+            else setJustify(null);
+        } catch { setJustify(j => j && ({ ...j, busy: false, err: "Could not reach the server. Please try again." })); }
+        finally { setClockBusy(false); }
     };
 
     // HOI / OM with assigned locations: clock in again at another assigned location (same attendance day)
@@ -556,7 +560,8 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
     const assignedNow: string[] = emp.role === "HOI" || emp.role === "OM"
         ? (((employees || []).find((e: any) => e.id === user.id) as any)?.attendanceLocations || hoiAllowedLocs)
         : [];
-    const multiLocation = assignedNow.length > 0 && !isWFH && !((todaysRecord as any)?.workMode === "WFH");
+    // HOI clocks in once a day like everyone else — the "Clock In at Another Location" option is for OM only
+    const multiLocation = emp.role !== "HOI" && assignedNow.length > 0 && !isWFH && !((todaysRecord as any)?.workMode === "WFH");
     const detectVisitLocation = () => {
         setVisit({ busy: true });
         if (!navigator.geolocation) { setVisit({ error: "Location is not supported on this device." }); return; }
@@ -577,7 +582,8 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
     };
 
     // HOI: may clock in at the live location even outside the assigned locations (recorded as "No Location Match")
-    const hoiAnywhere = emp.role === "HOI" && !!hoiLocCheck && !hoiLocCheck.matched && !hoiLocCheck.loading && geoStatus === "granted";
+    // Outside every assigned location the clock-in is blocked for HOI and OM alike (no bypass)
+    const hoiAnywhere = false;
     const canUseLocation = withinRadius || hoiAnywhere;
 
     const handleMarkAsPresent = () => {
@@ -603,22 +609,8 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
     const handleCheckOut = () => {
         if (hasCheckedIn && !hasCheckedOut) {
             const timeNow = istHHMM(serverNow() || new Date()); // on-screen checks only — the server sets the official time
-            let isShortLeave = false;
-            const locLower = (activeLocation || displayLocation || todaysRecord?.location || "").toLowerCase();
-            const isTargetLoc = locLower.includes("kokta") || locLower.includes("indore") || locLower.includes("mandideep") || locLower.includes("sdbc");
-            
-            if (isTargetLoc) {
-                const timeToMins = (t: string) => {
-                    const [h, m] = t.split(':').map(Number);
-                    return h * 60 + m;
-                };
-                const nowMins = timeToMins(timeNow);
-                const outMins = timeToMins(assignedClockOut);
-                if (nowMins < outMins) {
-                    const confirmed = window.confirm("You are clocking out early. Are you on short leave?");
-                    isShortLeave = confirmed;
-                }
-            }
+            // Short Leave is no longer used: an early clock-out is an Early Clock-Out for everyone
+            const isShortLeave = false;
 
             // OM with assigned locations: the clock-out location is checked too (any assigned college). HOI: from anywhere.
             const hoiAllowed: string[] = emp.role === "OM" ? ((emp as any).attendanceLocations || []) : [];
@@ -655,7 +647,7 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
     const statusLabel = (log: any) => (isHrMarked(log) && (log.status === "Present" || log.status === "Absent") ? `${log.status} – Marked by ${markerRole(log)}` : log.status);
     const markedBy = (log: any) => (isHrMarked(log) ? `${markerRole(log)}${log.markedByName ? ` · ${log.markedByName}` : ""}` : log.clockIn ? "Self Clock-In" : "System");
     // Flags shown in the tables: an HR-marked day shows "Present / Absent – Marked by …" instead of the "overridden" flag
-    const shownFlags = (rec: any) => Object.entries(rec?.flags || {}).filter(([k, v]) => v && !(k === "overridden" && isHrMarked(rec)));
+    const shownFlags = (rec: any) => Object.entries(rec?.flags || {}).filter(([k, v]) => v && k !== "shortLeave" && !(k === "overridden" && isHrMarked(rec)));
     const MarkedBadge = ({ rec }: { rec: any }) => (isHrMarked(rec) && (rec.status === "Present" || rec.status === "Absent") ? (
         <span data-testid="att-marked-flag" className={cn("text-[8.5px] font-bold px-1.5 py-0.5 rounded-sm", rec.status === "Present" ? "text-emerald-300 bg-emerald-500/10" : "text-red-300 bg-red-500/10")}>{rec.status} – Marked by {markerRole(rec)}</span>
     ) : null);
@@ -1009,6 +1001,47 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                             </motion.div>
                         )}
 
+                        {justify && (
+                            <div className="fixed inset-0 z-[80] bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="just-title" data-testid="clockin-justify">
+                                <div className="w-full sm:max-w-lg bg-zinc-950 border border-zinc-800 rounded-t-2xl sm:rounded-2xl max-h-[92vh] overflow-y-auto p-4 sm:p-5 space-y-4">
+                                    <div>
+                                        <h3 id="just-title" className="text-sm font-black text-white">Justification Required Before Clock-In</h3>
+                                        <p className="text-[11px] text-zinc-400 mt-1">Your clock-in will be recorded only after you submit {(justify.data.requires || []).length > 1 ? "both justifications" : "the justification"}.</p>
+                                    </div>
+                                    {(justify.data.requires || []).includes("late") && (
+                                        <div className="rounded-xl border border-yellow-500/25 bg-yellow-500/[0.04] p-3 space-y-2" data-testid="justify-late">
+                                            <p className="text-[11px] font-black uppercase tracking-widest text-yellow-300">Late Arrival</p>
+                                            <div className="grid grid-cols-2 gap-2 text-[11px]">
+                                                <div><p className="text-zinc-500">Scheduled Clock-In</p><p className="font-bold text-white">{justify.data.late?.scheduledTime || "—"}</p></div>
+                                                <div><p className="text-zinc-500">Current Time</p><p className="font-bold text-white">{justify.data.late?.currentTime || "—"}</p></div>
+                                            </div>
+                                            <label htmlFor="justify-late-text" className="block text-[10px] font-bold text-zinc-400">Reason for late arrival <span className="text-red-400">*</span></label>
+                                            <textarea id="justify-late-text" data-testid="justify-late-text" rows={3} maxLength={2000} value={justify.late} onChange={e => setJustify({ ...justify, late: e.target.value, err: "" })}
+                                                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2.5 text-xs text-white outline-none focus:border-yellow-500" placeholder="Explain why you are late today" />
+                                        </div>
+                                    )}
+                                    {(justify.data.requires || []).includes("location") && (
+                                        <div className="rounded-xl border border-sky-500/25 bg-sky-500/[0.04] p-3 space-y-2" data-testid="justify-location">
+                                            <p className="text-[11px] font-black uppercase tracking-widest text-sky-300">Location Change</p>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                                                <div className="min-w-0"><p className="text-zinc-500">Scheduled Location</p><p className="font-bold text-white [overflow-wrap:anywhere]">{justify.data.location?.scheduledLocationName || "—"}</p></div>
+                                                <div className="min-w-0"><p className="text-zinc-500">Current Location</p><p className="font-bold text-white [overflow-wrap:anywhere]">{justify.data.location?.actualLocationName || "—"}</p></div>
+                                            </div>
+                                            <label htmlFor="justify-loc-text" className="block text-[10px] font-bold text-zinc-400">Reason for clocking in at a different location <span className="text-red-400">*</span></label>
+                                            <textarea id="justify-loc-text" data-testid="justify-loc-text" rows={3} maxLength={2000} value={justify.loc} onChange={e => setJustify({ ...justify, loc: e.target.value, err: "" })}
+                                                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2.5 text-xs text-white outline-none focus:border-sky-500" placeholder="Explain why you are at this location today" />
+                                        </div>
+                                    )}
+                                    {justify.err && <p className="text-[11px] text-red-400" role="alert" data-testid="justify-error">{justify.err}</p>}
+                                    <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                                        <button type="button" onClick={() => setJustify(null)} disabled={justify.busy} data-testid="justify-cancel" className="px-4 py-2.5 rounded-lg border border-zinc-700 text-xs font-bold text-zinc-300 hover:bg-zinc-800 disabled:opacity-50">Cancel</button>
+                                        <button type="button" onClick={submitJustify} disabled={justify.busy} data-testid="justify-submit" className="px-4 py-2.5 rounded-lg bg-primary text-xs font-bold text-white hover:opacity-90 disabled:opacity-50">
+                                            {justify.busy ? "Submitting…" : (justify.data.requires || []).length > 1 ? "Submit Justifications & Clock In" : "Submit Justification & Clock In"}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         {clockInError && !showMapForm && (
                             <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-xl flex items-center gap-2">
                                 <AlertTriangle size={14} className="text-red-400 shrink-0" /><p className="text-[10px] text-red-400">{clockInError}</p>
@@ -1017,7 +1050,7 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                         {emp.role === "HOI" && hoiLocCheck && !hasCheckedIn && (
                             hoiLocCheck.matched
                                 ? <p className="text-[10px] text-emerald-400" data-testid="att-loc-status">Location: <b>{hoiLocCheck.name}</b> · Location Status: Assigned Location Matched</p>
-                                : <div className="p-2.5 rounded-xl border border-red-500/20 bg-red-500/5" data-testid="att-loc-status">{hoiLocCheck.loading ? <p className="text-[10px] text-zinc-400">Fetching your live location…</p> : <UnmatchedLocation address={hoiLocCheck.address} time={hoiLocCheck.time} />}<p className="text-[9px] text-zinc-500 mt-1">You can still clock in — it will be recorded at this location as "No Location Match".</p></div>
+                                : <div className="p-2.5 rounded-xl border border-red-500/20 bg-red-500/5" data-testid="att-loc-status">{hoiLocCheck.loading ? <p className="text-[10px] text-zinc-400">Fetching your live location…</p> : <p className="text-[10px] text-red-400 font-bold">Clock-In Not Allowed: you are outside your assigned work locations.</p>}<p className="text-[9px] text-zinc-500 mt-1">Please contact HR if you require access to this location.</p></div>
                         )}
 
                         {!showMapForm && !isDefaulter && !isHolidayToday && showModeSelector && (

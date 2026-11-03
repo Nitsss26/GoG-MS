@@ -37,7 +37,7 @@ const toneOf = (p: OrgPerson): string => {
     if (p.role === "HOI") return "hoi";
     if (p.role === "CURRICULUM_LEAD" || p.role === "CURRICULUM_HEAD") return "clch";
     if (p.role === "OM") return "om";
-    if (p.role === "TECH_TEAM") return "tech";
+    if (p.role === "TECH_TEAM" || p.role === "TECH_INTERN") return "tech";
     if (p.role === "MARKETING_TEAM") return "marketing";
     return "faculty";
 };
@@ -95,8 +95,10 @@ function SectionRow({ people, placeholder, highlightId }: { people: OrgPerson[];
 }
 
 /** Team group: header strip + every employee card, always visible (no expand / collapse). Cards keep the same size. */
-function GroupBox({ id, label, icon, tone, people, highlightId, emptyText }: {
+function GroupBox({ id, label, icon, tone, people, highlightId, emptyText, childrenOf }: {
     id: string; label: string; icon: ReactNode; tone: string; people: OrgPerson[]; highlightId?: string | null; emptyText: string;
+    /** people hanging directly under a card of this group (Tech Interns under their Tech Team member) */
+    childrenOf?: Record<string, OrgPerson[]>;
 }) {
     const cols = people.length > 14 ? 3 : people.length > 5 ? 2 : 1;
     const t = TONES[tone];
@@ -108,7 +110,23 @@ function GroupBox({ id, label, icon, tone, people, highlightId, emptyText }: {
                 <span className="text-[10px] font-bold text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-full px-2 py-0.5" data-testid={`org-group-count-${id}`}>{people.length}</span>
             </div>
             <div className="p-2 pt-1 grid gap-2" data-testid={`org-group-body-${id}`} style={{ gridTemplateColumns: `repeat(${cols}, ${CARD_W}px)` }}>
-                {people.map(p => <PersonCard key={p.id} p={p} highlight={highlightId === p.id} />)}
+                {people.map(p => {
+                    const kids = childrenOf?.[p.id] || [];
+                    if (!kids.length) return <PersonCard key={p.id} p={p} highlight={highlightId === p.id} />;
+                    return (
+                        <div key={p.id} className="flex flex-col items-center" data-testid="org-manager-node" data-manager={p.id}>
+                            <PersonCard p={p} highlight={highlightId === p.id} />
+                            <div className="flex flex-col items-center" data-testid="org-reportees" data-manager={p.id}>
+                                {kids.map(k => (
+                                    <div key={k.id} className="flex flex-col items-center">
+                                        <VLine h={10} />
+                                        <PersonCard p={k} highlight={highlightId === k.id} />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
                 {!people.length && <p className="text-[10px] text-zinc-500 italic px-2 py-3">{emptyText}</p>}
             </div>
         </div>
@@ -198,8 +216,8 @@ export default function OrgChart({ data, highlightId }: { data: OrgChartData; hi
     const [clchShift, setClchShift] = useState(0);
     const clchLinks = useClchLinks(rootRef, [data, clchShift], setClchShift);
 
-    const group = (id: string, label: string, icon: ReactNode, tone: string, people: OrgPerson[], emptyText: string) => (
-        <GroupBox id={id} label={label} icon={icon} tone={tone} people={people} highlightId={highlightId} emptyText={emptyText} />
+    const group = (id: string, label: string, icon: ReactNode, tone: string, people: OrgPerson[], emptyText: string, childrenOf?: Record<string, OrgPerson[]>) => (
+        <GroupBox id={id} label={label} icon={icon} tone={tone} people={people} highlightId={highlightId} emptyText={emptyText} childrenOf={childrenOf} />
     );
 
     const hoiNodes = data.hois.map(h => ({
@@ -273,7 +291,16 @@ export default function OrgChart({ data, highlightId }: { data: OrgChartData; hi
                 </svg>
             )}
             {sideColumn("left", [
-                { key: "tech", drop: skipDepth, node: group("tech", "Tech Team", <Code2 size={12} />, "tech", data.techTeam, "No Tech Team employees yet.") },
+                {
+                    key: "tech", drop: skipDepth, node: (data.techInterns || []).length ? (
+                        // Tech Team → Tech Interns (interns not assigned to a Tech Team member); assigned interns hang under their member's card
+                        <div className="flex flex-col items-center" data-testid="org-tech-branch">
+                            {group("tech", "Tech Team", <Code2 size={12} />, "tech", data.techTeam, "No Tech Team employees yet.", data.techChildren)}
+                            <VLine h={GAP_Y / 2} />
+                            {group("techinterns", "Tech Interns", <Code2 size={12} />, "tech", data.techInterns, "")}
+                        </div>
+                    ) : group("tech", "Tech Team", <Code2 size={12} />, "tech", data.techTeam, "No Tech Team employees yet.", data.techChildren),
+                },
                 { key: "marketing", drop: skipDepth, node: group("marketing", "Marketing Team", <Megaphone size={12} />, "marketing", data.marketingTeam, "No Marketing Team employees yet.") },
             ], "org-col-techlead")}
 

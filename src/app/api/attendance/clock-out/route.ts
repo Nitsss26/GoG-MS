@@ -11,7 +11,9 @@ import { assignedLocationsOf, matchAssignedLocation, makeVisit } from '@/lib/mul
 export async function POST(req: Request) {
     try {
         await dbConnect();
-        const { employeeId, isShortLeave, lat, lng, clockOutImageUrl, accuracy } = await req.json();
+        const { employeeId, lat, lng, clockOutImageUrl, accuracy } = await req.json();
+        // Short Leave is no longer used (an early clock-out is always an Early Clock-Out); a value sent by an old page is ignored
+        const isShortLeave = false;
         // Official time and date come only from this server's clock: a time / date sent by the browser is ignored
         const overrideDate: string | undefined = undefined;
         const actor: any = await getSessionUser({ ignoreDelegation: true });
@@ -99,9 +101,6 @@ export async function POST(req: Request) {
             "flags.earlyOut": overrideDate ? false : isEarly
         };
         if (clockOutLocation) updateFields.clockOutLocation = clockOutLocation;
-        if (isShortLeave) {
-            updateFields["flags.shortLeave"] = true;
-        }
 
         // HOI / OM location timeline: the final clock-out closes the day's visits
         const timelineOps: any = clockOutLoc

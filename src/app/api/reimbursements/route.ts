@@ -83,6 +83,7 @@ export async function GET() {
         const actor = await getSessionUser();
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         if ((actor as any).hrExecutive) return NextResponse.json({ error: 'Reimbursements are not available for the HR Executive role.' }, { status: 403 });
+        if (actor.role === 'TECH_INTERN') return NextResponse.json({ error: 'Reimbursements are not available for the Tech Intern role.' }, { status: 403 });
         const query = ADMIN.includes(actor.role) ? {} : { employeeId: actor.id };
         const claims = await ReimbursementClaim.find(query).sort({ date: -1 });
         return NextResponse.json(claims);
@@ -98,6 +99,7 @@ export async function POST(req: Request) {
         const actor = await getSessionUser();
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         if ((actor as any).hrExecutive) return NextResponse.json({ error: 'Reimbursements are not available for the HR Executive role.' }, { status: 403 });
+        if (actor.role === 'TECH_INTERN') return NextResponse.json({ error: 'Reimbursements are not available for the Tech Intern role.' }, { status: 403 });
         const body = await req.json();
         if (body.employeeId && body.employeeId !== actor.id) return NextResponse.json({ error: 'You can only claim for yourself.' }, { status: 403 });
         const { approvedAmount, hrRemarks, rejectionReason, ...rest } = body;
@@ -119,6 +121,7 @@ export async function PUT(req: Request) {
         const actor = await getSessionUser();
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         if ((actor as any).hrExecutive) return NextResponse.json({ error: 'Reimbursements are not available for the HR Executive role.' }, { status: 403 });
+        if (actor.role === 'TECH_INTERN') return NextResponse.json({ error: 'Reimbursements are not available for the Tech Intern role.' }, { status: 403 });
         if (!ADMIN.includes(actor.role)) return NextResponse.json({ error: 'Only HR can decide reimbursement claims.' }, { status: 403 });
         const body = await req.json();
         const { id, ...updates } = body;

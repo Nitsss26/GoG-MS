@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import MonetaryPenalties from "@/components/salary/MonetaryPenalties";
 import { useAuth } from "@/context/AuthContext";
 import {
     Wallet, CalendarDays, Briefcase, CheckCircle2, CalendarCheck, CalendarX, Ban, AlertTriangle, Shirt, Flag,
@@ -9,6 +10,7 @@ import {
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { exportEmployeeMonth } from "@/lib/salary-export";
 import { Download, FileSpreadsheet } from "lucide-react";
+import { useMinWidth } from "@/lib/use-min-width";
 
 /**
  * My Salary & Payable Days — the logged-in employee's own payable days, leaves, penalties and correction tickets.
@@ -60,6 +62,7 @@ function Section({ title, icon: Icon, children, open: defOpen = true, right, tes
 }
 
 export default function MyPayableDaysPage() {
+    const wide = useMinWidth(1280); // table on laptop / desktop, cards on phone / tablet
     const { user } = useAuth();
     // null until the ?month= link parameter has been read ("" = current month)
     const [month, setMonth] = useState<string | null>(null);
@@ -215,7 +218,24 @@ export default function MyPayableDaysPage() {
                             <label className="flex items-center gap-1.5 text-[11px] text-zinc-400 cursor-pointer"><input type="checkbox" checked={onlyIssues} onChange={e => setOnlyIssues(e.target.checked)} className="accent-emerald-500" /> Only non-payable / penalty days</label>
                             <span className="text-[10px] text-zinc-600 hidden sm:inline">Calculated {dt(data.calculatedAt)}</span>
                         </div>}>
-                        <div className="overflow-x-auto">
+                        {/* Phone / tablet: one card per day */}
+                        <div style={{ display: wide ? "none" : undefined }} className="divide-y divide-zinc-800/70" data-testid="pd-day-cards">
+                            {days.map((d: any) => (
+                                <div key={d.date} className="py-3 space-y-1.5 text-xs" data-testid="pd-day-card">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <p><span className="font-semibold text-white">{dmy(d.date)}</span> <span className="text-zinc-500">{d.weekday}</span></p>
+                                        <p className={`text-right font-bold ${PAY_STYLE[d.payableStatus]}`}>{d.payableStatus}{d.payableStatus === "Partly Payable" ? ` (${n(d.payable)})` : ""}{d.correction && <span className="block text-[10px] font-semibold text-zinc-500">Was: {d.basePayableStatus}</span>}</p>
+                                    </div>
+                                    <p className="text-zinc-300"><span className="text-zinc-500">Attendance:</span> {d.attendance}{d.leave ? <> · <span className="text-zinc-500">Leave:</span> {d.leave}</> : null}</p>
+                                    <div className="text-zinc-400 [overflow-wrap:anywhere]">{d.correction ? (
+                                                    <span className={d.correction.direction === "TO_NON_PAYABLE" ? "text-red-200" : "text-violet-200"} data-testid="pd-correction">{d.correction.direction === "TO_NON_PAYABLE" ? "Marked non-payable" : "Marked payable"} by {d.correction.correctedByRole || "HR"} ({d.correction.correctedByName}) · {dt(d.correction.correctedAt)}<span className="block text-zinc-400">Reason: {d.correction.correctionReason}</span><span className="block text-zinc-500">Original attendance: {d.attendance}{d.leave ? ` · ${d.leave}` : ""} — {d.baseReason}</span></span>
+                                                ) : d.reason}
+                                                {d.penalties.length > 0 && <span className="block text-[10px] text-amber-300/90 mt-0.5">Flags: {d.penalties.join(" · ")}</span>}</div>
+                                </div>
+                            ))}
+                            {days.length === 0 && <p className="py-8 text-center text-xs text-zinc-500">Nothing to show.</p>}
+                        </div>
+                        <div style={{ display: wide ? undefined : "none" }} className="overflow-x-auto">
                             <table className="w-full text-xs min-w-[720px]">
                                 <thead><tr className="text-[10px] uppercase tracking-widest text-zinc-500 text-left">
                                     <th className="py-2 px-2">Date</th><th className="py-2 px-2">Attendance</th><th className="py-2 px-2">Leave</th><th className="py-2 px-2">Payable</th><th className="py-2 px-2">Why</th>
@@ -251,7 +271,22 @@ export default function MyPayableDaysPage() {
                             ))}
                         </div>
                         {shownPen.length === 0 ? <p className="text-xs text-zinc-500 py-4 text-center">No {penKind === "DRESS" ? "dress code penalties" : penKind === "ATTENDANCE" ? "attendance penalties" : "penalties or flags"} in {data.monthLabel}.</p> : (
-                            <div className="overflow-x-auto">
+                            <>
+                            {/* Phone / tablet: one card per penalty */}
+                            <div style={{ display: wide ? "none" : undefined }} className="divide-y divide-zinc-800/70" data-testid="pd-penalty-cards">
+                                {shownPen.map((p: any) => (
+                                    <div key={p.flagId} className="py-3 space-y-1 text-xs" data-testid="pd-penalty-card">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <p className="text-white font-semibold">{dmy(p.date)}</p>
+                                            <span className={`shrink-0 inline-block text-[10px] font-black px-2 py-0.5 rounded-md border ${PEN_STYLE[p.status] || PEN_STYLE.Warning}`}>{p.status}</span>
+                                        </div>
+                                        <p className="text-zinc-300">{p.typeLabel}{p.instance ? <span className="text-zinc-500"> · #{p.instance}</span> : null}</p>
+                                        {p.detail && <p className="text-[10px] text-zinc-500 [overflow-wrap:anywhere]">{p.detail}</p>}
+                                        <p className="text-zinc-400"><span className="text-zinc-500">Level:</span> {p.levelLabel || "—"} · <span className="text-zinc-500">Deduction:</span> {p.deduction}{p.deductedDays ? <span className="text-red-300"> (−{n(p.deductedDays)} payable day)</span> : null}</p>
+                                    </div>
+                                ))}
+                            </div>
+                            <div style={{ display: wide ? undefined : "none" }} className="overflow-x-auto">
                                 <table className="w-full text-xs min-w-[680px]">
                                     <thead><tr className="text-[10px] uppercase tracking-widest text-zinc-500 text-left">
                                         <th className="py-2 px-2">Date</th><th className="py-2 px-2">Type</th><th className="py-2 px-2">Level</th><th className="py-2 px-2">Deduction</th><th className="py-2 px-2">Status</th>
@@ -269,6 +304,7 @@ export default function MyPayableDaysPage() {
                                     </tbody>
                                 </table>
                             </div>
+                            </>
                         )}
                         {removed.length > 0 && (
                             <div className="mt-4 pt-3 border-t border-zinc-800" data-testid="pd-removed">
@@ -286,6 +322,9 @@ export default function MyPayableDaysPage() {
                         )}
                         <p className="text-[10px] text-zinc-600 mt-3">Late Clock-In / Early Clock-Out / Missing Clock-Out deductions count after HR marks them “Approved for Payroll”. Dress-code deductions follow the same ladder on the month&apos;s rejected dress-code photos.</p>
                     </Section>
+
+                    {/* ₹ penalties — separate from payable days */}
+                    <MonetaryPenalties list={c.monetaryPenalties} total={c.monetaryPenaltyTotal} monthLabel={data.monthLabel} testid="pd-money" />
                 </>
             )}
 

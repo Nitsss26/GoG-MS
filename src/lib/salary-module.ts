@@ -5,6 +5,7 @@
  */
 import { Employee, Attendance, LeaveRequest, Holiday, AttendanceViolation, ExitRecord, Location, Notification } from '@/models/Schemas';
 import { FlagRemoval, SalaryCounter, PayableCorrection } from '@/models/SalaryModule';
+import { locationPenaltiesFor } from '@/lib/location-justification';
 import { calculatePayableDays, daysInMonth, CATEGORY_OF, TYPE_LABEL, LEVEL_LABEL, VIOLATION_CLOSED, ladder } from '@/lib/payable-days';
 import { sendMailInternal, MAIN_ADMIN_EMAIL } from '@/lib/mail-server';
 import { getAcademicNotificationTemplate } from '@/lib/mail-templates';
@@ -52,11 +53,16 @@ export const employeeCard = (e: any, locName?: string) => ({
 export const correctionDirection = (c: any) =>
     c?.direction === 'TO_NON_PAYABLE' || c?.updatedPayableStatus === 'Non-Payable' || Number(c?.adjustment) < 0 ? 'TO_NON_PAYABLE' : 'TO_PAYABLE';
 
+/** ₹ penalties are listed separately (they never change payable days) */
+const withMoney = <T extends object>(list: any[], calc: T) => ({ ...calc, monetaryPenalties: list, monetaryPenaltyTotal: Math.round(list.reduce((s, p) => s + (Number(p.amount) || 0), 0) * 100) / 100 });
+
+export type PayableWithMoney = ReturnType<typeof calculatePayableDays> & { monetaryPenalties: any[]; monetaryPenaltyTotal: number };
+
 /** One calculation for many employees (same rules everywhere: employee page, HR, HR Executive, Founders) */
 export async function payableForMany(emps: any[], month: string) {
     const start = `${month}-01`, end = `${month}-${pad(daysInMonth(month))}`;
     const ids = emps.map(e => e.id);
-    if (!ids.length) return new Map<string, ReturnType<typeof calculatePayableDays>>();
+    if (!ids.length) return new Map<string, PayableWithMoney>();
     const [att, leaves, hol, viol, exits, removed, corr] = await Promise.all([
         Attendance.find({ employeeId: { $in: ids }, date: { $gte: start, $lte: end } })
             .select('_id employeeId date status clockIn clockOut workMode location dressCodeStatus dressCodeRejectionReasons').lean(),
@@ -67,22 +73,25 @@ export async function payableForMany(emps: any[], month: string) {
         FlagRemoval.find({ employeeId: { $in: ids }, flagDate: { $gte: start, $lte: end } }).select('employeeId flagId removedAt removedByName removalReason').lean(),
         PayableCorrection.find({ employeeId: { $in: ids }, month, status: 'ACTIVE' }).lean(),
     ]);
+    // Location Mismatch rejections: Half-Day / Full-Day → payable days; ₹ penalty → separate Monetary Penalties list
+    const locPen = await locationPenaltiesFor(ids, start, end);
     const by = (rows: any[]) => { const m = new Map<string, any[]>(); for (const r of rows) { if (!m.has(r.employeeId)) m.set(r.employeeId, []); m.get(r.employeeId)!.push(r); } return m; };
     const A = by(att as any[]), L = by(leaves as any[]), V = by(viol as any[]), R = by(removed as any[]), C = by(corr as any[]);
     const lwd = new Map((exits as any[]).filter(x => x.lastWorkingDay).map(x => [x.employeeId, x.lastWorkingDay]));
     const today = istToday();
     const asOf = month === today.slice(0, 7) ? today : undefined;
-    const out = new Map<string, ReturnType<typeof calculatePayableDays>>();
+    const out = new Map<string, PayableWithMoney>();
     for (const emp of emps) {
         const holidays = (hol as any[]).filter(h => h.forAll || !h.collegeIds?.length || (emp.location && h.collegeIds.includes(emp.location))).map(h => h.date);
-        out.set(emp.id, calculatePayableDays({
+        const monetaryPenalties = (locPen.money.get(emp.id) || []).sort((a, b) => a.date.localeCompare(b.date));
+        out.set(emp.id, withMoney(monetaryPenalties, calculatePayableDays({
             month, asOf,
             joiningDate: emp.joiningDate || undefined,
             exitDate: emp.noticePeriod?.lastWorkingDay || lwd.get(emp.id) || undefined,
-            attendance: A.get(emp.id) || [], leaves: L.get(emp.id) || [], holidays, violations: V.get(emp.id) || [],
+            attendance: A.get(emp.id) || [], leaves: L.get(emp.id) || [], holidays, violations: [...(V.get(emp.id) || []), ...(locPen.violations.get(emp.id) || [])],
             removed: new Map((R.get(emp.id) || []).map(r => [r.flagId, { removedAt: r.removedAt, removedByName: r.removedByName, removalReason: r.removalReason }])),
             corrections: new Map((C.get(emp.id) || []).map(c => [c.date, { id: c.id, direction: correctionDirection(c), correctionCategory: c.correctionCategory, correctionReason: c.correctionReason, correctedByName: c.correctedByName, correctedByRole: c.correctedByRole, correctedAt: c.correctedAt, relatedTicketId: c.relatedTicketId }])),
-        }));
+        })));
     }
     return out;
 }

@@ -220,13 +220,14 @@ export default function LectureReportPage() {
 
     const inputCls = "w-full px-3 py-2.5 bg-zinc-950/70 border border-zinc-800 rounded-xl text-xs font-bold text-white focus:outline-none focus:border-emerald-500/50 [color-scheme:dark]";
     const label = "text-[11px] font-bold text-zinc-400 mb-1.5 block";
-    const typeStyle = (t?: string) => {
-        const x = (t || "").toLowerCase();
-        if (x.includes("practical") || x.includes("lab")) return "bg-violet-500/15 text-violet-300 border-violet-500/30";
-        if (x.includes("tutorial")) return "bg-pink-500/15 text-pink-300 border-pink-500/30";
-        if (x.includes("revision")) return "bg-amber-500/15 text-amber-300 border-amber-500/30";
-        if (x.includes("test") || x.includes("assessment")) return "bg-red-500/15 text-red-300 border-red-500/30";
-        return "bg-sky-500/15 text-sky-300 border-sky-500/30";
+    // Colours on this page mean only the class status (see the colour key); lecture type is plain text
+    const typeStyle = (_t?: string) => "bg-zinc-800/60 text-zinc-300 border-zinc-700";
+    /** Left edge of a record = its status colour */
+    const edge = (r: Row) => {
+        const st = r.pipelineStatus || "";
+        if (["OM_REVERTED", "CL_CH_REVERTED"].includes(st)) return "border-l-red-500";
+        const k = kind(r);
+        return k === "MISSED" ? "border-l-red-500" : k === "PENDING" ? "border-l-amber-400" : st === "COMPLETED" ? "border-l-emerald-500" : "border-l-sky-500";
     };
     const today = todayYmd();
     const openMenu = (e: React.MouseEvent, key: string) => {
@@ -303,8 +304,8 @@ export default function LectureReportPage() {
         const m = minsToStart(r);
         const running = m !== null && m <= 0;
         return (
-            <div className={`inline-flex items-start gap-2 px-2.5 py-2 rounded-xl border ${running ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-300" : "bg-orange-500/10 border-orange-500/25 text-orange-300"}`}>
-                {running ? <span className="mt-1 w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" /> : <Clock size={14} className="mt-0.5 shrink-0" />}
+            <div className={"inline-flex items-start gap-2 px-2.5 py-2 rounded-xl border bg-amber-500/10 border-amber-500/25 text-amber-300"}>
+                {running ? <span className="mt-1 w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" /> : <Clock size={14} className="mt-0.5 shrink-0" />}
                 <div>
                     <p className="text-[10px] font-black uppercase tracking-wider">{running ? "In Progress" : "Pending"}</p>
                     <p className="text-[10px] text-zinc-400 whitespace-nowrap">{running ? `Ends at ${r.timeStop}` : m !== null && m < 24 * 60 ? `Starts in ${Math.floor(m / 60) ? `${Math.floor(m / 60)} h ` : ""}${m % 60} min` : fmtShort(r.date)}</p>
@@ -312,6 +313,8 @@ export default function LectureReportPage() {
             </div>
         );
     };
+    /** Attachment present = filled (click to open); missing = dashed outline */
+    const ATT_ON = "bg-zinc-800 border-zinc-600 text-zinc-100 hover:bg-zinc-700";
     const Attachments = ({ r }: { r: Row }) => {
         const x = rep(r);
         const notes = x.lectureNotes?.notesUrl ? [x.lectureNotes.notesUrl] : [];
@@ -331,10 +334,10 @@ export default function LectureReportPage() {
         );
         return (
             <div className="flex items-start gap-1.5" data-testid="attachments">
-                {item(FileText, notes, "Notes", "bg-emerald-500/10 border-emerald-500/25 text-emerald-300")}
-                {item(Link2, links, "Assignment link", "bg-purple-500/10 border-purple-500/25 text-purple-300")}
-                {item(ImageIcon, photos, "Photos", "bg-sky-500/10 border-sky-500/25 text-sky-300")}
-                {item(Mic, rec, "Recording", "bg-indigo-500/10 border-indigo-500/25 text-indigo-300")}
+                {item(FileText, notes, "Notes", ATT_ON)}
+                {item(Link2, links, "Assignment link", ATT_ON)}
+                {item(ImageIcon, photos, "Photos", ATT_ON)}
+                {item(Mic, rec, "Recording", ATT_ON)}
             </div>
         );
     };
@@ -387,18 +390,6 @@ export default function LectureReportPage() {
                             <p className="text-sm text-zinc-400 mt-0.5">History of your lectures, attendance, notes and assignments</p>
                         </div>
                     </div>
-                    <div className="hidden xl:flex items-end gap-3 select-none" aria-hidden>
-                        <svg width="140" height="84" viewBox="0 0 140 84" fill="none">
-                            <path d="M100 62 C92 44 98 26 110 16 C108 32 112 46 112 62Z" fill="#34d399" opacity=".55" />
-                            <path d="M112 62 C112 40 122 22 138 14 C130 32 126 48 122 62Z" fill="#10b981" opacity=".7" />
-                            <rect x="98" y="60" width="30" height="22" rx="4" fill="#0e7490" opacity=".9" />
-                            <rect x="4" y="66" width="88" height="16" rx="3" fill="#0f766e" />
-                            <rect x="8" y="52" width="80" height="14" rx="3" fill="#be185d" opacity=".85" />
-                            <rect x="2" y="39" width="86" height="13" rx="3" fill="#a16207" opacity=".9" />
-                            <rect x="12" y="27" width="72" height="12" rx="3" fill="#1d4ed8" opacity=".85" />
-                        </svg>
-                        <p className="text-emerald-100/80 text-lg leading-6 -rotate-6 pb-4" style={{ fontFamily: "'Brush Script MT', 'Segoe Script', cursive" }}>Teach<br />Track <span className="text-pink-400">♥</span><br />Grow</p>
-                    </div>
                     <label className="relative self-start lg:self-center flex items-center gap-3 px-4 py-2.5 rounded-xl bg-zinc-950/40 border border-emerald-500/30 text-white text-sm font-black cursor-pointer hover:border-emerald-400/60">
                         <Calendar size={15} className="text-emerald-400" /> {dmy(range.from === range.to ? range.from : today)} <ChevronDown size={14} className="text-zinc-400" />
                         <input type="date" value={range.from === range.to ? range.from : today} onChange={e => pickDay(e.target.value)} aria-label="Pick a day"
@@ -434,21 +425,35 @@ export default function LectureReportPage() {
 
             {/* ── Summary ── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3" data-testid="record-stats">
-                <div className="flex items-center gap-4 p-4 rounded-2xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/15 to-zinc-900/40">
-                    <div className="shrink-0 w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center"><BookOpen size={22} /></div>
-                    <div className="flex-1 min-w-0"><p className="text-[11px] font-bold text-emerald-200">Total Classes</p><p className="text-2xl font-black text-white tabular-nums">{counts.total}</p><p className="text-[10px] text-zinc-400">in selected date range</p></div>
-                    <BarChart3 size={34} className="text-emerald-500/50 shrink-0" />
+                <div className="flex items-center gap-4 p-4 rounded-2xl border border-zinc-700/70 bg-zinc-900/50">
+                    <div className="shrink-0 w-12 h-12 rounded-xl bg-zinc-800 text-zinc-200 flex items-center justify-center"><BookOpen size={22} /></div>
+                    <div className="flex-1 min-w-0"><p className="text-[11px] font-bold text-zinc-300">Total Classes</p><p className="text-2xl font-black text-white tabular-nums">{counts.total}</p><p className="text-[10px] text-zinc-400">in selected date range</p></div>
+                    <BarChart3 size={34} className="text-zinc-600 shrink-0" />
                 </div>
                 {([
-                    ["Conducted", counts.COMPLETED, "Classes completed", CheckCircle2, "#6366f1", "border-indigo-500/25 from-indigo-500/15", "bg-indigo-500/25 text-indigo-200", "text-indigo-200"],
-                    ["Pending", counts.PENDING, "Yet to be conducted", Clock, "#f59e0b", "border-orange-500/25 from-orange-500/15", "bg-orange-500/25 text-orange-200", "text-orange-200"],
-                    ["Missed", counts.MISSED, "Ended, report not submitted", XCircle, "#f43f5e", "border-pink-500/25 from-pink-500/15", "bg-pink-500/25 text-pink-200", "text-pink-200"],
+                    ["Conducted", counts.COMPLETED, "Report submitted", CheckCircle2, "#10b981", "border-emerald-500/30 from-emerald-500/15", "bg-emerald-500/20 text-emerald-200", "text-emerald-200"],
+                    ["Pending", counts.PENDING, "Class not over yet", Clock, "#f59e0b", "border-amber-500/30 from-amber-500/15", "bg-amber-500/20 text-amber-200", "text-amber-200"],
+                    ["Missed", counts.MISSED, "Class over, report not submitted", XCircle, "#ef4444", "border-red-500/30 from-red-500/15", "bg-red-500/20 text-red-200", "text-red-200"],
                 ] as const).map(([t, n, sub, Icon, col, tone, ic, tc]) => (
                     <div key={t} className={`flex items-center gap-4 p-4 rounded-2xl border bg-gradient-to-br to-zinc-900/40 ${tone}`}>
                         <div className={`shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${ic}`}><Icon size={22} /></div>
-                        <div className="flex-1 min-w-0"><p className={`text-[11px] font-bold ${tc}`}>{t}</p><p className="text-2xl font-black text-white tabular-nums">{n}</p><p className="text-[10px] text-zinc-400 truncate">{sub}</p></div>
+                        <div className="flex-1 min-w-0"><p className={`text-[11px] font-bold ${tc}`}>{t}</p><p className="text-2xl font-black text-white tabular-nums">{n}</p><p className="text-[10px] text-zinc-400 leading-snug">{sub}</p></div>
                         <Ring pct={pct(n)} color={col} />
                     </div>
+                ))}
+            </div>
+
+            {/* ── Colour key (the same meaning everywhere on this page) ── */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 rounded-xl bg-zinc-900/40 border border-zinc-800/80 text-xs" data-testid="colour-key">
+                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Colour key</span>
+                {([
+                    ["bg-emerald-500", "Completed — fully verified"],
+                    ["bg-sky-500", "Submitted — waiting for verification"],
+                    ["bg-amber-400", "Pending — class not over yet"],
+                    ["bg-red-500", "Missed / sent back — action needed from you"],
+                    ["bg-zinc-500", "Not submitted yet"],
+                ] as const).map(([c, l]) => (
+                    <span key={l} className="flex items-center gap-1.5 text-zinc-300"><span className={`w-2.5 h-2.5 rounded-full ${c}`} />{l}</span>
                 ))}
             </div>
 
@@ -484,7 +489,7 @@ export default function LectureReportPage() {
                         </thead>
                         <tbody className="divide-y divide-zinc-800/60">
                             {shown.map(r => (
-                                <tr key={keyOf(r)} className="align-top hover:bg-white/[0.02]" data-testid="record-row">
+                                <tr key={keyOf(r)} className={`align-top hover:bg-white/[0.02] border-l-4 ${edge(r)}`} data-testid="record-row">
                                     <td className="py-4 px-2 text-center"><span className="text-xl font-black text-zinc-400 tabular-nums">{r.lectureNumber || "—"}</span></td>
                                     <td className="py-4 px-3"><Lesson r={r} /></td>
                                     <td className="py-4 px-3"><Schedule r={r} /></td>
@@ -498,7 +503,7 @@ export default function LectureReportPage() {
                     </table>
                     <div className="min-[1360px]:hidden grid grid-cols-1 md:grid-cols-2 gap-3 p-3" data-testid="records-cards">
                         {shown.map(r => (
-                            <div key={keyOf(r)} className="p-4 space-y-3 rounded-xl border border-zinc-800 bg-zinc-900/50 flex flex-col" data-testid="record-card">
+                            <div key={keyOf(r)} className={`p-4 space-y-3 rounded-xl border border-zinc-800 border-l-4 ${edge(r)} bg-zinc-900/50 flex flex-col`} data-testid="record-card">
                                 <div className="flex items-start gap-3">
                                     <span className="shrink-0 w-9 h-9 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-sm font-black text-zinc-300">{r.lectureNumber || "—"}</span>
                                     <div className="flex-1 min-w-0"><Lesson r={r} /></div>

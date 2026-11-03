@@ -26,14 +26,28 @@ const GUIDELINES = [
     { score: 2.0, text: "Needs improvement", tone: "bg-amber-500/15 text-amber-300 border-amber-500/30" },
     { score: 1.0, text: "Unsatisfactory performance", tone: "bg-red-500/15 text-red-300 border-red-500/30" },
 ];
-/** Last 12 months + next month, e.g. "October 2026" */
-const periodOptions = () => {
-    const now = new Date();
-    return Array.from({ length: 13 }, (_, i) => {
-        const d = new Date(now.getFullYear(), now.getMonth() + 1 - i, 1);
-        return `${d.toLocaleString("en-US", { month: "long" })} ${d.getFullYear()}`;
-    });
+/**
+ * Feedback is given twice a month: 1st–15th and 16th–last day (28 / 29 / 30 / 31).
+ * Period label = the existing half-month format, e.g. "Oct 01 - Oct 15, 2026" and "Oct 16 - Oct 31, 2026".
+ */
+const halfPeriod = (y: number, m: number, second: boolean) => {
+    const mon = new Date(y, m, 1).toLocaleString("en-US", { month: "short" });
+    const last = new Date(y, m + 1, 0).getDate();
+    return second ? `${mon} 16 - ${mon} ${last}, ${y}` : `${mon} 01 - ${mon} 15, ${y}`;
 };
+/** The half-month that contains today (IST) */
+const currentPeriod = () => {
+    const ist = new Date(Date.now() + 5.5 * 3600000);
+    return halfPeriod(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() > 15);
+};
+/** Last 12 months + next month, both halves of each, newest first */
+const periodOptions = () => {
+    const ist = new Date(Date.now() + 5.5 * 3600000);
+    return Array.from({ length: 13 }, (_, i) => new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth() + 1 - i, 1)))
+        .flatMap(d => [halfPeriod(d.getUTCFullYear(), d.getUTCMonth(), true), halfPeriod(d.getUTCFullYear(), d.getUTCMonth(), false)]);
+};
+/** Attendance points are also kept in monthlyScores (same half-month labels, no date / rater) — they are not feedback */
+const isFeedback = (s: any) => !!(s?.date || s?.ratedBy || s?.comment);
 
 /** Monthly Feedback audiences — the role decides the tab, the logged-in user's reportee scope decides who is listed */
 const AUDIENCES = {
@@ -68,11 +82,7 @@ export default function MonthlyReportPage() {
     const [screenshotUrl, setScreenshotUrl] = useState<string>("");
     const [comment, setComment] = useState<string>("");
     const [isUploading, setIsUploading] = useState(false);
-    const [period, setPeriod] = useState<string>(() => {
-        const now = new Date();
-        const month = now.toLocaleString('en-US', { month: 'long' });
-        return `${month} ${now.getFullYear()}`;
-    });
+    const [period, setPeriod] = useState<string>(() => currentPeriod());
     const [search, setSearch] = useState("");
     const [tab, setTab] = useState<Audience>("faculty");
     // keep the chosen tab across refreshes (?tab=om)
@@ -182,8 +192,8 @@ export default function MonthlyReportPage() {
     const q = search.trim().toLowerCase();
     const listed = q ? tabReportees.filter(e => `${e.name} ${e.id} ${e.designation || ""}`.toLowerCase().includes(q)) : tabReportees;
     const selected = tabReportees.find(e => e.id === selectedId);
-    const existing = selected?.monthlyScores?.find((s: any) => s.period === period) as any;
-    const givenFor = (emp: any) => !!emp.monthlyScores?.some((s: any) => s.period === period);
+    const existing = selected?.monthlyScores?.find((s: any) => s.period === period && isFeedback(s)) as any;
+    const givenFor = (emp: any) => !!emp.monthlyScores?.some((s: any) => s.period === period && isFeedback(s));
     const fmtDt = (v?: string) => { if (!v) return "—"; const d = new Date(v); return isNaN(d.getTime()) ? v : (/T/.test(v) ? d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }) : v.split("-").reverse().join("-")); };
     const startUpdate = () => {
         if (!existing) return;

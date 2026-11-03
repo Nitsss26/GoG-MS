@@ -8,6 +8,8 @@
  *   no_clock_in    No Clock-In            — scheduled employee, no clock-in, after the 11:59 AM clock-in cutoff,
  *                                           not on leave / holiday / weekly off
  *   no_clock_out   No Clock-Out           — the existing Missing Clock-Out detection (final clock-out of the day only)
+ *   full_attire    Full Attire Review     — one email per professor after HR accepts / rejects a Full Attire photo
+ *                                           (src/lib/full-attire.ts); CC HR, HR Executive, Founders and the professor's HOI
  *
  * Detection / rejection never sends these mails any more; it only makes the row appear here. Every send:
  * re-checks eligibility → claims the send (unique lock row: one send even if HR and HR Executive click together)
@@ -20,6 +22,8 @@ import { ManualEmail, ManualEmailLock } from '@/models/ManualEmail';
 import { sendMailInternal } from '@/lib/mail-server';
 import { composeViolationMail, escalation, fmtDuration, istNow, NOT_COUNTED } from '@/lib/attendance-violations';
 import { FlagRemoval } from '@/models/SalaryModule';
+import { FullAttireReview, FullAttireSubmission } from '@/models/FullAttire';
+import { fullAttireCc, fullAttireRejectCc } from '@/lib/full-attire';
 
 /** Late clock-in violation ids removed through Flag Removal (they no longer count and need no email) */
 async function removedLateIds(employeeIds: string[]) {
@@ -30,10 +34,10 @@ async function removedLateIds(employeeIds: string[]) {
 import { getExpectedTimingInternal } from '@/lib/attendance-utils';
 import { DRESS_CODE_REASONS, dressReasonText } from '@/lib/dress-code-reasons';
 
-export type EmailCategory = 'dress_code' | 'late_clock_in' | 'no_clock_in' | 'no_clock_out';
-export const CATEGORIES: EmailCategory[] = ['dress_code', 'late_clock_in', 'no_clock_in', 'no_clock_out'];
+export type EmailCategory = 'dress_code' | 'late_clock_in' | 'no_clock_in' | 'no_clock_out' | 'full_attire';
+export const CATEGORIES: EmailCategory[] = ['dress_code', 'late_clock_in', 'no_clock_in', 'no_clock_out', 'full_attire'];
 export const CATEGORY_LABEL: Record<EmailCategory, string> = {
-    dress_code: 'Dress Code Rejection', late_clock_in: 'Late Clock-In', no_clock_in: 'No Clock-In', no_clock_out: 'No Clock-Out',
+    dress_code: 'Dress Code Rejection', late_clock_in: 'Late Clock-In', no_clock_in: 'No Clock-In', no_clock_out: 'No Clock-Out', full_attire: 'Full Attire',
 };
 /** Row statuses: the five email statuses + the two "on hold" states of a late clock-in */
 export type RowStatus = 'not_sent' | 'sending' | 'sent' | 'failed' | 'not_required' | 'pending_review' | 'awaiting_justification';
@@ -126,6 +130,29 @@ function noClockOutMail(row: any) {
         'You are requested to review your attendance and complete the necessary correction or clarification through the prescribed process.',
         'If this is due to a technical issue, please inform the HR Team.',
     ]);
+    return { subject, html, text };
+}
+
+function fullAttireMail(row: any) {
+    const d = row.details;
+    const accepted = d.decision === 'accepted';
+    const subject = `GOG OMS | Full Attire Review — ${row.employeeName}`;
+    const { html, text } = renderMail(row.employeeName,
+        ['Your Full Attire verification has been reviewed through the GOG OMS.'],
+        [
+            ['Employee Name', row.employeeName], ['Employee ID', row.employeeId], ['College', d.collegeName || row.locationName || '—'],
+            ['Verification Date', longDate(row.date)], ['Submitted By', d.submittedBy || '—'],
+            ['Review Status', accepted ? 'Accepted' : 'Rejected'], ['Reviewed By', `${d.reviewedBy || '—'}${d.reviewedByRole ? ` (${d.reviewedByRole})` : ''}`],
+            ...(accepted ? [] : [['Reason for Rejection', d.reasonText || '—'] as [string, string]]),
+            ...(d.explanation ? [['Additional Remarks', d.explanation] as [string, string]] : []),
+        ],
+        ['Please review the details available in your GOG OMS portal.']);
+    // no group photo in the email (privacy); only the reviewer's own evidence image of a rejection, as a link
+    if (!accepted && d.evidenceUrl) {
+        const at = html.lastIndexOf('<p>Regards,');
+        const block = `<p style="font-family:Arial,sans-serif;font-size:14px;color:#18181b"><b>Supporting Evidence:</b> <a href="${esc(d.evidenceUrl)}">View image</a></p>\n`;
+        return { subject, html: html.slice(0, at) + block + html.slice(at), text: text.replace('Regards,', `Supporting Evidence: ${d.evidenceUrl}\n\nRegards,`) };
+    }
     return { subject, html, text };
 }
 
@@ -378,10 +405,40 @@ function applyFilters(rows: any[], f: Filters) {
         .sort((a, b) => (b.date || '').localeCompare(a.date || '') || a.employeeName.localeCompare(b.employeeName));
 }
 
+// ─────────────────────────── Full Attire ───────────────────────────
+/** One row per reviewed professor (accepted or rejected), by verification (submission) date */
+async function fullAttireRows(f: Filters, locs: Map<string, string>) {
+    const q: any = { status: { $in: ['accepted', 'rejected'] } };
+    if (f.employeeId) q.professorId = f.employeeId;
+    if (f.relatedRecordId) q.id = f.relatedRecordId;
+    const revs: any[] = await FullAttireReview.find(q).select('-history').lean();
+    if (!revs.length) return [];
+    const subs: any[] = await FullAttireSubmission.find({ id: { $in: Array.from(new Set(revs.map(r => r.submissionId))) } }).select('id submittedAt omName type collegeName').lean();
+    const sm = new Map(subs.map(s => [s.id, s]));
+    const emps = await employeeMap(Array.from(new Set(revs.map(r => r.professorId))));
+    const docs = await manualDocs(revs.map(r => `full_attire:${r.id}`));
+    const out: any[] = [];
+    for (const r of revs) {
+        const emp = emps.get(r.professorId); const sub = sm.get(r.submissionId);
+        if (!emp || !sub) continue;
+        const date = istNow(new Date(sub.submittedAt)).ymd;
+        if (date < f.from || date > f.to) continue;
+        const doc = docs.get(`full_attire:${r.id}`);
+        const details = {
+            decision: r.status, reasonText: dressReasonText(r.reasons, r.other), explanation: r.explanation || '', evidenceUrl: r.evidenceUrl || '',
+            submissionId: r.submissionId, submissionType: sub.type, position: r.position, submittedBy: sub.omName || '', collegeName: r.collegeName || sub.collegeName || '',
+            reviewedBy: r.reviewedByName || '', reviewedByRole: r.reviewedByRole || '', reviewedAt: r.reviewedAt || '',
+        };
+        out.push(withEmail(baseRow('full_attire', r.id, emp, date, locs), emailState(doc), doc, { details }));
+    }
+    return out;
+}
+
 export async function listRows(category: EmailCategory, fIn: Filters) {
     const f = { ...fIn, ...normalizeRange(fIn.from, fIn.to) };
     const locs = await locationNames();
     const rows = category === 'dress_code' ? await dressRows(f, locs)
+        : category === 'full_attire' ? await fullAttireRows(f, locs)
         : category === 'late_clock_in' ? await lateRows(f, locs)
             : category === 'no_clock_in' ? await noClockInRows(f, locs)
                 : await noClockOutRows(f, locs);
@@ -392,16 +449,16 @@ export async function listRows(category: EmailCategory, fIn: Filters) {
 export async function overview(fIn: Filters) {
     const f = { ...fIn, ...normalizeRange(fIn.from, fIn.to) };
     const locs = await locationNames();
-    const [d, l, ni, no] = await Promise.all([dressRows(f, locs), lateRows(f, locs), noClockInRows(f, locs), noClockOutRows(f, locs)]);
+    const [d, l, ni, no, fa] = await Promise.all([dressRows(f, locs), lateRows(f, locs), noClockInRows(f, locs), noClockOutRows(f, locs), fullAttireRows(f, locs)]);
     const pending = (rows: any[]) => rows.filter(r => r.status === 'not_sent' || r.status === 'failed').length;
     const today = istNow().ymd;
     const sentDocs: any[] = await ManualEmail.find({ emailStatus: 'sent' }).select('sentAt').lean();
     const sentToday = sentDocs.filter(x => x.sentAt && istNow(new Date(x.sentAt)).ymd === today).length;
     const failed = await ManualEmail.countDocuments({ emailStatus: 'failed' });
-    const all = [...d, ...l, ...ni, ...no];
+    const all = [...d, ...l, ...ni, ...no, ...fa];
     return {
         from: f.from, to: f.to,
-        cards: { dress_code: pending(d), late_clock_in: pending(l), no_clock_in: pending(ni), no_clock_out: pending(no), sentToday, failed },
+        cards: { dress_code: pending(d), late_clock_in: pending(l), no_clock_in: pending(ni), no_clock_out: pending(no), full_attire: pending(fa), sentToday, failed },
         departments: Array.from(new Set(all.map(r => r.dept).filter(Boolean))).sort(),
         locations: Array.from(new Map(all.filter(r => r.location).map(r => [r.location, r.locationName])).entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
     };
@@ -454,6 +511,9 @@ async function freshRow(category: EmailCategory, relatedRecordId: string) {
         const m = /^(.+):(\d{4}-\d{2}-\d{2})$/.exec(relatedRecordId);
         if (!m) return null;
         employeeId = m[1]; date = m[2];
+    } else if (category === 'full_attire') {
+        const rows = await fullAttireRows({ from: '2000-01-01', to: '2999-12-31', relatedRecordId }, await locationNames());
+        return rows.find(r => r.relatedRecordId === relatedRecordId) || null;
     } else if (category === 'dress_code') {
         if (!/^[a-f0-9]{24}$/i.test(relatedRecordId)) return null;
         const r: any = await Attendance.findById(relatedRecordId).select('employeeId date').lean();
@@ -505,13 +565,21 @@ export async function sendManualEmail(actor: any, categoryIn: string, relatedRec
     await ManualEmail.updateOne({ key }, { $set: { emailStatus: 'sending', sendingAt: now, attemptCount: attemptNo, updatedAt: now } });
 
     // 3. compose with the current data
-    let mail: { subject: string; html: string; text: string; storedHtml?: string; attachments?: any[] };
+    let mail: { subject: string; html: string; text: string; storedHtml?: string; attachments?: any[]; cc?: string[]; noAutoCc?: boolean };
     let warningLevel: number | undefined;
     if (category === 'late_clock_in') {
         const v: any = await AttendanceViolation.findOne({ id: relatedRecordId }).lean();
         warningLevel = await lateLevel(v);
         const lvl = escalation(warningLevel);
         mail = composeViolationMail({ ...v, instance: warningLevel, level: lvl.level, proposedDeduction: lvl.proposedDeduction, hrStatus: warningLevel >= 4 ? (v.hrStatus === 'Approved for Payroll' ? v.hrStatus : 'Pending HR Verification') : v.hrStatus });
+    } else if (category === 'full_attire') {
+        // TO the professor only; CC HR, HR Executive, all Founders and the professor's own HOI(s)
+        // Rejected: CC admin, HR, HR Executive, the professor's HOI(s) and OM(s) — exactly these (no automatic copies)
+        // Accepted: as before
+        const own = String(row.email || '').trim().toLowerCase();
+        mail = (row.details?.decision || row.decision) === 'rejected'
+            ? { ...fullAttireMail(row), cc: (await fullAttireRejectCc(row.employeeId, row.location, row.details?.submissionId || row.submissionId)).filter(e => e !== own), noAutoCc: true }
+            : { ...fullAttireMail(row), cc: (await fullAttireCc(row.employeeId, row.location)).filter(e => e !== own) };
     } else mail = category === 'dress_code' ? dressMail(row) : category === 'no_clock_in' ? noClockInMail(row) : noClockOutMail(row);
 
     // 4. send (existing mail service)
@@ -519,7 +587,7 @@ export async function sendManualEmail(actor: any, categoryIn: string, relatedRec
     let res: any;
     if (!EMAIL_RE.test(email)) res = { success: false, error: 'Employee has no valid email address.' };
     else {
-        res = await sendMailInternal({ to: email, subject: mail.subject, html: mail.html, text: mail.text, ...(mail.attachments ? { attachments: mail.attachments } : {}) }).catch((e: any) => ({ success: false, error: String(e?.message || e) }));
+        res = await sendMailInternal({ to: email, subject: mail.subject, html: mail.html, text: mail.text, ...(mail.attachments ? { attachments: mail.attachments } : {}), ...(mail.cc?.length ? { cc: mail.cc } : {}), ...(mail.noAutoCc ? { noAutoCc: true } : {}) }).catch((e: any) => ({ success: false, error: String(e?.message || e) }));
         if (res?.success && res.messageId === 'skipped-mails-stopped') res = { success: false, error: 'Emails are stopped for this employee.' };
     }
     const at = nowIso();

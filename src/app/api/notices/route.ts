@@ -33,6 +33,8 @@ export async function GET() {
             const scope: string[] = n.collegeIds || [];
             if (!scope.length) return true;
             if (!actor) return false;
+            // HOI college announcement: visible to everyone (only its e-mail goes to the selected colleges' professors / OMs)
+            if (n.source === 'HOI_COLLEGE_ANNOUNCEMENT' || n.source === 'HR_ANNOUNCEMENT') return true;
             return seesAll || n.createdById === actor.id || scope.some(id => mine.has(id));
         });
         // newest first (holiday announcements carry a date; ties keep the stored order)

@@ -348,7 +348,11 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
                 return fail(409, `This plan is already ${PLAN_STATUS_LABEL[status]}.`);
             }
             const entries = plainEntries(plan);
-            if (!entries.length) return fail(400, 'Add at least one class before locking the plan.');
+            // A plan that was locked before may be re-locked with no classes (all classes of the week removed);
+            // the first lock still needs at least one class
+            const prior: any = await SprintPlan.findById(plan._id).select('unlockSnapshot').lean();
+            const isRelock = status === 'UNLOCKED_FOR_REVISION' || status === 'RESUBMITTED' || !!prior?.unlockSnapshot;
+            if (!entries.length && !isRelock) return fail(400, 'Add at least one class before locking the plan.');
             const v = validateSprintEntries(entries);
             if (!v.valid) return fail(400, v.error || 'Some classes have invalid times.');
             const missing = entries.findIndex((e: any) => !e.subjectName || !e.topics);
@@ -382,7 +386,7 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
                 { label: 'Sprint Week', value: weekText(plan.weekStartDate, plan.weekEndDate) },
                 { label: 'Status', value: relock ? 'Updated & Re-Locked' : 'Locked' },
                 { label: relock ? 'Re-Locked At' : 'Locked At', value: istTime(now) },
-                { label: 'Classes', value: String(entries.length) },
+                { label: 'Classes', value: entries.length ? String(entries.length) : 'No classes this week (all removed)' },
             ];
             await notifySafe({
                 recipients,

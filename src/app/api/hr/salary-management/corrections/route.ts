@@ -3,7 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import { Employee } from '@/models/Schemas';
 import { CorrectionTicket, PayableCorrection } from '@/models/SalaryModule';
 import { getSessionUser } from '@/lib/session-user';
-import { canCorrectPayable, isYmd, istToday, nowIso, actorRoleLabel, payableDaysFor, notifyEmployee, fmtDate, monthLabel, meaningfulReason, CORRECTION_CATEGORIES, NON_PAYABLE_CATEGORIES, IMAGE_URL_RE } from '@/lib/salary-module';
+import { canCorrectPayable, isYmd, istToday, nowIso, actorRoleLabel, payableDaysFor, notifyEmployee, fmtDate, monthLabel, CORRECTION_CATEGORIES, NON_PAYABLE_CATEGORIES, IMAGE_URL_RE } from '@/lib/salary-module';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
         const category = String(b.category || '');
         if (!(toPay ? CORRECTION_CATEGORIES : NON_PAYABLE_CATEGORIES).includes(category)) return NextResponse.json({ error: 'Choose a correction category.' }, { status: 400 });
         const reason = String(b.reason || '').trim();
-        if (!meaningfulReason(reason)) return NextResponse.json({ error: 'Write a proper reason (at least 20 characters, a full sentence).' }, { status: 400 });
+        if (!reason) return NextResponse.json({ error: 'Enter the reason for the correction.' }, { status: 400 });
         const evidence = (Array.isArray(b.evidenceUrls) ? b.evidenceUrls : []).map((u: any) => String(u || '').trim()).filter(Boolean);
         if (evidence.length > 5 || evidence.some((u: string) => !IMAGE_URL_RE.test(u) || u.length > 2048)) return NextResponse.json({ error: 'Evidence must be uploaded files (up to 5).' }, { status: 400 });
 

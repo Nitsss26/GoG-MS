@@ -30,7 +30,7 @@ import {
 import { CUSTOM_SCHEDULE_RULES, FALLBACK_TIMINGS, isThirdSaturday } from '@/lib/attendance-config';
 
 // ─── TYPES ───
-export type Role = "FOUNDER" | "HR" | "AD" | "TL" | "HOI" | "OM" | "FACULTY" | "PROFESSOR" | "MARKETING_TEAM" | "TECH_TEAM" | "CURRICULUM_HEAD" | "CURRICULUM_LEAD" | "HR_EXECUTIVE";
+export type Role = "FOUNDER" | "HR" | "AD" | "TL" | "HOI" | "OM" | "FACULTY" | "PROFESSOR" | "MARKETING_TEAM" | "TECH_TEAM" | "TECH_INTERN" | "CURRICULUM_HEAD" | "CURRICULUM_LEAD" | "HR_EXECUTIVE";
 
 /**
  * HR Executive (stored role HR_EXECUTIVE) uses the HR portal: in the portal the user acts as "HR" with
@@ -697,7 +697,7 @@ interface AuthContextType {
     editNotice: (id: string, data: { title?: string; content?: string; category?: Notice["category"] }) => Promise<void>;
     markAnnouncementRead: (noticeId: string) => void;
     updateProfile: (data: Partial<Employee>) => void; // Added updateProfile
-    clockIn: (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number, isShortLeave?: boolean, mode?: "WFH" | "OFFICE") => Promise<void>;
+    clockIn: (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number, isShortLeave?: boolean, mode?: "WFH" | "OFFICE", justification?: { lateReason?: string; locationReason?: string }) => Promise<any>;
     clockOut: (time: string, isShortLeave?: boolean, lat?: number, lng?: number, clockOutImageUrl?: string) => Promise<void>;
     /** HOI / OM: detect (preview) or record a clock-in at another assigned location of the same day */
     locationClockIn: (lat: number, lng: number, accuracy?: number, preview?: boolean) => Promise<any>;
@@ -795,6 +795,28 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 const birthdayEmailsSent = new Set<string>();
 
 // ─── PROVIDER ───
+/**
+ * Clears browser storage (security kill switch) but keeps the professors' unsaved Sprint Plan drafts
+ * ("gog.sprintDraft.v1:<professor>:<week>" — only timetable entries, nothing sensitive) so a reload, a closed tab,
+ * a page change or a logout does not lose them. Drafts older than 30 days are dropped.
+ */
+const clearStorageKeepDrafts = () => {
+    try {
+        const keep: [string, string][] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i) || "";
+            if (!k.startsWith("gog.sprintDraft.v1:")) continue;
+            const v = localStorage.getItem(k) || "";
+            try {
+                const at = Date.parse(JSON.parse(v)?.savedAt || "");
+                if (!isNaN(at) && Date.now() - at < 30 * 86400000) keep.push([k, v]);
+            } catch { /* broken entry: dropped */ }
+        }
+        localStorage.clear();
+        keep.forEach(([k, v]) => { try { localStorage.setItem(k, v); } catch { } });
+    } catch { }
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
     const [authLoading, setAuthLoading] = useState(true);
@@ -832,7 +854,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 else if (emp.role === "CURRICULUM_LEAD") level = "CurriculumLead";
                 else if (emp.role === "AD" || emp.role === "HR" || emp.role === "TL") level = "Management";
                 else if (emp.role === "HOI") level = "Leadership";
-                else if (emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM") level = "OM";
+                else if (emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM" || emp.role === "TECH_INTERN") level = "OM";
                 else if (emp.role === "FACULTY" || emp.role === "PROFESSOR") level = "Faculty";
 
                 // Enforce "Tech Lead" designation for TL role (Failsafe)
@@ -842,7 +864,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 let parentId = Array.isArray(emp.reportsTo) ? emp.reportsTo[0] : emp.reportsTo;
 
                 // Fallback for academic/ops staff to ensure they have a parent if reportsTo is missing
-                if (!parentId && (emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM" || emp.role === "PROFESSOR" || emp.role === "FACULTY")) {
+                if (!parentId && (emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM" || emp.role === "TECH_INTERN" || emp.role === "PROFESSOR" || emp.role === "FACULTY")) {
                     // Logic for default reporting to be dynamic if possible, 
                     // otherwise default to Founder (or stay unassigned)
                     parentId = "FND001";
@@ -879,10 +901,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // ─── SESSION MANAGEMENT (Server-Side — No localStorage) ───
     useEffect(() => {
-        // SECURITY KILL SWITCH: Clear ALL localStorage on every mount
+        // SECURITY KILL SWITCH: Clear localStorage on every mount (except unsaved Sprint Plan drafts)
         // This ensures no sensitive data (passwords, salaries, etc.) persists in the browser
         if (typeof window !== 'undefined') {
-            try { localStorage.clear(); } catch { }
+            clearStorageKeepDrafts();
         }
 
         // Restore session from HTTP-only cookie via server API
@@ -1025,8 +1047,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     if (Array.isArray(wData?.applications)) setApprovedWfh(wData.applications);
                 } catch { /* attendance falls back to the schedule */ }
 
-                // HR Executive has no Reimbursements access
-                if (!user.hrExecutive) {
+                // HR Executive and Tech Intern have no Reimbursements access
+                if (!user.hrExecutive && user.role !== "TECH_INTERN") {
                     const rRes = await fetch(`/api/reimbursements?userId=${user.id}&role=${user.role}`);
                     const rData = await rRes.json();
                     if (Array.isArray(rData)) setReimbursements(rData);
@@ -1252,7 +1274,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const hasAssignedHOI = employees.some(m => m.role === "HOI" && assignedIds.includes(m.id));
                 return ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(e.role) && (isReportee || (!hasAssignedHOI && isLocationMatch));
             }
-            if (["OM", "MARKETING_TEAM", "TECH_TEAM"].includes(manager.role)) {
+            if (["OM", "MARKETING_TEAM", "TECH_TEAM", "TECH_INTERN"].includes(manager.role)) {
                 return ["FACULTY", "PROFESSOR"].includes(e.role) && isReportee;
             }
 
@@ -1318,7 +1340,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     const logout = async () => {
         try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { }
-        if (typeof window !== 'undefined') { try { localStorage.clear(); } catch { } }
+        if (typeof window !== 'undefined') { clearStorageKeepDrafts(); }
         setUser(null);
         router.push('/login');
     };
@@ -1401,13 +1423,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const rest = prev.filter(r => !(r.employeeId === rec.employeeId && r.date === rec.date));
         return [...rest, rec];
     });
-    const clockIn = async (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number, isShortLeave?: boolean, mode?: "WFH" | "OFFICE") => {
+    // Returns { justificationRequired, requires, late, location } when the server needs a justification BEFORE the
+    // clock-in (late arrival and / or location change) — nothing is recorded until it is submitted.
+    const clockIn = async (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number, isShortLeave?: boolean, mode?: "WFH" | "OFFICE", justification?: { lateReason?: string; locationReason?: string }) => {
         if (!user) return;
         if (clockInBusy.current) return;
         clockInBusy.current = true;
-        try { await clockInOnce(location, time, dressCodeImageUrl, lat, lng, isShortLeave, mode); } finally { clockInBusy.current = false; }
+        try { return await clockInOnce(location, time, dressCodeImageUrl, lat, lng, isShortLeave, mode, justification); } finally { clockInBusy.current = false; }
     };
-    const clockInOnce = async (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number, isShortLeave?: boolean, mode?: "WFH" | "OFFICE") => {
+    const clockInOnce = async (location: string, time: string, dressCodeImageUrl?: string, lat?: number, lng?: number, isShortLeave?: boolean, mode?: "WFH" | "OFFICE", justification?: { lateReason?: string; locationReason?: string }): Promise<any> => {
         if (!user) return;
 
         // Founders skip all restrictions
@@ -1454,15 +1478,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const res = await fetch("/api/attendance/clock-in", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ employeeId: user.id, location, time, dressCodeImageUrl, role: user.role, lat, lng, isShortLeave, mode })
+                body: JSON.stringify({ employeeId: user.id, location, time, dressCodeImageUrl, role: user.role, lat, lng, mode, ...(justification || {}) })
             });
             const data = await res.json();
+            if (res.status === 428 && data.justificationRequired) return data;
             if (data.record) {
                 upsertAttendanceRecord(data.record);
                 if (data.alreadyClockedIn) alert(data.error || "You have already clocked in today.");
             } else {
                 alert(data.error || "Clock-in failed");
             }
+            return data;
         } catch (err) {
             console.error("Clock-in error:", err);
             alert("Could not reach the server. Clock-in was not recorded — please try again.");
@@ -1672,7 +1698,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Robust state update: calculate the new array first
             const existingScores = emp.monthlyScores || [];
             // Remove any existing entry for the same period to avoid duplicates if re-rated
-            const filteredScores = existingScores.filter(s => s.period !== period);
+            // (attendance-point entries of the same period — no date / rater — are kept)
+            const filteredScores = existingScores.filter((s: any) => s.period !== period || !(s.date || s.ratedBy || s.comment));
             const updatedScores = [...filteredScores, newScore];
 
             // 1. Update DB first to ensure persistence
@@ -1840,7 +1867,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const now = new Date();
         const appliedAt = now.toISOString();
 
-        const isHierarchical = user.role === "OM" || user.role === "MARKETING_TEAM" || user.role === "TECH_TEAM" || user.role === "PROFESSOR" || user.role === "FACULTY";
+        const isHierarchical = user.role === "OM" || user.role === "MARKETING_TEAM" || user.role === "TECH_TEAM" || user.role === "TECH_INTERN" || user.role === "PROFESSOR" || user.role === "FACULTY";
         const initialStatus = isHierarchical ? "Pending HOI Approval" : "Pending";
 
         const newLeave: LeaveRequest = {
