@@ -14,7 +14,8 @@ import {
  * Multiple), confirm the left → right standing order, capture ONE photo and submit it for HR review.
  * Professors come from the server (the OM's own college scope); the server checks the scope again on submit.
  */
-type Prof = { id: string; name: string; dept: string; designation: string; college: string };
+type Today = { reviewId: string; submissionId: string; status: string; at: string } | null;
+type Prof = { id: string; name: string; dept: string; designation: string; college: string; today?: Today; self?: boolean };
 const MAX_GROUP = 20;
 const MAX_BYTES = 5 * 1024 * 1024;
 const dt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
@@ -23,7 +24,9 @@ const ST: Record<string, { l: string; c: string; I: any }> = {
     pending: { l: "Pending", c: "text-amber-300 bg-amber-500/10 border-amber-500/25", I: Clock },
     accepted: { l: "Accepted", c: "text-emerald-300 bg-emerald-500/10 border-emerald-500/25", I: CheckCircle2 },
     rejected: { l: "Rejected", c: "text-red-300 bg-red-500/10 border-red-500/25", I: XCircle },
+    replaced: { l: "Replaced (re-uploaded)", c: "text-zinc-400 bg-zinc-800/60 border-zinc-700", I: RefreshCw },
 };
+const tm = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true }) : "");
 
 export default function FullAttirePage() {
     const { user } = useAuth();
@@ -70,7 +73,7 @@ export default function FullAttirePage() {
             const up = await uploadToCloudinary(file);
             const r = await fetch("/api/full-attire", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ clientKey: keyRef.current, imageUrl: up.secure_url, capturedAt: photo.capturedAt, order }),
+                body: JSON.stringify({ clientKey: keyRef.current, imageUrl: up.secure_url, capturedAt: photo.capturedAt, order, reupload: reupIds.length > 0 }),
             });
             const d = await r.json().catch(() => ({}));
             if (!r.ok) throw new Error(d.error || "Could not submit");
@@ -84,6 +87,8 @@ export default function FullAttirePage() {
     if (user.role !== "OM") return <div className="p-8 text-center text-sm text-zinc-500">Full Attire capture is for Operations Managers.</div>;
 
     const group = order.length > 1;
+    /** selected professors whose Full Attire was already uploaded today (any OM) */
+    const reupIds = order.filter(id => byId.get(id)?.today);
     return (
         <div className="p-3 sm:p-6 space-y-4 max-w-5xl mx-auto w-full" data-testid="full-attire-om">
             <header className="space-y-1">
@@ -107,7 +112,7 @@ export default function FullAttirePage() {
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 items-start">
                 {/* professor list — big touch targets */}
                 <section className="rounded-2xl border border-zinc-800 bg-zinc-900/50 overflow-hidden" data-testid="fa-list">
-                    <p className="px-4 py-2.5 border-b border-zinc-800 text-[10px] font-black uppercase tracking-widest text-zinc-500">Professors ({shown.length})</p>
+                    <p className="px-4 py-2.5 border-b border-zinc-800 text-[10px] font-black uppercase tracking-widest text-zinc-500">Professors & You ({shown.length})</p>
                     {!data ? <div className="py-12 flex justify-center"><Loader2 className="animate-spin text-primary" /></div>
                         : !shown.length ? <p className="py-10 text-center text-xs text-zinc-500">No professors found.</p> : (
                             <div className="divide-y divide-zinc-800/70 max-h-[60vh] overflow-y-auto">
@@ -121,8 +126,13 @@ export default function FullAttirePage() {
                                                 {on ? (mode === "multiple" ? idx + 1 : <Check size={14} />) : null}
                                             </span>
                                             <span className="min-w-0 flex-1">
-                                                <span className="block text-sm font-bold text-white [overflow-wrap:anywhere]">{p.name}</span>
+                                                <span className="block text-sm font-bold text-white [overflow-wrap:anywhere]">{p.name}{p.self && <span className="ml-1.5 align-middle text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/30" data-testid="fa-self">You</span>}</span>
                                                 <span className="block text-[11px] text-zinc-500 [overflow-wrap:anywhere]">{p.id} · {p.dept || p.designation}{p.college ? ` · ${p.college}` : ""}</span>
+                                                {p.today && (() => { const st = ST[p.today.status] || ST.pending; return (
+                                                    <span className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] font-black border-sky-500/30 bg-sky-500/10 text-sky-200" data-testid="fa-today">
+                                                        <Check size={10} /> Uploaded today {tm(p.today.at)} · <span className={cn("px-1 rounded", st.c)}>{st.l}</span>
+                                                    </span>
+                                                ); })()}
                                             </span>
                                         </button>
                                     );
@@ -158,6 +168,16 @@ export default function FullAttirePage() {
                             </div>
                         )}
 
+                        {reupIds.length > 0 && (
+                            <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2.5 text-[11px] text-sky-100 space-y-1" data-testid="fa-already">
+                                <p className="font-bold flex items-center gap-1.5"><AlertTriangle size={13} /> Already uploaded today{group ? ` (${reupIds.length} of ${order.length})` : ""}</p>
+                                {reupIds.map(id => { const t = byId.get(id)!.today!; const st = ST[t.status] || ST.pending; return (
+                                    <p key={id} className="text-sky-200/90 [overflow-wrap:anywhere]">{group ? `${byId.get(id)?.name}: ` : ""}{tm(t.at)} · {t.submissionId} · <b>{st.l}</b></p>
+                                ); })}
+                                <p className="text-sky-200/70">Re-upload sends a new photo to HR. A photo still pending review is replaced; one HR already reviewed stays as it is.</p>
+                            </div>
+                        )}
+
                         {photo ? (
                             <div className="space-y-2" data-testid="fa-preview">
                                 <img src={photo.url} alt="Captured full attire" className="w-full max-h-[55vh] object-contain rounded-xl border border-zinc-700 bg-black" />
@@ -169,7 +189,7 @@ export default function FullAttirePage() {
                             </div>
                         ) : (
                             <button onClick={() => setCamOpen(true)} data-testid="fa-open-camera" className="w-full h-14 rounded-xl bg-primary text-white text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-primary/20">
-                                <Camera size={18} /> {group ? "Capture Group Photo" : "Capture Image"}
+                                <Camera size={18} /> {reupIds.length ? (group ? "Re-upload Group Photo" : "Re-upload Photo") : group ? "Capture Group Photo" : "Capture Image"}
                             </button>
                         )}
                     </>}

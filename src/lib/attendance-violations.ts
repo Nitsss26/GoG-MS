@@ -11,6 +11,7 @@
  * - Emails use the existing SMTP sender (src/lib/mail-server.ts). Delivery status is saved on the row; failed
  *   emails are retried (max 3 attempts) by the sweep, with an atomic claim so a mail is not sent twice.
  */
+import { isNewPolicy, lateLadder } from '@/lib/attendance-policy';
 import { randomBytes } from 'crypto';
 import { AttendanceViolation, Attendance, Employee, WorkSchedule } from '@/models/Schemas';
 import { FlagRemoval } from '@/models/SalaryModule';
@@ -63,6 +64,7 @@ export function escalation(instance: number) {
 export const LEVEL_LABEL: Record<string, string> = {
     FIRST_WARNING: 'First Warning', SECOND_WARNING: 'Second Warning', FINAL_WARNING: 'Final Warning',
     HALF_DAY: 'Half-Day Deduction', FULL_DAY: 'Full-Day Deduction', MISSING_ALERT: 'Missing Clock-Out Alert',
+    TWO_DAY: 'Two-Day Deduction',
 };
 
 /** Scheduled clock-in / clock-out of an employee on a date (same source as the clock-in / clock-out APIs) */
@@ -80,6 +82,20 @@ type Mail = { subject: string; paragraphs: string[]; rows: [string, string][]; s
 function buildMail(v: any): Mail {
     const sched = fmt12(v.scheduledTime), actual = fmt12(v.actualTime), n = v.instance;
     const status = v.hrStatus === 'Approved for Payroll' ? 'Approved for Payroll' : 'Pending HR Verification';
+    if (v.type === 'LATE_IN' && isNewPolicy(v.date)) {
+        // Late Arrivals Policy: 1st / 2nd warning; 3rd half-day, 4th full-day, 5th+ 2 days' pay cut (automatic)
+        const rows: [string, string][] = [['Attendance Date', fmtDate(v.date)], ['Scheduled Reporting Time', sched], ['Actual Clock-In Time', actual], ['Late Duration', fmtDuration(v.durationMins)], ['Late Arrival Instance (this month)', String(Math.max(1, n || 1))]];
+        if (n <= 1) return { subject: 'First Warning – Late Clock-In', rows,
+            paragraphs: [`This is to inform you that your attendance record for ${fmtDate(v.date)} indicates a late clock-in.`, 'This is your first warning. As per the Late Arrivals Policy, more than 2 late arrivals in a month lead to a pay cut (3rd: half-day, 4th: full-day, 5th onwards: 2 days).'],
+            action: 'Report on time from your next working day.' };
+        if (n === 2) return { subject: 'Second Warning – Repeated Late Clock-In', rows,
+            paragraphs: ['Our attendance records indicate that you have reported late for the second time this month.', 'This is your second warning. As per the Late Arrivals Policy, the next late arrival this month will result in a half-day pay cut.'],
+            action: 'Report on time; the next late arrival this month leads to a half-day pay cut.' };
+        const cut = n === 3 ? 'Half-day pay cut' : n === 4 ? 'Full-day pay cut' : "2 days' pay cut";
+        return { subject: `Attendance Action – ${cut} (Late Clock-In)`, rows: [...rows, ['Pay Cut', cut]], status: 'Applied as per the Late Arrivals Policy',
+            paragraphs: [`Our attendance system has recorded your ${ordinal(n)} Late Clock-In instance this month.`, `As per the Late Arrivals Policy, this results in a ${cut.toLowerCase()}.`, 'Further late arrivals this month will result in a 2 days\' pay cut for each instance.'],
+            action: 'Contact HR if you believe this record is incorrect.' };
+    }
     if (v.type === 'LATE_IN') {
         const base: [string, string][] = [['Attendance Date', fmtDate(v.date)], ['Scheduled Reporting Time', sched], ['Actual Clock-In Time', actual]];
         if (n <= 1) return { subject: 'First Warning – Late Clock-In', rows: [...base, ['Late Duration', fmtDuration(v.durationMins)], ['Late Arrival Instance', '1']],
@@ -183,7 +199,9 @@ export async function recordViolation(input: { emp: any; type: ViolationType; da
         const instance = previous + 1;
         const lvl = type === 'MISSING_OUT'
             ? { level: 'MISSING_ALERT', proposedDeduction: 'Half-Day (if not justified)', hrStatus: 'Awaiting Explanation' }
-            : escalation(instance);
+            : type === 'LATE_IN' && isNewPolicy(date)
+                ? (({ level, proposedDeduction, hrStatus }) => ({ level, proposedDeduction, hrStatus }))(lateLadder(instance))   // Late Arrivals Policy (automatic pay cut)
+                : escalation(instance);
         const doc = {
             id: `AV-${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`.toUpperCase(), key,
             employeeId: emp.id, employeeName: emp.name, email: emp.email || '', type, date, period,

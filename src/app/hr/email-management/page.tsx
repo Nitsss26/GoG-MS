@@ -22,7 +22,7 @@ const TABS: { id: Tab; label: string; icon: any; card?: string }[] = [
 ];
 const TAB_HINT: Record<Tab, string> = {
     dress_code: "Rejected dress code submissions. The rejection email (with the reasons, remarks and photo) is sent only when you click Send Email.",
-    late_clock_in: "A warning can be sent only after the late clock-in justification is rejected. The level (First / Second / Third…) is worked out when you send, from this month's late clock-ins that still count.",
+    late_clock_in: "Approve or Reject a pending justification right here. A warning can be sent after the justification is rejected, or directly when no justification was given. The level (First / Second / Third…) is worked out when you send, from this month's late clock-ins that still count.",
     no_clock_in: "Employees scheduled to work with no clock-in (today after the 11:59 AM cutoff). Leave, holidays and weekly offs are left out.",
     no_clock_out: "Missing final clock-out of the day. Multi-location visits are not counted — only the last clock-out.",
     full_attire: "One email per professor after HR accepts or rejects a Full Attire photo (group photos too). Sent only when you click Send Email — to the professor, CC HR, HR Executive, Founders and their HOI.",
@@ -102,6 +102,27 @@ export default function EmailManagementPage() {
     const [copy, setCopy] = useState<any>(null);
     const [copyLoading, setCopyLoading] = useState("");
     const [reload, setReload] = useState(0);
+    // Late Clock-In justification: decide right here (same decision as Attendance → Late Clock-In Justifications)
+    const [rejectRow, setRejectRow] = useState<any>(null);
+    const [rejectReason, setRejectReason] = useState("");
+    const [deciding, setDeciding] = useState("");
+    const decideLate = async (r: any, action: "approve" | "reject", reason = "") => {
+        setDeciding(`${r.key}:${action}`); setNotice(null);
+        try {
+            const res = await fetch("/api/hr/attendance/late-justifications", {
+                method: "PUT", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: r.details.justificationId, action, reason }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(d.error || "Could not save the decision.");
+            setNotice({ ok: true, text: action === "approve"
+                ? `${r.employeeName}: justification approved — attendance is Normal Clock-In, no warning needed.`
+                : `${r.employeeName}: justification rejected — you can now send the warning email.` });
+            setRejectRow(null); setRejectReason("");
+            setReload(n => n + 1); loadOverview();
+        } catch (e: any) { setNotice({ ok: false, text: e.message || "Could not save the decision." }); }
+        finally { setDeciding(""); }
+    };
 
     useEffect(() => { const t = setTimeout(() => setQ(qLive), 300); return () => clearTimeout(t); }, [qLive]);
     useEffect(() => { setStatus(""); setOpen(""); }, [tab]);
@@ -175,6 +196,18 @@ export default function EmailManagementPage() {
     const actionCell = (r: any) => (
         <td className={cn(td, "text-right")}>
             <div className="flex items-center justify-end gap-1.5">
+                {r.category === "late_clock_in" && r.status === "pending_review" && r.details?.justificationId && (
+                    <>
+                        <button onClick={() => decideLate(r, "approve")} disabled={!!deciding} data-testid="late-approve"
+                            className="h-7 px-2.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">
+                            {deciding === `${r.key}:approve` ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Approve
+                        </button>
+                        <button onClick={() => { setRejectRow(r); setRejectReason(""); }} disabled={!!deciding} data-testid="late-reject"
+                            className="h-7 px-2.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 disabled:opacity-50">
+                            <XCircle size={12} /> Reject
+                        </button>
+                    </>
+                )}
                 {(r.canSend || r.status === "sending" || (r.status === "sent" && !r.sentByRole?.startsWith("Auto"))) && (
                     <SendEmailButton key={`${r.key}:${r.status}:${r.attemptCount}`} small category={r.category} relatedRecordId={r.relatedRecordId} status={r.status}
                         label={r.category === "late_clock_in" ? "Send Warning" : "Send Email"} onDone={onSent(r.key)} />
@@ -387,7 +420,7 @@ export default function EmailManagementPage() {
                                     <tr className="hover:bg-zinc-800/20" data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
                                         {empCell(r)}
                                         <td className={cn(td, "text-zinc-300 whitespace-nowrap")}>{shortDate(r.date)}</td>
-                                        <td className={cn(td, "text-zinc-200")} data-testid="row-reason"><p className="truncate" title={r.details.reasonText}>{r.details.reasonText || <span className="text-zinc-500">—</span>}</p>{r.details.remarks && <p className="text-[10px] text-zinc-500 truncate" title={r.details.remarks}>{r.details.remarks}</p>}</td>
+                                        <td className={cn(td, "text-zinc-200")} data-testid="row-reason"><p className="truncate" title={r.details.reasonText}>{r.details.reasonText || <span className="text-zinc-500">—</span>}</p>{r.warningLabel && <p className={cn("text-[10px] font-semibold", r.details.finePercent ? "text-amber-300" : "text-zinc-400")} data-testid="row-dress-warning">{r.warningLabel}</p>}{r.details.remarks && <p className="text-[10px] text-zinc-500 truncate" title={r.details.remarks}>{r.details.remarks}</p>}</td>
                                         <td className={cn(td, "text-zinc-400 truncate", colCls(3))}>{r.details.reviewedBy || "—"}</td>
                                         <td className={td}><StatusBadge status={r.status} label={r.statusLabel} /></td>
                                         {actionCell(r)}
@@ -489,6 +522,31 @@ export default function EmailManagementPage() {
                     </div>
                 )}
             </section>
+
+            {rejectRow && (
+                <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" data-testid="late-reject-modal" onClick={() => !deciding && setRejectRow(null)}>
+                    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-5 space-y-3" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-start gap-3">
+                            <div className="min-w-0">
+                                <p className="text-sm font-bold text-white">Reject late clock-in justification</p>
+                                <p className="text-[11px] text-zinc-400">{rejectRow.employeeName} ({rejectRow.employeeId}) · {shortDate(rejectRow.date)} · clock-in {t12(rejectRow.details.clockIn)}{rejectRow.details.lateText ? ` (${rejectRow.details.lateText} late)` : ""}</p>
+                            </div>
+                            <button onClick={() => setRejectRow(null)} disabled={!!deciding} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close"><X size={18} /></button>
+                        </div>
+                        <div className="rounded-lg bg-zinc-950/70 border border-zinc-800 px-3 py-2 text-[11px] text-zinc-300 whitespace-pre-wrap [overflow-wrap:anywhere]"><span className="text-zinc-500">Employee's reason: </span>{rejectRow.details.justificationReason || "—"}</div>
+                        <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3} maxLength={1000} placeholder="Reason for rejection (required)" data-testid="late-reject-reason"
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-zinc-600" />
+                        <p className="text-[10px] text-zinc-500">After rejecting, the row shows Send Warning so you can email the employee from here.</p>
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setRejectRow(null)} disabled={!!deciding} className="h-9 px-4 rounded-lg border border-zinc-700 text-xs font-bold text-zinc-300">Cancel</button>
+                            <button onClick={() => decideLate(rejectRow, "reject", rejectReason.trim())} disabled={!!deciding || rejectReason.trim().length < 3} data-testid="late-reject-confirm"
+                                className="h-9 px-4 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-50">
+                                {deciding ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />} Reject
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {copy && (
                 <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" data-testid="sent-copy">

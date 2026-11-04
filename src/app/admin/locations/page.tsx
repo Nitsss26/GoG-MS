@@ -161,7 +161,7 @@ export default function LocationsPage() {
                                     <Edit2 size={16} />
                                 </button>
                                 <button
-                                    onClick={() => { if (confirm('Delete this location?')) deleteCollege(c.id); }}
+                                    onClick={() => { if (confirm('Delete this location?')) deleteCollege(c.id).then(r => { if (!r.ok) alert(r.error); }); }}
                                     className="p-2 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-lg transition-all"
                                 >
                                     <Trash2 size={16} />

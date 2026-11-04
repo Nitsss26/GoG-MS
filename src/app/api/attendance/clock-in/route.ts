@@ -10,8 +10,8 @@ import { createLateAtClockIn, discardLateAtClockIn, finishLateAtClockIn } from '
 import { createAtClockIn as createLocationJustification, discardAtClockIn as discardLocationJustification, finishAtClockIn as finishLocationJustification } from '@/lib/location-justification';
 import { assignedLocationsOf, matchAssignedLocation, makeVisit, locationLabel, MAX_VISIT_ACCURACY_M, UNASSIGNED_LOCATION_ERROR, tracksDetectedAddress, matchedVisitExtras, recordUnmatchedAttempt, unmatchedPlace } from '@/lib/multi-location-attendance';
 
-/** Minutes after the scheduled clock-in time that still count as on time (late from the 11th minute) */
-const LATE_GRACE_MINUTES = 10;
+/** Minutes after the scheduled clock-in time that still count as on time (more than 2 minutes late = Late Clock-In) */
+const LATE_GRACE_MINUTES = 2;
 
 export async function POST(req: Request) {
     try {
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
 
         // 4. Window Timing Check
         // Late Clock-In only after the grace period: up to LATE_GRACE_MINUTES after the scheduled time is on time
-        // (e.g. 09:30 schedule → 09:40 is on time, 09:41 is late). The late duration is still counted from 09:30.
+        // (e.g. 09:30 schedule → 09:32 is on time, 09:33 is late). The late duration is still counted from 09:30.
         const isLate = currentTime > schedTime + LATE_GRACE_MINUTES;
 
         if (!isOverride && currentTime < schedTime - 30) {
@@ -105,8 +105,8 @@ export async function POST(req: Request) {
                 // HOI / OM: a clock-in at ANOTHER assigned location while the day is open is a location visit
                 // (same daily record, same payable day, no new late check / points)
                 const remoteDay = existing.workMode === 'WFH' || String(existing.location || '').toLowerCase() === 'wfh';
-                // HOI: one clock-in per day like everyone else (no second clock-in at another location)
-                if (assignedLocs.length && employee.role !== 'HOI' && !existing.clockOut && !remoteDay) {
+                // HOI and OM: one clock-in per day like everyone else (no second clock-in at another location)
+                if (assignedLocs.length && !['HOI', 'OM'].includes(employee.role) && !existing.clockOut && !remoteDay) {
                     if (!hasCoords) return NextResponse.json({ error: "Location coordinates missing from request." }, { status: 400 });
                     if (gpsAccuracy !== undefined && gpsAccuracy > MAX_VISIT_ACCURACY_M) {
                         return NextResponse.json({ error: `GPS accuracy is too low (±${Math.round(gpsAccuracy)} m). Move to an open area and try again.`, gpsAccuracyLow: true }, { status: 422 });

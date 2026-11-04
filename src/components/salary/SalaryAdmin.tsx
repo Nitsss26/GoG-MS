@@ -390,11 +390,14 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
     const toPay = direction === "TO_PAYABLE";
     const [category, setCategory] = useState(toPay ? (categories[1] || categories[0]) : categories[0]);
     const [reason, setReason] = useState("");
+    const [categoryOther, setCategoryOther] = useState("");   // written by hand when "Other" is chosen
     const [ticket, setTicket] = useState(ticketId || openTickets.find((t: any) => (t.affectedDates || []).includes(day.date))?.id || "");
     const [files, setFiles] = useState<string[]>([]);
     const [busy, setBusy] = useState(false); const [uploading, setUploading] = useState(false); const [error, setError] = useState("");
     const [confirm, setConfirm] = useState(false);
-    const okReason = reason.trim().length > 0; // reason is required, no minimum length
+    // reason is optional; "Other" needs the category written by hand
+    const okReason = category !== "Other" || categoryOther.trim().length >= 2;
+    const categoryText = category === "Other" ? `Other — ${categoryOther.trim()}` : category;
     const upload = async (fl: FileList | null) => {
         if (!fl?.length) return; setUploading(true); setError("");
         try { const urls: string[] = []; for (const f of Array.from(fl).slice(0, 5 - files.length)) { if (!/^image\/(jpe?g|png|webp)$|^application\/pdf$/.test(f.type)) throw new Error("Upload JPG, PNG, WEBP or PDF files."); urls.push((await uploadToCloudinary(f)).secure_url); } setFiles([...files, ...urls]); }
@@ -403,7 +406,7 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
     const submit = async () => {
         setBusy(true); setError("");
         try {
-            const res = await fetch("/api/hr/salary-management/corrections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeId: employee.id, date: day.date, direction, category, reason, evidenceUrls: files, ticketId: ticket || undefined }) });
+            const res = await fetch("/api/hr/salary-management/corrections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeId: employee.id, date: day.date, direction, category, categoryOther: category === "Other" ? categoryOther.trim() : undefined, reason, evidenceUrls: files, ticketId: ticket || undefined }) });
             const d = await res.json().catch(() => ({})); if (!res.ok) throw new Error(d.error || "Could not save"); onDone(d.message);
         } catch (e: any) { setError(e.message); setConfirm(false); } finally { setBusy(false); }
     };
@@ -425,7 +428,13 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
                     <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Correction Category *
                         <select value={category} onChange={ev => setCategory(ev.target.value)} className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white" data-testid="sm-category">{categories.map(x => <option key={x}>{x}</option>)}</select>
                     </label>
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Reason for Correction *
+                    {category === "Other" && (
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Specify Category *
+                            <input value={categoryOther} onChange={ev => setCategoryOther(ev.target.value)} maxLength={150} autoFocus data-testid="sm-category-other" placeholder="Write the correction category"
+                                className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white normal-case tracking-normal font-normal" />
+                        </label>
+                    )}
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Reason for Correction (optional)
                         <textarea value={reason} onChange={ev => setReason(ev.target.value)} rows={5} data-testid="sm-reason" placeholder={toPay ? "e.g. The employee was present at the assigned college on this date, but the clock-in was not recorded due to a technical issue. Attendance was verified through the available records." : "e.g. The employee was not present at the college on this date although a clock-in was recorded; verified with the HOI and the gate register."}
                             className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white normal-case tracking-normal font-normal" />
 
@@ -446,7 +455,7 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
                 </>) : (<>
                     <div className={`rounded-xl p-3 space-y-1.5 ${toPay ? "bg-emerald-500/5 border border-emerald-500/20" : "bg-red-500/5 border border-red-500/20"}`}>
                         {line("Employee", employee.name)}{line("Date", dmy(day.date))}{line("Previous Status", day.payableStatus)}{line("Updated Status", toPay ? "Payable" : "Non-Payable")}
-                        {line("Payable Day Adjustment", toPay ? `+${n(day.lop)}` : `−${n(day.payable)}`)}{line("Category", category)}{line("Reason", reason)}{ticket ? line("Ticket", ticket) : null}
+                        {line("Payable Day Adjustment", toPay ? `+${n(day.lop)}` : `−${n(day.payable)}`)}{line("Category", categoryText)}{line("Reason", reason.trim() || "—")}{ticket ? line("Ticket", ticket) : null}
                     </div>
                     <p className="text-zinc-500">The attendance and leave records stay as they are. The employee is notified by email and in-app.</p>
                     {error && <p className="text-red-400">{error}</p>}

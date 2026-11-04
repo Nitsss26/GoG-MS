@@ -11,6 +11,7 @@
  */
 import { Employee, Location } from '@/models/Schemas';
 import { FullAttireSubmission, FullAttireReview } from '@/models/FullAttire';
+import { ManualEmail } from '@/models/ManualEmail';
 import { getAcademicScope, professorsInScope, hoisAbove } from '@/lib/academic';
 import { DRESS_CODE_REASONS, dressReasonText } from '@/lib/dress-code-reasons';
 import { MAIN_ADMIN_EMAIL } from '@/lib/mail-server';
@@ -35,15 +36,34 @@ async function locNames() {
 export async function omProfessors(actor: any) {
     const scope = await getAcademicScope(actor);
     const profs: any[] = await professorsInScope(scope);
-    const ids = profs.map(p => p.id);
+    // the OM can also upload their own Full Attire (shown first, marked "You")
+    const ids = Array.from(new Set([actor.id, ...profs.map(p => p.id)]));
     const full: any[] = ids.length ? await Employee.find({ id: { $in: ids }, isRemoved: { $ne: true } }).select('id name email dept designation location status').lean() : [];
     const names = await locNames();
+    const today = await uploadedToday(ids);
+    const list = full.filter(p => !/inactive|removed|terminated|resigned/i.test(String(p.status || 'Active')))
+        .map(p => ({ id: p.id, name: p.name, dept: p.dept || '', designation: p.id === actor.id ? (p.designation || 'Operations Manager') : (p.designation || 'Professor'), location: p.location || '', college: names.get(p.location) || p.location || '', today: today.get(p.id) || null, self: p.id === actor.id }))
+        .sort((a, b) => Number(b.self) - Number(a.self) || a.name.localeCompare(b.name));
     return {
         colleges: scope.colleges.map(c => ({ id: c.id, name: c.name })),
-        professors: full.filter(p => !/inactive|removed|terminated|resigned/i.test(String(p.status || 'Active')))
-            .map(p => ({ id: p.id, name: p.name, dept: p.dept || '', designation: p.designation || 'Professor', location: p.location || '', college: names.get(p.location) || p.location || '' }))
-            .sort((a, b) => a.name.localeCompare(b.name)),
+        professors: list,
     };
+}
+
+/** Start of today (IST) as an ISO time — "today" for Full Attire uploads */
+const istDayStartIso = () => { const d = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10); return new Date(`${d}T00:00:00+05:30`).toISOString(); };
+
+/**
+ * Latest Full Attire photo of each professor uploaded today (any OM), not counting replaced ones:
+ * professorId → { reviewId, submissionId, status, at }
+ */
+export async function uploadedToday(professorIds: string[]) {
+    const m = new Map<string, { reviewId: string; submissionId: string; status: string; at: string }>();
+    if (!professorIds.length) return m;
+    const rows: any[] = await FullAttireReview.find({ professorId: { $in: professorIds }, createdAt: { $gte: istDayStartIso() }, status: { $ne: 'replaced' } })
+        .select('id submissionId professorId status createdAt').sort({ createdAt: 1 }).lean();
+    rows.forEach(r => m.set(r.professorId, { reviewId: r.id, submissionId: r.submissionId, status: r.status, at: r.createdAt }));
+    return m;
 }
 
 async function nextId() {
@@ -70,6 +90,13 @@ export async function createSubmission(actor: any, body: any) {
     const outside = order.filter(id => !byId.has(id));
     if (outside.length) return { ok: false as const, status: 403, error: `Not in your college: ${outside.join(', ')}` };
 
+    // Already uploaded today → only as an explicit Re-upload
+    const already = await uploadedToday(order);
+    if (already.size && body?.reupload !== true) {
+        const list = order.filter(id => already.has(id)).map(id => ({ id, name: byId.get(id)!.name, status: already.get(id)!.status, submissionId: already.get(id)!.submissionId }));
+        return { ok: false as const, status: 409, error: `Full Attire already uploaded today for: ${list.map(x => x.name).join(', ')}. Choose Re-upload to send a new photo.`, already: list };
+    }
+
     const capturedAt = typeof body?.capturedAt === 'string' && !isNaN(Date.parse(body.capturedAt)) ? new Date(body.capturedAt).toISOString() : nowIso();
     const now = nowIso();
     const first = byId.get(order[0])!;
@@ -89,9 +116,26 @@ export async function createSubmission(actor: any, body: any) {
     await FullAttireReview.insertMany(standingOrder.map(s => ({
         id: `${id}:${s.professorId}`, submissionId: id, professorId: s.professorId, professorName: s.professorName, position: s.position,
         college: byId.get(s.professorId)!.location || college, collegeName: byId.get(s.professorId)!.college || collegeName, status: 'pending', createdAt: now,
-        history: [{ at: now, by: actor.id, byName: actor.name, role: 'OM', action: 'Submitted', note: order.length > 1 ? `Group photo · position ${s.position} of ${order.length}` : 'Single photo' }],
+        history: [{ at: now, by: actor.id, byName: actor.name, role: 'OM', action: already.has(s.professorId) ? 'Re-uploaded' : 'Submitted', note: `${order.length > 1 ? `Group photo · position ${s.position} of ${order.length}` : 'Single photo'}${already.has(s.professorId) ? ` · replaces today's photo ${already.get(s.professorId)!.submissionId}` : ''}` }],
     })));
-    return { ok: true as const, id, message: `Submitted for HR review (${order.length} professor${order.length > 1 ? 's' : ''}).` };
+    // Re-upload: today's earlier photo that HR has not reviewed yet is replaced (HR reviews only the new one);
+    // a photo HR already accepted / rejected stays as it is (its decision and email are kept)
+    let replaced = 0;
+    const oldSubs = new Set<string>();
+    for (const prev of Array.from(already.values())) {
+        const u = await FullAttireReview.updateOne({ id: prev.reviewId, status: 'pending' },
+            { $set: { status: 'replaced' }, $push: { history: { at: now, by: actor.id, byName: actor.name, role: 'OM', action: 'Replaced', note: `Re-uploaded in ${id}` } } });
+        if (u.modifiedCount) { replaced++; oldSubs.add(prev.submissionId); }
+    }
+    for (const sid of Array.from(oldSubs)) {
+        const rs: any[] = await FullAttireReview.find({ submissionId: sid }).select('status').lean();
+        const left = rs.filter(r => r.status === 'pending').length, decided = rs.filter(r => r.status === 'accepted' || r.status === 'rejected').length;
+        await FullAttireSubmission.updateOne({ id: sid }, { $set: { status: left ? (decided ? 'Partly Reviewed' : 'Pending Review') : decided ? 'Reviewed' : 'Replaced' } });
+    }
+    const reup = already.size;
+    return { ok: true as const, id, message: reup
+        ? `Re-uploaded for HR review (${order.length} professor${order.length > 1 ? 's' : ''}${replaced ? `; today's earlier pending photo replaced for ${replaced}` : ''}).`
+        : `Submitted for HR review (${order.length} professor${order.length > 1 ? 's' : ''}).` };
 }
 
 /** Submissions with their per-professor reviews */
@@ -100,12 +144,18 @@ export async function listSubmissions(actor: any, opts: { mine?: boolean; status
     if (opts.mine) q.omId = actor.id;
     const subs: any[] = await FullAttireSubmission.find(q).sort({ submittedAt: -1 }).limit(500).lean();
     const reviews: any[] = subs.length ? await FullAttireReview.find({ submissionId: { $in: subs.map(s => s.id) } }).select('-history').lean() : [];
+    // email state of each decided review (same record as Email Management → Full Attire)
+    const decided = reviews.filter(r => r.status === 'accepted' || r.status === 'rejected');
+    const mails: any[] = decided.length ? await ManualEmail.find({ key: { $in: decided.map(r => `full_attire:${r.id}`) } }).select('key emailStatus sendingAt').lean() : [];
+    const mailBy = new Map(mails.map(d => [d.key, d]));
+    const mailState = (d: any) => !d ? 'not_sent' : d.emailStatus === 'sent' ? 'sent' : d.emailStatus === 'failed' ? 'failed'
+        : d.emailStatus === 'sending' ? (Date.now() - Date.parse(d.sendingAt || 0) < 2 * 60000 ? 'sending' : 'failed') : 'not_sent';
     const bySub = new Map<string, any[]>();
     reviews.forEach(r => { (bySub.get(r.submissionId) || bySub.set(r.submissionId, []).get(r.submissionId)!).push(r); });
     let out = subs.map(s => {
         const rs = (bySub.get(s.id) || []).sort((a, b) => a.position - b.position);
         const pending = rs.filter(r => r.status === 'pending').length;
-        return { ...s, reviews: rs.map(r => ({ ...r, reasonText: dressReasonText(r.reasons, r.other) })), pending, accepted: rs.filter(r => r.status === 'accepted').length, rejected: rs.filter(r => r.status === 'rejected').length };
+        return { ...s, reviews: rs.map(r => ({ ...r, reasonText: dressReasonText(r.reasons, r.other), ...(r.status === 'accepted' || r.status === 'rejected' ? { emailStatus: mailState(mailBy.get(`full_attire:${r.id}`)) } : {}) })), pending, accepted: rs.filter(r => r.status === 'accepted').length, rejected: rs.filter(r => r.status === 'rejected').length };
     });
     if (opts.status === 'pending') out = out.filter(s => s.pending > 0);
     if (opts.status === 'reviewed') out = out.filter(s => s.pending === 0);
@@ -153,7 +203,7 @@ export async function decide(actor: any, reviewId: string, body: any) {
     const left = await FullAttireReview.countDocuments({ submissionId: r.submissionId, status: 'pending' });
     const total = await FullAttireReview.countDocuments({ submissionId: r.submissionId });
     await FullAttireSubmission.updateOne({ id: r.submissionId }, { $set: { status: left === 0 ? 'Reviewed' : left < total ? 'Partly Reviewed' : 'Pending Review' } });
-    return { ok: true as const, review: updated, message: `${r.professorName}: ${action === 'accept' ? 'Accepted' : 'Rejected'}. The email is ready in Email Management → Full Attire.` };
+    return { ok: true as const, review: updated, message: `${r.professorName}: ${action === 'accept' ? 'Accepted' : 'Rejected'}. Use Send Email here (or in Email Management → Full Attire) to email the professor.` };
 }
 
 /** CC of a professor's Full Attire email: HR, HR Executive, all Founders and the professor's own HOI(s) */

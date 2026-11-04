@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { MapPin, Building2, Users, Plus, Edit2, Search, X, Loader2, Clock } from "lucide-react";
+import { MapPin, Building2, Users, Plus, Edit2, Search, X, Loader2, Clock, Trash2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
@@ -12,7 +12,17 @@ const MapComponent = dynamic(() => import("@/components/MapComponent"), {
 });
 
 export default function LocationsPage() {
-    const { user, colleges, addCollege, updateCollege, employees, getExpectedTiming } = useAuth();
+    const { user, colleges, addCollege, updateCollege, deleteCollege, employees, getExpectedTiming } = useAuth();
+    // delete: confirm first; the server refuses a location that is still in use and says where
+    const [del, setDel] = useState<{ id: string; name: string; busy: boolean; error: string } | null>(null);
+    const [delMsg, setDelMsg] = useState("");
+    const confirmDelete = async () => {
+        if (!del) return;
+        setDel({ ...del, busy: true, error: "" });
+        const r = await deleteCollege(del.id);
+        if (r.ok) { setDelMsg(`${del.name} deleted.`); setDel(null); if (selectedCollege === del.id) setSelectedCollege(null); setTimeout(() => setDelMsg(""), 5000); }
+        else setDel({ ...del, busy: false, error: r.error || "Could not delete the location." });
+    };
     const [selectedCollege, setSelectedCollege] = useState<string | null>(null);
     const [search, setSearch] = useState("");
     const [mapSearchQuery, setMapSearchQuery] = useState("");
@@ -84,6 +94,7 @@ export default function LocationsPage() {
         setSearching(false);
     };
 
+    if (user?.role === "OM") return <div className="flex items-center justify-center h-[60vh] text-sm text-zinc-400">This page is not available in the OM portal.</div>;
     return (
         <div className="flex flex-col h-screen overflow-hidden bg-background">
             <header className="p-4 border-b border-zinc-800 bg-zinc-900/50 flex justify-between items-center shrink-0">
@@ -133,7 +144,10 @@ export default function LocationsPage() {
                                             <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center"><Building2 size={16} className="text-primary" /></div>
                                             <div><h3 className="text-xs font-bold text-white">{college.shortName}</h3><p className="text-[9px] text-zinc-500">{college.city}</p></div>
                                         </div>
-                                        {isHR && <button onClick={e => { e.stopPropagation(); openEdit(college.id); }} className="p-1 rounded-md hover:bg-zinc-800 text-zinc-500 hover:text-white transition-colors"><Edit2 size={12} /></button>}
+                                        {isHR && <div className="flex items-center gap-0.5">
+                                            <button onClick={e => { e.stopPropagation(); openEdit(college.id); }} title="Edit" className="p-1 rounded-md hover:bg-zinc-800 text-zinc-500 hover:text-white transition-colors"><Edit2 size={12} /></button>
+                                            <button onClick={e => { e.stopPropagation(); setDel({ id: college.id, name: college.shortName || college.name, busy: false, error: "" }); }} title="Delete" data-testid="loc-delete" className="p-1 rounded-md hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"><Trash2 size={12} /></button>
+                                        </div>}
                                     </div>
                                     <div className="flex items-center gap-1.5 text-[10px] text-zinc-400"><Users size={10} />{empCount} assigned</div>
                                     <AnimatePresence>
@@ -217,6 +231,23 @@ export default function LocationsPage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            {delMsg && <div className="fixed bottom-5 right-5 z-[130] rounded-xl border border-emerald-500/30 bg-emerald-500/15 text-emerald-200 text-xs px-4 py-3" data-testid="loc-deleted">{delMsg}</div>}
+            {del && (
+                <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => !del.busy && setDel(null)}>
+                    <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3" onClick={e => e.stopPropagation()} data-testid="loc-delete-dialog">
+                        <h2 className="text-base font-bold text-white flex items-center gap-2"><Trash2 size={16} className="text-red-400" /> Delete {del.name}?</h2>
+                        <p className="text-xs text-zinc-400">The location is removed from GOG OMS. A location that is still assigned to employees, HOI / OM clock-in locations, work schedules or upcoming holidays cannot be deleted — move them in Work Location first. Past attendance records are kept.</p>
+                        {del.error && <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/25 rounded-lg px-3 py-2 flex gap-2 [overflow-wrap:anywhere]" data-testid="loc-delete-error"><AlertTriangle size={14} className="shrink-0 mt-0.5" />{del.error}</p>}
+                        <div className="flex justify-end gap-2 pt-1">
+                            <button onClick={() => setDel(null)} disabled={del.busy} className="px-4 py-2 rounded-lg text-xs font-bold text-zinc-400 hover:text-white">Cancel</button>
+                            <button onClick={confirmDelete} disabled={del.busy} data-testid="loc-delete-confirm" className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-50">
+                                {del.busy ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

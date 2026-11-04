@@ -92,7 +92,7 @@ const PayableCorrectionSchema = new Schema({
     previousMonthPayable: { type: Number },
     updatedMonthPayable: { type: Number },
     correctionCategory: { type: String },
-    correctionReason: { type: String, required: true },
+    correctionReason: { type: String, default: '' },              // optional
     supportingEvidence: [String],
     relatedTicketId: { type: String },
     correctedBy: { type: String }, correctedByName: { type: String }, correctedByRole: { type: String }, correctedAt: { type: String },

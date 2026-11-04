@@ -1,4 +1,5 @@
 "use client";
+import { clockInCutoff, cutoffLabel } from "@/lib/time-utils";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useAuth, Employee } from "@/context/AuthContext";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -336,7 +337,9 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
         .map(l => ({ id: l, label: locName(l) }));
     if (!officeOptions.length) officeOptions.push({ id: "office", label: "Office" });
 
-    const isPastCutoff = !!(currentTime && currentTime >= "11:59:00");
+    // 11:59 AM for normal shifts; a shift starting 11:30 AM or later gets its own cutoff (e.g. 1:00 PM → 3:29 PM)
+    const clockInCutoffHm = clockInCutoff(expected.in);
+    const isPastCutoff = !!(currentTime && currentTime >= `${clockInCutoffHm}:00`);
     const shouldShowMAPOnly = isPastCutoff && !hasCheckedIn && currentDate === istDate(serverNow() || new Date());
 
     const requestLocation = () => {
@@ -568,7 +571,8 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
         ? (((employees || []).find((e: any) => e.id === user.id) as any)?.attendanceLocations || hoiAllowedLocs)
         : [];
     // HOI clocks in once a day like everyone else — the "Clock In at Another Location" option is for OM only
-    const multiLocation = emp.role !== "HOI" && assignedNow.length > 0 && !isWFH && !((todaysRecord as any)?.workMode === "WFH");
+    // HOI and OM: one clock-in per day (no second clock-in at another location)
+    const multiLocation = !["HOI", "OM"].includes(emp.role) && assignedNow.length > 0 && !isWFH && !((todaysRecord as any)?.workMode === "WFH");
     const detectVisitLocation = () => {
         setVisit({ busy: true });
         if (!navigator.geolocation) { setVisit({ error: "Location is not supported on this device." }); return; }
@@ -817,7 +821,7 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                                             <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-3">
                                                 <div className="flex items-center gap-2">
                                                     <Clock size={16} className="text-amber-400" />
-                                                    <p className="text-xs font-bold text-amber-400">Past 11:59 AM Deadline</p>
+                                                    <p className="text-xs font-bold text-amber-400">Past {cutoffLabel(clockInCutoffHm)} Deadline</p>
                                                 </div>
                                                 <p className="text-[10px] text-zinc-400">The standard clock-in window for today has closed. Please raise a "Mark As Present" request instead.</p>
                                                 <button

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { cn } from "@/lib/utils";
+import SendEmailButton from "@/components/email-management/SendEmailButton";
 import { Shirt, Search, Loader2, CheckCircle2, XCircle, Clock, X, History, AlertTriangle, ImagePlus, Trash2, Maximize2, RefreshCw } from "lucide-react";
 
 /**
@@ -16,6 +17,7 @@ const ST: Record<string, { l: string; c: string; I: any }> = {
     pending: { l: "Pending", c: "text-amber-300 bg-amber-500/10 border-amber-500/25", I: Clock },
     accepted: { l: "Accepted", c: "text-emerald-300 bg-emerald-500/10 border-emerald-500/25", I: CheckCircle2 },
     rejected: { l: "Rejected", c: "text-red-300 bg-red-500/10 border-red-500/25", I: XCircle },
+    replaced: { l: "Replaced (re-uploaded)", c: "text-zinc-400 bg-zinc-800/60 border-zinc-700", I: RefreshCw },
 };
 
 export default function HrFullAttirePage() {
@@ -25,7 +27,7 @@ export default function HrFullAttirePage() {
     const [data, setData] = useState<any>(null);
     const [error, setError] = useState("");
     const [busy, setBusy] = useState("");
-    const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+    const [notice, setNotice] = useState<{ ok: boolean; text: string; reviewId?: string; name?: string } | null>(null);
     const [reject, setReject] = useState<{ sub: any; r: any } | null>(null);
     const [hist, setHist] = useState<{ name: string; rows: any[] | null } | null>(null);
     const [zoom, setZoom] = useState("");
@@ -46,7 +48,8 @@ export default function HrFullAttirePage() {
             const r = await fetch("/api/full-attire/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reviewId, ...body }) });
             const d = await r.json().catch(() => ({}));
             if (!r.ok) { await load(); return { ok: false, error: d.error || "Could not save" }; }
-            setNotice({ ok: true, text: d.message }); await load(); return { ok: true };
+            // the decided review leaves the Pending list → its Send Email button is shown in this message too
+            setNotice({ ok: true, text: d.message, reviewId, name: d.review?.professorName || "" }); await load(); return { ok: true };
         } finally { setBusy(""); }
     };
     const openHistory = async (r: any) => {
@@ -64,7 +67,7 @@ export default function HrFullAttirePage() {
             <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
                 <div>
                     <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2"><Shirt size={20} className="text-primary" /> Full Attire Management</h1>
-                    <p className="text-xs text-zinc-500 mt-0.5">Accept or reject every professor separately. Emails are sent from Email Management → Full Attire.</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">Accept or reject every professor separately, then use Send Email (here or in Email Management → Full Attire).</p>
                 </div>
                 <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-4 py-2 text-amber-200 text-xs"><b className="text-lg text-white tabular-nums mr-1" data-testid="fa-pending-count">{c?.pendingProfessors ?? "—"}</b> professor review(s) pending</div>
             </header>
@@ -80,7 +83,7 @@ export default function HrFullAttirePage() {
                 <button onClick={load} className="h-11 px-3 rounded-xl border border-zinc-800 text-zinc-300 text-xs font-bold flex items-center justify-center gap-1.5"><RefreshCw size={13} /> Refresh</button>
             </div>
 
-            {notice && <div data-testid="fa-hr-notice" className={cn("rounded-xl border px-4 py-3 text-xs flex items-start gap-2", notice.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-red-500/30 bg-red-500/10 text-red-200")}>{notice.ok ? <CheckCircle2 size={15} className="shrink-0" /> : <AlertTriangle size={15} className="shrink-0" />}<span className="min-w-0 [overflow-wrap:anywhere]">{notice.text}</span><button onClick={() => setNotice(null)} className="ml-auto shrink-0" aria-label="Close"><X size={14} /></button></div>}
+            {notice && <div data-testid="fa-hr-notice" className={cn("rounded-xl border px-4 py-3 text-xs flex items-start gap-2", notice.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-red-500/30 bg-red-500/10 text-red-200")}>{notice.ok ? <CheckCircle2 size={15} className="shrink-0" /> : <AlertTriangle size={15} className="shrink-0" />}<span className="min-w-0 [overflow-wrap:anywhere]">{notice.text}</span>{notice.ok && notice.reviewId && <span className="shrink-0" data-testid="fa-notice-send"><SendEmailButton small category="full_attire" relatedRecordId={notice.reviewId} status="not_sent" label="Send Email" onDone={res => setNotice({ ok: res.ok, text: res.ok ? `${notice.name || "Professor"}: email sent.` : (res.error || "Email could not be sent.") })} /></span>}<button onClick={() => setNotice(null)} className="ml-auto shrink-0" aria-label="Close"><X size={14} /></button></div>}
             {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 text-red-200 px-4 py-3 text-xs">{error}</div>}
 
             {!data ? <div className="py-16 flex justify-center"><Loader2 className="animate-spin text-primary" /></div>
@@ -119,9 +122,16 @@ export default function HrFullAttirePage() {
                                                             <button onClick={() => decide(r.id, { action: "accept" })} disabled={!!busy} data-testid="fa-accept" className="h-11 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 disabled:opacity-50">{busy === r.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Accept</button>
                                                             <button onClick={() => setReject({ sub: s, r })} disabled={!!busy} data-testid="fa-reject" className="h-11 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 disabled:opacity-50"><XCircle size={14} /> Reject</button>
                                                         </div>
+                                                    ) : r.status === "replaced" ? (
+                                                        <p className="text-[11px] text-zinc-500" data-testid="fa-replaced">The OM re-uploaded a new photo today — review the new submission instead.</p>
                                                     ) : (
                                                         <div className="text-[11px] text-zinc-400 space-y-0.5">
                                                             <p>By {r.reviewedByName} ({r.reviewedByRole}) · {dt(r.reviewedAt)}</p>
+                                                            {/* email to the professor — same as Email Management → Full Attire */}
+                                                            <div className="pt-1" data-testid="fa-send-mail">
+                                                                <SendEmailButton key={`${r.id}:${r.emailStatus || "not_sent"}`} small category="full_attire" relatedRecordId={r.id} status={r.emailStatus || "not_sent"} label="Send Email"
+                                                                    onDone={res => setNotice({ ok: res.ok, text: res.ok ? `${r.professorName}: email sent.` : (res.error || "Email could not be sent.") })} />
+                                                            </div>
                                                             {r.status === "rejected" && <p className="text-red-200 [overflow-wrap:anywhere]"><b>{r.reasonText}</b>{r.explanation ? ` — ${r.explanation}` : ""}</p>}
                                                             {r.evidenceUrl && <a href={r.evidenceUrl} target="_blank" rel="noreferrer" className="text-emerald-300 underline">Supporting evidence</a>}
                                                         </div>

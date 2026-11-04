@@ -11,7 +11,8 @@ export const dynamic = 'force-dynamic';
  *   GET  ?view=om                         OM: own college professors + own submissions (with HR decisions)
  *   GET  ?view=review&status=pending|reviewed|all&q=   HR / HR Executive / Founder: submissions to review
  *   GET  ?history=<professorId>           HR / HR Executive / Founder: one professor's review history
- *   POST { clientKey, imageUrl, capturedAt, order: [professorId…] }   OM: submit a live capture
+ *   POST { clientKey, imageUrl, capturedAt, order: [professorId…], reupload? }   OM: submit a live capture
+ *        (a professor already uploaded today needs reupload: true — today's pending photo is then replaced)
  */
 export async function GET(req: Request) {
     try {
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
         const actor: any = await getSessionUser({ ignoreDelegation: true });
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         const r = await createSubmission(actor, await req.json().catch(() => ({})));
-        if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
+        if (!r.ok) return NextResponse.json({ error: r.error, ...((r as any).already ? { already: (r as any).already } : {}) }, { status: r.status });
         return NextResponse.json({ success: true, id: r.id, message: r.message });
     } catch (e: any) {
         console.error('[full-attire POST]', e?.message);

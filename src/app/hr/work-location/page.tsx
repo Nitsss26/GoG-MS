@@ -186,7 +186,7 @@ export default function HRWorkLocationPage() {
                                             </label>
                                         ))}
                                     </div>
-                                    <p className="text-[9px] text-zinc-500 italic">The {selectedEmployee?.role === "OM" ? "OM" : "HOI"} can clock in / clock out at any ticked college (geofence checked), and clock in again at another ticked college on the same day. Original Location is not changed. None ticked = existing behaviour.</p>
+                                    <p className="text-[9px] text-zinc-500 italic">{selectedEmployee?.role === "OM" ? "The OM clocks in and clocks out once a day, like everyone else. The clock-in is expected at the college scheduled for that day (Work Location schedule); clocking in at another ticked college needs a location justification, and outside the ticked colleges the clock-in is blocked. Original Location is not changed. None ticked = existing behaviour." : "The HOI clocks in and clocks out once a day, like everyone else. The clock-in is expected at the college scheduled for that day (Work Location schedule); clocking in at another ticked college needs a location justification, and outside the ticked colleges the clock-in is blocked. Original Location is not changed. None ticked = existing behaviour."}</p>
                                 </div>
                             )}
                             <div className="space-y-2">

@@ -5,6 +5,8 @@
  */
 import { Employee, Attendance, LeaveRequest, Holiday, AttendanceViolation, ExitRecord, Location, Notification } from '@/models/Schemas';
 import { FlagRemoval, SalaryCounter, PayableCorrection } from '@/models/SalaryModule';
+import { LateJustification } from '@/models/LateJustification';
+import { isNewPolicy, dressLadder } from '@/lib/attendance-policy';
 import { locationPenaltiesFor } from '@/lib/location-justification';
 import { calculatePayableDays, daysInMonth, CATEGORY_OF, TYPE_LABEL, LEVEL_LABEL, VIOLATION_CLOSED, ladder } from '@/lib/payable-days';
 import { sendMailInternal, MAIN_ADMIN_EMAIL } from '@/lib/mail-server';
@@ -75,6 +77,8 @@ export async function payableForMany(emps: any[], month: string) {
     ]);
     // Location Mismatch rejections: Half-Day / Full-Day → payable days; ₹ penalty → separate Monetary Penalties list
     const locPen = await locationPenaltiesFor(ids, start, end);
+    // Late Clock-In justifications still under HR review → on hold (no pay cut until decided)
+    const ljPending: any[] = await LateJustification.find({ employeeId: { $in: ids }, date: { $gte: start, $lte: end }, justificationStatus: 'pending' }).select('employeeId date').lean();
     const by = (rows: any[]) => { const m = new Map<string, any[]>(); for (const r of rows) { if (!m.has(r.employeeId)) m.set(r.employeeId, []); m.get(r.employeeId)!.push(r); } return m; };
     const A = by(att as any[]), L = by(leaves as any[]), V = by(viol as any[]), R = by(removed as any[]), C = by(corr as any[]);
     const lwd = new Map((exits as any[]).filter(x => x.lastWorkingDay).map(x => [x.employeeId, x.lastWorkingDay]));
@@ -90,6 +94,7 @@ export async function payableForMany(emps: any[], month: string) {
             exitDate: emp.noticePeriod?.lastWorkingDay || lwd.get(emp.id) || undefined,
             attendance: A.get(emp.id) || [], leaves: L.get(emp.id) || [], holidays, violations: [...(V.get(emp.id) || []), ...(locPen.violations.get(emp.id) || [])],
             removed: new Map((R.get(emp.id) || []).map(r => [r.flagId, { removedAt: r.removedAt, removedByName: r.removedByName, removalReason: r.removalReason }])),
+            latePendingDates: ljPending.filter(j => j.employeeId === emp.id).map(j => j.date),
             corrections: new Map((C.get(emp.id) || []).map(c => [c.date, { id: c.id, direction: correctionDirection(c), correctionCategory: c.correctionCategory, correctionReason: c.correctionReason, correctedByName: c.correctedByName, correctedByRole: c.correctedByRole, correctedAt: c.correctedAt, relatedTicketId: c.relatedTicketId }])),
         })));
     }
@@ -155,7 +160,7 @@ async function dressLevels(dress: any[]) {
         for (const a of all.sort((x, y) => x.date.localeCompare(y.date))) {
             if (removed.has(`DRESS:${String(a._id)}`)) continue;
             n++;
-            const l = ladder(n);
+            const l = isNewPolicy(a.date) ? (() => { const d = dressLadder(n); return { level: d.level, deduction: d.deduction }; })() : ladder(n);
             out.set(String(a._id), { ...l, instance: n });
         }
         void list;

@@ -2,7 +2,7 @@
  * SERVER-ONLY: Email Management — HR / HR Executive (and Founder) send four employee emails by hand:
  *
  *   dress_code     Dress Code Rejection   — after a dress code is rejected (reasons + remarks saved on the attendance)
- *   late_clock_in  Late Clock-In warning  — only after the late justification is REJECTED; the warning level
+ *   late_clock_in  Late Clock-In warning  — after the late justification is REJECTED, or when none was given; the warning level
  *                                           (1st / 2nd / 3rd …) is worked out at send time with the existing
  *                                           escalation policy (same month, approved / waived lates not counted)
  *   no_clock_in    No Clock-In            — scheduled employee, no clock-in, after the 11:59 AM clock-in cutoff,
@@ -16,6 +16,8 @@
  * → sends with the existing mail service → saves the status, sender and role (history).
  * All other automatic emails are unchanged.
  */
+import { clockInCutoff } from '@/lib/time-utils';
+import { isNewPolicy, lateLadder, dressLadder } from '@/lib/attendance-policy';
 import { Attendance, AttendanceViolation, Employee, Holiday, LeaveRequest, Location, WorkSchedule } from '@/models/Schemas';
 import { LateJustification } from '@/models/LateJustification';
 import { ManualEmail, ManualEmailLock } from '@/models/ManualEmail';
@@ -60,6 +62,7 @@ const EMAIL_RE = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
 const ORG = 'Geeks of Gurukul';
 const PHOTO_URL_RE = /^https?:\/\/[^\s"'<>]+$/i;
 const PHOTO_CID = 'dresscode-photo@gog';
+const FA_PHOTO_CID = 'fullattire-evidence@gog';
 
 const nowIso = () => new Date().toISOString();
 const isYmd = (s: any) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -96,11 +99,15 @@ ${afterRows.map(p => `<p>${esc(p)}</p>`).join('')}
 }
 
 function dressMail(row: any): { subject: string; html: string; text: string; storedHtml?: string; attachments?: any[] } {
-    const subject = `Dress Code Non-Compliance Notification — ${ORG}`;
+    const pol = row.details.warningLabel ? row.details : null;   // Dress Code policy (new): warning number + fine
+    const subject = pol ? `${pol.warningLabel} – Dress Code Non-Compliance — ${ORG}` : `Dress Code Non-Compliance Notification — ${ORG}`;
     const { html, text } = renderMail(row.employeeName,
         [`This is to inform you that your dress code submission for ${longDate(row.date)} has been reviewed and marked as non-compliant.`],
-        [['Reason for Rejection', row.details.reasonText || '—'], ['Additional Remarks', row.details.remarks || '—']],
-        ["You are requested to ensure compliance with the organization's prescribed dress code guidelines.", 'Please take the necessary corrective measures to avoid similar issues in the future.']);
+        [['Reason for Rejection', row.details.reasonText || '—'], ['Additional Remarks', row.details.remarks || '—'],
+            ...(pol ? [['Warning', `${pol.warningLabel} (instance ${pol.instance} this month)`], ['Disciplinary Action', pol.finePercent ? `${pol.finePercent}% fine deducted from one day's gross salary` : 'Entry recorded in HR records']] as [string, string][] : [])],
+        ["You are requested to ensure compliance with the organization's prescribed dress code guidelines.",
+            ...(pol ? ["As per the Dress Code Disciplinary Process: 1st and 2nd instance — warning; 3rd — 10%, 4th — 20%, 5th and subsequent — 30% fine of one day's gross salary; further disciplinary action may be initiated at the Management's discretion."] : []),
+            'Please take the necessary corrective measures to avoid similar issues in the future.']);
     const photo = row.details.photoUrl;
     if (!photo) return { subject, html, text };
     // reviewer's photo: shown in the email body and attached as a file
@@ -147,11 +154,23 @@ function fullAttireMail(row: any) {
             ...(d.explanation ? [['Additional Remarks', d.explanation] as [string, string]] : []),
         ],
         ['Please review the details available in your GOG OMS portal.']);
-    // no group photo in the email (privacy); only the reviewer's own evidence image of a rejection, as a link
+    // no group photo in the email (privacy); only the reviewer's own evidence image of a rejection —
+    // shown inside the email (and attached), like the dress code rejection photo; a non-image file stays a link
     if (!accepted && d.evidenceUrl) {
         const at = html.lastIndexOf('<p>Regards,');
-        const block = `<p style="font-family:Arial,sans-serif;font-size:14px;color:#18181b"><b>Supporting Evidence:</b> <a href="${esc(d.evidenceUrl)}">View image</a></p>\n`;
-        return { subject, html: html.slice(0, at) + block + html.slice(at), text: text.replace('Regards,', `Supporting Evidence: ${d.evidenceUrl}\n\nRegards,`) };
+        const m = /\.(jpe?g|png|webp|gif)(\?|#|$)/i.exec(d.evidenceUrl);
+        if (!m) {
+            const block = `<p style="font-family:Arial,sans-serif;font-size:14px;color:#18181b"><b>Supporting Evidence:</b> <a href="${esc(d.evidenceUrl)}">View file</a></p>\n`;
+            return { subject, html: html.slice(0, at) + block + html.slice(at), text: text.replace('Regards,', `Supporting Evidence: ${d.evidenceUrl}\n\nRegards,`) };
+        }
+        const ext = m[1].toLowerCase().replace('jpeg', 'jpg');
+        const block = (src: string) => `<p style="font-family:Arial,sans-serif;font-size:14px;color:#18181b"><b>Supporting Evidence:</b></p><img src="${src}" alt="Full attire evidence" style="max-width:420px;width:100%;border:1px solid #e4e4e7;border-radius:6px"/>\n`;
+        const withPhoto = (src: string) => html.slice(0, at) + block(src) + html.slice(at);
+        return {
+            subject, html: withPhoto(`cid:${FA_PHOTO_CID}`), storedHtml: withPhoto(esc(d.evidenceUrl)),
+            text: text.replace('Regards,', 'Supporting Evidence: attached\n\nRegards,'),
+            attachments: [{ filename: `full-attire-evidence-${row.date}.${ext}`, path: d.evidenceUrl, cid: FA_PHOTO_CID }],
+        };
     }
     return { subject, html, text };
 }
@@ -219,6 +238,7 @@ async function dressRows(f: Filters, locs: Map<string, string>) {
     const recs: any[] = await Attendance.find(q).select('employeeId date clockIn dressCodeImageUrl dressCodeReviewedAt dressCodeReviewedByName dressCodeReviewedByRole dressCodeRejectionReasons dressCodeRejectionOther dressCodeRejectionRemarks dressCodeRejectionPhoto').lean();
     const emps = await employeeMap(Array.from(new Set(recs.map(r => r.employeeId))));
     const docs = await manualDocs(recs.map(r => `dress_code:${String(r._id)}`));
+    const numbers = await dressInstanceNumbers(recs);
     const out: any[] = [];
     for (const r of recs) {
         const emp = emps.get(r.employeeId);
@@ -226,14 +246,38 @@ async function dressRows(f: Filters, locs: Map<string, string>) {
         const id = String(r._id);
         const doc = docs.get(`dress_code:${id}`);
         const reasons: string[] = Array.isArray(r.dressCodeRejectionReasons) ? r.dressCodeRejectionReasons : [];
+        // Dress Code policy (new): this month's instance number → warning + fine % of one day's gross salary
+        const n = numbers.get(id);
+        const pol = isNewPolicy(r.date) && n ? dressLadder(n) : null;
         const details = {
             reasons, other: r.dressCodeRejectionOther || '', remarks: r.dressCodeRejectionRemarks || '', photoUrl: r.dressCodeRejectionPhoto || '', reasonText: dressReasonText(reasons, r.dressCodeRejectionOther),
             clockIn: r.clockIn || '', imageUrl: r.dressCodeImageUrl || '', reviewedAt: r.dressCodeReviewedAt || '', reviewedBy: r.dressCodeReviewedByName || '', reviewedByRole: r.dressCodeReviewedByRole || '',
+            ...(pol ? { instance: n, warningLabel: pol.warning, finePercent: pol.finePercent } : {}),
         };
         const row = baseRow('dress_code', id, emp, r.date, locs);
         // Rejected before Email Management existed (no reasons saved): the warning email went out automatically then
         if (!reasons.length && !doc) { out.push(withEmail(row, 'sent', null, { details, sentBy: 'System (automatic)', sentByRole: 'Automatic', canSend: false, statusLabel: 'Sent (automatic)' })); continue; }
-        out.push(withEmail(row, emailState(doc), doc, { details }));
+        out.push(withEmail(row, emailState(doc), doc, { details, ...(pol ? { warningLabel: pol.finePercent ? `${pol.warning} · ${pol.finePercent}% fine` : pol.warning } : {}) }));
+    }
+    return out;
+}
+
+/** Dress code: instance number of each rejected photo within its month (date order; flags removed by HR do not count) */
+async function dressInstanceNumbers(recs: any[]) {
+    const out = new Map<string, number>();
+    const keys = Array.from(new Set(recs.map(r => `${r.employeeId}|${String(r.date).slice(0, 7)}`)));
+    for (const k of keys) {
+        const [employeeId, month] = k.split('|');
+        const [all, rem] = await Promise.all([
+            Attendance.find({ employeeId, date: { $gte: `${month}-01`, $lte: `${month}-31` }, dressCodeStatus: 'Rejected' }).select('_id date').lean() as Promise<any[]>,
+            FlagRemoval.find({ employeeId, source: 'DRESS_CODE', flagDate: { $gte: `${month}-01`, $lte: `${month}-31` } }).select('flagId').lean() as Promise<any[]>,
+        ]);
+        const removed = new Set(rem.map(x => x.flagId));
+        let n = 0;
+        for (const a of all.sort((x, y) => String(x.date).localeCompare(String(y.date)))) {
+            if (removed.has(`DRESS:${String(a._id)}`)) continue;
+            out.set(String(a._id), ++n);
+        }
     }
     return out;
 }
@@ -283,7 +327,7 @@ async function lateRows(f: Filters, locs: Map<string, string>) {
             && !removed.has(String(x.id)) && jBy.get(`${x.employeeId}:${x.date}`)?.justificationStatus !== 'pending').length;
         const details = {
             clockIn: v.actualTime || rec?.clockIn || '', scheduled: v.scheduledTime || '', lateMinutes: v.durationMins, lateText: fmtDuration(v.durationMins),
-            justificationStatus: j?.justificationStatus || 'not_submitted', justificationReason: j?.justificationReason || '', supportingDocument: j?.supportingDocument || '',
+            justificationId: j?.id || '', justificationStatus: j?.justificationStatus || 'not_submitted', justificationReason: j?.justificationReason || '', supportingDocument: j?.supportingDocument || '',
             hrDecisionBy: j?.reviewedByName || '', hrDecisionRole: j?.reviewedByRole || '', hrDecisionAt: j?.reviewedAt || '', rejectionReason: j?.rejectionReason || '',
             violationStatus: v.hrStatus || '',
         };
@@ -296,7 +340,8 @@ async function lateRows(f: Filters, locs: Map<string, string>) {
         // emailed automatically before Email Management existed
         if (v.emailStatus === 'Sent') { out.push(withEmail(row, 'sent', null, { details, warningLevel: v.instance, warningLabel: lateCategoryLabel(v.instance || 1), sentAt: v.emailSentAt || '', sentBy: 'System (automatic)', sentByRole: 'Automatic', canSend: false, statusLabel: 'Sent (automatic)' })); continue; }
         if (j?.justificationStatus === 'pending') { out.push(withEmail(row, 'pending_review', doc, { details, warningLevel: null, warningLabel: '—', canSend: false })); continue; }
-        if (!j) { out.push(withEmail(row, 'awaiting_justification', doc, { details, warningLevel: null, warningLabel: '—', canSend: false })); continue; }
+        // no justification given → HR may send the warning directly (same as after a rejected justification)
+        if (!j) { out.push(withEmail(row, emailState(doc), doc, { details, warningLevel: level, warningLabel: lateCategoryLabel(level) })); continue; }
         // rejected → eligible
         out.push(withEmail(row, emailState(doc), doc, { details, warningLevel: level, warningLabel: lateCategoryLabel(level) }));
     }
@@ -315,6 +360,7 @@ async function noClockInRows(f: Filters, locs: Map<string, string>) {
     for (let d = range.from; d <= range.to; d = addDays(d, 1)) {
         if (d > now.ymd) break;
         if (d === now.ymd && nowHm < CLOCK_IN_CUTOFF) continue; // before the clock-in cutoff nobody is "No Clock-In" yet
+        // (a shift starting 11:30 AM or later has its own, later cutoff — checked per employee below)
         dates.push(d);
     }
     if (!dates.length) return [];
@@ -347,6 +393,7 @@ async function noClockInRows(f: Filters, locs: Map<string, string>) {
             if (!sched && dn === 'Sun') continue;
             if (holidays.some(h => h.date === d && (h.forAll || (h.collegeIds || []).includes(location) || (h.collegeIds || []).includes(emp.location)))) continue;
             if (leaves.some(l => l.employeeId === emp.id && l.startDate <= d && d <= l.endDate)) continue; // approved / requested leave (as on the roster)
+            if (d === now.ymd && nowHm < clockInCutoff(sched?.clockInTime || t.in)) continue; // late shift: its clock-in is still open
             const relatedRecordId = `${emp.id}:${d}`;
             keys.push(`no_clock_in:${relatedRecordId}`);
             candidates.push({ emp, d, relatedRecordId, scheduled: sched?.clockInTime || t.in, location, markedAbsent: rs.some(r => r.status === 'Absent') });
@@ -570,8 +617,14 @@ export async function sendManualEmail(actor: any, categoryIn: string, relatedRec
     if (category === 'late_clock_in') {
         const v: any = await AttendanceViolation.findOne({ id: relatedRecordId }).lean();
         warningLevel = await lateLevel(v);
-        const lvl = escalation(warningLevel);
-        mail = composeViolationMail({ ...v, instance: warningLevel, level: lvl.level, proposedDeduction: lvl.proposedDeduction, hrStatus: warningLevel >= 4 ? (v.hrStatus === 'Approved for Payroll' ? v.hrStatus : 'Pending HR Verification') : v.hrStatus });
+        if (isNewPolicy(v.date)) {
+            // Late Arrivals Policy: the pay cut is automatic
+            const lvl = lateLadder(warningLevel);
+            mail = composeViolationMail({ ...v, instance: warningLevel, level: lvl.level, proposedDeduction: lvl.proposedDeduction, hrStatus: lvl.hrStatus });
+        } else {
+            const lvl = escalation(warningLevel);
+            mail = composeViolationMail({ ...v, instance: warningLevel, level: lvl.level, proposedDeduction: lvl.proposedDeduction, hrStatus: warningLevel >= 4 ? (v.hrStatus === 'Approved for Payroll' ? v.hrStatus : 'Pending HR Verification') : v.hrStatus });
+        }
     } else if (category === 'full_attire') {
         // TO the professor only; CC HR, HR Executive, all Founders and the professor's own HOI(s)
         // Rejected: CC admin, HR, HR Executive, the professor's HOI(s) and OM(s) — exactly these (no automatic copies)

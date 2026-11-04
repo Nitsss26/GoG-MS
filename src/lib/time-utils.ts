@@ -80,3 +80,20 @@ export function validateSprintEntries<T extends TimeRange>(entries: T[]): {
 
     return { valid: true };
 }
+
+/**
+ * Clock-in cutoff of a day (after it only a Mark-As-Present request is possible).
+ * Existing policy: 11:59 AM. A shift that starts at 11:30 AM or later (e.g. 1:00 PM) gets the same gap as the
+ * standard 09:30 shift (2 h 29 min after its start, e.g. 1:00 PM → 3:29 PM), so a late shift can clock in at all.
+ * Returns "HH:MM" (24 h).
+ */
+export function clockInCutoff(scheduledIn?: string): string {
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(scheduledIn || ''));
+    if (!m) return '11:59';
+    const start = Number(m[1]) * 60 + Number(m[2]);
+    if (isNaN(start) || start < 11 * 60 + 30) return '11:59';
+    const c = Math.min(start + 149, 23 * 60 + 59);
+    return `${String(Math.floor(c / 60)).padStart(2, '0')}:${String(c % 60).padStart(2, '0')}`;
+}
+/** "15:29" → "3:29 PM" */
+export const cutoffLabel = (hm: string) => { const [h, mm] = hm.split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(mm).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };

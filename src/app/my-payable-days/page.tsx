@@ -36,6 +36,8 @@ const PEN_STYLE: Record<string, string> = {
     "Pending HR Verification": "bg-amber-500/10 text-amber-300 border-amber-500/30",
     "Awaiting Explanation": "bg-amber-500/10 text-amber-300 border-amber-500/30",
     "Warning": "bg-zinc-800 text-zinc-300 border-zinc-700",
+    "Fine": "bg-amber-500/10 text-amber-300 border-amber-500/30",
+    "Justification Under Review": "bg-amber-500/10 text-amber-300 border-amber-500/30",
     "Waived": "bg-emerald-500/10 text-emerald-300 border-emerald-500/30",
     "Resolved": "bg-emerald-500/10 text-emerald-300 border-emerald-500/30",
     "Explanation Rejected": "bg-red-500/10 text-red-300 border-red-500/30",
@@ -139,7 +141,7 @@ export default function MyPayableDaysPage() {
         { label: "Unpaid Leaves", value: n(c.unpaidLeaves), sub: "Approved leave beyond paid", icon: CalendarX, tone: "amber" },
         { label: "Non-Payable Days", value: n(c.nonPayableDays ?? c.lopDays), sub: c.correctedDays || c.hrDeductedDays ? `HR: +${n(c.correctedDays || 0)} payable / −${n(c.hrDeductedDays || 0)} non-payable` : "Leave without pay / absent / penalties", icon: Ban, tone: "red" },
         { label: "Penalty Deductions", value: `${n(c.penaltyDays)} day${c.penaltyDays === 1 ? "" : "s"}`, sub: c.pendingPenalties ? `${c.pendingPenalties} pending HR verification` : "Counted in payable days", icon: AlertTriangle, tone: "red" },
-        { label: "Dress Code Penalty", value: dressPen.length, sub: `${sumDays(dressPen) ? `${n(sumDays(dressPen))} day deduction · ` : ""}${dressPen.length ? "Click to see the days" : "None this month"}`, icon: Shirt, tone: "amber", click: "DRESS" as const },
+        { label: "Dress Code Penalty", value: dressPen.length, sub: `${sumDays(dressPen) ? `${n(sumDays(dressPen))} day deduction · ` : ""}${(c.dressCodeFines || []).length ? `Fine: ${(c.dressCodeFines || []).map((f: any) => `${f.percent}%`).join(" + ")} of a day's gross · ` : ""}${dressPen.length ? "Click to see the days" : "None this month"}`, icon: Shirt, tone: "amber", click: "DRESS" as const },
         { label: "Attendance Penalty", value: attPen.length, sub: `${sumDays(attPen) ? `${n(sumDays(attPen))} day deduction · ` : ""}${attPen.length ? "Late / early / missing clock-out — click to see the days" : "None this month"}`, icon: Flag, tone: "red", click: "ATTENDANCE" as const },
     ] : [];
     const TONE: Record<string, string> = {

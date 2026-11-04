@@ -24,7 +24,8 @@ function summaryRows(calc: Calc) {
     return [
         ["Total Days", calc.totalDays], ["Working Days", calc.workingDays], ["Payable Days", calc.payableDays], ["Non-Payable Days", calc.nonPayableDays ?? calc.lopDays],
         ["Paid Leaves", calc.paidLeaves], ["Unpaid Leaves", calc.unpaidLeaves], ["Penalty Deduction (days)", calc.penaltyDays],
-        ["Dress Code Deduction (days)", calc.dressCodeDeductionDays], ["Active Flags", calc.activeFlags],
+        ["Dress Code Deduction (days)", calc.dressCodeDeductionDays],
+        ["Dress Code Fines (% of one day's gross salary)", ((calc as any).dressCodeFines || []).map((f: any) => `${f.percent}%`).join(" + ") || "None"], ["Active Flags", calc.activeFlags],
         ["Days marked payable by HR", calc.correctedDays || 0], ["Days marked non-payable by HR", calc.hrDeductedDays || 0],
         ["Provisional", calc.provisional ? `Yes (as of ${dmy(calc.asOf)})` : "No"],
     ];

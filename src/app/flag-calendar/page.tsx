@@ -1,5 +1,6 @@
 "use client";
 
+import { clockInCutoff } from "@/lib/time-utils";
 import { useAuth } from "@/context/AuthContext";
 import { FLAG_CONFIG, INDIAN_HOLIDAYS_2026 } from "@/lib/colleges";
 import { cn } from "@/lib/utils";
@@ -147,7 +148,7 @@ export default function FlagCalendarPage() {
 
     // Helper for today's time check
     const currentTimeIST = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
-    const isBeforeCutoff = currentTimeIST < "11:59";
+    const isBeforeCutoff = currentTimeIST < clockInCutoff(getExpectedTiming(selectedEmployeeId).in);
 
     // Build calendar grid
     const firstDay = new Date(year, month, 1);

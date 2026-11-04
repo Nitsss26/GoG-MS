@@ -738,7 +738,7 @@ interface AuthContextType {
     approveWorkSchedule: (employeeId: string) => void;
     addCollege: (college: Omit<College, "id">) => Promise<void>;
     updateCollege: (id: string, updates: Partial<College>) => Promise<void>;
-    deleteCollege: (id: string) => Promise<void>;
+    deleteCollege: (id: string) => Promise<{ ok: boolean; error?: string }>;
     addAdditionalResponsibility: (employeeId: string, description: string, points: number) => Promise<boolean>;
     approveAdditionalResponsibility: (id: string, status: "Approved" | "Rejected", rejectionReason?: string) => Promise<void>;
     addMarkAsPresentRequest: (req: Omit<MarkAsPresentRequest, "id" | "status" | "appliedAt" | "employeeName">) => Promise<void>;
@@ -1778,9 +1778,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const deleteCollege = async (id: string) => {
         try {
             const res = await fetch(`/api/locations/${id}`, { method: "DELETE" });
-            const data = await res.json();
-            if (data.message) setColleges(prev => prev.filter(c => c.id !== id));
-        } catch (err) { console.error(err); }
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.message) { setColleges(prev => prev.filter(c => c.id !== id)); return { ok: true }; }
+            return { ok: false, error: data.error || "Could not delete the location." };
+        } catch (err) { console.error(err); return { ok: false, error: "Could not reach GOG OMS. Please try again." }; }
     };
 
     const overrideAttendance = async (employeeId: string, date: string, status: "Present" | "Absent") => {

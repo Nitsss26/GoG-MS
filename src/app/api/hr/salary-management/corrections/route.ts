@@ -25,10 +25,14 @@ export async function POST(req: Request) {
         if (employeeId === actor.id) return NextResponse.json({ error: 'You cannot correct your own payable days.' }, { status: 403 });
         const direction = b.direction === 'TO_NON_PAYABLE' ? 'TO_NON_PAYABLE' : 'TO_PAYABLE';
         const toPay = direction === 'TO_PAYABLE';
-        const category = String(b.category || '');
-        if (!(toPay ? CORRECTION_CATEGORIES : NON_PAYABLE_CATEGORIES).includes(category)) return NextResponse.json({ error: 'Choose a correction category.' }, { status: 400 });
+        const picked = String(b.category || '');
+        if (!(toPay ? CORRECTION_CATEGORIES : NON_PAYABLE_CATEGORIES).includes(picked)) return NextResponse.json({ error: 'Choose a correction category.' }, { status: 400 });
+        // "Other" → HR writes the category by hand
+        const otherText = String(b.categoryOther || '').trim().replace(/\s+/g, ' ').slice(0, 150);
+        if (picked === 'Other' && otherText.length < 2) return NextResponse.json({ error: 'Write the correction category for "Other".' }, { status: 400 });
+        const category = picked === 'Other' ? `Other — ${otherText}` : picked;
+        // reason is optional
         const reason = String(b.reason || '').trim();
-        if (!reason) return NextResponse.json({ error: 'Enter the reason for the correction.' }, { status: 400 });
         const evidence = (Array.isArray(b.evidenceUrls) ? b.evidenceUrls : []).map((u: any) => String(u || '').trim()).filter(Boolean);
         if (evidence.length > 5 || evidence.some((u: string) => !IMAGE_URL_RE.test(u) || u.length > 2048)) return NextResponse.json({ error: 'Evidence must be uploaded files (up to 5).' }, { status: 400 });
 
@@ -73,11 +77,11 @@ export async function POST(req: Request) {
             const pendingDates = (ticket.affectedDates || []).filter((d: string) => d.startsWith(month) ? (after.days.find(x => x.date === d)?.payable ?? 1) < 1 : false);
             const otherMonths = (ticket.affectedDates || []).some((d: string) => !d.startsWith(month));
             ticketStatus = pendingDates.length || otherMonths ? 'Under Review' : 'Resolved';
-            const set: any = { status: ticketStatus, updatedAt: now, hrResponse: `${fmtDate(date)} marked as ${toPay ? 'payable' : 'non-payable'}. ${reason}`.slice(0, 3000) };
+            const set: any = { status: ticketStatus, updatedAt: now, hrResponse: `${fmtDate(date)} marked as ${toPay ? 'payable' : 'non-payable'} (${category}).${reason ? ` ${reason}` : ''}`.slice(0, 3000) };
             if (ticketStatus === 'Resolved') Object.assign(set, { resolvedAt: now, resolvedBy: actor.id, resolvedByName: actor.name, resolutionNote: `${fmtDate(date)} marked as ${toPay ? 'payable' : 'non-payable'} (${before.payableDays} → ${after.payableDays} payable days).` });
             await CorrectionTicket.updateOne({ id: ticket.id }, {
                 $set: set, $addToSet: { correctionIds: doc.id },
-                $push: { history: { at: now, by: actor.id, byName: actor.name, role, action: `Marked ${fmtDate(date)} ${toPay ? 'payable' : 'non-payable'}`, fromStatus: ticket.status, toStatus: ticketStatus, note: reason.slice(0, 3000) } },
+                $push: { history: { at: now, by: actor.id, byName: actor.name, role, action: `Marked ${fmtDate(date)} ${toPay ? 'payable' : 'non-payable'}`, fromStatus: ticket.status, toStatus: ticketStatus, note: (reason || category).slice(0, 3000) } },
             });
         }
         const notify = await notifyEmployee(emp, toPay ? 'Payable Day Correction Approved' : 'Payable Day Correction — Marked Non-Payable',
@@ -88,7 +92,7 @@ export async function POST(req: Request) {
                 { label: 'Employee', value: `${emp.name} (${emp.id})` }, { label: 'Date', value: fmtDate(date) },
                 { label: 'Previous Status', value: row.payableStatus }, { label: 'Updated Status', value: toPay ? 'Payable' : 'Non-Payable' },
                 { label: 'Previous Monthly Payable Days', value: String(before.payableDays) }, { label: 'Updated Monthly Payable Days', value: String(after.payableDays) },
-                { label: 'Correction Reason', value: reason }, { label: 'Updated By', value: role },
+                { label: 'Correction Category', value: category }, { label: 'Correction Reason', value: reason || '—' }, { label: 'Updated By', value: role },
                 ...(ticket ? [{ label: 'Ticket', value: `${ticket.id} — ${ticketStatus}` }] : []),
             ], actor, doc.id);
         await PayableCorrection.updateOne({ id: doc.id }, { $set: { notifyStatus: notify } });

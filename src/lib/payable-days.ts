@@ -19,6 +19,8 @@
  */
 
 export type PdAttendance = { _id?: any; date: string; status?: string; clockIn?: string; clockOut?: string; workMode?: string; location?: string; dressCodeStatus?: string; dressCodeRejectionReasons?: string[] };
+import { isNewPolicy, lateLadder, dressLadder } from './attendance-policy';
+
 export type PdLeave = { id?: string; type?: string; leaveType?: string; startDate: string; endDate: string; days?: number; status?: string };
 export type PdViolation = { id: string; date: string; type: string; level?: string; instance?: number; proposedDeduction?: string; hrStatus?: string; scheduledTime?: string; actualTime?: string };
 export type PdInput = {
@@ -26,6 +28,8 @@ export type PdInput = {
     attendance: PdAttendance[]; leaves: PdLeave[]; holidays: string[]; violations: PdViolation[];
     removed: Map<string, { removedAt?: string; removedByName?: string; removalReason?: string }>;
     paidLeavePerMonth?: number; weeklyOff?: number[];
+    /** dates whose Late Clock-In justification is still under HR review (on hold: not counted, no pay cut yet) */
+    latePendingDates?: string[];
     /** HR payable-day corrections (ACTIVE), by date */
     corrections?: Map<string, { id: string; direction?: string; correctionCategory?: string; correctionReason?: string; correctedByName?: string; correctedByRole?: string; correctedAt?: string; relatedTicketId?: string }>;
 };
@@ -33,6 +37,7 @@ export type PdInput = {
 export const LEVEL_LABEL: Record<string, string> = {
     FIRST_WARNING: 'First Warning', SECOND_WARNING: 'Second Warning', FINAL_WARNING: 'Final Warning',
     HALF_DAY: 'Half-Day Deduction', FULL_DAY: 'Full-Day Deduction', MISSING_ALERT: 'Missing Clock-Out Alert',
+    TWO_DAY: 'Two-Day Deduction', THIRD_WARNING: 'Third Warning', FOURTH_WARNING: 'Fourth Warning', FIFTH_WARNING: 'Fifth Warning',
 };
 export const TYPE_LABEL: Record<string, string> = { LATE_IN: 'Late Clock-In', EARLY_OUT: 'Early Clock-Out', MISSING_OUT: 'Missing Clock-Out', DRESS_CODE: 'Dress Code', LOCATION_MISMATCH: 'Location Mismatch' };
 export const CATEGORY_OF: Record<string, string> = { LATE_IN: 'CLOCK_IN', EARLY_OUT: 'CLOCK_OUT', MISSING_OUT: 'CLOCK_OUT', DRESS_CODE: 'DRESS_CODE', LOCATION_MISMATCH: 'LOCATION' };
@@ -47,7 +52,7 @@ export function ladder(instance: number) {
     if (instance === 4) return { level: 'HALF_DAY', deduction: 'Half-Day' };
     return { level: 'FULL_DAY', deduction: 'Full-Day' };
 }
-const units = (d?: string) => (/full/i.test(String(d || '')) ? 1 : /half/i.test(String(d || '')) ? 0.5 : 0);
+const units = (d?: string) => (/^\s*2\s*days?/i.test(String(d || '')) ? 2 : /full/i.test(String(d || '')) ? 1 : /half/i.test(String(d || '')) ? 0.5 : 0);
 
 export type PenaltyItem = {
     flagId: string; date: string; type: string; typeLabel: string; category: string;
@@ -57,6 +62,8 @@ export type PenaltyItem = {
     active: boolean;             // an active flag
     detail?: string;
     removal?: { removedAt?: string; removedByName?: string; removalReason?: string };
+    /** dress code (new policy): fine as a % of one day's gross salary — never changes payable days */
+    finePercent?: number;
 };
 export type DayRow = {
     date: string; weekday: string; attendance: string; leave: string;
@@ -106,10 +113,29 @@ export function calculatePayableDays(input: PdInput) {
 
     // ── penalties / flags ──
     const penalties: PenaltyItem[] = [];
+    const latePending = new Set(input.latePendingDates || []);
+    let lateN = 0;   // Late Clock-In instances of the month that still count (removed / waived / approved / on hold do not)
     for (const v of (input.violations || []).filter(x => x?.date?.startsWith(input.month)).sort((a, b) => a.date.localeCompare(b.date))) {
         const flagId = `VIO:${v.id}`;
         const rem = input.removed.get(flagId);
         const closed = VIOLATION_CLOSED.includes(String(v.hrStatus || ''));
+        if (v.type === 'LATE_IN' && !rem && !closed && !latePending.has(v.date)) lateN++;
+        if (v.type === 'LATE_IN' && isNewPolicy(v.date)) {
+            // Late Arrivals Policy: automatic pay cut from the 3rd instance (no HR approval needed)
+            const onHold = !rem && !closed && latePending.has(v.date);
+            const l = lateLadder(lateN || 1);
+            const cut = !rem && !closed && !onHold ? l.days : 0;
+            penalties.push({
+                flagId, date: v.date, type: v.type, typeLabel: TYPE_LABEL[v.type] || v.type, category: CATEGORY_OF[v.type] || 'OTHER',
+                instance: rem || closed || onHold ? null : lateN, level: rem || closed || onHold ? '' : l.level, levelLabel: rem || closed || onHold ? '—' : LEVEL_LABEL[l.level],
+                deduction: rem || closed || onHold ? 'None' : l.proposedDeduction,
+                status: rem ? 'Removed' : v.hrStatus === 'Waived' ? 'Waived' : v.hrStatus === 'Approved' ? 'Resolved' : onHold ? 'Justification Under Review' : cut ? 'Deducted' : 'Warning',
+                deductedDays: cut, active: !rem && !closed,
+                detail: v.actualTime ? `${v.scheduledTime ? `Scheduled ${v.scheduledTime} · ` : ''}Actual ${v.actualTime}` : undefined,
+                ...(rem ? { removal: rem } : {}),
+            });
+            continue;
+        }
         const u = units(v.proposedDeduction);
         const approved = /approved for payroll/i.test(String(v.hrStatus || ''));
         const status = rem ? 'Removed'
@@ -141,6 +167,17 @@ export function calculatePayableDays(input: PdInput) {
             continue;
         }
         dressN++;
+        if (isNewPolicy(a.date)) {
+            // Dress Code policy: warnings, then a fine (% of one day's gross salary) — no payable-day deduction
+            const d = dressLadder(dressN);
+            penalties.push({
+                flagId, date: a.date, type: 'DRESS_CODE', typeLabel: 'Dress Code', category: 'DRESS_CODE', instance: dressN,
+                level: d.level, levelLabel: d.warning, deduction: d.deduction,
+                status: d.finePercent ? 'Fine' : 'Warning', deductedDays: 0, active: true, finePercent: d.finePercent,
+                detail: reasons || undefined,
+            });
+            continue;
+        }
         const l = ladder(dressN);
         penalties.push({
             flagId, date: a.date, type: 'DRESS_CODE', typeLabel: 'Dress Code', category: 'DRESS_CODE', instance: dressN,
@@ -153,7 +190,7 @@ export function calculatePayableDays(input: PdInput) {
     const penaltyByDate = new Map<string, { u: number; labels: string[] }>();
     for (const p of penalties) {
         const cur = penaltyByDate.get(p.date) || { u: 0, labels: [] };
-        if (p.deductedDays) cur.u = Math.min(1, cur.u + p.deductedDays);
+        if (p.deductedDays) cur.u = cur.u + p.deductedDays;   // may exceed 1 (2 days' pay cut): the rest comes off the month
         if (p.status !== 'Removed') cur.labels.push(`${p.typeLabel}${p.levelLabel && p.levelLabel !== '—' ? ` — ${p.levelLabel}` : ''}`);
         penaltyByDate.set(p.date, cur);
     }
@@ -163,6 +200,8 @@ export function calculatePayableDays(input: PdInput) {
     const days: DayRow[] = [];
     let workingDays = 0, employedDays = 0, presentDays = 0, paidLeave = 0, unpaidLeave = 0, absentDays = 0, penaltyDays = 0;
     let holidayDays = 0, weeklyOffDays = 0, upcomingDays = 0, pendingLeaveDays = 0, correctedDays = 0, hrDeductedDays = 0;
+    /** pay cut beyond the day itself (e.g. 2 days' pay cut on one date), taken from the month's payable days */
+    const extraByDate = new Map<string, number>();
     /** HR correction on top of the records (attendance / leave shown on the row stay as recorded) */
     const applyCorrection = (row: DayRow) => {
         const corr = input.corrections?.get(row.date);
@@ -233,6 +272,8 @@ export function calculatePayableDays(input: PdInput) {
         if (pen) {
             const applied = Math.min(pen, Math.max(0, 1 - lop));
             if (applied) { lop += applied; penaltyDays += applied; why.push(`Penalty deduction ${applied} day`); }
+            const extra = r2(pen - Math.min(pen, 1));   // only the part above one day (2 days' pay cut)
+            if (extra > 0) { extraByDate.set(date, extra); why.push(`+${extra} day pay cut from this month's payable days`); }
         }
         row.lop = r2(lop); row.payable = r2(1 - lop);
         row.payableStatus = lop >= 1 ? 'Non-Payable' : lop > 0 ? 'Partly Payable' : 'Payable';
@@ -243,7 +284,12 @@ export function calculatePayableDays(input: PdInput) {
         applyCorrection(row);
         days.push(row);
     }
-    const lopDays = r2(days.reduce((s, d) => s + d.lop, 0));
+    // extra pay cut counts unless HR corrected that date
+    let extraPenaltyDays = 0;
+    extraByDate.forEach((x, d) => { if (!days.find(r => r.date === d)?.correction) extraPenaltyDays = r2(extraPenaltyDays + x); });
+    penaltyDays = r2(penaltyDays + extraPenaltyDays);
+    const lopDays = r2(Math.min(employedDays, days.reduce((s, d) => s + d.lop, 0) + extraPenaltyDays));
+    const dressFines = penalties.filter(p => p.type === 'DRESS_CODE' && (p.finePercent || 0) > 0).map(p => ({ date: p.date, instance: p.instance, percent: p.finePercent!, flagId: p.flagId }));
     return {
         month: input.month, provisional: !!input.asOf, asOf: input.asOf || null,
         totalDays: N, workingDays, employedDays,
@@ -258,6 +304,9 @@ export function calculatePayableDays(input: PdInput) {
         activeFlags: penalties.filter(p => p.active).length,
         dressCodeViolations: penalties.filter(p => p.type === 'DRESS_CODE' && p.status !== 'Removed').length,
         dressCodeDeductionDays: r2(penalties.filter(p => p.type === 'DRESS_CODE').reduce((s, p) => s + p.deductedDays, 0)),
+        /** dress code fines (new policy): % of one day's gross salary each — the rupee amount is calculated by finance */
+        dressCodeFines: dressFines, dressCodeFinePercentTotal: dressFines.reduce((s, f) => s + f.percent, 0),
+        extraPenaltyDays,
         pendingPenalties: penalties.filter(p => p.status === 'Pending HR Verification' || p.status === 'Awaiting Explanation').length,
         removedFlags: penalties.filter(p => p.status === 'Removed').length,
         penalties, days,
