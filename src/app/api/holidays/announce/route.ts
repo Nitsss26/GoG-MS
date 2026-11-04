@@ -13,25 +13,34 @@ export const dynamic = 'force-dynamic';
  * HOI direct holiday announcement (no HR approval).
  *   GET                — HOI: colleges it may announce for + its announcements with e-mail delivery status
  *                        (HR / Founder: every HOI announcement)
- *   POST { title, collegeId, date, holidayType, reason, description }   — HOI only, for a college it manages
+ *   POST { title, collegeId, date, endDate?, holidayType, reason, description }   — HOI only, for a college it manages.
+ *        endDate (optional) makes it a multi-day holiday (date … endDate, max 31 days): one Holiday record per day
+ *        (so attendance / payable days work per date as before), ONE announcement and ONE e-mail for the whole range.
  *   PUT  { holidayId, action: "retry_emails" }                          — resend failed e-mails (HOI owner / HR / Founder)
  * "Colleges an HOI manages" = its own campus + campuses it heads (Location.hoiId) — the same scope the academic
  * workflow uses, plus the HOI's assigned (attendance) locations.
  */
 const HOLIDAY_TYPES = ['Public Holiday', 'Institutional Holiday', 'Special Holiday', 'Emergency Closure', 'Other'];
 const fmtLong = (ymd: string) => new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' });
+const MAX_RANGE_DAYS = 31;
+/** "05 November 2026" or "05 November 2026 to 07 November 2026 (3 days)" */
+const fmtRange = (from: string, to?: string) => {
+    if (!to || to === from) return fmtLong(from);
+    const n = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1;
+    return `${fmtLong(from)} to ${fmtLong(to)} (${n} days)`;
+};
 
 /** Colleges the HOI manages + every location HR assigned to the HOI (Employee.attendanceLocations) */
 async function managedColleges(actor: any) {
     return hoiColleges(actor);
 }
 
-function emailParts(h: any, collegeName: string) {
+function emailParts(h: any, collegeName: string, endDate?: string) {
     return {
         title: `Holiday Announcement – ${collegeName}`,
         message: `Dear Employee, this is to inform you that a holiday has been announced for ${collegeName}.`,
         rows: [
-            { label: 'Holiday', value: h.name }, { label: 'Date', value: fmtLong(h.date) }, { label: 'Type', value: h.holidayType || '' },
+            { label: 'Holiday', value: h.name }, { label: endDate && endDate !== h.date ? 'Dates' : 'Date', value: fmtRange(h.date, endDate) }, { label: 'Type', value: h.holidayType || '' },
             { label: 'Reason', value: h.reason || '' }, { label: 'Announced By', value: `Head of Institution (${h.proposedByName})` },
         ],
         note: 'Please refer to the GOG OMS Announcements section for further information.',
@@ -64,8 +73,15 @@ export async function GET() {
         if (actor.role !== 'HOI' && !isAdmin) return NextResponse.json({ error: 'Not allowed.' }, { status: 403 });
         const colleges = actor.role === 'HOI' ? await managedColleges(actor) : [];
         const holidays: any[] = await Holiday.find({ source: 'HOI_ANNOUNCEMENT', ...(isAdmin ? {} : { proposedBy: actor.id }) }).sort({ date: -1 }).lean();
-        const delivery = await deliveryOf(holidays.map(h => h.id));
-        return NextResponse.json({ colleges, types: HOLIDAY_TYPES, holidays: holidays.map(h => ({ ...h, _id: String(h._id), delivery: delivery[h.id] || { total: 0, SENT: 0, FAILED: 0, SKIPPED: 0, PENDING: 0 } })) });
+        // A multi-day holiday = several day records sharing one announcementId → shown as one row (first day carries the e-mails)
+        const groups = new Map<string, any[]>();
+        holidays.forEach(h => { const k = h.announcementId || h.id; groups.set(k, [...(groups.get(k) || []), h]); });
+        const rows = Array.from(groups.values()).map(days => {
+            days.sort((a, b) => a.date.localeCompare(b.date));
+            return { ...days[0], endDate: days[days.length - 1].date, days: days.length, dayIds: days.map(d => d.id) };
+        }).sort((a, b) => b.date.localeCompare(a.date));
+        const delivery = await deliveryOf(rows.map(h => h.id));
+        return NextResponse.json({ colleges, types: HOLIDAY_TYPES, holidays: rows.map(h => ({ ...h, _id: String(h._id), delivery: delivery[h.id] || { total: 0, SENT: 0, FAILED: 0, SKIPPED: 0, PENDING: 0 } })) });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -82,6 +98,7 @@ export async function POST(req: Request) {
         const title = String(body.title || '').trim();
         const collegeId = String(body.collegeId || '');
         const date = String(body.date || '');
+        const endDate = body.endDate ? String(body.endDate) : date;
         const holidayType = HOLIDAY_TYPES.includes(body.holidayType) ? body.holidayType : '';
         const reason = String(body.reason || '').trim();
         const description = String(body.description || '').trim();
@@ -92,56 +109,66 @@ export async function POST(req: Request) {
         const today = zonedNow().ymd;
         if (date < addDays(today, -30)) return NextResponse.json({ error: 'A holiday can be announced at most 30 days in the past.' }, { status: 400 });
         if (date > addDays(today, 366)) return NextResponse.json({ error: 'A holiday can be announced at most one year ahead.' }, { status: 400 });
+        if (!isValidYmd(endDate)) return NextResponse.json({ error: 'Select a valid "To" date.' }, { status: 400 });
+        if (endDate < date) return NextResponse.json({ error: 'The "To" date cannot be before the "From" date.' }, { status: 400 });
+        const dates: string[] = [];
+        for (let d = date; d <= endDate; d = addDays(d, 1)) dates.push(d);
+        if (dates.length > MAX_RANGE_DAYS) return NextResponse.json({ error: `A holiday can cover at most ${MAX_RANGE_DAYS} days.` }, { status: 400 });
 
         const colleges = await managedColleges(actor);
         const college = colleges.find(c => c.id === collegeId);
         if (!college) return NextResponse.json({ error: 'You can only announce holidays for the colleges you manage.' }, { status: 403 });
 
-        // No second holiday for the same college and date (announced, approved or waiting for HR)
-        const existing: any = await Holiday.findOne({ date, status: { $in: ['Approved', 'Proposed'] }, $or: [{ forAll: true }, { collegeIds: collegeId }] }).lean();
-        if (existing) return NextResponse.json({ error: `A holiday already exists for ${college.name} on ${fmtLong(date)}: "${existing.name}" (${existing.status}).`, existingId: existing.id }, { status: 409 });
+        // No second holiday for the same college and date (announced, approved or waiting for HR) — checked for every day
+        const existing: any = await Holiday.findOne({ date: { $in: dates }, status: { $in: ['Approved', 'Proposed'] }, $or: [{ forAll: true }, { collegeIds: collegeId }] }).lean();
+        if (existing) return NextResponse.json({ error: `A holiday already exists for ${college.name} on ${fmtLong(existing.date)}: "${existing.name}" (${existing.status}).`, existingId: existing.id }, { status: 409 });
 
         const now = new Date().toISOString();
-        const holidayId = `HOL-${collegeId}-${date}`;   // stable id: a retried request cannot create a second record
+        const holidayId = `HOL-${collegeId}-${date}`;   // stable id (first day): a retried request cannot create a second record
+        const noticeId = `N-${holidayId}`;
+        const created: string[] = [];
         let holiday: any;
         try {
-            holiday = await Holiday.create({
-                id: holidayId, name: title, date, collegeIds: [collegeId], forAll: false, status: 'Approved',
-                source: 'HOI_ANNOUNCEMENT', holidayType, reason, description, customMessage: reason,
-                proposedBy: actor.id, proposedByName: actor.name, proposedAt: now,
-                approvedBy: actor.id, approvedByName: actor.name, approvedAt: now,
-                announcedByRole: 'HOI', createdAt: now, publishedStatus: 'Published',
-            });
+            for (const d of dates) {
+                const doc = await Holiday.create({
+                    id: `HOL-${collegeId}-${d}`, name: title, date: d, collegeIds: [collegeId], forAll: false, status: 'Approved',
+                    source: 'HOI_ANNOUNCEMENT', holidayType, reason, description, customMessage: reason,
+                    proposedBy: actor.id, proposedByName: actor.name, proposedAt: now,
+                    approvedBy: actor.id, approvedByName: actor.name, approvedAt: now,
+                    announcedByRole: 'HOI', createdAt: now, publishedStatus: 'Published', announcementId: noticeId,
+                });
+                created.push(doc.id);
+                if (!holiday) holiday = doc;
+            }
         } catch (e: any) {
+            if (created.length) await Holiday.deleteMany({ id: { $in: created } });
             if (e?.code === 11000) return NextResponse.json({ error: 'This holiday has already been announced.' }, { status: 409 });
             throw e;
         }
 
         // Publish in the existing Announcements (linked to the holiday). If this fails, the holiday is rolled back.
-        const noticeId = `N-${holidayId}`;
         try {
             await Notice.create({
                 id: noticeId, title: `Holiday: ${title}`, category: 'Holiday',
-                content: `HOLIDAY ANNOUNCEMENT\nCollege: ${college.name}\nHoliday Date: ${fmtLong(date)}\nType: ${holidayType}\nReason: ${reason}${description ? `\n${description}` : ''}\nAnnounced By: HOI – ${actor.name}`,
+                content: `HOLIDAY ANNOUNCEMENT\nCollege: ${college.name}\n${dates.length > 1 ? 'Holiday Dates' : 'Holiday Date'}: ${fmtRange(date, endDate)}\nType: ${holidayType}\nReason: ${reason}${description ? `\n${description}` : ''}\nAnnounced By: HOI – ${actor.name}`,
                 createdBy: actor.name, createdById: actor.id, createdByRole: 'HOI', createdAt: today,
                 collegeIds: [collegeId], holidayId, status: 'Published', readBy: [],
             });
         } catch (e: any) {
-            if (e?.code !== 11000) { await Holiday.deleteOne({ id: holidayId }); throw e; }
+            if (e?.code !== 11000) { await Holiday.deleteMany({ id: { $in: created } }); throw e; }
         }
-        await Holiday.updateOne({ id: holidayId }, { $set: { announcementId: noticeId } });
 
         // E-mail + in-app to the college's employees after the response (delivery is tracked per recipient;
         // an e-mail problem never removes the holiday or the announcement)
         const recipients = await collegeEmployees(collegeId);
-        const parts = emailParts(holiday, college.name);
+        const parts = emailParts(holiday, college.name, endDate);
         after(async () => {
             const already = await Notification.countDocuments({ entityType: 'Holiday', entityId: holidayId });
             if (already) return; // idempotent
             await notifySafe({ recipients, ...parts, type: 'HOLIDAY_ANNOUNCED', link: '/announcements', entityType: 'Holiday', entityId: holidayId, college: collegeId, actor });
         });
 
-        return NextResponse.json({ success: true, holiday: { ...holiday.toObject(), announcementId: noticeId }, announcementId: noticeId, recipients: recipients.length, message: `Holiday announced for ${college.name}. ${recipients.length} employee(s) are being notified.` });
+        return NextResponse.json({ success: true, holiday: { ...holiday.toObject(), announcementId: noticeId }, holidayIds: created, days: created.length, announcementId: noticeId, recipients: recipients.length, message: `Holiday announced for ${college.name} (${fmtRange(date, endDate)}). ${recipients.length} employee(s) are being notified.` });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -159,7 +186,8 @@ export async function PUT(req: Request) {
         const isAdmin = actor.role === 'HR' || actor.role === 'FOUNDER';
         if (!isAdmin && h.proposedBy !== actor.id) return NextResponse.json({ error: 'Not allowed.' }, { status: 403 });
         const loc: any = await Location.findOne({ id: h.collegeIds?.[0] }).select('name').lean();
-        const parts = emailParts(h, loc?.name || h.collegeIds?.[0] || '');
+        const last: any = h.announcementId ? await Holiday.findOne({ announcementId: h.announcementId, source: 'HOI_ANNOUNCEMENT' }).sort({ date: -1 }).select('date').lean() : null;
+        const parts = emailParts(h, loc?.name || h.collegeIds?.[0] || '', last?.date);
         const tpl = getAcademicNotificationTemplate({ title: parts.title, intro: parts.message, rows: parts.rows, note: parts.note, link: appUrl('/announcements') });
         const failed: any[] = await Notification.find({ entityType: 'Holiday', entityId: holidayId, emailStatus: 'FAILED' }).lean();
         let sent = 0;

@@ -714,7 +714,7 @@ interface AuthContextType {
     hrAssignEmployee: (employeeId: string, assignment: { location?: string; hoiId?: string; attendanceLocations?: string[] }) => Promise<{ success: boolean; msg?: string }>;
     addReimbursement: (claim: Omit<ReimbursementClaim, "id" | "status" | "date" | "employeeId" | "employeeName">) => Promise<void>;
     updateReimbursementStatus: (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string, approvedAmount?: number) => Promise<void>;
-    proposeHoliday: (h: Omit<Holiday, "id" | "proposedBy" | "status" | "proposedByName">) => void;
+    proposeHoliday: (h: Omit<Holiday, "id" | "proposedBy" | "status" | "proposedByName"> & { endDate?: string }) => void;
     approveHoliday: (id: string, customMessage?: string) => Promise<any>;
     rejectHoliday: (id: string, reason?: string) => Promise<any>;
     removeEmployee: (employeeId: string) => Promise<{ success: boolean; msg?: string }>;
@@ -2275,7 +2275,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     // ─── HOLIDAYS ───
-    const proposeHoliday = async (h: Omit<Holiday, "id" | "proposedBy" | "status" | "proposedByName">) => {
+    const proposeHoliday = async (h: Omit<Holiday, "id" | "proposedBy" | "status" | "proposedByName"> & { endDate?: string }) => {
         if (!user) return;
         const isHRorFounder = user.role === "HR" || user.role === "FOUNDER";
         const newHol: Holiday = {
@@ -2294,10 +2294,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
             const saved = await res.json();
             if (saved.id) {
-                setHolidays(prev => [...prev, saved]);
+                // Multi-day holiday: the server returns every day record in `days`
+                const dayRecords: Holiday[] = Array.isArray(saved.days) && saved.days.length ? saved.days : [saved];
+                setHolidays(prev => [...prev, ...dayRecords]);
+                const multi = !!saved.endDate && saved.endDate !== saved.date;
 
                 if (isHRorFounder) {
-                    const msg = h.customMessage || `${h.name} on ${h.date} is declared as a holiday.`;
+                    const msg = h.customMessage || (multi
+                        ? `${h.name} from ${saved.date} to ${saved.endDate} (${dayRecords.length} days) is declared as a holiday.`
+                        : `${h.name} on ${h.date} is declared as a holiday.`);
                     addAnnouncement({
                         title: `Holiday: ${h.name}`, content: msg, category: "General"
                     });

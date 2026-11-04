@@ -11,13 +11,14 @@ import { cn } from "@/lib/utils";
  * Announcements and e-mailed to that college's employees. Delivery status per announcement, with retry.
  */
 const fmt = (ymd: string) => new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" });
+const fmtRange = (from: string, to?: string) => (!to || to === from ? fmt(from) : `${fmt(from)} – ${fmt(to)}`);
 const todayIST = () => new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
 
 export default function HoiHolidayAnnouncements() {
     const { reloadHolidaysAndNotices } = useAuth();
     const [data, setData] = useState<{ colleges: { id: string; name: string }[]; types: string[]; holidays: any[] } | null>(null);
     const [open, setOpen] = useState(false);
-    const blank = () => ({ title: "", collegeId: "", date: todayIST(), holidayType: "", reason: "", description: "" });
+    const blank = () => ({ title: "", collegeId: "", date: todayIST(), endDate: "", holidayType: "", reason: "", description: "" });
     const [form, setForm] = useState(blank());
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
@@ -34,9 +35,11 @@ export default function HoiHolidayAnnouncements() {
     const flash = (m: string) => { setToast(m); setTimeout(() => setToast(""), 5000); };
 
     const submit = async (e: React.FormEvent) => {
-        e.preventDefault(); setError(""); setBusy(true);
+        e.preventDefault(); setError("");
+        if (form.endDate && form.endDate < form.date) { setError('The "To" date cannot be before the "From" date.'); return; }
+        setBusy(true);
         try {
-            const r = await fetch("/api/holidays/announce", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+            const r = await fetch("/api/holidays/announce", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, endDate: form.endDate || undefined }) });
             const d = await r.json();
             if (!r.ok) throw new Error(d.error || "Could not announce the holiday.");
             setOpen(false); setForm(blank()); flash(d.message); await reloadHolidaysAndNotices(); load();
@@ -70,7 +73,7 @@ export default function HoiHolidayAnnouncements() {
                         return (
                             <div key={h.id} className="px-4 py-3 flex flex-wrap items-center gap-3 text-xs" data-testid="hoi-announced-row" data-id={h.id}>
                                 <div className="flex-1 min-w-[14rem]">
-                                    <p className="font-bold text-white">{h.name} <span className="text-zinc-500 font-normal">· {fmt(h.date)} · {h.holidayType}</span></p>
+                                    <p className="font-bold text-white">{h.name} <span className="text-zinc-500 font-normal">· {fmtRange(h.date, h.endDate)}{h.days > 1 ? ` (${h.days} days)` : ""} · {h.holidayType}</span></p>
                                     <p className="text-[11px] text-zinc-400">{data.colleges.find(c => c.id === h.collegeIds?.[0])?.name || h.collegeIds?.[0]} · {h.reason}</p>
                                 </div>
                                 <span className="px-2 py-0.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-[10px] font-bold">{h.publishedStatus || "Published"}</span>
@@ -100,9 +103,12 @@ export default function HoiHolidayAnnouncements() {
                                 {data && !data.colleges.length && <span className="text-[10px] text-amber-300">No college is mapped to you yet — ask HR to set your Original Location.</span>}
                             </label>
                             <div className="grid grid-cols-2 gap-3">
-                                <label className="block space-y-1"><span className={label}>Holiday Date</span>
-                                    <input type="date" required value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className={input} data-testid="hoi-date" /></label>
-                                <label className="block space-y-1"><span className={label}>Holiday Type</span>
+                                <label className="block space-y-1"><span className={label}>From Date</span>
+                                    <input type="date" required value={form.date} onChange={e => setForm({ ...form, date: e.target.value, endDate: form.endDate && form.endDate < e.target.value ? "" : form.endDate })} className={input} data-testid="hoi-date" /></label>
+                                <label className="block space-y-1"><span className={label}>To Date <span className="normal-case font-normal">(optional)</span></span>
+                                    <input type="date" min={form.date || undefined} value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} className={input} data-testid="hoi-end-date" /></label>
+                                <p className="col-span-2 text-[10px] text-zinc-500 -mt-1">Leave &quot;To Date&quot; empty for a one-day holiday.</p>
+                                <label className="block space-y-1 col-span-2"><span className={label}>Holiday Type</span>
                                     <select required value={form.holidayType} onChange={e => setForm({ ...form, holidayType: e.target.value })} className={input} data-testid="hoi-type">
                                         <option value="">Select type…</option>
                                         {(data?.types || []).map(t => <option key={t} value={t}>{t}</option>)}

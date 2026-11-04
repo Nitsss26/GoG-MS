@@ -10,13 +10,26 @@ export default function HolidayApprovalPage() {
     const [busyId, setBusyId] = useState<string | null>(null);
     const [approveMessages, setApproveMessages] = useState<Record<string, string>>({});
     const [showCreate, setShowCreate] = useState(false);
-    const [createForm, setCreateForm] = useState({ name: "", date: "", collegeIds: [] as string[], forAll: true, customMessage: "" });
+    const [createForm, setCreateForm] = useState({ name: "", date: "", endDate: "", collegeIds: [] as string[], forAll: true, customMessage: "" });
+    const [createError, setCreateError] = useState("");
 
     if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return null;
 
     const pendingHolidays = holidays.filter(h => h.status === "Proposed");
     const approvedHolidays = holidays.filter(h => h.status === "Approved");
     const rejectedHolidays = holidays.filter(h => h.status === "Rejected");
+    // A multi-day holiday is stored as one record per day → show it as one row (From – To)
+    const approvedGroups = (() => {
+        const m = new Map<string, any[]>();
+        approvedHolidays.forEach((h: any) => {
+            const k = h.announcementId || (/^(HOL[a-z0-9]+)-\d{4}-\d{2}-\d{2}$/.exec(h.id)?.[1]) || h.id;
+            m.set(k, [...(m.get(k) || []), h]);
+        });
+        return Array.from(m.values()).map(days => {
+            days.sort((a, b) => a.date.localeCompare(b.date));
+            return { ...days[0], endDate: days[days.length - 1].date, dayCount: days.length };
+        }).sort((a, b) => a.date.localeCompare(b.date));
+    })();
     const getCollegeNames = (ids?: string[]) => {
         if (!ids || ids.length === 0) return null;
         return ids.map(id => colleges.find(c => c.id === id)?.shortName || id).join(", ");
@@ -51,14 +64,17 @@ export default function HolidayApprovalPage() {
 
     const handleCreate = (e: React.FormEvent) => {
         e.preventDefault();
+        if (createForm.endDate && createForm.endDate < createForm.date) { setCreateError('The "To" date cannot be before the "From" date.'); return; }
+        setCreateError("");
         proposeHoliday({
             name: createForm.name,
             date: createForm.date,
+            endDate: createForm.endDate && createForm.endDate !== createForm.date ? createForm.endDate : undefined,
             collegeIds: createForm.forAll ? [] : createForm.collegeIds,
             forAll: createForm.forAll || undefined,
             customMessage: createForm.customMessage || undefined,
         });
-        setCreateForm({ name: "", date: "", collegeIds: [], forAll: true, customMessage: "" });
+        setCreateForm({ name: "", date: "", endDate: "", collegeIds: [], forAll: true, customMessage: "" });
         setShowCreate(false);
     };
 
@@ -124,16 +140,16 @@ export default function HolidayApprovalPage() {
             )}
 
             <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl overflow-hidden">
-                <div className="p-4 border-b border-zinc-800/50"><h3 className="text-sm font-semibold text-green-400 flex items-center gap-2"><CheckCircle2 size={14} /> Approved Holidays ({approvedHolidays.length})</h3></div>
+                <div className="p-4 border-b border-zinc-800/50"><h3 className="text-sm font-semibold text-green-400 flex items-center gap-2"><CheckCircle2 size={14} /> Approved Holidays ({approvedGroups.length})</h3></div>
                 <div className="divide-y divide-zinc-800/50">
-                    {approvedHolidays.length === 0 ? <div className="p-8 text-center text-xs text-zinc-500 italic">No approved holidays.</div> :
-                        approvedHolidays.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(h => (
-                            <div key={h.id} className="p-4 flex items-center gap-3 hover:bg-zinc-800/20 transition-colors">
+                    {approvedGroups.length === 0 ? <div className="p-8 text-center text-xs text-zinc-500 italic">No approved holidays.</div> :
+                        approvedGroups.map(h => (
+                            <div key={h.id} className="p-4 flex items-center gap-3 hover:bg-zinc-800/20 transition-colors" data-testid="hol-approved-row">
                                 <Calendar size={14} className="text-green-400" />
                                 <div className="flex-1">
                                     <p className="text-xs font-bold text-white">{h.name}</p>
                                     <div className="flex items-center gap-2 mt-0.5">
-                                        <span className="text-[10px] text-zinc-500">{h.date}</span>
+                                        <span className="text-[10px] text-zinc-500" data-testid="hol-approved-date">{h.dayCount > 1 ? `${h.date} to ${h.endDate} (${h.dayCount} days)` : h.date}</span>
                                         {h.collegeIds && h.collegeIds.length > 0 && <span className="text-[8px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-full border border-blue-500/20"><Building2 size={8} className="inline" /> {getCollegeNames(h.collegeIds)}</span>}
                                         {h.forAll && <span className="text-[8px] font-bold text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full border border-green-500/20"><Globe size={8} className="inline" /> All</span>}
                                         {h.customMessage && <span className="text-[9px] text-zinc-600 italic truncate max-w-[250px]">"{h.customMessage}"</span>}
@@ -176,9 +192,17 @@ export default function HolidayApprovalPage() {
                                     <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Holiday Name</label>
                                     <input type="text" required placeholder="e.g. Diwali, Staff Day" value={createForm.name} onChange={e => setCreateForm({ ...createForm, name: e.target.value })} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-xs text-white" />
                                 </div>
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Date</label>
-                                    <input type="date" required value={createForm.date} onChange={e => setCreateForm({ ...createForm, date: e.target.value })} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-xs text-white" />
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">From Date</label>
+                                        <input type="date" required value={createForm.date} onChange={e => setCreateForm({ ...createForm, date: e.target.value, endDate: createForm.endDate && createForm.endDate < e.target.value ? "" : createForm.endDate })} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-xs text-white [color-scheme:dark]" data-testid="hol-from" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">To Date <span className="normal-case font-normal">(optional)</span></label>
+                                        <input type="date" min={createForm.date || undefined} value={createForm.endDate} onChange={e => setCreateForm({ ...createForm, endDate: e.target.value })} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 text-xs text-white [color-scheme:dark]" data-testid="hol-to" />
+                                    </div>
+                                    <p className="col-span-2 text-[10px] text-zinc-500 -mt-1">Leave "To Date" empty for a one-day holiday.</p>
+                                    {createError && <p className="col-span-2 text-[10px] text-red-400" data-testid="hol-create-error">{createError}</p>}
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Applies To</label>

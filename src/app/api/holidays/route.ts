@@ -4,6 +4,7 @@ import { Holiday, Employee, Location } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
 import { sendMailInternal } from '@/lib/mail-server';
 import { getHolidayFacultyTemplate } from '@/lib/mail-templates';
+import { isValidYmd, addDays } from '@/lib/academic';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +55,8 @@ export async function GET() {
 /**
  * Create a holiday (HR / Founder: approved directly) or a holiday request (everyone else: goes to HR as "Proposed").
  * A request from an HOI always belongs to the HOI's own college.
+ * HR / Founder may send `endDate` to create a multi-day holiday (date … endDate, max 31 days): one record per day,
+ * so attendance / payable days keep working per date. The response is the first day, with `days` = every record.
  */
 export async function POST(req: Request) {
     try {
@@ -68,6 +71,8 @@ export async function POST(req: Request) {
 
         const body = await req.json();
         const isHR = actor.role === "HR" || actor.role === "FOUNDER";
+        const endDate = body.endDate ? String(body.endDate) : '';
+        delete body.endDate;
 
         const data: any = {
             ...body,
@@ -92,6 +97,25 @@ export async function POST(req: Request) {
             data.approvedBy = actor.id;
             data.approvedByName = actor.name;
             data.approvedAt = data.proposedAt;
+        }
+
+        // Multi-day holiday (HR / Founder only)
+        if (endDate && endDate !== data.date) {
+            if (!isHR) return NextResponse.json({ error: 'Only HR can create a holiday for more than one day.' }, { status: 403 });
+            if (!isValidYmd(data.date) || !isValidYmd(endDate)) return NextResponse.json({ error: 'Select valid From and To dates.' }, { status: 400 });
+            if (endDate < data.date) return NextResponse.json({ error: 'The "To" date cannot be before the "From" date.' }, { status: 400 });
+            const dates: string[] = [];
+            for (let d = data.date; d <= endDate; d = addDays(d, 1)) dates.push(d);
+            if (dates.length > 31) return NextResponse.json({ error: 'A holiday can cover at most 31 days.' }, { status: 400 });
+            const base = `HOL${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+            const docs: any[] = [];
+            try {
+                for (const d of dates) docs.push(await Holiday.create({ ...data, date: d, id: `${base}-${d}` }));
+            } catch (e) {
+                if (docs.length) await Holiday.deleteMany({ id: { $in: docs.map(x => x.id) } });
+                throw e;
+            }
+            return NextResponse.json({ ...docs[0].toObject(), endDate, days: docs.map(x => x.toObject()) });
         }
 
         // Check if updating existing or creating new

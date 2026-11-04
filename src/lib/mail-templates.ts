@@ -531,12 +531,12 @@ export const getHolidayTemplate = (holiday: any, status: 'Proposed' | 'Approved'
     const title = `${status} Holiday Notice`;
     const content = DataTable([
         { label: "Holiday Name", value: holiday.name },
-        { label: "Event Date", value: formatDate(holiday.date) },
+        { label: "Event Date", value: holiday.endDate && holiday.endDate !== holiday.date ? `${formatDate(holiday.date)} to ${formatDate(holiday.endDate)}` : formatDate(holiday.date) },
         { label: "Classification", value: holiday.category },
         { label: "Public Status", value: status }
     ]);
     return {
-        subject: `[HOLIDAY ${status.toUpperCase()}] ${holiday.name} - ${formatDate(holiday.date)}`,
+        subject: `[HOLIDAY ${status.toUpperCase()}] ${holiday.name} - ${formatDate(holiday.date)}${holiday.endDate && holiday.endDate !== holiday.date ? ` to ${formatDate(holiday.endDate)}` : ''}`,
         html: ProfessionalWrapper(title, content + (holiday.customMessage ? `<div style="background-color: #ecfdf5; padding: 12px; border-radius: 6px; margin-top: 10px; color: #065f46;">${holiday.customMessage}</div>` : ''), "#10b981")
     };
 };

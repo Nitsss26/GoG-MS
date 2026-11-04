@@ -69,7 +69,6 @@ const hrMenu = [
     { label: "Attendance Override", icon: ClipboardList, path: "/hr/attendance-override" },
     { label: "Dress Code", icon: Shirt, path: "/hr/dress-code" },
     { label: "Full Attire", icon: Shirt, path: "/hr/full-attire" },
-    { label: "Location Justifications", icon: MapPin, path: "/attendance/location-justifications" },
     { label: "SOP Management", icon: FileText, path: "/hr/sop" },
     { label: "Reimbursements", icon: Receipt, path: "/hr/reimbursements" },
     { label: "PIP Management", icon: ShieldAlert, path: "/hr/pip" },
