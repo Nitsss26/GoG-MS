@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { ShieldCheck, RefreshCw, ChevronDown, ChevronUp, Flag, AlertTriangle, CheckCircle2, Filter } from "lucide-react";
-import { ClassRecordDetails, ClassRecordActions, ClassStatusBadge } from "@/components/academic/ClassRecordDetails";
+import { ShieldCheck, RefreshCw, Flag, AlertTriangle, CheckCircle2, Filter, Eye } from "lucide-react";
+import { ClassRecordDetails, ClassRecordActions } from "@/components/academic/ClassRecordDetails";
+import LectureTable, { LectureDrawer, RowButton, toLectureRow } from "@/components/academic/LectureTable";
 import { VERIFICATION_ROLES, CLASS_STATUS_LABEL, FINAL_VERIFIER_ROLES, FINAL_PENDING_CLASS_STATUSES } from "@/lib/academic-status";
 
 /**
@@ -16,7 +17,9 @@ const daysAgo = (n: number) => { const d = todayIST(); d.setDate(d.getDate() - n
 
 /** Submitted and waiting for OM or for the final verification (CL / CH / HOI) */
 const PENDING_VERIFICATION = ["PENDING_OM", "PENDING_CL_CH", "PENDING_HOI"];
-/** Completed class whose assignment was added later and waits for the HOI */
+/** Records the OM has already verified (forwarded to CL / CH / HOI, or completed) */
+const OM_DONE = ["OM_VERIFIED", "PENDING_CL_CH", "CL_CH_VERIFIED", "PENDING_HOI", "COMPLETED"];
+/** Completed class whose assignment was added later and waits for the final verifier (CL / CH / HOI / AD) */
 const assignmentPending = (r: any) => r.pipelineStatus === "COMPLETED" && r.assignment?.hasAssignment && r.assignment?.addedLater && r.assignment?.verificationStatus === "Pending";
 
 export default function ClassVerificationPage() {
@@ -35,6 +38,10 @@ export default function ClassVerificationPage() {
     const [statusFilter, setStatusFilter] = useState("All");
     // All Classes: quick buttons — All / Pending Verification (with OM or CL / CH / HOI) / Verified (completed)
     const [quick, setQuick] = useState<"ALL" | "PENDING" | "VERIFIED">("ALL");
+    // Quick buttons by role: OM → verified = OM has verified it, pending = waiting for OM;
+    // CL / CH / HOI / AD → verified = final verification done, pending = waiting for any verification (as before)
+    const isVerifiedForMe = (r: any) => role === "OM" ? OM_DONE.includes(r.pipelineStatus) : r.pipelineStatus === "COMPLETED";
+    const isPendingForMe = (r: any) => role === "OM" ? r.pipelineStatus === "PENDING_OM" : PENDING_VERIFICATION.includes(r.pipelineStatus);
     const [records, setRecords] = useState<any[]>([]);
     const [professors, setProfessors] = useState<any[]>([]);
     const [colleges, setColleges] = useState<any[]>([]);
@@ -88,8 +95,8 @@ export default function ClassVerificationPage() {
 
     const visible = useMemo(() => {
         let list = records;
-        if (tab === "QUEUE" && queue) list = list.filter(r => queue.keys.includes(r.pipelineStatus) || (role === "HOI" && assignmentPending(r)));
-        if (tab === "ALL" && quick !== "ALL") list = list.filter(r => (quick === "VERIFIED" ? r.pipelineStatus === "COMPLETED" : PENDING_VERIFICATION.includes(r.pipelineStatus)));
+        if (tab === "QUEUE" && queue) list = list.filter(r => queue.keys.includes(r.pipelineStatus) || (FINAL_VERIFIER_ROLES.includes(role) && assignmentPending(r)));
+        if (tab === "ALL" && quick !== "ALL") list = list.filter(r => (quick === "VERIFIED" ? isVerifiedForMe(r) : isPendingForMe(r)));
         if (tab === "ALL" && statusFilter !== "All") {
             list = statusFilter === "DELAYED"
                 ? list.filter(r => r.classEnded && (r.pipelineStatus === "PENDING_PROFESSOR" || r.notesMissing))
@@ -98,6 +105,11 @@ export default function ClassVerificationPage() {
         if (deepRecord && !list.some(r => r._id === deepRecord._id)) list = [deepRecord, ...list];
         return list;
     }, [records, tab, statusFilter, quick, queue, deepRecord]);
+
+    // Table rows (same records, nothing changed) + the record open in the drawer
+    const rows = useMemo(() => visible.map(r => toLectureRow(r, "record")), [visible]);
+    const openRow = open ? rows.find(r => r.key === open) || null : null;
+    const inMyQueue = (r: any) => !!queue && (queue.keys.includes(r.pipelineStatus) || (FINAL_VERIFIER_ROLES.includes(role) && assignmentPending(r)));
 
     const refreshAfterAction = async (msg: string) => {
         setMessage(msg);
@@ -111,15 +123,15 @@ export default function ClassVerificationPage() {
         return <div className="flex items-center justify-center h-[80vh] text-zinc-400">Class verification is available for OM, CL, CH, HOI and AD.</div>;
     }
 
-    const queueCount = queue ? records.filter(r => queue.keys.includes(r.pipelineStatus) || (role === "HOI" && assignmentPending(r))).length : 0;
+    const queueCount = queue ? records.filter(r => queue.keys.includes(r.pipelineStatus) || (FINAL_VERIFIER_ROLES.includes(role) && assignmentPending(r))).length : 0;
     const quickCounts = {
         ALL: records.length,
-        PENDING: records.filter(r => PENDING_VERIFICATION.includes(r.pipelineStatus)).length,
-        VERIFIED: records.filter(r => r.pipelineStatus === "COMPLETED").length,
+        PENDING: records.filter(isPendingForMe).length,
+        VERIFIED: records.filter(isVerifiedForMe).length,
     };
 
     return (
-        <div className="max-w-6xl mx-auto pt-8 pb-16 px-4 sm:px-6 space-y-6 w-full [contain:inline-size]">
+        <div className="max-w-[1600px] mx-auto pt-6 pb-16 px-4 sm:px-6 space-y-4 w-full [contain:inline-size]">
             <div className="bg-zinc-900/60 border border-zinc-800 rounded-3xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 min-w-0">
                 <div className="flex items-center gap-3">
                     <div className="w-11 h-11 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center"><ShieldCheck size={22} className="text-emerald-400" /></div>
@@ -189,46 +201,50 @@ export default function ClassVerificationPage() {
             {message && <div className="flex items-center gap-2 rounded-xl px-4 py-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold" data-testid="page-message"><CheckCircle2 size={14} /> {message}</div>}
             {error && <div className="flex items-center gap-2 rounded-xl px-4 py-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-semibold"><AlertTriangle size={14} /> {error}</div>}
 
-            {loading ? (
-                <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>
-            ) : visible.length === 0 ? (
-                <div className="text-center py-16 text-sm text-zinc-500 bg-zinc-900/30 border border-dashed border-zinc-800 rounded-2xl">
-                    {tab === "QUEUE" ? "Nothing is waiting for you." : quick === "PENDING" ? "No classes pending verification in this range." : quick === "VERIFIED" ? "No verified classes in this range." : "No classes in this range."}
-                </div>
-            ) : (
-                <div className="space-y-3" data-testid="record-list">
-                    {visible.map(r => {
-                        const isOpen = open === r._id;
-                        const openFlags = (r.delayFlags || []).filter((f: any) => f.status === "OPEN").length;
-                        return (
-                            <div key={r._id} className={`min-w-0 rounded-2xl border ${isOpen ? "border-emerald-500/30 bg-zinc-900/70" : "border-zinc-800 bg-zinc-900/40"}`} data-testid="record-row">
-                                <button onClick={() => setOpen(isOpen ? null : r._id)} className="w-full text-left p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-bold text-white truncate">{r.facultyName} · {r.courseName}</p>
-                                        <p className="text-[11px] text-zinc-400 truncate">{r.date?.split("-").reverse().join("-")} · {r.timeStart}{r.timeStop ? `–${r.timeStop}` : ""} · {[r.className || r.stream, r.section ? `Sec ${r.section}` : ""].filter(Boolean).join(" / ")}</p>
-                                    </div>
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        {r.notesMissing && <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">Notes missing</span>}
-                                        {role === "HOI" && assignmentPending(r) && <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded" data-testid="assignment-pending-badge">Assignment to verify</span>}
-                                        {openFlags > 0 && <span className="text-[10px] font-bold text-amber-400 flex items-center gap-1"><Flag size={10} /> {openFlags}</span>}
-                                        {r.virtual && r.classEnded && <span className="text-[10px] font-bold text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded">No record yet</span>}
-                                        <ClassStatusBadge status={r.pipelineStatus} />
-                                        {isOpen ? <ChevronUp size={16} className="text-zinc-500" /> : <ChevronDown size={16} className="text-zinc-500" />}
-                                    </div>
-                                </button>
-                                {isOpen && (
-                                    <div className="px-4 pb-5 space-y-5 border-t border-zinc-800 pt-4">
-                                        {r.virtual
-                                            ? <p className="text-xs text-zinc-400">The professor has not submitted the class record for this class yet{r.classEnded ? "" : " (the class has not ended)"}.</p>
-                                            : <ClassRecordDetails record={r} />}
-                                        <ClassRecordActions key={`${r._id}-${r.pipelineStatus}-${(r.pipelineHistory || []).length}`} record={r} role={role} userId={user.id} onDone={refreshAfterAction} />
-                                    </div>
-                                )}
+            <LectureTable
+                rows={rows}
+                loading={loading}
+                showProfessor
+                showQuick={false}
+                variant="report"
+                showPlanDetails
+                activeKey={open}
+                resetKey={`${tab}|${quick}|${statusFilter}|${from}|${to}|${college}|${facultyId}`}
+                onOpen={(r) => setOpen(r.key)}
+                emptyText={tab === "QUEUE" ? "Nothing is waiting for you." : quick === "PENDING" ? "No classes pending verification in this range." : quick === "VERIFIED" ? "No verified classes in this range." : "No classes in this range."}
+                renderActions={(row) => {
+                    const r = row.raw;
+                    const openFlags = (r.delayFlags || []).filter((x: any) => x.status === "OPEN").length;
+                    const mine = inMyQueue(r);
+                    return (
+                        <>
+                            {openFlags > 0 && <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-400" title={`${openFlags} open delay flag(s)`}><Flag size={10} /> {openFlags}</span>}
+                            {FINAL_VERIFIER_ROLES.includes(role) && assignmentPending(r) && <span className="text-[10px] font-bold text-amber-400" title="Assignment added later — waiting for CL / CH / HOI / AD" data-testid="assignment-pending-badge">Asg.</span>}
+                            <RowButton tone={mine ? "primary" : "default"} icon={mine ? ShieldCheck : Eye} onClick={() => setOpen(row.key)} testId={mine ? "row-verify" : "row-view"}>{mine ? "Verify" : "View"}</RowButton>
+                        </>
+                    );
+                }}
+            />
+
+            {/* Details drawer — the same record details and verification actions as before */}
+            <LectureDrawer row={openRow} onClose={() => setOpen(null)}>
+                {openRow && (() => {
+                    const r = openRow.raw;
+                    return (
+                        <div className="space-y-5">
+                            <div className="flex flex-wrap gap-1.5">
+                                {r.notesMissing && <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">Notes missing</span>}
+                                {FINAL_VERIFIER_ROLES.includes(role) && assignmentPending(r) && <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">Assignment to verify</span>}
+                                {r.virtual && r.classEnded && <span className="text-[10px] font-bold text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded">No record yet</span>}
                             </div>
-                        );
-                    })}
-                </div>
-            )}
+                            {r.virtual
+                                ? <p className="text-xs text-zinc-400">The professor has not submitted the class record for this class yet{r.classEnded ? "" : " (the class has not ended)"}.</p>
+                                : <ClassRecordDetails record={r} />}
+                            <ClassRecordActions key={`${r._id}-${r.pipelineStatus}-${(r.pipelineHistory || []).length}`} record={r} role={role} userId={user.id} onDone={refreshAfterAction} />
+                        </div>
+                    );
+                })()}
+            </LectureDrawer>
         </div>
     );
 }

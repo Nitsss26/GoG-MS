@@ -15,9 +15,13 @@ const NoticeSchema = new Schema({
     // Optional scope (older announcements have none and stay visible to everyone)
     collegeIds: [String],
     holidayId: { type: String },
+    holidayIds: [String], // every holiday day this announcement created (removed with it)
     createdById: { type: String },
     createdByRole: { type: String },
-    status: { type: String }
+    status: { type: String },
+    // Holiday announcement: image shown above the text + optional Dashboard Vacation Banner (HR)
+    announcementImageUrl: { type: String },
+    vacationBanner: { type: Schema.Types.Mixed }
 });
 
 // Employee Schema
@@ -232,6 +236,15 @@ const AttendanceSchema = new Schema({
     }],
     // HOI multi-location attendance: where the clock-out happened (clock-in place stays in `location`)
     clockOutLocation: { type: String },
+    // HOI daily clock-in locations (HR → Location Management, that date): what HR allowed + the actual GPS position
+    hoiDailyLocations: { type: [String], default: undefined },
+    hoiDailyLocationsLabel: { type: String },
+    autoLocationFetch: { type: Boolean },
+    clockInLat: { type: Number }, clockInLng: { type: Number }, clockInAccuracyMeters: { type: Number },
+    // Field visit / meeting clock-in (Automatic Location Fetch, outside the assigned colleges)
+    fieldVisit: { type: Boolean },
+    fieldVisitAddress: { type: String },
+    fieldVisitReason: { type: String },         // the HOI's reason (no approval step — the clock-in is normal)
     // HOI / OM multiple-location attendance: every location clock-in of the day, in order (one record = one payable day)
     currentLocationId: { type: String },
     locationVisits: [{
@@ -268,7 +281,13 @@ const WorkScheduleSchema = new Schema({
     changedAt: { type: String },
     hrReadBy: { type: String },
     hrReadByName: { type: String },
-    hrReadAt: { type: String }
+    hrReadAt: { type: String },
+    // HOI only, a specific date (HR → Location Management): several allowed clock-in colleges and / or
+    // Automatic Location Fetch (Field Visit / Meeting). Valid only while `location` still equals `locationsFor`
+    // (another schedule screen changing the location makes them stale → ignored).
+    locations: [String],
+    locationsFor: { type: String },
+    autoLocationFetch: { type: Boolean }
 });
 
 // Mark As Present Request Schema
@@ -454,7 +473,15 @@ const HolidaySchema = new Schema({
     announcedByRole: { type: String },
     createdAt: { type: String },
     publishedStatus: { type: String },      // "Published"
-    announcementId: { type: String }        // linked Notice id
+    announcementId: { type: String },       // linked Notice id
+    // HR "Manually Assign Holiday" (no e-mail): only for these employees when set; batchId groups one assignment
+    employeeIds: [String],
+    employeeNames: [String],
+    batchId: { type: String },
+    assignedManually: { type: Boolean },
+    // Holiday Management → removed for one employee of a college-wide holiday (it no longer applies to them)
+    excludedEmployeeIds: [String],
+    excludedEmployees: [{ id: { type: String }, name: { type: String }, by: { type: String }, byName: { type: String }, at: { type: String } }]
 });
 
 const PIPRecordSchema = new Schema({ id: { type: String, unique: true }, employeeId: String, employeeName: String, reason: String, startDate: String, status: String, warnings: Number, disclaimer: String });
@@ -750,6 +777,9 @@ const LectureReportSchema = new Schema({
     // Notes not submitted → reason (verified by OM)
     notesMissing: { type: Boolean, default: false },
     notesMissingReason: { type: String },
+    // Was the planned topic fully covered in the class? If not, the topics still left (written by the professor)
+    topicFullyCovered: { type: Boolean },
+    topicsLeft: { type: String },
     notesReasonStatus: { type: String, enum: ["PENDING", "VERIFIED", "REVERTED"] },
     notesReasonReviewedBy: { type: String },
     notesReasonReviewedByName: { type: String },

@@ -6,12 +6,12 @@ import Link from "next/link";
 import {
     FileText, Calendar, Users, Camera, Mic, AlertTriangle, CheckCircle2, BookOpen, Clock, X,
     Search, RotateCcw, Download, Loader2, ChevronDown, BarChart3, XCircle, Link2, Image as ImageIcon,
-    Eye, Upload, ClipboardList, MoreVertical, Sparkles, CalendarDays, Info, ExternalLink,
+    Eye, Upload, ClipboardList, MoreVertical, Sparkles, CalendarDays, Info, ExternalLink, Plus,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { ClassRecordDetails, ClassRecordActions, ClassStatusBadge } from "@/components/academic/ClassRecordDetails";
+import { ClassRecordDetails, ClassRecordActions } from "@/components/academic/ClassRecordDetails";
+import LectureTable, { LectureDrawer, RowButton, toLectureRow } from "@/components/academic/LectureTable";
 import AddAssignmentDialog from "@/components/academic/AddAssignmentDialog";
-import { DEFAULT_CLASS_STRENGTH } from "@/lib/academic-status";
 
 /**
  * My Class Records (Lecture Report) — history of the professor's classes with attendance, notes,
@@ -70,21 +70,7 @@ type Row = ReportEntry & { [key: string]: any };
 const todayYmd = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 const shiftDays = (ymd: string, n: number) => { const d = new Date(ymd + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const fmtShort = (ymd?: string) => ymd ? new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "";
-const fmtDay = (ymd?: string) => ymd ? new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short" }) : "";
 const dmy = (ymd: string) => ymd.split("-").reverse().join("-");
-
-function Ring({ pct, color }: { pct: number; color: string }) {
-    const r = 22, c = 2 * Math.PI * r;
-    return (
-        <div className="relative w-[58px] h-[58px] shrink-0">
-            <svg viewBox="0 0 56 56" className="w-full h-full -rotate-90">
-                <circle cx="28" cy="28" r={r} fill="none" stroke="currentColor" strokeWidth="6" className="text-white/10" />
-                <circle cx="28" cy="28" r={r} fill="none" stroke={color} strokeWidth="6" strokeLinecap="round" strokeDasharray={`${(pct / 100) * c} ${c}`} />
-            </svg>
-            <span className="absolute inset-0 flex items-center justify-center text-[11px] font-black text-white tabular-nums">{Math.round(pct)}%</span>
-        </div>
-    );
-}
 
 export default function LectureReportPage() {
     const { user } = useAuth();
@@ -97,11 +83,7 @@ export default function LectureReportPage() {
     const [fromInput, setFromInput] = useState(shiftDays(todayYmd(), -30));
     const [toInput, setToInput] = useState(todayYmd());
     const [range, setRange] = useState({ from: shiftDays(todayYmd(), -30), to: todayYmd() });
-    const [subject, setSubject] = useState("All");
-    const [statusFilter, setStatusFilter] = useState("All");
-    const [appliedFilters, setAppliedFilters] = useState({ subject: "All", status: "All" });
 
-    const [viewRecord, setViewRecord] = useState<Row | null>(null);
     const [asgFor, setAsgFor] = useState<Row | null>(null);
     const [menuFor, setMenuFor] = useState<string | null>(null);
     const [menuPos, setMenuPos] = useState<{ top: number; right: number; up: boolean }>({ top: 0, right: 0, up: false });
@@ -152,25 +134,23 @@ export default function LectureReportPage() {
     // ── derived ──
     const rep = (r: Row) => (r.report || r) as any; // planned rows carry the record in .report; old rows are the record
     const isRecorded = (r: Row) => !!r.report ? (r.report.status === "Completed" || (r.pipelineStatus && r.pipelineStatus !== "PENDING_PROFESSOR")) : r.status === "Completed";
-    const classEnded = (r: Row) => r.classEnded ?? true;
-    const kind = (r: Row): "COMPLETED" | "PENDING" | "MISSED" => isRecorded(r) ? "COMPLETED" : classEnded(r) ? "MISSED" : "PENDING";
-    const minsToStart = (r: Row) => {
-        const t = r.timeStart || r.classStartTime?.slice(0, 5);
-        if (!r.date || !t) return null;
-        return Math.round((new Date(`${r.date}T${t.padStart(5, "0")}:00+05:30`).getTime() - nowTick) / 60000);
-    };
-    const subjects = useMemo(() => Array.from(new Set(reports.map(r => r.courseName).filter(Boolean))).sort(), [reports]);
-    const shown = useMemo(() => reports.filter(r =>
-        (appliedFilters.subject === "All" || r.courseName === appliedFilters.subject) &&
-        (appliedFilters.status === "All" || kind(r) === appliedFilters.status)
-    ), [reports, appliedFilters, nowTick]);
-    const counts = useMemo(() => {
-        const c = { total: shown.length, COMPLETED: 0, PENDING: 0, MISSED: 0 };
-        shown.forEach(r => { c[kind(r)] += 1; });
-        return c;
-    }, [shown]);
-    const pct = (n: number) => (counts.total ? (n / counts.total) * 100 : 0);
     const keyOf = (r: Row) => `${r.date}#${r.lectureNumber}#${r._id || ""}`;
+    // Table rows: old rows (the record itself, no .report) are treated as recorded, exactly like before
+    const rows = useMemo(() => reports.map(r => {
+        const legacy = !r.report && r.status === "Completed";
+        const row = toLectureRow({ ...r, report: legacy ? r : r.report, classEnded: r.classEnded ?? true }, "lecture");
+        return { ...row, key: keyOf(r), raw: r };
+    }), [reports, nowTick]); // eslint-disable-line react-hooks/exhaustive-deps
+    const counts = useMemo(() => ({
+        total: rows.length,
+        submitted: rows.filter(r => r.report === "SUBMITTED" || r.report === "VERIFIED").length,
+        pending: rows.filter(r => r.report === "PENDING").length,
+        reverted: rows.filter(r => r.report === "REVERTED").length,
+        upcoming: rows.filter(r => r.report === "SCHEDULED" || r.report === "IN_PROGRESS").length,
+    }), [rows]);
+    const [drawerKey, setDrawerKey] = useState<string | null>(null);
+    const drawerRow = drawerKey ? rows.find(r => r.key === drawerKey) || null : null;
+    const [rangeOpen, setRangeOpen] = useState(false);
 
     const apply = () => {
         let a = fromInput, b = toInput;
@@ -178,34 +158,33 @@ export default function LectureReportPage() {
         if (a > b) [a, b] = [b, a];
         setFromInput(a); setToInput(b);
         setRange({ from: a, to: b });
-        setAppliedFilters({ subject, status: statusFilter });
+        setRangeOpen(false);
     };
     const reset = () => {
         const t = todayYmd(), f = shiftDays(t, -30);
-        setFromInput(f); setToInput(t); setSubject("All"); setStatusFilter("All");
-        setRange({ from: f, to: t }); setAppliedFilters({ subject: "All", status: "All" });
+        setFromInput(f); setToInput(t); setRange({ from: f, to: t }); setRangeOpen(false);
     };
-    const pickDay = (d: string) => { if (!d) return; setFromInput(d); setToInput(d); setRange({ from: d, to: d }); };
+    const preset = (from: string, to: string) => { setFromInput(from); setToInput(to); setRange({ from, to }); setRangeOpen(false); };
 
     const download = () => {
-        if (!shown.length) { setMessage("No class records to download for these filters."); return; }
+        if (!reports.length) { setMessage("No class records to download for this date range."); return; }
         setExporting(true);
         try {
-            const rows = shown.map(r => {
+            const out = reports.map(r => {
                 const x = rep(r);
                 return {
                     "Date": dmy(r.date), "Lecture #": r.lectureNumber, "Subject": r.courseName, "Topic": r.topicsCovered,
                     "Lecture Type": r.lectureType || x.lectureType || "", "Class": r.className || x.className || "", "Section": r.section || x.section || "",
                     "Stream": r.stream, "Year": r.year, "Semester": r.semester,
                     "Time": `${r.timeStart || x.classStartTime || ""} - ${r.timeStop || x.classEndTime || ""}`,
-                    "Status": kind(r) === "COMPLETED" ? (r.pipelineStatus || "Completed") : kind(r),
+                    "Status": isRecorded(r) ? (r.pipelineStatus || "Completed") : (r.classEnded ?? true) ? "MISSED" : "PENDING",
                     "Attendees": isRecorded(r) ? x.numberOfAttendees ?? "" : "", "Total Students": isRecorded(r) ? x.totalStudents ?? "" : "",
                     "Notes": x.lectureNotes?.notesUrl || (x.notesMissing ? `Not submitted: ${x.notesMissingReason || ""}` : ""),
                     "Assignment": x.assignment?.assignmentUrl || "", "Recording": x.recordingUrl || "",
                 };
             });
-            const ws = XLSX.utils.json_to_sheet(rows);
-            ws["!cols"] = Object.keys(rows[0]).map(k => ({ wch: Math.max(k.length, ...rows.map((r: any) => String(r[k] ?? "").length)) + 2 }));
+            const ws = XLSX.utils.json_to_sheet(out);
+            ws["!cols"] = Object.keys(out[0]).map(k => ({ wch: Math.max(k.length, ...out.map((r: any) => String(r[k] ?? "").length)) + 2 }));
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Class Records");
             XLSX.writeFile(wb, `Class_Records_${user?.name || "Professor"}_${range.from}_to_${range.to}.xlsx`);
@@ -218,242 +197,102 @@ export default function LectureReportPage() {
         return <div className="flex items-center justify-center h-[80vh] text-zinc-400">Access restricted</div>;
     }
 
-    const inputCls = "w-full px-3 py-2.5 bg-zinc-950/70 border border-zinc-800 rounded-xl text-xs font-bold text-white focus:outline-none focus:border-emerald-500/50 [color-scheme:dark]";
-    const label = "text-[11px] font-bold text-zinc-400 mb-1.5 block";
-    // Colours on this page mean only the class status (see the colour key); lecture type is plain text
-    const typeStyle = (_t?: string) => "bg-zinc-800/60 text-zinc-300 border-zinc-700";
-    /** Left edge of a record = its status colour */
-    const edge = (r: Row) => {
-        const st = r.pipelineStatus || "";
-        if (["OM_REVERTED", "CL_CH_REVERTED"].includes(st)) return "border-l-red-500";
-        const k = kind(r);
-        return k === "MISSED" ? "border-l-red-500" : k === "PENDING" ? "border-l-amber-400" : st === "COMPLETED" ? "border-l-emerald-500" : "border-l-sky-500";
-    };
     const today = todayYmd();
-    const openMenu = (e: React.MouseEvent, key: string) => {
+    const inputCls = "w-full h-9 px-3 bg-zinc-950/70 border border-zinc-800 rounded-lg text-xs font-bold text-white focus:outline-none focus:border-emerald-500/50 [color-scheme:dark]";
+    const rangeText = range.from === range.to ? fmtShort(range.from) : `${fmtShort(range.from)} – ${fmtShort(range.to)}`;
+    const warnRows = reports.filter(r => (rep(r).warnings || []).length > 0);
+    // Reports are submitted on My Lectures (same form as before) — these links open it on the right class
+    const submitHref = (r: Row) => `/faculty/lectures?date=${r.date}&lecture=${r.lectureNumber}`;
+    const isReverted = (r: Row) => ["OM_REVERTED", "CL_CH_REVERTED"].includes(r.pipelineStatus || "") && !!r.sprintEntryId;
+    const canSubmit = (r: Row) => (r.pipelineStatus || "PENDING_PROFESSOR") === "PENDING_PROFESSOR" && !!r.sprintEntryId && (r.classEnded ?? true) && !isRecorded(r);
+    // "+ Add Report": the oldest class still waiting for its report, otherwise My Lectures
+    const firstPending = [...reports].sort((a, b) => (a.date + (a.timeStart || "")).localeCompare(b.date + (b.timeStart || ""))).find(r => canSubmit(r) || isReverted(r));
+    const open = rows.find(r => r.key === menuFor)?.raw as Row | undefined;
+    const openMenu = (e: React.MouseEvent<HTMLButtonElement>, key: string) => {
         e.stopPropagation();
-        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        const up = window.innerHeight - r.bottom < 240;
-        setMenuPos({ top: up ? r.top - 4 : r.bottom + 4, right: window.innerWidth - r.right, up });
+        const b = e.currentTarget.getBoundingClientRect();
+        // the app zooms 1.1× on desktop: fixed-position values are in zoomed units
+        const z = (e.currentTarget as any).currentCSSZoom || 1;
+        const up = window.innerHeight - b.bottom < 240 * z;
+        setMenuPos({ top: (up ? b.top - 4 : b.bottom + 4) / z, right: Math.max(8, Math.min((window.innerWidth - b.right) / z, window.innerWidth / z - 232)), up }); // keep the 224px menu on screen
         setMenuFor(menuFor === key ? null : key);
     };
 
-    // ── cells ──
-    const Lesson = ({ r }: { r: Row }) => {
-        const x = rep(r);
-        const cls = [r.className || x.className, (r.section || x.section) ? `Sec ${r.section || x.section}` : "", r.semester, r.year].filter(Boolean);
-        return (
-            <div className="min-w-0">
-                <p className="text-sm font-black text-white leading-snug">{r.courseName}</p>
-                {r.topicsCovered && <p className="text-[11px] text-zinc-500 line-clamp-1 mt-0.5" title={r.topicsCovered}>{r.topicsCovered}</p>}
-                <div className="flex flex-wrap gap-1 mt-1.5">
-                    {(r.lectureType || x.lectureType) && <span className={`px-1.5 py-0.5 rounded-md border text-[10px] font-bold ${typeStyle(r.lectureType || x.lectureType)}`}>{r.lectureType || x.lectureType}</span>}
-                    {(r.unitNumber || x.unitNumber) && <span className="px-1.5 py-0.5 rounded-md border border-zinc-700 bg-zinc-800/60 text-[10px] font-bold text-zinc-300">Unit {r.unitNumber || x.unitNumber}</span>}
-                </div>
-                <p className="text-[11px] text-zinc-400 mt-1.5 leading-snug">
-                    {r.stream && <span className="text-indigo-300 font-semibold">{r.stream}</span>}{cls.length > 0 && <span> · {cls.join(" · ")}</span>}
-                </p>
-            </div>
-        );
-    };
-    const Schedule = ({ r }: { r: Row }) => {
-        const x = rep(r);
-        const s = r.timeStart || x.classStartTime?.slice(0, 5), e = r.timeStop || x.classEndTime?.slice(0, 5);
-        return (
-            <div>
-                <div className="flex items-center gap-1.5 text-xs font-black text-white tabular-nums whitespace-nowrap"><Clock size={13} className="text-amber-400" /> {s || "—"} – {e || "—"}</div>
-                <p className="text-[10px] text-zinc-400 mt-0.5 whitespace-nowrap">{fmtShort(r.date)} ({fmtDay(r.date)})</p>
-                {(r.scheduledDuration || x.actualDurationMinutes) ? <p className="text-[10px] text-zinc-500">{x.actualDurationMinutes || r.scheduledDuration} mins</p> : null}
-            </div>
-        );
-    };
-    const Attendance = ({ r }: { r: Row }) => {
-        const x = rep(r);
-        const tot = x.totalStudents || r.defaultTotalStudents || DEFAULT_CLASS_STRENGTH;
-        if (!isRecorded(r) || typeof x.numberOfAttendees !== "number") return (
-            <div className="w-full max-w-[7rem]">
-                <div className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-500 whitespace-nowrap"><Users size={12} /> Not Marked Yet</div>
-                <div className="h-1.5 w-full bg-zinc-800 rounded-full mt-1.5" />
-            </div>
-        );
-        const p = Math.min(100, (x.numberOfAttendees / tot) * 100);
-        return (
-            <div className="w-full max-w-[7rem]">
-                <div className="flex items-center gap-1.5 text-xs font-black text-white tabular-nums"><Users size={13} className="text-emerald-400" /> {x.numberOfAttendees} / {tot}</div>
-                <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden mt-1.5"><div className={`h-full rounded-full ${p < 50 ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${p}%` }} /></div>
-            </div>
-        );
-    };
-    const Status = ({ r }: { r: Row }) => {
-        const k = kind(r);
-        if (k === "COMPLETED") {
-            const x = rep(r);
-            return (
-                <div className="space-y-1.5 min-w-0">
-                    <div className="[&>span]:whitespace-normal [&>span]:leading-tight"><ClassStatusBadge status={r.pipelineStatus || "COMPLETED"} /></div>
-                    <p className="text-[10px] text-zinc-500">{fmtShort(r.date)}</p>
-                    {x.notesMissing && <span className="inline-block text-[9px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">Notes missing</span>}
-                </div>
-            );
-        }
-        if (k === "MISSED") return (
-            <div className="inline-flex items-start gap-2 px-2.5 py-2 rounded-xl border bg-red-500/10 border-red-500/25 text-red-300">
-                <XCircle size={14} className="mt-0.5 shrink-0" /><div><p className="text-[10px] font-black uppercase tracking-wider">Report Missing</p><p className="text-[10px] text-zinc-400 whitespace-nowrap">{fmtShort(r.date)}</p></div>
-            </div>
-        );
-        const m = minsToStart(r);
-        const running = m !== null && m <= 0;
-        return (
-            <div className={"inline-flex items-start gap-2 px-2.5 py-2 rounded-xl border bg-amber-500/10 border-amber-500/25 text-amber-300"}>
-                {running ? <span className="mt-1 w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" /> : <Clock size={14} className="mt-0.5 shrink-0" />}
-                <div>
-                    <p className="text-[10px] font-black uppercase tracking-wider">{running ? "In Progress" : "Pending"}</p>
-                    <p className="text-[10px] text-zinc-400 whitespace-nowrap">{running ? `Ends at ${r.timeStop}` : m !== null && m < 24 * 60 ? `Starts in ${Math.floor(m / 60) ? `${Math.floor(m / 60)} h ` : ""}${m % 60} min` : fmtShort(r.date)}</p>
-                </div>
-            </div>
-        );
-    };
-    /** Attachment present = filled (click to open); missing = dashed outline */
-    const ATT_ON = "bg-zinc-800 border-zinc-600 text-zinc-100 hover:bg-zinc-700";
-    const Attachments = ({ r }: { r: Row }) => {
-        const x = rep(r);
-        const notes = x.lectureNotes?.notesUrl ? [x.lectureNotes.notesUrl] : [];
-        const links = x.assignment?.assignmentUrl ? [x.assignment.assignmentUrl] : [];
-        const photos: string[] = [...(x.snapshotUrls || []), ...(x.classPhotoUrl && !(x.snapshotUrls || []).includes(x.classPhotoUrl) ? [x.classPhotoUrl] : [])];
-        const rec = x.recordingUrl ? [x.recordingUrl] : [];
-        const item = (Icon: any, list: string[], title: string, tone: string) => (
-            <div className="flex flex-col items-center gap-1">
-                {list.length ? (
-                    <a href={list[0]} target="_blank" rel="noopener noreferrer" title={`${title} (${list.length})`}
-                        className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all hover:scale-105 ${tone}`}><Icon size={14} /></a>
-                ) : (
-                    <span title={`No ${title.toLowerCase()}`} className="w-8 h-8 rounded-lg border border-dashed border-zinc-800 flex items-center justify-center text-zinc-700"><Icon size={14} /></span>
-                )}
-                <span className={`text-[10px] font-bold tabular-nums ${list.length ? "text-zinc-300" : "text-zinc-700"}`}>{list.length || "–"}</span>
-            </div>
-        );
-        return (
-            <div className="flex items-start gap-1.5" data-testid="attachments">
-                {item(FileText, notes, "Notes", ATT_ON)}
-                {item(Link2, links, "Assignment link", ATT_ON)}
-                {item(ImageIcon, photos, "Photos", ATT_ON)}
-                {item(Mic, rec, "Recording", ATT_ON)}
-            </div>
-        );
-    };
-    const Actions = ({ r, wide }: { r: Row; wide?: boolean }) => {
-        const k = kind(r);
-        const notSubmitted = (r.pipelineStatus || "PENDING_PROFESSOR") === "PENDING_PROFESSOR";
-        const btn = "flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-black whitespace-nowrap transition-all active:scale-95";
-        const reverted = ["OM_REVERTED", "CL_CH_REVERTED"].includes(r.pipelineStatus || "");
-        const primary = reverted && r.sprintEntryId ? (
-            <Link href={`/faculty/lectures?date=${r.date}&lecture=${r.lectureNumber}`} data-testid="resubmit-report" title="Reverted to you — correct and re-submit"
-                className={`${btn} w-full bg-amber-500 hover:bg-amber-400 text-zinc-950`}><RotateCcw size={13} /> Re-submit Report</Link>
-        ) : k === "COMPLETED" && r.report ? (
-            <button onClick={() => setViewRecord(r)} data-testid="view-record" className={`${btn} w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700`}><Eye size={13} /> View</button>
-        ) : notSubmitted && r.sprintEntryId && classEnded(r) ? (
-            <Link href={`/faculty/lectures?date=${r.date}&lecture=${r.lectureNumber}`} data-testid="submit-report" className={`${btn} w-full bg-emerald-600 hover:bg-emerald-500 text-white`}><Upload size={13} /> Submit Report</Link>
-        ) : (
-            <button disabled title={`Available after the class ends (${r.timeStop || ""})`} className={`${btn} w-full bg-zinc-800/60 text-zinc-500 border border-zinc-800 cursor-not-allowed`}><Upload size={13} /> Submit Report</button>
-        );
-        const dayStarted = !!r.date && r.date <= today;
-        const hasAsg = !!rep(r).assignment?.hasAssignment;
-        return (
-            <div className={`flex ${wide ? "flex-col sm:flex-row" : "flex-col"} gap-1.5`}>
-                <div className={wide ? "sm:flex-1" : ""}>{primary}</div>
-                <div className={`flex items-center gap-1.5 ${wide ? "sm:flex-1" : ""}`}>
-                    <button onClick={() => setAsgFor(r)} disabled={!dayStarted || !r.sprintEntryId && !r.report} data-testid="add-assignment"
-                        title={dayStarted ? (hasAsg ? "Update the assignment" : "Add an assignment for this class") : "Available from the class day"}
-                        className={`${btn} flex-1 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/25 disabled:opacity-40 disabled:cursor-not-allowed`}>
-                        <ClipboardList size={13} /> {hasAsg ? "Edit Asg." : "Assignment"}
-                    </button>
-                    <button onClick={e => openMenu(e, keyOf(r))} aria-label="More actions" data-testid="row-menu"
-                        className="shrink-0 p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 border border-transparent hover:border-zinc-700"><MoreVertical size={15} /></button>
-                </div>
-            </div>
-        );
-    };
-    const open = shown.find(r => keyOf(r) === menuFor);
-    const rangeText = range.from === range.to ? fmtShort(range.from) : `${fmtShort(range.from)} – ${fmtShort(range.to)}`;
-    const warnRows = shown.filter(r => (rep(r).warnings || []).length > 0);
+    const STATS = [
+        { label: "Total Lectures", value: counts.total, icon: BookOpen, ring: "border-emerald-500/30 shadow-[0_0_24px_-12px_rgba(16,185,129,0.6)]", ic: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", glow: "from-emerald-500/10" },
+        { label: "Submitted", value: counts.submitted, icon: CheckCircle2, ring: "border-sky-500/30 shadow-[0_0_24px_-12px_rgba(14,165,233,0.6)]", ic: "bg-sky-500/15 text-sky-300 border-sky-500/30", glow: "from-sky-500/10" },
+        { label: "Report Pending", value: counts.pending, icon: Clock, ring: "border-amber-500/35 shadow-[0_0_24px_-12px_rgba(245,158,11,0.6)]", ic: "bg-amber-500/15 text-amber-300 border-amber-500/30", glow: "from-amber-500/10" },
+        { label: "Reverted", value: counts.reverted, icon: RotateCcw, ring: "border-red-500/30 shadow-[0_0_24px_-12px_rgba(239,68,68,0.6)]", ic: "bg-red-500/15 text-red-300 border-red-500/30", glow: "from-red-500/10" },
+        { label: "Upcoming", value: counts.upcoming, icon: CalendarDays, ring: "border-violet-500/30 shadow-[0_0_24px_-12px_rgba(139,92,246,0.6)]", ic: "bg-violet-500/15 text-violet-300 border-violet-500/30", glow: "from-violet-500/10" },
+    ];
 
     return (
-        <div className="max-w-7xl mx-auto pt-6 pb-16 px-4 sm:px-6 space-y-5 w-full [contain:inline-size]">
-            {/* ── Header banner ── */}
-            <div className="relative overflow-hidden rounded-3xl border border-emerald-500/20 bg-gradient-to-r from-emerald-950/90 via-teal-950/70 to-zinc-900 p-6 sm:p-7">
-                <div className="absolute -top-24 -left-16 w-72 h-72 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
-                <div className="relative flex flex-col lg:flex-row lg:items-center gap-6">
-                    <div className="flex items-start gap-4 min-w-0 flex-1">
-                        <div className="shrink-0 w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center"><FileText size={28} className="text-emerald-400" /></div>
-                        <div className="min-w-0">
-                            <h1 className="text-3xl font-black text-white tracking-tight">My Class Records</h1>
-                            <p className="text-sm text-zinc-400 mt-0.5">History of your lectures, attendance, notes and assignments</p>
-                        </div>
+        <div className="max-w-[1600px] mx-auto pt-6 pb-16 px-4 sm:px-6 space-y-4 w-full [contain:inline-size]">
+            {/* ── Header ── */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="shrink-0 w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shadow-[0_0_24px_-6px_rgba(16,185,129,0.45)]"><FileText size={22} className="text-emerald-400" /></div>
+                    <div className="min-w-0">
+                        <h1 className="text-2xl sm:text-[28px] font-black text-white tracking-tight leading-tight">Lecture Reports</h1>
+                        <p className="text-xs sm:text-sm text-zinc-400">Manage, submit and track your lecture reports, notes and assignments.</p>
                     </div>
-                    <label className="relative self-start lg:self-center flex items-center gap-3 px-4 py-2.5 rounded-xl bg-zinc-950/40 border border-emerald-500/30 text-white text-sm font-black cursor-pointer hover:border-emerald-400/60">
-                        <Calendar size={15} className="text-emerald-400" /> {dmy(range.from === range.to ? range.from : today)} <ChevronDown size={14} className="text-zinc-400" />
-                        <input type="date" value={range.from === range.to ? range.from : today} onChange={e => pickDay(e.target.value)} aria-label="Pick a day"
-                            className="absolute inset-0 opacity-0 cursor-pointer [color-scheme:dark]" data-testid="day-picker" />
-                    </label>
                 </div>
-            </div>
-
-            {/* ── Filters ── */}
-            <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-4 sm:p-5">
-                <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-[1fr_1fr_1.2fr_1fr_auto_auto_auto] gap-3 items-end">
-                    <div><span className={label}>Date From</span><input type="date" value={fromInput} onChange={e => setFromInput(e.target.value)} className={inputCls} data-testid="date-from" /></div>
-                    <div><span className={label}>Date To</span><input type="date" value={toInput} onChange={e => setToInput(e.target.value)} className={inputCls} data-testid="date-to" /></div>
-                    <div><span className={label}>Subject</span>
-                        <select value={subject} onChange={e => setSubject(e.target.value)} className={inputCls} data-testid="subject-filter">
-                            <option value="All">All Subjects</option>
-                            {subjects.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select></div>
-                    <div><span className={label}>Status</span>
-                        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={inputCls} data-testid="status-filter">
-                            <option value="All">All Status</option>
-                            <option value="COMPLETED">Conducted (report submitted)</option>
-                            <option value="PENDING">Pending (upcoming)</option>
-                            <option value="MISSED">Missed (no report)</option>
-                        </select></div>
-                    <button onClick={apply} data-testid="apply" className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black active:scale-95"><Search size={14} /> Apply</button>
-                    <button onClick={reset} className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-black active:scale-95"><RotateCcw size={14} /> Reset</button>
-                    <button onClick={download} disabled={exporting} className="col-span-2 md:col-span-1 flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-black active:scale-95 disabled:opacity-50">
-                        {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Download Report
+                <div className="flex flex-wrap items-center gap-2">
+                    {/* Date range */}
+                    <div className="relative">
+                        <button onClick={() => setRangeOpen(v => !v)} aria-expanded={rangeOpen} data-testid="range-button"
+                            className="h-11 flex items-center gap-3 pl-3 pr-3.5 rounded-xl border border-zinc-800 bg-zinc-900/70 hover:border-emerald-500/40 text-left">
+                            <Calendar size={16} className="text-emerald-400 shrink-0" />
+                            <span className="min-w-0">
+                                <span className="block text-[9.5px] font-bold uppercase tracking-wider text-zinc-500 leading-3">Date Range</span>
+                                <span className="block text-xs font-bold text-white whitespace-nowrap" data-testid="range-text">{rangeText}</span>
+                            </span>
+                            <ChevronDown size={14} className={`text-zinc-500 transition-transform ${rangeOpen ? "rotate-180" : ""}`} />
+                        </button>
+                        {rangeOpen && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setRangeOpen(false)} />
+                                <div className="absolute left-0 top-full mt-2 z-50 w-[min(290px,calc(100vw-2rem))] rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-3 space-y-3" data-testid="range-popover">
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {([["Today", today, today], ["Last 7 days", shiftDays(today, -6), today], ["Last 30 days", shiftDays(today, -30), today], ["Next 7 days", today, shiftDays(today, 6)]] as const).map(([l, a, b]) => (
+                                            <button key={l} onClick={() => preset(a, b)} className="h-7 px-2.5 rounded-lg border border-zinc-800 bg-zinc-950/50 text-[11px] font-bold text-zinc-300 hover:text-white hover:border-emerald-500/40">{l}</button>
+                                        ))}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <label className="space-y-1"><span className="block text-[9.5px] font-black uppercase tracking-widest text-zinc-500">From</span><input type="date" value={fromInput} onChange={e => setFromInput(e.target.value)} className={inputCls} data-testid="date-from" /></label>
+                                        <label className="space-y-1"><span className="block text-[9.5px] font-black uppercase tracking-widest text-zinc-500">To</span><input type="date" value={toInput} onChange={e => setToInput(e.target.value)} className={inputCls} data-testid="date-to" /></label>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={apply} data-testid="apply" className="flex-1 h-9 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black"><Search size={13} /> Apply</button>
+                                        <button onClick={reset} className="h-9 px-3 flex items-center gap-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-black"><RotateCcw size={13} /> Reset</button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                    <button onClick={download} disabled={exporting} title="Download Excel report" data-testid="download"
+                        className="h-11 px-3.5 flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-800 text-zinc-200 text-xs font-bold disabled:opacity-50">
+                        {exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} <span className="hidden sm:inline">Download</span>
                     </button>
+                    <Link href={firstPending ? submitHref(firstPending) : "/faculty/lectures"} data-testid="add-report"
+                        title={firstPending ? `Next report due: ${firstPending.courseName} · ${fmtShort(firstPending.date)}` : "Open My Lectures"}
+                        className="h-11 px-4 flex items-center gap-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-sm font-black shadow-[0_0_24px_-8px_rgba(16,185,129,0.8)] active:scale-95 transition-all">
+                        <Plus size={16} strokeWidth={3} /> Add Report
+                    </Link>
                 </div>
             </div>
 
             {/* ── Summary ── */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3" data-testid="record-stats">
-                <div className="flex items-center gap-4 p-4 rounded-2xl border border-zinc-700/70 bg-zinc-900/50">
-                    <div className="shrink-0 w-12 h-12 rounded-xl bg-zinc-800 text-zinc-200 flex items-center justify-center"><BookOpen size={22} /></div>
-                    <div className="flex-1 min-w-0"><p className="text-[11px] font-bold text-zinc-300">Total Classes</p><p className="text-2xl font-black text-white tabular-nums">{counts.total}</p><p className="text-[10px] text-zinc-400">in selected date range</p></div>
-                    <BarChart3 size={34} className="text-zinc-600 shrink-0" />
-                </div>
-                {([
-                    ["Conducted", counts.COMPLETED, "Report submitted", CheckCircle2, "#10b981", "border-emerald-500/30 from-emerald-500/15", "bg-emerald-500/20 text-emerald-200", "text-emerald-200"],
-                    ["Pending", counts.PENDING, "Class not over yet", Clock, "#f59e0b", "border-amber-500/30 from-amber-500/15", "bg-amber-500/20 text-amber-200", "text-amber-200"],
-                    ["Missed", counts.MISSED, "Class over, report not submitted", XCircle, "#ef4444", "border-red-500/30 from-red-500/15", "bg-red-500/20 text-red-200", "text-red-200"],
-                ] as const).map(([t, n, sub, Icon, col, tone, ic, tc]) => (
-                    <div key={t} className={`flex items-center gap-4 p-4 rounded-2xl border bg-gradient-to-br to-zinc-900/40 ${tone}`}>
-                        <div className={`shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${ic}`}><Icon size={22} /></div>
-                        <div className="flex-1 min-w-0"><p className={`text-[11px] font-bold ${tc}`}>{t}</p><p className="text-2xl font-black text-white tabular-nums">{n}</p><p className="text-[10px] text-zinc-400 leading-snug">{sub}</p></div>
-                        <Ring pct={pct(n)} color={col} />
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3" data-testid="record-stats">
+                {STATS.map(c => (
+                    <div key={c.label} className={`relative overflow-hidden flex items-center gap-3 px-4 py-3.5 rounded-2xl border bg-zinc-900/60 ${c.ring}`} data-testid="stat-card">
+                        <div className={`absolute inset-0 bg-gradient-to-br ${c.glow} to-transparent pointer-events-none`} />
+                        <div className={`relative shrink-0 w-11 h-11 rounded-xl border flex items-center justify-center ${c.ic}`}><c.icon size={20} /></div>
+                        <div className="relative min-w-0">
+                            <p className="text-[11px] font-bold text-zinc-300 truncate">{c.label}</p>
+                            <p className="text-[26px] font-black text-white tabular-nums leading-none mt-0.5">{loading ? "—" : c.value}</p>
+                        </div>
                     </div>
-                ))}
-            </div>
-
-            {/* ── Colour key (the same meaning everywhere on this page) ── */}
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 rounded-xl bg-zinc-900/40 border border-zinc-800/80 text-xs" data-testid="colour-key">
-                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Colour key</span>
-                {([
-                    ["bg-emerald-500", "Completed — fully verified"],
-                    ["bg-sky-500", "Submitted — waiting for verification"],
-                    ["bg-amber-400", "Pending — class not over yet"],
-                    ["bg-red-500", "Missed / sent back — action needed from you"],
-                    ["bg-zinc-500", "Not submitted yet"],
-                ] as const).map(([c, l]) => (
-                    <span key={l} className="flex items-center gap-1.5 text-zinc-300"><span className={`w-2.5 h-2.5 rounded-full ${c}`} />{l}</span>
                 ))}
             </div>
 
@@ -463,63 +302,31 @@ export default function LectureReportPage() {
                 </div>
             )}
 
-            {/* ── Records ── */}
-            {loading ? (
-                <div className="flex flex-col items-center justify-center py-24 gap-4">
-                    <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
-                    <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Loading records…</p>
-                </div>
-            ) : shown.length === 0 ? (
-                <div className="rounded-2xl bg-zinc-900/30 border border-dashed border-zinc-800 p-16 text-center">
-                    <div className="w-16 h-16 bg-zinc-800/60 rounded-full flex items-center justify-center mx-auto mb-4"><BookOpen size={28} className="text-zinc-600" /></div>
-                    <h3 className="text-lg font-black text-white">No class records found</h3>
-                    <p className="text-zinc-500 text-sm mt-1">Nothing for {rangeText}{appliedFilters.subject !== "All" || appliedFilters.status !== "All" ? " with these filters" : ""}.</p>
-                </div>
-            ) : (
-                <div className="rounded-2xl bg-zinc-900/40 border border-zinc-800/80 overflow-hidden">
-                    <table className="hidden min-[1360px]:table w-full table-fixed text-left border-collapse" data-testid="records-table">
-                        <colgroup>
-                            <col className="w-11" /><col /><col className="w-[8.5rem]" /><col className="w-[7.5rem]" /><col className="w-[9.5rem]" /><col className="w-[11rem]" /><col className="w-[12rem]" />
-                        </colgroup>
-                        <thead>
-                            <tr className="bg-zinc-800/40 text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                <th className="py-3 px-2 text-center">Lec</th><th className="py-3 px-3">Lesson & Class</th><th className="py-3 px-3">Schedule</th>
-                                <th className="py-3 px-3">Attendance</th><th className="py-3 px-3">Status</th><th className="py-3 px-3">Attachments</th><th className="py-3 px-3">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-800/60">
-                            {shown.map(r => (
-                                <tr key={keyOf(r)} className={`align-top hover:bg-white/[0.02] border-l-4 ${edge(r)}`} data-testid="record-row">
-                                    <td className="py-4 px-2 text-center"><span className="text-xl font-black text-zinc-400 tabular-nums">{r.lectureNumber || "—"}</span></td>
-                                    <td className="py-4 px-3"><Lesson r={r} /></td>
-                                    <td className="py-4 px-3"><Schedule r={r} /></td>
-                                    <td className="py-4 px-3"><Attendance r={r} /></td>
-                                    <td className="py-4 px-3"><Status r={r} /></td>
-                                    <td className="py-4 px-3"><Attachments r={r} /></td>
-                                    <td className="py-4 px-3"><Actions r={r} /></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                    <div className="min-[1360px]:hidden grid grid-cols-1 md:grid-cols-2 gap-3 p-3" data-testid="records-cards">
-                        {shown.map(r => (
-                            <div key={keyOf(r)} className={`p-4 space-y-3 rounded-xl border border-zinc-800 border-l-4 ${edge(r)} bg-zinc-900/50 flex flex-col`} data-testid="record-card">
-                                <div className="flex items-start gap-3">
-                                    <span className="shrink-0 w-9 h-9 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-sm font-black text-zinc-300">{r.lectureNumber || "—"}</span>
-                                    <div className="flex-1 min-w-0"><Lesson r={r} /></div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-3"><Schedule r={r} /><Attendance r={r} /></div>
-                                <div className="flex flex-wrap items-start justify-between gap-3"><Status r={r} /><Attachments r={r} /></div>
-                                <div className="mt-auto pt-1"><Actions r={r} wide /></div>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="px-4 py-2.5 border-t border-zinc-800 text-[11px] text-zinc-500 flex flex-wrap justify-between gap-2">
-                        <span>Showing {shown.length} class{shown.length === 1 ? "" : "es"} · {rangeText} · newest first</span>
-                        <span>Report is submitted once (re-submit only after a revert); assignments can be added any time.</span>
-                    </div>
-                </div>
-            )}
+            {/* ── Reports table ── */}
+            <LectureTable
+                rows={rows}
+                loading={loading}
+                itemLabel="Report"
+                variant="report"
+                showPlanDetails
+                defaultSort={{ key: "date", dir: -1 }}
+                resetKey={`${range.from}|${range.to}`}
+                activeKey={drawerKey}
+                onOpen={(r) => { setMenuFor(null); setDrawerKey(r.key); }}
+                emptyText={`No class records for ${rangeText}.`}
+                renderActions={(row) => {
+                    const r = row.raw as Row;
+                    return (
+                        <>
+                            {isReverted(r) ? <Link href={submitHref(r)} data-testid="resubmit-report" title="Reverted to you — correct and re-submit" className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500 hover:bg-amber-400 text-zinc-950 text-[11px] font-bold whitespace-nowrap"><RotateCcw size={13} /> Re-submit</Link>
+                                : canSubmit(r) ? <Link href={submitHref(r)} data-testid="submit-report" className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold whitespace-nowrap"><Upload size={13} /> Submit Report</Link>
+                                    : row.recorded ? <RowButton icon={Eye} onClick={() => setDrawerKey(row.key)} testId="view-record">View Report</RowButton>
+                                        : <RowButton icon={Info} onClick={() => setDrawerKey(row.key)} testId="view-plan">View Plan</RowButton>}
+                            <RowButton tone="ghost" icon={MoreVertical} title="More actions" testId="row-menu" onClick={(e) => openMenu(e, row.key)} />
+                        </>
+                    );
+                }}
+            />
 
             {/* Non-compliance warnings from the existing analysis */}
             {warnRows.length > 0 && (
@@ -545,41 +352,56 @@ export default function LectureReportPage() {
                             </button>
                         );
                         return (<>
-                            {kind(open) === "COMPLETED" && open.report && item(Eye, "View class record", () => setViewRecord(open))}
-                            {["OM_REVERTED", "CL_CH_REVERTED"].includes(open.pipelineStatus || "") && open.report && item(Eye, "View class record", () => setViewRecord(open))}
-                            {kind(open) === "MISSED" && (open.pipelineStatus || "PENDING_PROFESSOR") === "PENDING_PROFESSOR" && open.sprintEntryId && item(Upload, "Submit report", () => { window.location.href = `/faculty/lectures?date=${open.date}&lecture=${open.lectureNumber}`; })}
+                            {item(Info, isRecorded(open) ? "View class record" : "Lecture details", () => setDrawerKey(keyOf(open)))}
+                            {canSubmit(open) && item(Upload, "Submit report", () => { window.location.href = submitHref(open); })}
+                            {isReverted(open) && item(RotateCcw, "Correct & re-submit report", () => { window.location.href = submitHref(open); })}
                             {open.date <= today && item(ClipboardList, x.assignment?.hasAssignment ? "Update assignment" : "Add assignment", () => setAsgFor(open))}
                             {x.recordingUrl && item(Sparkles, x.aiAnalysisAt ? "AI insights" : "AI insights (processing…)", () => setAiInsightReport({ ...x, lectureNumber: open.lectureNumber, courseName: open.courseName }), !x.aiAnalysisAt)}
                             {x.lectureNotes?.notesUrl && item(ExternalLink, "Open notes", () => window.open(x.lectureNotes.notesUrl, "_blank", "noopener"))}
                             {x.assignment?.assignmentUrl && item(ExternalLink, "Open assignment", () => window.open(x.assignment.assignmentUrl, "_blank", "noopener"))}
+                            {x.recordingUrl && item(Mic, "Open recording", () => window.open(x.recordingUrl, "_blank", "noopener"))}
                             {item(CalendarDays, "Open in Weekly Calendar", () => { window.location.href = `/academic/weekly-calendar?week=${open.date}`; })}
                         </>);
                     })()}
                 </div>
             )}
 
-            {/* Class record details (verification, comments, history) */}
-            {viewRecord && viewRecord.report && (
-                <div className="fixed inset-0 bg-zinc-950/80 backdrop-blur-xl z-[100] flex items-center justify-center py-10 px-4 overflow-y-auto" onClick={() => setViewRecord(null)}>
-                    <div className="bg-zinc-900 border border-zinc-800 w-full max-w-3xl rounded-2xl overflow-hidden my-auto" onClick={e => e.stopPropagation()} data-testid="record-modal">
-                        <div className="p-5 border-b border-zinc-800 flex items-start justify-between gap-3">
-                            <div>
-                                <h2 className="text-lg font-black text-white">{viewRecord.courseName}</h2>
-                                <p className="text-[11px] text-zinc-500">{fmtShort(viewRecord.date)} · {viewRecord.timeStart}–{viewRecord.timeStop}</p>
-                                <div className="mt-2"><ClassStatusBadge status={viewRecord.pipelineStatus} /></div>
-                            </div>
-                            <button onClick={() => setViewRecord(null)} className="p-2 hover:bg-white/5 rounded-lg text-zinc-500 hover:text-white"><X size={18} /></button>
-                        </div>
-                        <div className="p-5 space-y-6 max-h-[70vh] overflow-y-auto">
-                            <ClassRecordDetails record={{ ...viewRecord.report, pipelineStatus: viewRecord.pipelineStatus, timeStart: viewRecord.timeStart, timeStop: viewRecord.timeStop }} />
+            {/* Lecture details drawer: class record (verification, comments, history) + existing actions */}
+            <LectureDrawer row={drawerRow} onClose={() => setDrawerKey(null)}
+                actions={drawerRow && (() => {
+                    const r = drawerRow.raw as Row;
+                    const x = rep(r);
+                    return (<>
+                        {isReverted(r) && <Link href={submitHref(r)} className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500 hover:bg-amber-400 text-zinc-950 text-[11px] font-bold" data-testid="drawer-resubmit"><RotateCcw size={13} /> Correct & Re-submit</Link>}
+                        {canSubmit(r) && <Link href={submitHref(r)} className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold" data-testid="drawer-submit"><Upload size={13} /> Submit Report</Link>}
+                        {r.date <= today && <RowButton icon={ClipboardList} onClick={() => setAsgFor(r)} testId="drawer-assignment">{x.assignment?.hasAssignment ? "Update Assignment" : "Upload Assignment"}</RowButton>}
+                        {x.recordingUrl && <RowButton icon={Sparkles} disabled={!x.aiAnalysisAt} onClick={() => setAiInsightReport({ ...x, lectureNumber: r.lectureNumber, courseName: r.courseName })}>{x.aiAnalysisAt ? "AI Insights" : "AI processing…"}</RowButton>}
+                        <RowButton icon={CalendarDays} onClick={() => { window.location.href = `/academic/weekly-calendar?week=${r.date}`; }}>Weekly Calendar</RowButton>
+                    </>);
+                })()}>
+                {drawerRow && (() => {
+                    const r = drawerRow.raw as Row;
+                    if (r.report && isRecorded(r)) return (
+                        <>
+                            <ClassRecordDetails record={{ facultyName: user.name, courseName: r.courseName, topicsCovered: r.topicsCovered, className: r.className, section: r.section, stream: r.stream, year: r.year, semester: r.semester, date: r.date, ...r.report, pipelineStatus: r.pipelineStatus, timeStart: r.timeStart, timeStop: r.timeStop }} />
                             <ClassRecordActions
-                                record={{ ...viewRecord.report, _id: viewRecord.report._id, pipelineStatus: viewRecord.pipelineStatus, classEnded: true }}
+                                record={{ ...r.report, _id: r.report._id, pipelineStatus: r.pipelineStatus, classEnded: true }}
                                 role={user.role} userId={user.id}
-                                onDone={(m) => { setMessage(m); setViewRecord(null); fetchReports(); }} />
+                                onDone={(m) => { setMessage(m); setDrawerKey(null); fetchReports(); }} />
+                        </>
+                    );
+                    if (!r.report && isRecorded(r)) return (
+                        <p className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-xs text-zinc-400">Older class record — attendance {r.numberOfAttendees ?? "—"} / {r.totalStudents ?? "—"}.{r.recordingUrl ? " A recording is attached (see AI Insights)." : ""}</p>
+                    );
+                    return (
+                        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-xs text-zinc-400" data-testid="drawer-no-record">
+                            {!r.sprintEntryId ? "This class is not linked to a sprint plan entry."
+                                : (r.classEnded ?? true) ? <>The class has ended. Submit the class record with <b className="text-emerald-300">Submit Report</b> — it opens the report form on My Lectures.</>
+                                    : <>The class record can be submitted after the class ends ({r.timeStop}).</>}
                         </div>
-                    </div>
-                </div>
-            )}
+                    );
+                })()}
+            </LectureDrawer>
 
             {asgFor && (
                 <AddAssignmentDialog lecture={asgFor} facultyId={user.id} onClose={() => setAsgFor(null)}

@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { Role } from "@/context/AuthContext";
+import { useSidebarCounts, badgeText } from "@/lib/use-sidebar-counts";
 
 const coreMenu = [
     { label: "Dashboard", icon: LayoutDashboard, path: "/" },
@@ -130,22 +131,35 @@ const TECH_LEAD_ROLES: Role[] = ["TL", "FOUNDER"];
 
 type NavItem = { label: string; icon: typeof LayoutDashboard; path: string; roles?: Role[]; hideFor?: Role[]; badge?: number };
 
-function NavSection({ title, items, pathname, onNavigate, inHub }: { title: string; items: NavItem[]; pathname: string; onNavigate?: () => void; inHub?: boolean }) {
+/** Filled circular count badge at the right end of a menu item (two digits grow into a pill; hidden at 0) */
+function CountBadge({ n }: { n?: number }) {
+    if (!n || n <= 0) return null;
+    return (
+        <span data-testid="nav-badge" aria-hidden="true"
+            className="ml-auto shrink-0 -my-1 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none tabular-nums shadow-[0_0_0_2px_#0a0a0b]">
+            {badgeText(n)}
+        </span>
+    );
+}
+
+function NavSection({ title, items, pathname, onNavigate, inHub, counts = {} }: { title: string; items: NavItem[]; pathname: string; onNavigate?: () => void; inHub?: boolean; counts?: Record<string, number> }) {
     return (
         <div>
             {title && title !== "Personal" && <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-3 px-3">{title}</p>}
             <div className="space-y-0.5">
                 {items.map((item) => {
                     const isActive = !inHub && (pathname === item.path || (item.path !== "/" && pathname.startsWith(item.path)));
+                    const n = item.badge ?? counts[item.path] ?? 0;
                     return (
                         <Link key={item.path + item.label} href={item.path} onClick={onNavigate}
+                            aria-label={n > 0 ? `${item.label} (${badgeText(n)})` : undefined} data-nav-path={item.path}
                             className={cn(
                                 "flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all group",
                                 isActive ? "bg-primary/10 text-primary border border-primary/10" : "text-zinc-400 hover:text-white hover:bg-zinc-800/50 border border-transparent"
                             )}>
                             <item.icon size={14} className={cn(isActive ? "text-primary" : "text-zinc-600 group-hover:text-white")} />
-                            <span>{item.label}</span>
-                            {!!item.badge && <span className="ml-auto bg-primary/20 text-primary text-[9px] font-bold px-1.5 py-0.5 rounded-full">{item.badge}</span>}
+                            <span className="min-w-0">{item.label}</span>
+                            <CountBadge n={n} />
                         </Link>
                     );
                 })}
@@ -199,6 +213,9 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
         return () => { alive = false; clearInterval(t); };
     }, [user?.id, pathname]);
 
+    // Notification badges (pending / unread counts from the server, for the logged-in designation)
+    const counts = useSidebarCounts(user?.id, pathname);
+
     const roleStyle = (user as any)?.hrExecutive ? ROLE_COLORS.HR_EXECUTIVE : role ? ROLE_COLORS[role] : { bg: "bg-zinc-800", text: "text-zinc-400", label: "Guest" };
     const RoleIcon = role === "FOUNDER" ? Crown : role === "HR" ? ShieldCheck : role === "AD" || role === "HOI" ? Briefcase : User;
 
@@ -231,46 +248,46 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
             </div>
 
             <nav className="flex-1 overflow-y-auto space-y-6 custom-scrollbar">
-                <NavSection title="Core" items={NO_REIMBURSEMENT(coreMenu, user)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
-                <NavSection title="Personal" items={personalMenu.map(i => i.path === "/notifications" ? { ...i, badge: unreadNotifications } : i)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
+                <NavSection title="Core" items={NO_REIMBURSEMENT(coreMenu, user)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
+                <NavSection title="Personal" items={personalMenu.map(i => i.path === "/notifications" ? { ...i, badge: unreadNotifications } : i)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
 
                 {/* Manager Suite: Visible to FOUNDER, AD, HOI */}
                 {role && MANAGER_ROLES.includes(role) && (
-                    <NavSection title="Manager Suite" items={managerMenu.filter((i: any) => (!i.roles || i.roles.includes(role)) && !(i.hideFor || []).includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
+                    <NavSection title="Manager Suite" items={managerMenu.filter((i: any) => (!i.roles || i.roles.includes(role)) && !(i.hideFor || []).includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
                 )}
 
                 {/* HR Administration: Visible to FOUNDER, HR */}
                 {role && HR_ROLES.includes(role) && (
-                    <NavSection title={(user as any)?.hrExecutive ? "HR Executive Portal" : "HR Administration"} items={NO_REIMBURSEMENT(hrMenu.map(i => i.path === "/hr/schedule-approval" ? { ...i, badge: unreadScheduleChanges } : i), user)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
+                    <NavSection title={(user as any)?.hrExecutive ? "HR Executive Portal" : "HR Administration"} items={NO_REIMBURSEMENT(hrMenu.map(i => i.path === "/hr/schedule-approval" ? { ...i, badge: unreadScheduleChanges } : i), user)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
                 )}
 
                 {/* Email Management: HR, HR Executive, Founder */}
                 {role && HR_ROLES.includes(role) && (
-                    <NavSection title="Email Management" items={emailMenu} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
+                    <NavSection title="Email Management" items={emailMenu} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
                 )}
 
                 {/* Faculty Suite: Visible to FACULTY, PROFESSOR */}
                 {role && FACULTY_ROLES.includes(role) && (
-                    <NavSection title="Faculty Suite" items={facultyMenu} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
+                    <NavSection title="Faculty Suite" items={facultyMenu} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
                 )}
 
                 {/* CL / CH Portal: one common section for CURRICULUM_LEAD and CURRICULUM_HEAD (also FOUNDER, AD) */}
                 {role && CURRICULUM_ROLES.includes(role) && (
-                    <NavSection title={role === "CURRICULUM_LEAD" || role === "CURRICULUM_HEAD" ? "CL / CH Portal" : "CL / CH & Academics"} items={curriculumMenu.filter(i => !i.roles || i.roles.includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
+                    <NavSection title={role === "CURRICULUM_LEAD" || role === "CURRICULUM_HEAD" ? "CL / CH Portal" : "CL / CH & Academics"} items={curriculumMenu.filter(i => !i.roles || i.roles.includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
                 )}
 
                 {/* Founder Console: Visible to FOUNDER only */}
                 {role === "FOUNDER" && (
-                    <NavSection title="Founder Console" items={founderMenu} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
+                    <NavSection title="Founder Console" items={founderMenu} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
                 )}
 
                 {/* Tech Support: Visible to TL, FOUNDER */}
                 {role && TECH_LEAD_ROLES.includes(role) && (
-                    <NavSection title="Tech Support" items={techLeadMenu.filter(i => !i.roles || i.roles.includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
+                    <NavSection title="Tech Support" items={techLeadMenu.filter(i => !i.roles || i.roles.includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
                 )}
                 {/* Give Access: Founder, and Tech Leads the Founder authorised */}
                 {(role === "FOUNDER" || canManageAccess) && (
-                    <NavSection title="Access Control" items={[{ label: "Give Access", icon: KeySquare, path: "/access" }]} pathname={pathname} onNavigate={leaveHub} inHub={inHub} />
+                    <NavSection title="Access Control" items={[{ label: "Give Access", icon: KeySquare, path: "/access" }]} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
                 )}
 
                 {/* Delegated hubs (Give Access) — each hub once, with its source selection */}

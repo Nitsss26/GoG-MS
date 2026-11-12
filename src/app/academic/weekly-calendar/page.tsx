@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { CalendarDays, Calendar, ArrowLeft, ArrowRight, RefreshCw, X, Filter, LayoutGrid, List, ExternalLink, AlertTriangle, Building2, Network, ChevronDown, Users, BookOpen, GraduationCap, GitBranch, Layers, SlidersHorizontal, RotateCcw, Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
+import { CalendarDays, Calendar, ArrowLeft, ArrowRight, RefreshCw, X, Filter, LayoutGrid, List, ExternalLink, AlertTriangle, Building2, Network, ChevronDown, Users, BookOpen, GraduationCap, GitBranch, Layers, SlidersHorizontal, RotateCcw, Download, FileSpreadsheet, FileText, Loader2, Coffee, Clock, FlaskConical } from "lucide-react";
 import * as XLSX from "xlsx";
 import { CALENDAR_ROLES, PROFESSOR_ROLES, PLAN_STATUS_LABEL, PROFESSOR_EDITABLE_CLASS_STATUSES, CLASS_STATUS_LABEL, CLASS_STATUS_STYLE } from "@/lib/academic-status";
 import { FACULTY_CARD_THEMES } from "@/components/academic/SprintPlanTimetableGrid";
@@ -17,6 +17,8 @@ const DAYS = [
     { code: "MON", name: "Monday" }, { code: "TUE", name: "Tuesday" }, { code: "WED", name: "Wednesday" },
     { code: "THU", name: "Thursday" }, { code: "FRI", name: "Friday" }, { code: "SAT", name: "Saturday" },
 ];
+/** Timetable card colours (hex, inline styles): one per professor / subject; no yellow (that means "pending") */
+const CARD_COLORS = ["#38bdf8", "#f472b6", "#34d399", "#a78bfa", "#22d3ee", "#fb923c", "#818cf8", "#a3e635", "#fb7185", "#2dd4bf"];
 /** Campus accent colours (only for the campus chips / section frames — the timetable keeps its own palette) */
 const CAMPUS_ACCENTS = [
     { text: "text-sky-300", border: "border-sky-500/40", headBg: "bg-sky-500/[0.07]", iconBg: "bg-sky-500/15", pill: "border-sky-500/30 bg-sky-500/10 text-sky-200", btn: "border-sky-500/40 text-sky-200 bg-sky-500/10", chipActive: "bg-sky-500/20 border-sky-400/60 text-sky-100", chipIdle: "bg-zinc-900 border-zinc-800 text-sky-300 hover:border-sky-500/50" },
@@ -324,109 +326,136 @@ export default function WeeklyCalendarPage() {
         const grid = rowsFor(list);
         const rows = grid.rows;
         const profsHere = Array.from(new Map(list.map(c => [c.facultyId, c.facultyName])).entries());
+        // Full-size timetable in the Sprint Management design (dark cards, coloured edge, Free Period cells).
+        // Colour = professor in the college view, = subject in "My Schedule". Same design for the campus overview (compact).
+        const colorKeys = showProfessor
+            ? profsHere.map(([id]) => String(id))
+            : Array.from(new Set([...list].sort((x, y) => (x.date + x.timeStart).localeCompare(y.date + y.timeStart)).map(c => String(c.subjectName || c.topics || "Lecture").toLowerCase())));
+        const colorOf = (c: any) => CARD_COLORS[Math.max(0, colorKeys.indexOf(showProfessor ? String(c.facultyId) : String(c.subjectName || c.topics || "Lecture").toLowerCase())) % CARD_COLORS.length];
+        const shortDate = (ymd: string) => new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
         return (
-            <div className={`overflow-x-auto [contain:inline-size] ${compact ? "" : "rounded-2xl border-2 border-zinc-800/80 shadow-2xl"} bg-[#0c0d10] p-0.5`} data-testid="calendar-grid">
-                <table className={`w-full table-fixed border-collapse text-center ${compact ? "min-w-[780px]" : "min-w-[860px]"}`}>
-                    <thead>
-                        {!compact && (
-                            <tr className="border-b-2 border-zinc-800">
-                                <th className="w-28 bg-[#b38600] text-zinc-950 font-black text-[11px] py-3 px-2 border-r-2 border-zinc-800 leading-tight">
-                                    <div className="truncate" title={badge}>GoG &lt;&gt; {badge}</div>
-                                    <div className="text-[9px] font-bold opacity-90 mt-0.5 tracking-tight">[{dmy(data.weekStart)} to {dmy(data.weekEnd)}]</div>
-                                </th>
-                                <th colSpan={DAYS.length} className="bg-zinc-900/90 text-white font-black text-sm md:text-base py-3 tracking-wide">
-                                    {title}
-                                    <span className="ml-2 text-[11px] font-bold text-zinc-400">({list.length} class{list.length === 1 ? "" : "es"})</span>
-                                </th>
-                            </tr>
-                        )}
-                        <tr className="bg-[#1a3852] text-sky-100 font-black text-[11px] border-b-2 border-zinc-800">
-                            <th className={`${compact ? "w-24 py-2" : "py-2.5"} px-2 border-r-2 border-zinc-800 bg-zinc-900/80 text-zinc-300`}>TIME / DAY</th>
-                            {dates.map(d => {
-                                const isToday = d.date === today;
-                                return (
-                                    <th key={d.date} className={`${compact ? "py-1.5" : "py-2"} px-2 border-r border-zinc-700/60 leading-tight ${isToday ? "bg-[#245079]" : ""}`}>
-                                        <div className="tracking-wider">{d.code}</div>
-                                        <div className="text-[10px] font-bold opacity-70 mt-0.5">{d.date.split("-").reverse().slice(0, 2).join("/")}</div>
-                                        {isToday && <div className="text-[8px] font-black text-amber-300 tracking-widest mt-0.5">TODAY</div>}
-                                    </th>
-                                );
-                            })}
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-800 text-xs">
-                        {rows.map((row, rIdx) => (
-                            <tr key={rIdx} className={`hover:bg-zinc-900/30 ${row.isLunch ? (compact ? "h-7" : "h-10") : (compact ? "" : "h-16")}`}>
-                                <td className={`font-black ${compact ? "text-[10px] py-1.5" : "text-[11px] py-2"} px-2 border-r-2 border-zinc-800 leading-tight ${row.isLunch ? "bg-[#663b14] text-amber-100" : row.other ? "bg-zinc-800 text-zinc-300" : "bg-zinc-900 text-zinc-100"}`}>
-                                    {row.label.includes(" – ") ? (
-                                        <>
-                                            <div className="whitespace-nowrap">{row.label.split(" – ")[0]}</div>
-                                            <div className="text-[9px] font-semibold text-zinc-500 whitespace-nowrap">to {row.label.split(" – ")[1]}</div>
-                                        </>
-                                    ) : row.label}
-                                    {row.isLunch && !compact && <div className="text-[9px] tracking-widest mt-0.5">LUNCH</div>}
-                                    {row.other && <div className="text-[9px] text-zinc-500 tracking-wider mt-0.5">CHECK TIME</div>}
-                                </td>
+            <div className={compact ? "bg-zinc-950/40" : "rounded-2xl border border-zinc-800 bg-zinc-950/40 overflow-hidden"} data-testid="calendar-grid">
+                {!compact && <div className="px-4 py-3 border-b border-zinc-800 flex flex-wrap items-center justify-between gap-2 bg-zinc-900/60">
+                    <p className="text-sm font-bold text-white min-w-0">{title}<span className="ml-2 text-[11px] font-semibold text-zinc-500">({list.length} class{list.length === 1 ? "" : "es"})</span></p>
+                    <p className="text-[11px] text-zinc-500">{badge ? `${badge} · ` : ""}{dmy(data.weekStart)} to {dmy(data.weekEnd)}</p>
+                </div>}
+                <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full table-fixed border-separate border-spacing-0 text-xs min-w-[860px]">
+                        <thead>
+                            <tr>
+                                <th className="sticky left-0 z-10 bg-zinc-900 text-left px-3 py-3 text-[10px] font-black uppercase tracking-widest text-zinc-500 w-[92px] border-b border-r border-zinc-800">Time</th>
                                 {dates.map(d => {
-                                    if (row.isLunch) return <td key={d.date} className="bg-amber-950/20 text-amber-200/80 font-black text-[9px] border-r border-zinc-800/80 uppercase tracking-widest">Lunch</td>;
-                                    const at = grid.cellAt(rIdx, d.date);
-                                    if (at === "covered") return null;
-                                    const cell = at ? at.items : [];
+                                    const isToday = d.date === today;
                                     return (
-                                        <td key={d.date} rowSpan={at && at.span > 1 ? at.span : undefined} className={`${compact ? "p-1" : "p-1.5"} h-px align-top border-r border-zinc-800 ${d.date === today ? "bg-sky-500/[0.04]" : ""}`}>
-                                            {cell.length === 0 ? (
-                                                <div className={`h-full ${compact ? "min-h-[1.75rem]" : "min-h-[3rem]"} flex items-center justify-center text-[10px] text-zinc-700`}>—</div>
-                                            ) : (
-                                                // the card(s) fill the whole time span of the class (e.g. 10:00–12:30 over two rows)
-                                                <div className={`h-full flex flex-col ${compact ? "gap-1" : "gap-1.5"}`}>
-                                                    {cell.map(c => {
-                                                        const theme = FACULTY_CARD_THEMES[profTheme(c.facultyId)];
-                                                        const st = c.recordStatus || "PENDING_PROFESSOR";
-                                                        return compact ? (
-                                                            <button key={c.id} onClick={() => setSelected(c)} data-testid="calendar-class"
-                                                                title={`${t12(c.timeStart)} – ${t12(c.timeStop)} · ${c.subjectName || ""} · ${c.facultyName || ""} · ${CLASS_STATUS_LABEL[st] || st} — click for details`}
-                                                                className={`w-full flex-1 rounded-md px-1.5 py-1 text-left border cursor-pointer hover:brightness-125 hover:ring-1 hover:ring-white/30 transition ${theme.bg} ${theme.border}`}>
-                                                                <div className={`font-black text-[10px] leading-tight truncate ${theme.text}`}>{c.subjectName || c.topics || "Lecture"}</div>
-                                                                <div className={`text-[9px] font-bold leading-tight flex items-center justify-between gap-1 ${theme.subtext}`}>
-                                                                    <span className="truncate">{c.facultyName}</span>
-                                                                    {c.section && <span className="shrink-0 opacity-80">Sec {c.section}</span>}
-                                                                </div>
-                                                                <div className={`text-[9px] font-semibold tabular-nums leading-tight ${theme.subtext}`}>{t12(c.timeStart)} – {t12(c.timeStop)}</div>
-                                                            </button>
-                                                        ) : (
-                                                            <button key={c.id} onClick={() => setSelected(c)} data-testid="calendar-class"
-                                                                title={`${t12(c.timeStart)} – ${t12(c.timeStop)} · ${c.subjectName || ""} · ${c.facultyName || ""} — click for details`}
-                                                                className={`w-full flex-1 rounded-lg p-1.5 text-left border shadow-sm cursor-pointer hover:brightness-125 hover:ring-1 hover:ring-white/30 transition ${theme.bg} ${theme.border}`}>
-                                                                <div className={`font-black text-[10px] leading-tight line-clamp-2 ${theme.text}`}>{c.subjectName || c.topics || "Lecture"}</div>
-                                                                {c.topics && c.subjectName && <div className={`text-[9px] leading-tight line-clamp-1 mt-0.5 ${theme.subtext}`}>{c.topics}</div>}
-                                                                <div className={`text-[9px] font-bold mt-0.5 flex items-center justify-between gap-1 ${theme.subtext}`}>
-                                                                    <span className="truncate">{showProfessor ? c.facultyName : (c.className || c.branch || "")}</span>
-                                                                    {c.section && <span className="shrink-0 opacity-80">Sec {c.section}</span>}
-                                                                </div>
-                                                                <div className={`text-[9px] font-semibold tabular-nums mt-0.5 ${theme.subtext}`}>{t12(c.timeStart)} – {t12(c.timeStop)}</div>
-                                                                <span className={`inline-block mt-1 max-w-full text-[7.5px] leading-tight font-black uppercase px-1.5 py-0.5 rounded border bg-zinc-950/80 ${CLASS_STATUS_STYLE[st] || ""}`}>{CLASS_STATUS_LABEL[st] || st}</span>
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            )}
-                                        </td>
+                                        <th key={d.date} className={`text-center px-2 py-2.5 border-b border-r border-zinc-800 last:border-r-0 ${isToday ? "bg-indigo-500/15" : "bg-zinc-900/80"}`} data-testid={`wc-day-${d.code}`}>
+                                            <span className={`block text-[12px] font-bold ${isToday ? "text-indigo-200" : "text-white"}`}>{d.name}</span>
+                                            <span className={`block text-[10.5px] font-medium ${isToday ? "text-indigo-300" : "text-zinc-500"}`}>{shortDate(d.date)}{isToday ? " · Today" : ""}</span>
+                                        </th>
                                     );
                                 })}
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {rows.map((row, rIdx) => row.isLunch ? (
+                                <tr key={rIdx} data-testid="wc-lunch">
+                                    <td className="sticky left-0 z-10 px-3 py-2 whitespace-nowrap border-b border-r border-zinc-800 bg-zinc-900 text-amber-200">
+                                        <span className="font-semibold text-[11px]">{row.label.split(" – ")[0]}</span>
+                                        {row.label.includes(" – ") && <span className="block text-[10px] text-zinc-500">to {row.label.split(" – ")[1]}</span>}
+                                    </td>
+                                    <td colSpan={dates.length} className="p-1.5 border-b border-zinc-800/70">
+                                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] py-2 flex items-center justify-center gap-1.5 text-amber-200/90 text-[11px] font-bold tracking-wide"><Coffee size={13} /> Lunch Break</div>
+                                    </td>
+                                </tr>
+                            ) : (
+                                <tr key={rIdx}>
+                                    <td className={`sticky left-0 z-10 px-3 py-2.5 align-top whitespace-nowrap border-b border-r border-zinc-800 ${row.other ? "bg-zinc-800 text-zinc-300" : "bg-zinc-900 text-zinc-300"}`}>
+                                        {row.label.includes(" – ") ? (
+                                            <>
+                                                <span className="font-semibold text-[11px]">{row.label.split(" – ")[0]}</span>
+                                                <span className="block text-[10px] text-zinc-500">to {row.label.split(" – ")[1]}</span>
+                                            </>
+                                        ) : <span className="font-semibold text-[11px]">{row.label}</span>}
+                                        {row.other && <span className="block text-[9px] text-zinc-500 tracking-wider">CHECK TIME</span>}
+                                    </td>
+                                    {dates.map(d => {
+                                        const at = grid.cellAt(rIdx, d.date);
+                                        if (at === "covered") return null;
+                                        const isToday = d.date === today;
+                                        const cell = at ? at.items : [];
+                                        return (
+                                            <td key={d.date} rowSpan={at && at.span > 1 ? at.span : undefined}
+                                                className={`p-1.5 h-px border-b border-r border-zinc-800/70 last:border-r-0 ${cell.length ? "align-top" : "align-middle"} ${isToday ? "bg-indigo-500/[0.04]" : ""}`}>
+                                                {cell.length === 0 ? (
+                                                    <div className="h-full min-h-[52px] rounded-xl border border-dashed border-zinc-800 flex flex-col items-center justify-center gap-1 text-zinc-500" data-testid="wc-free">
+                                                        <Coffee size={13} className="text-zinc-600" /><span className="text-[10.5px] font-medium">Free Period</span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="h-full flex flex-col gap-1.5">
+                                                        {cell.map(c => {
+                                                            const col = colorOf(c);
+                                                            const st = c.recordStatus || "PENDING_PROFESSOR";
+                                                            const lab = /lab|practical/i.test(`${c.lectureType || ""} ${c.subjectName || ""}`);
+                                                            const Icon = lab ? FlaskConical : BookOpen;
+                                                            // Several classes in one time period → a compact card (one line each, full text on hover / click)
+                                                            if (cell.length > 1) {
+                                                                const sameTime = cell.every(x => x.timeStart === c.timeStart && x.timeStop === c.timeStop);
+                                                                const meta = [c.branch || c.stream || c.className, c.year, c.section ? `Sec ${c.section}` : ""].filter(Boolean).join(" · ");
+                                                                return (
+                                                                    <button key={c.id} onClick={() => setSelected(c)} data-testid="calendar-class" data-color={col} data-dense="1"
+                                                                        title={`${c.subjectName || ""}${c.facultyName ? ` · ${c.facultyName}` : ""}\n${meta}\n${t12(c.timeStart)} – ${t12(c.timeStop)} · ${CLASS_STATUS_LABEL[st] || st}\nClick for details`}
+                                                                        className="relative w-full overflow-hidden rounded-lg border bg-zinc-900/90 pl-3 pr-2 py-1.5 text-left cursor-pointer hover:brightness-125 transition"
+                                                                        style={{ borderColor: `${col}59`, backgroundImage: `linear-gradient(135deg, ${col}14, transparent 60%)` }}>
+                                                                        <span className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: col }} />
+                                                                        <span className="flex items-center gap-1.5 min-w-0">
+                                                                            <Icon size={12} className="shrink-0" style={{ color: col }} />
+                                                                            <span className="text-[11.5px] font-black leading-tight text-white truncate min-w-0">{c.subjectName || c.topics || "Lecture"}</span>
+                                                                        </span>
+                                                                        {showProfessor && c.facultyName && <span className="block mt-0.5 text-[10px] font-bold text-zinc-200 truncate">{c.facultyName}</span>}
+                                                                        {meta && <span className="block text-[10px] text-zinc-400 truncate">{meta}</span>}
+                                                                        {/* time only when it differs from the other classes of this period (the row already shows it) */}
+                                                                        {!sameTime && <span className="block text-[9.5px] font-semibold text-zinc-300 tabular-nums truncate">{t12(c.timeStart)} – {t12(c.timeStop)}</span>}
+                                                                        <span className={`mt-1 block max-w-full w-fit truncate text-[9px] leading-tight font-bold px-1 py-px rounded border ${CLASS_STATUS_STYLE[st] || ""}`} data-testid="wc-status">{CLASS_STATUS_LABEL[st] || st}</span>
+                                                                    </button>
+                                                                );
+                                                            }
+                                                            return (
+                                                                <button key={c.id} onClick={() => setSelected(c)} data-testid="calendar-class" data-color={col}
+                                                                    title={`${t12(c.timeStart)} – ${t12(c.timeStop)} · ${c.subjectName || ""} · ${c.facultyName || ""} — click for details`}
+                                                                    className="relative w-full flex-1 overflow-hidden rounded-xl border bg-zinc-900/90 pl-3.5 pr-2.5 py-2.5 text-left cursor-pointer hover:brightness-125 transition"
+                                                                    style={{ borderColor: `${col}59`, backgroundImage: `linear-gradient(135deg, ${col}14, transparent 60%)` }}>
+                                                                    <span className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: col }} />
+                                                                    <span className="flex items-start gap-1.5 min-w-0">
+                                                                        <span className="shrink-0 w-5 h-5 rounded-md border flex items-center justify-center" style={{ color: col, background: `${col}26`, borderColor: `${col}59` }}><Icon size={12} /></span>
+                                                                        <span lang="en" className="text-[12px] font-black leading-snug text-white break-words hyphens-auto min-w-0">{c.subjectName || c.topics || "Lecture"}</span>
+                                                                    </span>
+                                                                    {showProfessor && c.facultyName && <span className="block mt-1.5 text-[10.5px] font-bold text-zinc-200 [overflow-wrap:anywhere]">{c.facultyName}</span>}
+                                                                    {(c.className || c.branch || c.stream) && <span className={`block ${showProfessor ? "" : "mt-1.5"} text-[10.5px] font-semibold text-zinc-300 [overflow-wrap:anywhere]`}>{[c.branch || c.stream || c.className, c.year].filter(Boolean).join(" · ") || c.className}</span>}
+                                                                    {c.section && <span className="block text-[10.5px] text-zinc-400">Sec {c.section}</span>}
+                                                                    <span className="mt-1 flex items-center gap-1 text-[10.5px] font-semibold text-zinc-300 tabular-nums"><Clock size={11} className="text-zinc-500 shrink-0" /> {t12(c.timeStart)} – {t12(c.timeStop)}</span>
+                                                                    <span className={`inline-block mt-2 max-w-full text-[9.5px] leading-tight font-bold px-1.5 py-0.5 rounded-md border ${CLASS_STATUS_STYLE[st] || ""}`} data-testid="wc-status">{CLASS_STATUS_LABEL[st] || st}</span>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </td>
+                                        );
+                                    })}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
                 {showProfessor && profsHere.length > 0 && (
                     <div className="flex flex-wrap items-center gap-4 px-4 py-3 border-t border-zinc-800 text-xs" data-testid="calendar-key">
                         <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Colour = Professor</span>
                         {profsHere.map(([id, name]) => (
                             <span key={id} className="flex items-center gap-2">
-                                <span className={`w-3 h-3 rounded-md border ${FACULTY_CARD_THEMES[profTheme(id)].bg} ${FACULTY_CARD_THEMES[profTheme(id)].border}`} />
+                                <span className="w-3 h-3 rounded-md border" style={{ background: `${CARD_COLORS[Math.max(0, colorKeys.indexOf(String(id))) % CARD_COLORS.length]}40`, borderColor: CARD_COLORS[Math.max(0, colorKeys.indexOf(String(id))) % CARD_COLORS.length] }} />
                                 <span className="font-bold text-zinc-300">{name}</span>
                             </span>
                         ))}
-                        <span className="sm:ml-auto text-[11px] text-zinc-500">{compact ? "" : "Small label on a class = its class-record status. "}Click any class to see full details.</span>
+                        <span className="sm:ml-auto text-[11px] text-zinc-500">Small label on a class = its class-record status. Click any class to see full details.</span>
                     </div>
                 )}
             </div>

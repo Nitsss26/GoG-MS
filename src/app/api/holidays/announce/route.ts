@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { Holiday, Notice, Employee, Location, Notification } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
+import { removeFlagsForHolidays } from '@/lib/holiday-flag-removal';
 import { hoiColleges } from '@/lib/college-announcements';
 import { getAcademicScope, notifySafe, collegeKeysFor, isValidYmd, zonedNow, addDays, appUrl } from '@/lib/academic';
 import { sendMailInternal } from '@/lib/mail-server';
@@ -102,6 +103,8 @@ export async function POST(req: Request) {
         const holidayType = HOLIDAY_TYPES.includes(body.holidayType) ? body.holidayType : '';
         const reason = String(body.reason || '').trim();
         const description = String(body.description || '').trim();
+        // optional announcement image (shown above the announcement text)
+        const announcementImageUrl = typeof body.announcementImageUrl === 'string' && /^https:\/\//i.test(body.announcementImageUrl) && body.announcementImageUrl.length < 2048 ? body.announcementImageUrl : '';
         if (title.length < 2) return NextResponse.json({ error: 'Enter the holiday title.' }, { status: 400 });
         if (!holidayType) return NextResponse.json({ error: 'Select the holiday type.' }, { status: 400 });
         if (reason.length < 3) return NextResponse.json({ error: 'Enter the reason.' }, { status: 400 });
@@ -146,6 +149,9 @@ export async function POST(req: Request) {
             throw e;
         }
 
+        // Holiday days: their attendance flags are removed automatically (no e-mail) — after the announcement is saved below
+        const flagDays = dates.map((d: string) => ({ name: title, date: d, forAll: false, collegeIds: [collegeId] }));
+
         // Publish in the existing Announcements (linked to the holiday). If this fails, the holiday is rolled back.
         try {
             await Notice.create({
@@ -153,10 +159,13 @@ export async function POST(req: Request) {
                 content: `HOLIDAY ANNOUNCEMENT\nCollege: ${college.name}\n${dates.length > 1 ? 'Holiday Dates' : 'Holiday Date'}: ${fmtRange(date, endDate)}\nType: ${holidayType}\nReason: ${reason}${description ? `\n${description}` : ''}\nAnnounced By: HOI – ${actor.name}`,
                 createdBy: actor.name, createdById: actor.id, createdByRole: 'HOI', createdAt: today,
                 collegeIds: [collegeId], holidayId, status: 'Published', readBy: [],
+                ...(announcementImageUrl ? { announcementImageUrl } : {}),
             });
         } catch (e: any) {
             if (e?.code !== 11000) { await Holiday.deleteMany({ id: { $in: created } }); throw e; }
         }
+
+        await removeFlagsForHolidays(flagDays, actor);
 
         // E-mail + in-app to the college's employees after the response (delivery is tracked per recipient;
         // an e-mail problem never removes the holiday or the announcement)

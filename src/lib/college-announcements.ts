@@ -19,11 +19,19 @@ import { Employee, Holiday, Location, Notice, Notification } from '@/models/Sche
 import { getAcademicScope, collegeKeysFor, isValidYmd, zonedNow, addDays, appUrl } from '@/lib/academic';
 import { PROFESSOR_ROLES } from '@/lib/academic-status';
 import { sendMailInternal } from '@/lib/mail-server';
+import { removeFlagsForHolidays } from '@/lib/holiday-flag-removal';
+import { cleanVacationBanner } from '@/lib/celebrations';
 
 export const ANNOUNCEMENT_TYPES = ['Important Notice', 'Academic Announcement', 'Meeting Announcement', 'Schedule Update', 'Examination Notice', 'General Announcement', 'Other'];
 const EMAIL_RE = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
 const ENTITY = 'CollegeAnnouncement';
 const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[c]);
+/** "05 November 2026 to 07 November 2026 (3 days)" */
+export const fmtRange = (from: string, to?: string) => {
+    if (!to || to === from) return fmtLong(from);
+    const n = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1;
+    return `${fmtLong(from)} to ${fmtLong(to)} (${n} days)`;
+};
 export const fmtLong = (ymd: string) => (isValidYmd(ymd) ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '');
 const nowIso = () => new Date().toISOString();
 
@@ -84,7 +92,7 @@ function mailFor(n: any, prof: any, collegeNames: Record<string, string>) {
     const cols = n.scope === 'GENERAL' ? 'All colleges / all employees' : (prof.colleges?.length ? prof.colleges : n.collegeIds).map((id: string) => collegeNames[id] || id).join(', ');
     const rows: [string, string][] = [
         ['Announcement Type', n.announcementType], ['College(s)', cols], ['Title', n.title],
-        ...(n.effectiveDate ? [[n.holidayIds?.length ? 'Holiday Date' : 'Effective Date', fmtLong(n.effectiveDate)] as [string, string]] : []),
+        ...(n.effectiveDate ? [[n.holidayIds?.length ? (n.endDate && n.endDate !== n.effectiveDate ? 'Holiday Dates' : 'Holiday Date') : 'Effective Date', n.endDate && n.endDate !== n.effectiveDate ? fmtRange(n.effectiveDate, n.endDate) : fmtLong(n.effectiveDate)] as [string, string]] : []),
         ['Announced By', n.createdBy],
     ];
     const details = `${n.description}${n.additionalDetails ? `\n\n${n.additionalDetails}` : ''}`;
@@ -275,12 +283,21 @@ export async function createHrAnnouncement(actor: any, body: any) {
     if (description.length < 2) return { ok: false as const, status: 400, error: 'Enter the announcement content.' };
     const isHoliday = category === 'Holiday';
     const date = String(body.holidayDate || '');
+    // optional "To" date: a holiday for several days (From … To, max 31 days) — one holiday record per day
+    const endDate = isHoliday && body.holidayEndDate ? String(body.holidayEndDate) : date;
     const today = zonedNow().ymd;
+    const dates: string[] = [];
     if (isHoliday) {
         if (!isValidYmd(date)) return { ok: false as const, status: 400, error: 'Select the holiday date.' };
-        if (date < addDays(today, -30) || date > addDays(today, 366)) return { ok: false as const, status: 400, error: 'The holiday date must be within the last 30 days or the next year.' };
+        if (!isValidYmd(endDate)) return { ok: false as const, status: 400, error: 'Select a valid "To" date.' };
+        if (endDate < date) return { ok: false as const, status: 400, error: 'The "To" date cannot be before the "From" date.' };
+        if (date < addDays(today, -30) || endDate > addDays(today, 366)) return { ok: false as const, status: 400, error: 'The holiday date must be within the last 30 days or the next year.' };
+        for (let d = date; d <= endDate; d = addDays(d, 1)) { dates.push(d); if (dates.length > 31) return { ok: false as const, status: 400, error: 'A holiday can cover at most 31 days.' }; }
     }
     const imageUrls = Array.isArray(body.imageUrls) ? body.imageUrls.filter((u: any) => typeof u === 'string' && /^https:\/\//i.test(u) && u.length < 2048).slice(0, 10) : [];
+    // Holiday only: one announcement image (shown above the text) + the optional Dashboard Vacation Banner
+    const announcementImageUrl = isHoliday && typeof body.announcementImageUrl === 'string' && /^https:\/\//i.test(body.announcementImageUrl) && body.announcementImageUrl.length < 2048 ? body.announcementImageUrl : '';
+    const vacationBanner = isHoliday ? cleanVacationBanner(body.vacationBanner) : null;
     const recipients = await employeesOf(general ? 'GENERAL' : sel.ids);
     if (!recipients.length) return { ok: false as const, status: 400, error: 'There are no active employees in the selected college(s).' };
 
@@ -289,14 +306,16 @@ export async function createHrAnnouncement(actor: any, body: any) {
     const holidayIds: string[] = [];
     if (isHoliday) {
         // HR's holiday is approved directly (existing HR rule); one record for everyone, or one per selected college
-        const clash: any = await Holiday.findOne({ date, status: { $in: ['Approved', 'Proposed'] }, ...(general ? {} : { $or: [{ forAll: true }, { collegeIds: { $in: sel.ids } }] }) }).lean();
-        if (clash) return { ok: false as const, status: 409, error: `A holiday already exists on ${fmtLong(date)}: "${clash.name}" (${clash.status}).` };
+        const clash: any = await Holiday.findOne({ date: { $in: dates }, status: { $in: ['Approved', 'Proposed'] }, ...(general ? {} : { $or: [{ forAll: true }, { collegeIds: { $in: sel.ids } }] }) }).lean();
+        if (clash) return { ok: false as const, status: 409, error: `A holiday already exists on ${fmtLong(clash.date)}: "${clash.name}" (${clash.status}).` };
         const base = { name: title, date, status: 'Approved', source: 'HR_ANNOUNCEMENT', customMessage: description.slice(0, 500), reason: description.slice(0, 500), description,
             proposedBy: actor.id, proposedByName: actor.name, proposedAt: now, approvedBy: actor.id, approvedByName: actor.name, approvedAt: now, createdAt: now, announcementId: noticeId,
             emailSentAt: now, emailStatus: 'Sent' };
         try {
-            if (general) { const hid = `HOL-ALL-${date}`; await Holiday.create({ ...base, id: hid, collegeIds: [], forAll: true }); holidayIds.push(hid); }
-            else for (const c of sel.colleges) { const hid = `HOL-${c.id}-${date}`; await Holiday.create({ ...base, id: hid, collegeIds: [c.id], forAll: false }); holidayIds.push(hid); }
+            for (const d of dates) {
+                if (general) { const hid = `HOL-ALL-${d}`; await Holiday.create({ ...base, date: d, id: hid, collegeIds: [], forAll: true }); holidayIds.push(hid); }
+                else for (const c of sel.colleges) { const hid = `HOL-${c.id}-${d}`; await Holiday.create({ ...base, date: d, id: hid, collegeIds: [c.id], forAll: false }); holidayIds.push(hid); }
+            }
         } catch (e: any) {
             await Holiday.deleteMany({ id: { $in: holidayIds } }).catch(() => {});
             if (e?.code === 11000) return { ok: false as const, status: 409, error: 'This holiday has already been announced.' };
@@ -304,12 +323,13 @@ export async function createHrAnnouncement(actor: any, body: any) {
         }
     }
     const collegeLabel = general ? 'All employees' : sel.colleges.map(c => c.name).join(', ');
-    const content = [...(isHoliday ? [`HOLIDAY`, `Holiday Date: ${fmtLong(date)}`] : []), `Audience: ${collegeLabel}`, '', description].join('\n');
+    const content = [...(isHoliday ? [`HOLIDAY`, dates.length > 1 ? `Holiday Dates: ${fmtRange(date, endDate)}` : `Holiday Date: ${fmtLong(date)}`] : []), `Audience: ${collegeLabel}`, '', description].join('\n');
     const notice = {
         id: noticeId, title, content, category, createdBy: actor.name, createdById: actor.id, createdByRole: actor.hrExecutive ? 'HR_EXECUTIVE' : actor.role,
         createdAt: today, createdAtIso: now, readBy: [], isEdited: false, imageUrls, collegeIds: sel.ids, status: 'Published',
         audience: 'EVERYONE', scope: general ? 'GENERAL' : 'COLLEGES', source: 'HR_ANNOUNCEMENT', announcementType: category, description,
-        ...(isHoliday ? { effectiveDate: date, holidayId: holidayIds[0], holidayIds } : {}), recipientCount: recipients.length,
+        ...(isHoliday ? { effectiveDate: date, ...(endDate !== date ? { endDate } : {}), holidayId: holidayIds[0], holidayIds } : {}), recipientCount: recipients.length,
+        ...(announcementImageUrl ? { announcementImageUrl } : {}), ...(vacationBanner ? { vacationBanner } : {}),
     };
     try { await Notice.collection.insertOne(notice); }
     catch (e) { if (holidayIds.length) await Holiday.deleteMany({ id: { $in: holidayIds } }).catch(() => {}); throw e; }
@@ -320,5 +340,7 @@ export async function createHrAnnouncement(actor: any, body: any) {
         type: 'COLLEGE_ANNOUNCEMENT', link: '/announcements', entityType: ENTITY, entityId: noticeId, ...(r.colleges[0] ? { college: r.colleges[0] } : {}),
         collegeIds: r.colleges, actorId: actor.id, actorName: actor.name, read: false, createdAt: now, emailStatus: 'PENDING', emailAttempts: 0,
     })));
+    // the holiday days' attendance flags are removed (no e-mail) — payable days and the warning ladder skip them
+    if (isHoliday && holidayIds.length) await removeFlagsForHolidays(dates.flatMap(d => general ? [{ name: title, date: d, forAll: true, collegeIds: [] }] : sel.colleges.map(c => ({ name: title, date: d, forAll: false, collegeIds: [c.id] }))), actor);
     return { ok: true as const, id: noticeId, recipients: recipients.length };
 }

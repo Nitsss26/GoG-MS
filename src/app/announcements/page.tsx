@@ -509,19 +509,27 @@ import { uploadToCloudinary } from "@/lib/cloudinary";
 import {
     Megaphone, Plus, Calendar, User, Send, Image as ImageIcon, FileText,
     Heart, AlertCircle, PartyPopper, Search, Edit3, X, CheckCheck, Cake,
-    UserPlus, Upload, Eye, Trash2, Loader2
+    UserPlus, Upload, Eye, Trash2, Loader2, CalendarDays, BellOff
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ddmmyyyy, ddmmyyyyText } from "@/lib/date-display";
 import { cn } from "@/lib/utils";
 import { HoiCreateAnnouncementButton, HoiAnnouncementHistory, HrAnnouncementModal } from "@/components/announcements/HoiCollegeAnnouncements";
+import ManualHolidayModal from "@/components/holidays/ManualHolidayModal";
+import HolidayManagement from "@/components/holidays/HolidayManagement";
+import CelebrationManagement from "@/components/celebrations/CelebrationManagement";
 
 export default function AnnouncementsPage() {
     const { user, notices, employees, addAnnouncement, editNotice, markAnnouncementRead, colleges, reloadHolidaysAndNotices } = useAuth();
     const [showModal, setShowModal] = useState(false);
+    // Announcements | Holiday Management (HR / HR Executive / Founder, HOI)
+    const [mainTab, setMainTab] = useState<"announcements" | "holidays" | "celebrations">("announcements");
     const [section, setSection] = useState<"all" | "holiday" | "mine">("all"); // All Announcements | Holiday Announcements | (HOI) My Announcements
     const [histKey, setHistKey] = useState(0);
     const [showHrModal, setShowHrModal] = useState(false); // HR / HR Executive / Founder: General or college-wise (incl. Holiday)
+    // HR / HR Executive / Founder → "Announce Holiday": choose Announce (e-mail + announcement) or Assign Manually (no e-mail)
+    const [holChoice, setHolChoice] = useState(false);
+    const [holMode, setHolMode] = useState<"" | "ANNOUNCE" | "MANUAL">("");
     const [search, setSearch] = useState("");
     const [editingNotice, setEditingNotice] = useState<Notice | null>(null);
     const [filter, setFilter] = useState("All");
@@ -529,6 +537,10 @@ export default function AnnouncementsPage() {
     const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
     const [uploading, setUploading] = useState(false);
     const [viewNotice, setViewNotice] = useState<Notice | null>(null);
+    // HR / HR Executive: delete a holiday announcement (its holiday days are removed too)
+    const [delNotice, setDelNotice] = useState<Notice | null>(null);
+    const [delInfo, setDelInfo] = useState<{ loading: boolean; dates: string[]; error: string; busy: boolean }>({ loading: false, dates: [], error: "", busy: false });
+    const [delDone, setDelDone] = useState("");
 
     // Birthday / Joinee poster modals
     const [showBirthdayModal, setShowBirthdayModal] = useState(false);
@@ -552,14 +564,17 @@ export default function AnnouncementsPage() {
     if (!user) return null;
 
     const isHROrFounder = user.role === "HR" || user.role === "FOUNDER";
+    const hasHolidayMgmt = isHROrFounder || user.role === "HOI";
     const categories = ["All", "General", "Policy", "Event", "Urgent", "Update", "HR", "Achievement", "Training", "Birthday", "Welcome", "Holiday"];
     // Holiday announcements: HOI-announced (category Holiday / linked holiday) and the existing "Holiday: …" announcements
     const isHoliday = (n: any) => n.category === "Holiday" || !!n.holidayId || /^holiday:/i.test(String(n.title || ""));
+    // Older holiday announcements were saved as "General" — they are shown (and filtered) as Holiday
+    const catOf = (n: any) => (isHoliday(n) ? "Holiday" : n.category);
     const collegeNames = (n: any) => ((n.collegeIds || []) as string[]).map(id => colleges.find(c => c.id === id)?.name || id).join(", ");
     const term = search.trim().toLowerCase();
     const filteredNotices = notices
         .filter(n => section === "all" || isHoliday(n))
-        .filter(n => filter === "All" || n.category === filter)
+        .filter(n => filter === "All" || catOf(n) === filter)
         .filter(n => !term || `${n.title} ${n.content} ${n.createdBy} ${collegeNames(n)}`.toLowerCase().includes(term))
         .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))); // newest first
 
@@ -615,9 +630,31 @@ export default function AnnouncementsPage() {
         setShowJoineeModal(false);
     };
 
+    const openDelete = async (notice: Notice) => {
+        setDelNotice(notice); setDelDone("");
+        setDelInfo({ loading: true, dates: [], error: "", busy: false });
+        try {
+            const res = await fetch(`/api/notices?id=${encodeURIComponent(notice.id)}&preview=1`, { method: "DELETE" });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(d.error || "Could not load the holiday dates.");
+            setDelInfo({ loading: false, dates: d.holidayDates || [], error: "", busy: false });
+        } catch (e: any) { setDelInfo({ loading: false, dates: [], error: e.message, busy: false }); }
+    };
+    const confirmDelete = async () => {
+        if (!delNotice) return;
+        setDelInfo(p => ({ ...p, busy: true, error: "" }));
+        try {
+            const res = await fetch(`/api/notices?id=${encodeURIComponent(delNotice.id)}`, { method: "DELETE" });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(d.error || "Could not delete the announcement.");
+            await reloadHolidaysAndNotices();
+            setDelNotice(null); setDelDone(d.message || "Announcement deleted.");
+        } catch (e: any) { setDelInfo(p => ({ ...p, busy: false, error: e.message })); }
+    };
+
     const openEdit = (notice: Notice) => {
         setEditingNotice(notice);
-        setForm({ title: notice.title, content: notice.content, category: notice.category });
+        setForm({ title: notice.title, content: notice.content, category: catOf(notice) });
         setUploadedUrls(notice.imageUrls || []);
         setShowModal(true);
     };
@@ -630,13 +667,14 @@ export default function AnnouncementsPage() {
     };
 
     const catColor = (cat: string) =>
-        cat === "Urgent" ? "bg-red-500" : cat === "Policy" ? "bg-amber-500" :
+        cat === "Holiday" ? "bg-orange-500" : cat === "Urgent" ? "bg-red-500" : cat === "Policy" ? "bg-amber-500" :
             cat === "Event" ? "bg-purple-500" : cat === "Birthday" ? "bg-pink-500" :
                 cat === "Welcome" ? "bg-sky-500" : cat === "Achievement" ? "bg-amber-500" :
                     cat === "Training" ? "bg-cyan-500" : cat === "HR" ? "bg-pink-500" :
                         cat === "Update" ? "bg-emerald-500" : "bg-primary";
 
     const catBadge = (cat: string) =>
+        cat === "Holiday" ? "text-orange-300 bg-orange-500/20 border-orange-500/30" :
         cat === "Urgent" ? "text-red-300 bg-red-500/20 border-red-500/30" :
             cat === "Policy" ? "text-blue-300 bg-blue-500/20 border-blue-500/30" :
                 cat === "Event" ? "text-purple-300 bg-purple-500/20 border-purple-500/30" :
@@ -682,22 +720,67 @@ export default function AnnouncementsPage() {
     );
 
     return (
-        <div className="p-8 space-y-8 max-w-6xl mx-auto">
+        <div className="p-4 sm:p-8 space-y-8 max-w-6xl mx-auto w-full [contain:inline-size]">
             <header className="flex justify-between items-end flex-wrap gap-3">
                 <div>
                     <h1 className="text-2xl font-bold text-white tracking-tight">Announcements</h1>
                     <p className="text-sm text-zinc-400 mt-1">Stay updated with the latest news, events and important notices.</p>
                 </div>
                 {isHROrFounder && (
-                    <button onClick={() => setShowHrModal(true)} data-testid="hr-ann-add" className="btn-primary flex items-center gap-2 px-6 shadow-[0_0_20px_rgba(16,185,129,0.2)]">
-                        <Plus size={16} /> Add Announcement
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                        <button onClick={() => setHolChoice(true)} data-testid="hol-announce-btn" className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 text-sm font-semibold">
+                            <CalendarDays size={16} /> Announce Holiday
+                        </button>
+                        <button onClick={() => setShowHrModal(true)} data-testid="hr-ann-add" className="btn-primary flex items-center gap-2 px-6 shadow-[0_0_20px_rgba(16,185,129,0.2)]">
+                            <Plus size={16} /> Add Announcement
+                        </button>
+                    </div>
                 )}
                 {/* HOI: college-wise announcement to the professors of the selected college(s) */}
                 {user.role === "HOI" && <HoiCreateAnnouncementButton onCreated={() => { reloadHolidaysAndNotices(); setHistKey(k => k + 1); }} />}
                 {showHrModal && <HrAnnouncementModal onClose={() => setShowHrModal(false)} onCreated={() => { reloadHolidaysAndNotices(); setHistKey(k => k + 1); }} />}
+                {holMode === "ANNOUNCE" && <HrAnnouncementModal initialCategory="Holiday" onClose={() => setHolMode("")} onCreated={() => { reloadHolidaysAndNotices(); setHistKey(k => k + 1); }} />}
+                {holMode === "MANUAL" && <ManualHolidayModal onClose={() => setHolMode("")} />}
+                {holChoice && (
+                    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4" role="dialog" aria-modal="true" data-testid="hol-choice">
+                        <div className="absolute inset-0 bg-black/70" onClick={() => setHolChoice(false)} />
+                        <div className="relative w-full sm:max-w-lg bg-zinc-950 border border-zinc-800 rounded-t-2xl sm:rounded-2xl p-5 space-y-4 shadow-2xl">
+                            <div className="flex items-center justify-between gap-3">
+                                <h2 className="text-base font-bold text-white flex items-center gap-2"><CalendarDays size={17} className="text-orange-300" /> Announce Holiday</h2>
+                                <button onClick={() => setHolChoice(false)} className="p-1.5 rounded-lg hover:bg-white/5 text-zinc-400" aria-label="Close"><X size={16} /></button>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <button onClick={() => { setHolChoice(false); setHolMode("ANNOUNCE"); }} data-testid="hol-choice-announce" className="text-left p-4 rounded-xl border border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/10 space-y-1.5">
+                                    <span className="flex items-center gap-2 text-sm font-bold text-white"><Megaphone size={15} className="text-orange-300" /> Announce Holiday</span>
+                                    <span className="block text-[11px] text-zinc-400">Posts an announcement and e-mails the selected colleges / everyone. The holiday is added for them.</span>
+                                </button>
+                                <button onClick={() => { setHolChoice(false); setHolMode("MANUAL"); }} data-testid="hol-choice-manual" className="text-left p-4 rounded-xl border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 space-y-1.5">
+                                    <span className="flex items-center gap-2 text-sm font-bold text-white"><BellOff size={15} className="text-sky-300" /> Assign Holiday Manually</span>
+                                    <span className="block text-[11px] text-zinc-400">No e-mail, no announcement. Adds the holiday for all colleges, selected colleges or particular employees.</span>
+                                </button>
+                            </div>
+                            <p className="text-[11px] text-zinc-500">Both remove the attendance flags of the holiday days automatically.</p>
+                        </div>
+                    </div>
+                )}
             </header>
 
+            {/* HR / HR Executive / Founder and HOI: Announcements | Holiday Management (inside this page, no new menu) */}
+            {hasHolidayMgmt && (
+                <div className="flex gap-1 p-1 bg-zinc-900 border border-zinc-800 rounded-2xl w-fit max-w-full overflow-x-auto" role="tablist" data-testid="ann-main-tabs">
+                    {([["announcements", "Announcements", Megaphone], ["holidays", "Holiday Management", CalendarDays], ...(isHROrFounder ? [["celebrations", "Celebration Management", PartyPopper]] : [])] as [typeof mainTab, string, typeof Megaphone][]).map(([k, l, Icon]) => (
+                        <button key={k} role="tab" aria-selected={mainTab === k} onClick={() => setMainTab(k)} data-testid={`ann-main-${k}`}
+                            className={cn("flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all", mainTab === k ? "bg-primary/15 text-primary border border-primary/25" : "text-zinc-400 hover:text-white border border-transparent")}>
+                            <Icon size={14} /> {l}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {hasHolidayMgmt && mainTab === "holidays" && <HolidayManagement />}
+            {isHROrFounder && mainTab === "celebrations" && <CelebrationManagement />}
+
+            {mainTab === "announcements" && (<>
             {/* All Announcements | Holiday Announcements + search */}
             <div className="flex flex-wrap items-center gap-3">
                 <div className="flex gap-1 p-1 bg-zinc-900 border border-zinc-800 rounded-2xl" data-testid="ann-sections">
@@ -735,7 +818,13 @@ export default function AnnouncementsPage() {
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.9 }}
                             className="card group hover:border-primary/30 transition-all p-0 flex flex-col relative">
-                            <div className={cn("h-2 w-full rounded-t-3xl shadow-[0_0_12px_rgba(0,0,0,0.3)]", catColor(notice.category))} />
+                            <div className={cn("h-2 w-full rounded-t-3xl shadow-[0_0_12px_rgba(0,0,0,0.3)]", catColor(catOf(notice)))} />
+                            {/* holiday announcement image — above the text, whole image (no crop) */}
+                            {(notice as any).announcementImageUrl && (
+                                <button type="button" onClick={() => setViewNotice(notice)} className="block w-full bg-zinc-950 border-b border-zinc-800" aria-label="View announcement">
+                                    <img src={(notice as any).announcementImageUrl} alt="" className="block w-full h-auto max-h-56 object-contain mx-auto" data-testid="ann-card-image" />
+                                </button>
+                            )}
 
                             <div className="p-5 space-y-3 flex-1 flex flex-col">
                                 <div className="flex justify-between items-start">
@@ -752,7 +841,7 @@ export default function AnnouncementsPage() {
                                                         notice.category === "Welcome" ? <UserPlus size={14} /> :
                                                             <FileText size={14} />}
                                         </div>
-                                        <span className={cn("text-[8px] font-bold px-1.5 py-0.5 rounded-full border uppercase", catBadge(notice.category))}>{notice.category}</span>
+                                        <span className={cn("text-[8px] font-bold px-1.5 py-0.5 rounded-full border uppercase", catBadge(catOf(notice)))} data-testid="ann-cat">{catOf(notice)}</span>
                                         {notice.isEdited && <span className="text-[7px] font-bold text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700/50">edited</span>}
                                     </div>
                                     <div className="flex items-center gap-1">
@@ -760,6 +849,11 @@ export default function AnnouncementsPage() {
                                         {isHROrFounder && (
                                             <button onClick={() => openEdit(notice)} className="p-1 rounded-lg hover:bg-zinc-800 text-zinc-600 hover:text-primary transition-colors" title="Edit">
                                                 <Edit3 size={11} />
+                                            </button>
+                                        )}
+                                        {isHROrFounder && isHoliday(notice) && (
+                                            <button onClick={() => openDelete(notice)} data-testid="ann-delete" className="p-1 rounded-lg hover:bg-red-500/10 text-zinc-600 hover:text-red-400 transition-colors" title="Delete announcement and its holiday">
+                                                <Trash2 size={11} />
                                             </button>
                                         )}
                                     </div>
@@ -825,21 +919,24 @@ export default function AnnouncementsPage() {
                 </div>
             )}
 
+            </>)}
+
             {/* View Full Announcement Modal */}
             <AnimatePresence>
                 {viewNotice && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setViewNotice(null)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
                         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-lg relative z-10 shadow-2xl overflow-hidden max-h-[85vh] overflow-y-auto">
-                            <div className={cn("h-1.5 w-full sticky top-0", catColor(viewNotice.category))} />
+                            <div className={cn("h-1.5 w-full sticky top-0", catColor(catOf(viewNotice)))} />
                             <div className="p-6 space-y-4">
                                 <div className="flex justify-between items-start">
                                     <div className="flex items-center gap-2">
-                                        <span className={cn("text-[8px] font-bold px-2 py-0.5 rounded-full border uppercase", catBadge(viewNotice.category))}>{viewNotice.category}</span>
+                                        <span className={cn("text-[8px] font-bold px-2 py-0.5 rounded-full border uppercase", catBadge(catOf(viewNotice)))}>{catOf(viewNotice)}</span>
                                         {viewNotice.isEdited && <span className="text-[7px] font-bold text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700/50">edited {ddmmyyyy(viewNotice.editedAt)}</span>}
                                     </div>
                                     <button onClick={() => setViewNotice(null)} className="text-zinc-500 hover:text-white transition-colors"><X size={16} /></button>
                                 </div>
+                                {(viewNotice as any).announcementImageUrl && <img src={(viewNotice as any).announcementImageUrl} alt="" className="block w-full h-auto max-h-[50vh] object-contain rounded-xl bg-zinc-950 border border-zinc-800" data-testid="ann-detail-image" />}
                                 <h2 className="text-lg font-bold text-white leading-tight">{viewNotice.title}</h2>
                                 <div className="grid grid-cols-[7rem_1fr] gap-y-1 text-[11px]" data-testid="ann-detail-meta">
                                     <span className="text-zinc-500">Audience</span><span className="text-zinc-300">{(viewNotice as any).collegeIds?.length ? collegeNames(viewNotice) : "All employees"}</span>
@@ -865,6 +962,50 @@ export default function AnnouncementsPage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            {delDone && (
+                <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[120] max-w-[calc(100vw-2rem)] flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold shadow-xl" data-testid="ann-delete-done">
+                    <CheckCheck size={14} className="shrink-0" /> <span>{delDone}</span>
+                    <button onClick={() => setDelDone("")} className="ml-1 p-0.5 text-emerald-400 hover:text-white" aria-label="Close"><X size={13} /></button>
+                </div>
+            )}
+
+            {/* Delete holiday announcement (HR / HR Executive) */}
+            {delNotice && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4" data-testid="ann-delete-dialog" role="dialog" aria-modal="true">
+                    <div className="absolute inset-0 bg-black/70" onClick={() => !delInfo.busy && setDelNotice(null)} />
+                    <div className="relative w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 p-5 space-y-4 shadow-2xl">
+                        <div className="flex items-start gap-3">
+                            <span className="shrink-0 w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/25 flex items-center justify-center text-red-400"><Trash2 size={17} /></span>
+                            <div className="min-w-0">
+                                <h3 className="text-base font-bold text-white">Delete holiday announcement?</h3>
+                                <p className="text-xs text-zinc-400 mt-0.5 [overflow-wrap:anywhere]">{delNotice.title}</p>
+                            </div>
+                        </div>
+                        {delInfo.loading ? (
+                            <p className="flex items-center gap-2 text-xs text-zinc-400"><Loader2 size={14} className="animate-spin" /> Finding the holiday dates…</p>
+                        ) : delInfo.dates.length ? (
+                            <div className="space-y-2">
+                                <p className="text-xs text-zinc-300">These holiday date{delInfo.dates.length === 1 ? "" : "s"} will also be removed and become <b className="text-white">normal working day{delInfo.dates.length === 1 ? "" : "s"}</b>:</p>
+                                <div className="flex flex-wrap gap-1.5" data-testid="ann-delete-dates">
+                                    {delInfo.dates.map(d => <span key={d} className="px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-[11px] font-semibold text-zinc-200">{ddmmyyyy(d)}</span>)}
+                                </div>
+                                <p className="text-[11px] text-amber-300/90 bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2">Attendance and payable days will count {delInfo.dates.length === 1 ? "this day" : "these days"} as working days. Anyone who did not come on {delInfo.dates.length === 1 ? "it" : "them"} may show as absent.</p>
+                            </div>
+                        ) : !delInfo.error ? (
+                            <p className="text-xs text-zinc-400">No holiday dates are linked to this announcement — only the announcement will be deleted.</p>
+                        ) : null}
+                        {delInfo.error && <p className="text-xs text-red-400" data-testid="ann-delete-error">{delInfo.error}</p>}
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setDelNotice(null)} disabled={delInfo.busy} className="h-9 px-4 rounded-xl border border-zinc-700 bg-zinc-900 text-xs font-semibold text-zinc-200 hover:bg-zinc-800 disabled:opacity-50">Cancel</button>
+                            <button onClick={confirmDelete} disabled={delInfo.busy || delInfo.loading} data-testid="ann-delete-confirm"
+                                className="h-9 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-xs font-bold text-white flex items-center gap-1.5 disabled:opacity-50">
+                                {delInfo.busy ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Delete{delInfo.dates.length ? " announcement & holiday" : ""}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Compose / Edit Modal */}
             <AnimatePresence>

@@ -17,6 +17,7 @@
  * All other automatic emails are unchanged.
  */
 import { clockInCutoff } from '@/lib/time-utils';
+import { holidayForEmployee, holidayExcludes } from '@/lib/holiday-scope';
 import { isNewPolicy, lateLadder, dressLadder } from '@/lib/attendance-policy';
 import { Attendance, AttendanceViolation, Employee, Holiday, LeaveRequest, Location, WorkSchedule } from '@/models/Schemas';
 import { LateJustification } from '@/models/LateJustification';
@@ -372,7 +373,7 @@ async function noClockInRows(f: Filters, locs: Map<string, string>) {
     const [recs, leaves, holidays, schedules] = await Promise.all([
         Attendance.find({ employeeId: { $in: ids }, date: { $gte: first, $lte: last } }).select('employeeId date clockIn status').lean() as Promise<any[]>,
         LeaveRequest.find({ employeeId: { $in: ids }, startDate: { $lte: last }, endDate: { $gte: first }, status: { $ne: 'Rejected' } }).select('employeeId startDate endDate status').lean() as Promise<any[]>,
-        Holiday.find({ date: { $in: dates }, status: 'Approved' }).select('date forAll collegeIds').lean() as Promise<any[]>,
+        Holiday.find({ date: { $in: dates }, status: 'Approved' }).select('date forAll collegeIds employeeIds excludedEmployeeIds').lean() as Promise<any[]>,
         WorkSchedule.find({ employeeId: { $in: ids }, date: { $in: [...dates, ...DAY] } }).select('employeeId date location clockInTime clockOutTime').lean() as Promise<any[]>,
     ]);
     const recBy = new Map<string, any[]>();
@@ -391,7 +392,7 @@ async function noClockInRows(f: Filters, locs: Map<string, string>) {
             const location = sched?.location || t.location;
             if (/^(holiday|off|week ?off|weekly ?off|leave)$/i.test(String(location || ''))) continue; // weekly off (Sunday) / scheduled off
             if (!sched && dn === 'Sun') continue;
-            if (holidays.some(h => h.date === d && (h.forAll || (h.collegeIds || []).includes(location) || (h.collegeIds || []).includes(emp.location)))) continue;
+            if (holidays.some(h => h.date === d && (h.employeeIds?.length ? holidayForEmployee(h, emp.id) : !holidayExcludes(h, emp.id) && (h.forAll || (h.collegeIds || []).includes(location) || (h.collegeIds || []).includes(emp.location))))) continue;
             if (leaves.some(l => l.employeeId === emp.id && l.startDate <= d && d <= l.endDate)) continue; // approved / requested leave (as on the roster)
             if (d === now.ymd && nowHm < clockInCutoff(sched?.clockInTime || t.in)) continue; // late shift: its clock-in is still open
             const relatedRecordId = `${emp.id}:${d}`;

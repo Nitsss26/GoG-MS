@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { Calendar, CheckCircle2, Clock, Building2, Globe, MessageSquare, Plus, XCircle, Mail } from "lucide-react";
+import { Calendar, CheckCircle2, Clock, Building2, Globe, MessageSquare, Plus, XCircle, Mail, Users, BellOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -22,7 +22,8 @@ export default function HolidayApprovalPage() {
     const approvedGroups = (() => {
         const m = new Map<string, any[]>();
         approvedHolidays.forEach((h: any) => {
-            const k = h.announcementId || (/^(HOL[a-z0-9]+)-\d{4}-\d{2}-\d{2}$/.exec(h.id)?.[1]) || h.id;
+            // manual assignment: one row per college / person of that assignment
+            const k = (h.batchId ? `${h.batchId}:${h.forAll ? "ALL" : (h.employeeIds || [])[0] || (h.collegeIds || [])[0] || ""}` : "") || h.announcementId || (/^(HOL[a-z0-9]+)-\d{4}-\d{2}-\d{2}$/.exec(h.id)?.[1]) || h.id;
             m.set(k, [...(m.get(k) || []), h]);
         });
         return Array.from(m.values()).map(days => {
@@ -82,6 +83,7 @@ export default function HolidayApprovalPage() {
         <div className="p-6 space-y-6 max-w-5xl mx-auto w-full">
             <header className="flex justify-between items-end">
                 <div><h1 className="text-xl font-bold text-white tracking-tight">Holiday Approval</h1><p className="text-xs text-zinc-400 mt-1">Review, approve, and create holidays with custom announcements.</p></div>
+                {/* "Manually Assign Holiday" is in Announcements → Announce Holiday */}
                 <button onClick={() => setShowCreate(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-2"><Plus size={14} /> Create Holiday</button>
             </header>
 
@@ -152,6 +154,8 @@ export default function HolidayApprovalPage() {
                                         <span className="text-[10px] text-zinc-500" data-testid="hol-approved-date">{h.dayCount > 1 ? `${h.date} to ${h.endDate} (${h.dayCount} days)` : h.date}</span>
                                         {h.collegeIds && h.collegeIds.length > 0 && <span className="text-[8px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-full border border-blue-500/20"><Building2 size={8} className="inline" /> {getCollegeNames(h.collegeIds)}</span>}
                                         {h.forAll && <span className="text-[8px] font-bold text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full border border-green-500/20"><Globe size={8} className="inline" /> All</span>}
+                                        {(h.employeeIds || []).length > 0 && <span className="text-[8px] font-bold text-violet-300 bg-violet-500/10 px-1.5 py-0.5 rounded-full border border-violet-500/20" data-testid="hol-emp-chip"><Users size={8} className="inline" /> {(h.employeeNames || h.employeeIds || []).join(", ")}</span>}
+                                        {h.source === "HR_MANUAL" && <span className="text-[8px] font-bold text-zinc-300 bg-zinc-800 px-1.5 py-0.5 rounded-full border border-zinc-700" data-testid="hol-manual-chip"><BellOff size={8} className="inline" /> Assigned manually · no e-mail</span>}
                                         {h.customMessage && <span className="text-[9px] text-zinc-600 italic truncate max-w-[250px]">"{h.customMessage}"</span>}
                                     </div>
                                     {emailLine(h) && <p className={cn("text-[9px] mt-1 flex items-center gap-1", h.emailStatus === "Sent" ? "text-green-400/80" : "text-amber-500/80")}><Mail size={9} /> {emailLine(h)}</p>}

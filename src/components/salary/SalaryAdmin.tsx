@@ -277,6 +277,25 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
     useEffect(() => { load(); }, [load]);
     const c = data?.calc, e = data?.employee;
     const days = (c?.days || []).filter((d: any) => !onlyIssues || d.correctable || d.correction || ["Non-Payable", "Partly Payable"].includes(d.payableStatus) || d.penalties.length);
+    // HOI only: assigned location(s) of the day + the actual clock-in location (field visit: address, GPS, reason)
+    const isHoi = e?.role === "HOI";
+    const HoiLoc = ({ d }: { d: any }) => {
+        const l = d.hoiLocation;
+        if (!l) return <span className="text-zinc-600">—</span>;
+        return (
+            <div className="space-y-0.5 min-w-0" data-testid="sm-hoi-loc">
+                <p className="[overflow-wrap:anywhere]"><span className="text-zinc-500">Assigned:</span> <span className="text-zinc-200">{l.assigned || "—"}</span></p>
+                {l.actual ? (
+                    <p className="[overflow-wrap:anywhere]"><span className="text-zinc-500">Actual:</span>{" "}
+                        <span className={l.actualType === "Field Visit" ? "text-amber-300 font-semibold" : l.matched === false ? "text-orange-300" : "text-emerald-300"}>{l.actual}</span>
+                        {l.actualType === "Field Visit" && <span className="text-amber-300/80"> (Field Visit / Meeting)</span>}
+                        {typeof l.lat === "number" && <span className="text-zinc-500 tabular-nums"> · {l.lat.toFixed(5)}, {l.lng.toFixed(5)}</span>}
+                    </p>
+                ) : <p className="text-zinc-600">Actual: —</p>}
+                {l.reason && <p className="text-zinc-300 [overflow-wrap:anywhere]" data-testid="sm-hoi-reason"><span className="text-zinc-500">Reason:</span> {l.reason}</p>}
+            </div>
+        );
+    };
     const monthCorr = (data?.corrections || []).filter((x: any) => x.month === month);
     const openTickets = (data?.tickets || []).filter((t: any) => !["Resolved", "Rejected"].includes(t.status));
     const dayReason = (d: any) => (<>
@@ -331,23 +350,25 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
                                 </div>
                                 <p className="text-zinc-300"><span className="text-zinc-500">In / Out:</span> {d.clockIn || "—"} / {d.clockOut || "—"} · <span className="text-zinc-500">Attendance:</span> {d.attendance}{d.leave ? <> · <span className="text-zinc-500">Leave:</span> {d.leave}</> : null}</p>
                                 {d.correction && <p className="text-[10px] text-zinc-500">Records: {d.basePayableStatus}</p>}
+                                {isHoi && <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2 text-[11px]"><p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-0.5">Location</p><HoiLoc d={d} /></div>}
                                 <div className="text-zinc-400 [overflow-wrap:anywhere]">{dayReason(d)}</div>
                                 <div className="flex flex-wrap gap-1.5 [&>button]:ml-0 [&>button]:mr-0">{dayActions(d)}</div>
                             </div>
                         ))}
                     </div>
-                    <div style={{ display: wide ? undefined : "none" }} className="overflow-x-auto">
-                        <table className="w-full text-xs min-w-[1000px]" data-testid="sm-breakdown">
+                    <div style={{ display: wide ? undefined : "none" }} className="overflow-x-auto" data-testid="sm-breakdown-scroll">
+                        <table className={`w-full text-xs ${isHoi ? "min-w-[1320px]" : "min-w-[1000px]"}`} data-testid="sm-breakdown">
                             <thead><tr className="text-[10px] uppercase tracking-widest text-zinc-500 text-left">
-                                <th className="py-2 px-3">Date</th><th className="py-2 px-3">Clock-In / Out</th><th className="py-2 px-3">Attendance</th><th className="py-2 px-3">Leave</th>
+                                <th className={`py-2 px-3 ${isHoi ? "sticky left-0 z-[1] bg-[#121214]" : ""}`}>Date</th><th className="py-2 px-3">Clock-In / Out</th><th className="py-2 px-3">Attendance</th>{isHoi && <th className="py-2 px-3 min-w-[300px]" data-testid="sm-hoi-loc-head">Location (Assigned / Actual)</th>}<th className="py-2 px-3">Leave</th>
                                 <th className="py-2 px-3">Payable</th><th className="py-2 px-3">Value</th><th className="py-2 px-3">Reason / Penalties</th><th className="py-2 px-3 text-right">Action</th>
                             </tr></thead>
                             <tbody className="divide-y divide-zinc-800/70">
                                 {days.map((d: any) => (
                                     <tr key={d.date} className={`align-top ${d.correction ? (d.correction.direction === "TO_NON_PAYABLE" ? "bg-red-500/[0.04]" : "bg-violet-500/[0.04]") : ""}`} data-testid="sm-day">
-                                        <td className="py-2 px-3 whitespace-nowrap"><span className="font-semibold text-white">{dmy(d.date)}</span> <span className="text-zinc-500">{d.weekday}</span>{d.holiday && <span className="block text-[10px] text-sky-300">Holiday</span>}</td>
+                                        <td className={`py-2 px-3 whitespace-nowrap ${isHoi ? "sticky left-0 z-[1] bg-[#121214]" : ""}`}><span className="font-semibold text-white">{dmy(d.date)}</span> <span className="text-zinc-500">{d.weekday}</span>{d.holiday && <span className="block text-[10px] text-sky-300">Holiday</span>}</td>
                                         <td className="py-2 px-3 text-zinc-300 whitespace-nowrap tabular-nums">{d.clockIn || "—"} / {d.clockOut || "—"}</td>
                                         <td className="py-2 px-3 text-zinc-300">{d.attendance}</td>
+                                        {isHoi && <td className="py-2 px-3 text-[11px] max-w-[360px]"><HoiLoc d={d} /></td>}
                                         <td className="py-2 px-3 text-zinc-300">{d.leave || "—"}</td>
                                         <td className="py-2 px-3"><Badge s={d.payableStatus} map={PAY} />{d.correction && <span className="block text-[10px] text-zinc-500 mt-0.5">Records: {d.basePayableStatus}</span>}</td>
                                         <td className="py-2 px-3 tabular-nums text-zinc-200">{d.payableStatus === "Not Employed" ? "—" : n(d.payable)}</td>

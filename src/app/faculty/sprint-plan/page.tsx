@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
     CalendarDays, Plus, Trash2, Lock, Unlock, Save, AlertTriangle,
     Clock, BookOpen, ArrowLeft, ArrowRight, Check, X, Send, Settings, Edit2, Copy,
-    Download
+    Download, Building2, CheckCircle, ChevronDown, CheckCircle2
 } from "lucide-react";
 import TimePicker from "@/components/ui/TimePicker";
 import Link from "next/link";
@@ -16,6 +16,7 @@ import autoTable from "jspdf-autotable";
 import { validateSprintEntries, isValidTimeFormat } from "@/lib/time-utils";
 import SprintPlanWorkflowPanel from "@/components/academic/SprintPlanWorkflowPanel";
 import { getPlanStatus, LOCKED_PLAN_STATUSES, LECTURE_TYPES, UNIT_NUMBERS } from "@/lib/academic-status";
+import { useMinWidth } from "@/components/academic/LectureTable";
 
 interface SprintEntry {
     day: string;
@@ -643,100 +644,208 @@ export default function SprintPlanPage() {
         doc.save(`SprintPlan_${user?.name || 'Faculty'}_${weekInfo.start}.pdf`);
     };
 
+    // ── Day-by-Day Slot Editor (UI state only; the entries list above stays the single source of truth) ──
+    const [selDate, setSelDate] = useState<string>("");
+    /** Slot being added / edited in the side form: idx = -1 for a new slot */
+    const [slotForm, setSlotForm] = useState<{ idx: number; data: SprintEntry } | null>(null);
+    const [slotError, setSlotError] = useState("");
+    const slotFormRef = useRef<HTMLDivElement>(null);
+    const [ttEditSignal, setTtEditSignal] = useState(0);
+    const [statusOpen, setStatusOpen] = useState(false); // status chip ▾ menu
+    useEffect(() => {
+        if (!statusOpen) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.querySelector('[role="dialog"]')) setStatusOpen(false); };
+        window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
+    }, [statusOpen]);
+    const isMd = useMinWidth(768); // slot table vs. phone list
+    const [timingRev, setTimingRev] = useState(0);
+    // College + timings for the editor info bar / day stats (same read-only API the timetable uses)
+    const [collegeInfo, setCollegeInfo] = useState<{ name?: string; start?: string; end?: string; canEdit?: boolean } | null>(null);
+    useEffect(() => {
+        if (!user?.id) return;
+        fetch("/api/academic/college-timings", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(d => {
+            if (d) setCollegeInfo({ name: d.college?.name, start: d.timing?.startTime, end: d.timing?.endTime, canEdit: !!d.canEdit });
+        }).catch(() => { });
+    }, [user?.id, ttRefresh, timingRev]);
+    // Selected day: today when it is in the week, otherwise Monday
+    useEffect(() => {
+        const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        setSelDate(weekInfo.dates.some(d => d.date === today) ? today : weekInfo.dates[0].date);
+        setSlotForm(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [weekInfo.start]);
+    // After a failed save / lock, jump to the day of the first highlighted class
+    useEffect(() => {
+        const i = invalidIndices[0];
+        if (i === undefined || !entries[i]) return;
+        const d = weekInfo.dates.find(x => x.date === entries[i].date || x.day === entries[i].day);
+        if (d) setSelDate(d.date);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [invalidIndices]);
+
+    const openNewSlot = (day: string, date: string, quiet = false) => {
+        setSlotError("");
+        setSlotForm({
+            idx: -1, data: {
+                day, date, timeStart: "09:20", timeStop: "10:10",
+                stream: facultyStreams[0] || STREAMS[0], year: YEARS[0], semester: SEMESTERS[0],
+                subjectCode: "", subjectName: "", topics: "", section: "",
+                lectureType: LECTURE_TYPES[0], unitNumber: "1", content: "",
+                className: autoClassName({ stream: facultyStreams[0] || STREAMS[0], year: YEARS[0], section: "" }),
+            }
+        });
+        if (!quiet) setTimeout(() => slotFormRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
+    };
+    // The Add / Edit Slot form opens only from "Add Slot" / Edit; until then the help card is shown.
+    useEffect(() => {
+        if (isFrozen) { if (slotForm) setSlotForm(null); return; } // a locked plan cannot be edited
+        if (viewMode !== "EDITOR" || loading || !selDate || !slotForm) return;
+        const d = weekInfo.dates.find(x => x.date === selDate);
+        if (!d) return;
+        if (slotForm.idx < 0 && slotForm.data.date !== d.date) setSlotForm(f => f && f.idx < 0 ? { ...f, data: { ...f.data, day: d.day, date: d.date } } : f);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [viewMode, loading, isFrozen, selDate, slotForm]);
+    const openEditSlot = (idx: number) => {
+        setSlotError("");
+        setSlotForm({ idx, data: { ...entries[idx] } });
+        setTimeout(() => slotFormRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
+    };
+    /** Same rules as updateEntry: subject code → name, stream / year / section → class */
+    const updateSlotForm = (field: keyof SprintEntry, value: string) => setSlotForm(f => {
+        if (!f) return f;
+        const d = { ...f.data, [field]: value };
+        if (field === "subjectCode" && facultySubjects[value]) d.subjectName = facultySubjects[value];
+        if (field === "stream" || field === "year" || field === "section") d.className = autoClassName(d);
+        return { ...f, data: d };
+    });
+    const saveSlotForm = () => {
+        if (!slotForm) return;
+        const d = slotForm.data;
+        if (!isValidTimeFormat(d.timeStart) || !isValidTimeFormat(d.timeStop)) { setSlotError("Pick a valid start and end time."); return; }
+        if (d.timeStart >= d.timeStop) { setSlotError("The end time must be after the start time."); return; }
+        const row = { ...d, className: autoClassName(d) };
+        if (slotForm.idx < 0) setEntries([...entries, row]);
+        else setEntries(entries.map((e, i) => (i === slotForm.idx ? row : e)));
+        setInvalidIndices(list => list.filter(i => i !== slotForm.idx));
+        setSlotForm(null); setSlotError("");
+    };
+    const deleteSlot = (idx: number) => {
+        if (slotForm && slotForm.idx === idx) setSlotForm(null);
+        else if (slotForm && slotForm.idx > idx) setSlotForm({ ...slotForm, idx: slotForm.idx - 1 });
+        removeEntry(idx);
+    };
+
     if (!user || !["FACULTY", "PROFESSOR", "MARKETING_TEAM", "TECH_TEAM"].includes(user.role)) {
         return <div className="flex items-center justify-center h-[80vh] text-zinc-400">Access restricted to Faculty/Professors & Specific Teams</div>;
     }
 
-    return (
-        <div className="w-full max-w-7xl mx-auto pt-8 pb-10 px-4 sm:px-6 space-y-6 [contain:inline-size]">
-            {/* Header */}
-            <div className="relative group">
-                <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500/10 to-emerald-500/10 rounded-3xl blur opacity-25 group-hover:opacity-40 transition duration-1000"></div>
-                <div className="relative bg-zinc-900/60 backdrop-blur-xl border border-zinc-800/80 rounded-3xl p-5 sm:p-7 flex flex-col gap-4 shadow-2xl">
-                    {/* Row 1: title + week navigation */}
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 shrink-0">
-                        <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20 shadow-inner">
-                            <CalendarDays size={24} className="text-indigo-400" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl sm:text-3xl font-black whitespace-nowrap bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400 tracking-tight">
-                                Sprint Management
-                            </h1>
-                            <p className="text-[10px] text-zinc-500 font-black uppercase tracking-[0.2em] mt-1 italic">Teaching Schedule</p>
-                        </div>
-                    </div>
+    const statusInfo: Record<string, { label: string; tone: string; chip: string }> = {
+        DRAFT: { label: "Draft", tone: "text-amber-300", chip: "bg-amber-500/10 text-amber-300 border-amber-500/30" },
+        SUBMITTED: { label: "Submitted", tone: "text-sky-300", chip: "bg-sky-500/10 text-sky-300 border-sky-500/30" },
+        RESUBMITTED: { label: "Re-submitted", tone: "text-sky-300", chip: "bg-sky-500/10 text-sky-300 border-sky-500/30" },
+        UNLOCKED_FOR_REVISION: { label: "Unlocked for Editing", tone: "text-violet-300", chip: "bg-violet-500/10 text-violet-300 border-violet-500/30" },
+        LOCKED: { label: "Finalized / Locked", tone: "text-emerald-300", chip: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30" },
+        LOCKED_AGAIN: { label: "Updated & Re-Locked", tone: "text-emerald-300", chip: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30" },
+        UNLOCK_REQUESTED: { label: "Locked · Unlock Requested", tone: "text-orange-300", chip: "bg-orange-500/10 text-orange-300 border-orange-500/30" },
+    };
+    const st = statusInfo[planStatus] || statusInfo.DRAFT;
+    const fmtDMon = (ymd: string) => new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    const weekText = `${fmtDMon(weekInfo.start)} – ${fmtDMon(weekInfo.end)}`;
+    const to12 = (t?: string) => { if (!t || !isValidTimeFormat(t)) return t || "—"; const [h, m] = t.split(":").map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`; };
+    const mins = (t?: string) => (t && isValidTimeFormat(t) ? Number(t.split(":")[0]) * 60 + Number(t.split(":")[1]) : NaN);
+    const dur = (e: SprintEntry) => { const d = mins(e.timeStop) - mins(e.timeStart); return d > 0 ? d : 0; };
+    const hm = (m: number) => `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+    const selDay = weekInfo.dates.find(d => d.date === selDate) || weekInfo.dates[0];
+    const dayList = entries.map((e, idx) => ({ e, idx })).filter(({ e }) => e.date === selDay.date || e.day === selDay.day)
+        .sort((a, b) => (a.e.timeStart || "").localeCompare(b.e.timeStart || ""));
+    const dayMinutes = dayList.reduce((s, { e }) => s + dur(e), 0);
+    const collegeMinutes = collegeInfo?.start && collegeInfo?.end ? mins(collegeInfo.end) - mins(collegeInfo.start) : NaN;
+    const freeText = isNaN(collegeMinutes) ? "—" : hm(Math.max(0, collegeMinutes - dayMinutes));
+    const dayLongName = (ymd: string) => new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "short", year: "numeric" });
+    const yrShort = (y?: string) => (String(y || "").match(/\d+(st|nd|rd|th)?/i) || [y || "—"])[0];
+    const semShort = (s?: string) => { const n = Number((String(s || "").match(/\d+/) || [""])[0]); return n ? ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII"][n] || String(n) : (s || "—"); };
+    const fieldCls = "w-full h-9 px-2.5 bg-zinc-950/70 border border-zinc-800 rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500/50 disabled:opacity-50 [color-scheme:dark]";
+    const lbl = "block text-[10.5px] font-semibold text-zinc-400 mb-1";
+    // "All changes saved today at 02:14 PM" — from the plan's last save on the server
+    const savedWhen = (() => {
+        const iso = (plan as any)?.updatedAt; if (!iso) return "";
+        const d = new Date(iso); if (isNaN(d.getTime())) return "";
+        const time = d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true }).toUpperCase();
+        const day = d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        return day === today ? `today at ${time}` : `on ${d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" })} at ${time}`;
+    })();
+    // Status hint (text only; follows the existing lifecycle)
+    const statusHintText = ({
+        DRAFT: "Draft — complete the week, review it and press \"Finalize & Lock\". No approval is needed; HOI is informed.",
+        SUBMITTED: "Submitted earlier — you can now lock it yourself with \"Finalize & Lock\".",
+        RESUBMITTED: "Submitted earlier — you can now lock it yourself with \"Finalize & Lock\".",
+        UNLOCKED_FOR_REVISION: "Unlocked for Editing — add, change or remove classes (past classes of this week too), then press \"Save & Re-Lock\". HOI and CL / CH get the list of changes.",
+        LOCKED: "Locked. To change it, press \"Unlock Sprint Plan\".",
+        LOCKED_AGAIN: "Updated & Re-Locked. To change it, press \"Unlock Sprint Plan\".",
+        UNLOCK_REQUESTED: "Locked — an older unlock request is open. You can unlock the plan yourself with \"Unlock Sprint Plan\".",
+    } as Record<string, string>)[planStatus] || "";
+    const tdc = "px-3 border-b border-zinc-800/60 overflow-hidden";
+    const wideCol = "hidden @min-[820px]:table-cell";
+    const btnBase = "h-9 inline-flex items-center justify-center gap-2 px-3.5 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap";
 
-                    <div className="flex items-center gap-2 shrink-0">
-                        <button onClick={() => setWeekOffset(prev => prev - 1)}
-                            className="p-3 rounded-xl bg-zinc-800/50 hover:bg-zinc-700 text-zinc-400 border border-zinc-700/50 transition-all hover:scale-110 active:scale-95">
-                            <ArrowLeft size={16} />
-                        </button>
-                        <div className="px-4 py-3 bg-zinc-800/80 border border-zinc-700/50 rounded-xl shrink-0">
-                            <span className="text-xs font-black text-white tabular-nums tracking-widest uppercase whitespace-nowrap">
-                                {formatDateDMY(weekInfo.start)} <span className="text-zinc-600 font-bold mx-2">/</span> {formatDateDMY(weekInfo.end)}
-                            </span>
-                        </div>
-                        <button onClick={() => setWeekOffset(prev => prev + 1)}
-                            className="p-3 rounded-xl bg-zinc-800/50 hover:bg-zinc-700 text-zinc-400 border border-zinc-700/50 transition-all hover:scale-110 active:scale-95">
-                            <ArrowRight size={16} />
-                        </button>
+    return (
+        <div className="w-full max-w-[1600px] mx-auto pt-6 pb-10 px-4 sm:px-6 space-y-4 [contain:inline-size]">
+            {/* ── Header: title; then actions (left) + week navigation and plan status (right) ── */}
+            <div className="space-y-3">
+                <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="shrink-0 w-11 h-11 rounded-xl bg-zinc-900 border border-zinc-700 flex items-center justify-center"><CalendarDays size={20} className="text-zinc-200" /></div>
+                    <div className="min-w-0">
+                        <h1 className="text-2xl sm:text-[26px] font-black text-white tracking-tight leading-tight">Sprint Management</h1>
+                        <p className="text-xs text-zinc-400">Manage weekly teaching schedules, classes, and sprint plans.</p>
                     </div>
-                    </div>
-                    {/* Row 2: dropdown settings and copy */}
-                    <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-zinc-800/70">
-                        <button
-                            onClick={() => { setPrefTab("SUBJECTS"); setShowPrefModal(true); }}
-                            className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-widest rounded-xl border border-indigo-500/10 transition-all active:scale-95 whitespace-nowrap"
-                        >
-                            <Plus size={14} /> Add Courses
-                        </button>
-                        <button
-                            onClick={() => { setPrefTab("STREAMS"); setShowPrefModal(true); }}
-                            className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-widest rounded-xl border border-emerald-500/10 transition-all active:scale-95 whitespace-nowrap"
-                        >
-                            <Plus size={14} /> Add Streams
-                        </button>
-                        {/* <button
-                            onClick={exportToPDF}
-                            disabled={entries.length === 0}
-                            className="flex items-center gap-2 px-4 py-2 bg-zinc-100 hover:bg-white text-zinc-950 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50"
-                        >
-                            <Download size={14} /> Download Plan
-                        </button> */}
+                </div>
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button onClick={() => { setPrefTab("STREAMS"); setShowPrefModal(true); }} data-testid="add-course"
+                            className={`${btnBase} bg-emerald-600 hover:bg-emerald-500 text-white`}><Plus size={14} /> Add Course / Stream</button>
+                        <button onClick={() => { setPrefTab("SUBJECTS"); setShowPrefModal(true); }} data-testid="add-subject"
+                            className={`${btnBase} bg-zinc-900 hover:bg-zinc-800 text-zinc-100 border border-zinc-700`}><Plus size={14} /> Add Subject</button>
                         {!isFrozen && (
-                            <button
-                                onClick={copyFromPreviousWeek}
-                                disabled={copying || loading}
-                                className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 text-[10px] font-black uppercase tracking-widest rounded-xl border border-amber-500/10 transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap"
-                            >
-                                <Copy size={14} /> {copying ? "Copying..." : "Copy Previous Week"}
-                            </button>
+                            <button onClick={copyFromPreviousWeek} disabled={copying || loading} data-testid="copy-week"
+                                className={`${btnBase} bg-zinc-900 hover:bg-zinc-800 text-zinc-100 border border-zinc-700`}><Copy size={14} /> {copying ? "Copying..." : "Copy Previous Week"}</button>
                         )}
                     </div>
-
+                    <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                        <button onClick={() => setWeekOffset(prev => prev - 1)} aria-label="Previous week" data-testid="week-prev"
+                            className="h-9 w-9 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 flex items-center justify-center"><ArrowLeft size={15} /></button>
+                        <div className="h-9 px-3.5 flex items-center gap-2 rounded-lg bg-zinc-900 border border-zinc-700 text-[13px] font-bold text-white whitespace-nowrap" data-testid="week-text">
+                            <CalendarDays size={14} className="text-zinc-400" /> {weekText}
+                        </div>
+                        <button onClick={() => setWeekOffset(prev => prev + 1)} aria-label="Next week" data-testid="week-next"
+                            className="h-9 w-9 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 flex items-center justify-center"><ArrowRight size={15} /></button>
+                        {/* Status chip ▾ → plan status, history and unlock details (same workflow panel) */}
+                        <div className="relative">
+                            <button onClick={() => setStatusOpen(v => !v)} aria-expanded={statusOpen} data-testid="plan-status-chip" title={statusHintText}
+                                className={`h-9 pl-3 pr-2 inline-flex items-center gap-1.5 rounded-lg border text-xs font-bold whitespace-nowrap ${st.chip}`}>
+                                {isFrozen ? <Lock size={13} /> : <Edit2 size={13} />} {st.label}
+                                <span className="ml-1 pl-1.5 border-l border-current/30 opacity-80"><ChevronDown size={14} className={`transition-transform ${statusOpen ? "rotate-180" : ""}`} /></span>
+                            </button>
+                            {statusOpen && (
+                                <>
+                                    <div className="fixed inset-0 z-40" onClick={() => setStatusOpen(false)} />
+                                    <div className="absolute right-0 top-full mt-2 z-50 w-[min(380px,calc(100vw-2rem))] rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-3 space-y-2.5" data-testid="plan-status-menu">
+                                        {plan?._id ? (
+                                            <SprintPlanWorkflowPanel plan={plan} mode="professor" compact
+                                                onChanged={(p, msg) => { setPlan(p); setServerEntries(p?.entries || entries); setEntries(p?.entries || entries); setTtRefresh(k => k + 1); setMessage({ type: "success", text: msg }); }} />
+                                        ) : <p className="text-xs font-bold text-white">Draft — not saved yet</p>}
+                                        <p className="text-[11px] leading-snug text-zinc-400" data-testid="plan-status-text">{statusHintText || "Add the classes of the week, then press Save Draft or Finalize & Lock."}</p>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            {/* Status Bar — lifecycle, history and Request Unlock */}
-            {plan?._id && (
-                <div className="flex flex-col gap-3 bg-zinc-900/60 border border-zinc-800 rounded-2xl px-6 py-4 shadow-lg">
-                    <SprintPlanWorkflowPanel plan={plan} mode="professor" onChanged={(p, msg) => { setPlan(p); setServerEntries(p?.entries || entries); setEntries(p?.entries || entries); setTtRefresh(k => k + 1); setMessage({ type: "success", text: msg }); }} />
-                    <span className="text-xs text-zinc-400 font-medium" data-testid="plan-status-text">
-                        {planStatus === "DRAFT" && "Draft — complete the week, review it and press \"Finalize & Lock\". No approval is needed; HOI is informed."}
-                        {(planStatus === "SUBMITTED" || planStatus === "RESUBMITTED") && "Submitted earlier — you can now lock it yourself with \"Finalize & Lock\"."}
-                        {planStatus === "UNLOCKED_FOR_REVISION" && "Unlocked for Editing — add, change or remove classes (past classes of this week too), then press \"Save & Re-Lock\". HOI and CL / CH get the list of changes."}
-                        {["LOCKED", "LOCKED_AGAIN"].includes(planStatus) && <>{planStatus === "LOCKED_AGAIN" ? "Updated & Re-Locked" : "Locked"}{plan.lockedAt ? ` (since ${new Date(plan.lockedAt).toString() === "Invalid Date" ? plan.lockedAt : new Date(plan.lockedAt).toLocaleString("en-IN")})` : ""}. To change it, press <span className="text-orange-400 font-bold">Unlock Sprint Plan</span>.</>}
-                        {planStatus === "UNLOCK_REQUESTED" && "Locked — an older unlock request is open. You can unlock the plan yourself with \"Unlock Sprint Plan\"."}
-                    </span>
-                </div>
-            )}
-
             {message && (
-                <div className={`flex items-center gap-2 rounded-xl px-4 py-3 ${message.type === "success" ? "bg-green-500/10 border border-green-500/20 text-green-400" :
-                    "bg-red-500/10 border border-red-500/20 text-red-400"
-                    }`}>
-                    {message.type === "success" ? <Check size={14} /> : <AlertTriangle size={14} />}
+                <div className={`flex items-center gap-2 rounded-xl px-4 py-3 ${message.type === "success" ? "bg-green-500/10 border border-green-500/20 text-green-400" : "bg-red-500/10 border border-red-500/20 text-red-400"}`}>
+                    {message.type === "success" ? <Check size={14} className="shrink-0" /> : <AlertTriangle size={14} className="shrink-0" />}
                     <span className="text-xs font-medium">{message.text}</span>
                 </div>
             )}
@@ -748,276 +857,292 @@ export default function SprintPlanPage() {
                         <Save size={14} className="shrink-0" />
                         Your unsaved changes{draftInfo.savedAt ? ` from ${new Date(draftInfo.savedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}` : ""} were brought back from this device. Press Save Draft or Finalize &amp; Lock to keep them.
                     </span>
-                    <button onClick={discardDraft} data-testid="discard-draft"
-                        className="text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg bg-zinc-900/60 hover:bg-zinc-800 text-zinc-300 border border-zinc-700">
+                    <button onClick={discardDraft} data-testid="discard-draft" className="text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg bg-zinc-900/60 hover:bg-zinc-800 text-zinc-300 border border-zinc-700">
                         Discard &amp; show saved plan
                     </button>
                 </div>
             )}
 
-            {/* View Mode Switcher */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-zinc-900/60 p-2.5 rounded-2xl border border-zinc-800 shadow-lg">
-                <div className="flex flex-wrap items-center gap-2">
-                    <button
-                        onClick={() => setViewMode("GRID")}
-                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                            viewMode === "GRID"
-                                ? "bg-amber-400 text-zinc-950 shadow-lg shadow-amber-400/20"
-                                : "text-zinc-400 hover:text-white hover:bg-zinc-800/60"
-                        }`}
-                    >
-                        <CalendarDays size={14} /> My Timetable
+            {/* ── Tabs ── */}
+            <div className="flex items-end gap-1 border-b border-zinc-800 overflow-x-auto" role="tablist">
+                {([["GRID", "My Timetable", CalendarDays], ["EDITOR", "Day-by-Day Slot Editor", Edit2]] as const).map(([k, l, Icon]) => (
+                    <button key={k} role="tab" aria-selected={viewMode === k} onClick={() => setViewMode(k)} data-testid={`tab-${k}`}
+                        className={`shrink-0 flex items-center gap-2 px-4 h-10 -mb-px text-sm font-semibold border-b-2 rounded-t-lg transition-colors ${viewMode === k ? "border-emerald-400 text-white bg-emerald-500/[0.07]" : "border-transparent text-zinc-400 hover:text-white"}`}>
+                        <Icon size={15} className="shrink-0" /> <span className="whitespace-nowrap">{l}</span>
                     </button>
-                    <button
-                        onClick={() => setViewMode("EDITOR")}
-                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                            viewMode === "EDITOR"
-                                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
-                                : "text-zinc-400 hover:text-white hover:bg-zinc-800/60"
-                        }`}
-                    >
-                        <Edit2 size={14} /> Day-by-Day Slot Editor
-                    </button>
-                </div>
-                <div className="text-[11px] text-zinc-500 font-medium px-3 hidden sm:block">
-                    {viewMode === "GRID" ? "Your classes · real class timings" : "Customize your individual teaching slots"}
-                </div>
+                ))}
             </div>
 
-            {/* Weekly Content */}
+            {/* ── Content ── */}
             {loading ? (
-                <div className="flex items-center justify-center py-16">
-                    <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
-                </div>
+                <div className="flex items-center justify-center py-16"><div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>
             ) : viewMode === "GRID" ? (
                 <div className="[contain:inline-size]">
-                    <DynamicCollegeTimetable weekStart={weekInfo.start} weekDates={weekInfo.dates} currentUserId={user?.id} refreshKey={ttRefresh} mineOnly />
+                    <DynamicCollegeTimetable weekStart={weekInfo.start} weekDates={weekInfo.dates} currentUserId={user?.id} refreshKey={ttRefresh} mineOnly
+                        statusLabel={st.label} statusTone={st.tone} lastUpdated={(plan as any)?.updatedAt}
+                        editSignal={ttEditSignal} onEditOpened={() => setTtEditSignal(0)} onTimingSaved={() => setTimingRev(k => k + 1)} />
                 </div>
             ) : (
-                <div className="space-y-4">
-                    <datalist id="sprint-class-names">
-                        {Array.from(new Set(entries.map(e => e.className).filter(Boolean))).map(c => <option key={c} value={c as string} />)}
-                    </datalist>
-                    <p className="text-[10px] text-zinc-500 px-1">Each class: Time From–Till · Subject · Topic · Branch · Section · Year / Semester, then Lecture Type · Unit. Class is filled automatically from Branch, Year and Section.</p>
-                    {weekInfo.dates.map(({ day, date }) => {
-                        const dayEntries = entries.filter(e => e.date === date || e.day === day);
-                        // A calm accent per weekday: coloured day chip, tinted header, accent bar
-                        const DAY_THEME: Record<string, { name: string; chip: string; header: string; border: string; add: string; slot: string; slotChip: string }> = {
-                            MON: { name: "Monday", chip: "bg-sky-500/15 text-sky-300 border-sky-500/30", header: "from-sky-500/10", border: "border-l-sky-400", add: "text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 border-sky-500/20", slot: "border-sky-500/25 bg-sky-500/[0.04]", slotChip: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
-                            TUE: { name: "Tuesday", chip: "bg-teal-500/15 text-teal-300 border-teal-500/30", header: "from-teal-500/10", border: "border-l-teal-400", add: "text-teal-300 bg-teal-500/10 hover:bg-teal-500/20 border-teal-500/20", slot: "border-teal-500/25 bg-teal-500/[0.04]", slotChip: "bg-teal-500/15 text-teal-300 border-teal-500/30" },
-                            WED: { name: "Wednesday", chip: "bg-amber-500/15 text-amber-300 border-amber-500/30", header: "from-amber-500/10", border: "border-l-amber-400", add: "text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20", slot: "border-amber-500/25 bg-amber-500/[0.04]", slotChip: "bg-amber-500/15 text-amber-300 border-amber-500/30" },
-                            THU: { name: "Thursday", chip: "bg-violet-500/15 text-violet-300 border-violet-500/30", header: "from-violet-500/10", border: "border-l-violet-400", add: "text-violet-300 bg-violet-500/10 hover:bg-violet-500/20 border-violet-500/20", slot: "border-violet-500/25 bg-violet-500/[0.04]", slotChip: "bg-violet-500/15 text-violet-300 border-violet-500/30" },
-                            FRI: { name: "Friday", chip: "bg-rose-500/15 text-rose-300 border-rose-500/30", header: "from-rose-500/10", border: "border-l-rose-400", add: "text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/20", slot: "border-rose-500/25 bg-rose-500/[0.04]", slotChip: "bg-rose-500/15 text-rose-300 border-rose-500/30" },
-                            SAT: { name: "Saturday", chip: "bg-orange-500/15 text-orange-300 border-orange-500/30", header: "from-orange-500/10", border: "border-l-orange-400", add: "text-orange-300 bg-orange-500/10 hover:bg-orange-500/20 border-orange-500/20", slot: "border-orange-500/25 bg-orange-500/[0.04]", slotChip: "bg-orange-500/15 text-orange-300 border-orange-500/30" },
-                        };
-                        const theme = DAY_THEME[day] || DAY_THEME.MON;
-
-                        return (
-                            <div key={date} className={`rounded-xl bg-zinc-900/50 border border-zinc-800 border-l-4 ${theme.border} overflow-hidden`}>
-                                <div className={`flex flex-wrap items-center justify-between gap-3 px-4 sm:px-5 py-3.5 bg-gradient-to-r ${theme.header} to-transparent border-b border-zinc-800/60`}>
-                                    <div className="flex items-center gap-3">
-                                        <span className={`text-[10px] font-black px-3 py-1.5 rounded-lg border tracking-[0.2em] ${theme.chip}`}>{day}</span>
-                                        <span className="text-sm font-bold text-white">{theme.name}</span>
-                                        <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{formatDateDMY(date)}</span>
-                                        {dayEntries.length > 0 && <span className="text-[10px] font-bold text-zinc-400 bg-zinc-800/70 px-2 py-0.5 rounded-md">{dayEntries.length} class{dayEntries.length > 1 ? "es" : ""}</span>}
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-3">
-                                        {/* Daily Location Tag — Positioned to the left of Add Slot button */}
-                                        {(() => {
-                                            // Robust matching: Check date, then uppercase/lowercase weekday strings
-                                            const sch = workSchedules.find(s =>
-                                                s.date === date ||
-                                                s.date?.toUpperCase() === day?.toUpperCase() ||
-                                                s.date?.toLowerCase() === day?.toLowerCase() ||
-                                                (s.date && date && s.date.replace(/[-\/]/g, '') === date.replace(/[-\/]/g, ''))
-                                            );
-
-                                            if (!sch) return (
-                                                <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800/20 border border-zinc-800/50 rounded-lg opacity-40">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
-                                                    <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">No Location</span>
-                                                </div>
-                                            );
-
-                                            return (
-                                                <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800/80 border border-zinc-700/50 rounded-lg shadow-sm group-hover:border-emerald-500/30 transition-all">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                                    <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest leading-none">
-                                                        {sch.location}
-                                                    </span>
-                                                </div>
-                                            );
-                                        })()}
-
-                                        {!isFrozen && (
-                                            <button onClick={() => addEntry(day, date)}
-                                                className={`flex items-center gap-2 text-[10px] font-black px-4 py-2 rounded-xl transition-all border active:scale-95 uppercase tracking-widest whitespace-nowrap ${theme.add}`}>
-                                                <Plus size={14} /> Add Slot
-                                            </button>
-                                        )}
-                                    </div>
+                <div className="space-y-3" data-testid="slot-editor">
+                    {/* Info bar */}
+                    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-3 sm:p-3.5 flex flex-col md:flex-row md:items-center gap-3">
+                        <div className="grid grid-cols-2 md:flex md:flex-1 md:divide-x md:divide-zinc-800 gap-x-4 gap-y-3 min-w-0">
+                            {([[Building2, "College", collegeInfo?.name || plan?.college || "Not mapped"], [Clock, "College Timing", collegeInfo?.start && collegeInfo?.end ? `${to12(collegeInfo.start)} – ${to12(collegeInfo.end)}` : "Not set"], [CalendarDays, "Week", weekText]] as const).map(([Icon, l, v]) => (
+                                <div key={l} className={`flex items-start gap-2.5 min-w-0 md:px-4 first:md:pl-1 ${l === "Week" ? "col-span-2 md:col-span-1" : ""}`}>
+                                    <Icon size={15} className="text-zinc-500 mt-0.5 shrink-0" />
+                                    <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{l}</p><p className="text-xs font-bold text-white [overflow-wrap:anywhere]">{v}</p></div>
                                 </div>
+                            ))}
+                        </div>
+                        {collegeInfo?.canEdit && (
+                            <button onClick={() => { setViewMode("GRID"); setTtEditSignal(k => k + 1); }} data-testid="update-timings"
+                                className={`${btnBase} self-start md:self-center bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700`}><Edit2 size={13} /> Update Timings</button>
+                        )}
+                    </div>
 
-                                {dayEntries.length === 0 ? (
-                                    <div className="px-4 py-6 text-center text-xs text-zinc-600">No lectures scheduled</div>
-                                ) : (
-                                    <div className="p-3 space-y-3">
-                                        {entries.map((entry, idx) => {
-                                            if (entry.date !== date && entry.day !== day) return null;
-                                            const slotNo = entries.slice(0, idx + 1).filter(x => x.date === date || x.day === day).length;
-                                            return (
-                                                <div key={idx} className={`rounded-xl border ${theme.slot} px-3 sm:px-4 pt-2.5 pb-3 space-y-2 shadow-sm shadow-black/30`} data-testid="plan-entry">
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border ${theme.slotChip}`}>Slot {slotNo}</span>
-                                                    <span className="text-[10px] text-zinc-500 tabular-nums">{entry.timeStart || "--:--"} – {entry.timeStop || "--:--"}</span>
-                                                </div>
-                                                <div className="grid grid-cols-12 gap-2 items-start [&>*]:min-w-0">
-                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-2 flex gap-1 items-center">
-                                                        <button 
-                                                            onClick={() => setActiveTimePicker({ idx, field: "timeStart" })}
-                                                            disabled={isFrozen}
-                                                            className={`flex-1 px-2 py-1.5 bg-zinc-800 border ${invalidIndices.includes(idx) ? 'border-red-500 animate-pulse' : 'border-zinc-700'} rounded text-[11px] text-white text-center focus:border-violet-500 hover:border-zinc-600 transition-colors disabled:opacity-50`}
-                                                        >
-                                                            {entry.timeStart || "09:20"}
-                                                        </button>
-                                                        <span className="text-zinc-600 font-bold">-</span>
-                                                        <button 
-                                                            onClick={() => setActiveTimePicker({ idx, field: "timeStop" })}
-                                                            disabled={isFrozen}
-                                                            className={`flex-1 px-2 py-1.5 bg-zinc-800 border ${invalidIndices.includes(idx) ? 'border-red-500 animate-pulse' : 'border-zinc-700'} rounded text-[11px] text-white text-center focus:border-violet-500 hover:border-zinc-600 transition-colors disabled:opacity-50`}
-                                                        >
-                                                            {entry.timeStop || "10:10"}
-                                                        </button>
-                                                    </div>
-                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-2 flex flex-col gap-1 relative">
-                                                        <select value={entry.subjectCode} onChange={e => {
-                                                            const code = e.target.value;
-                                                            updateEntry(idx, "subjectCode", code);
-                                                        }}
-                                                            disabled={isFrozen}
-                                                            className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50 font-medium appearance-none">
-                                                            <option value="">-- Select Subject --</option>
-                                                            {Object.entries(facultySubjects).map(([code, name]) => (
-                                                                <option key={code} value={code}>{name}</option>
-                                                            ))}
-                                                        </select>
-                                                        {!isFrozen && (
-                                                            <button
-                                                                onClick={() => { setPrefTab("SUBJECTS"); setShowPrefModal(true); }}
-                                                                className="absolute right-2 top-2 text-zinc-500 hover:text-indigo-400 p-0.5">
-                                                                <Settings size={10} />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-2">
-                                                        <input value={entry.topics} onChange={e => updateEntry(idx, "topics", e.target.value)}
-                                                            disabled={isFrozen} placeholder="Topic" title="Topic"
-                                                            className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50" />
-                                                    </div>
-                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-2 relative group-item">
-                                                        <select value={entry.stream} onChange={e => updateEntry(idx, "stream", e.target.value)}
-                                                            disabled={isFrozen} title="Branch / Stream"
-                                                            className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50 appearance-none">
-                                                            {facultyStreams.map(s => <option key={s} value={s}>{s}</option>)}
-                                                        </select>
-                                                        {!isFrozen && (
-                                                            <button
-                                                                onClick={() => { setPrefTab("STREAMS"); setShowPrefModal(true); }}
-                                                                className="absolute right-2 top-2 text-zinc-500 hover:text-emerald-400 p-0.5">
-                                                                <Edit2 size={10} />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-1">
-                                                        <input value={entry.section} onChange={e => updateEntry(idx, "section", e.target.value)}
-                                                            disabled={isFrozen} placeholder="Section"
-                                                            className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50" />
-                                                    </div>
-                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-3 flex flex-col gap-1">
-                                                        <div className="flex gap-1">
-                                                            <select value={entry.year} onChange={e => updateEntry(idx, "year", e.target.value)}
-                                                                disabled={isFrozen}
-                                                                className="flex-1 px-1 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[9px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50">
-                                                                {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
-                                                            </select>
-                                                            <select value={entry.semester} onChange={e => updateEntry(idx, "semester", e.target.value)}
-                                                                disabled={isFrozen}
-                                                                className="flex-1 px-1 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[9px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50">
-                                                                {SEMESTERS.map(s => <option key={s} value={s}>{s}</option>)}
-                                                            </select>
-                                                            {!isFrozen && (
-                                                                <button onClick={() => removeEntry(idx)} className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors shrink-0">
-                                                                    <Trash2 size={12} />
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                {/* Lecture details: type, unit, class (automatic) */}
-                                                <div className="grid grid-cols-12 gap-2 items-start [&>*]:min-w-0">
-                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-2">
-                                                        <select value={entry.lectureType || ""} onChange={e => updateEntry(idx, "lectureType", e.target.value)}
-                                                            disabled={isFrozen} title="Lecture Type"
-                                                            className="w-full px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50">
-                                                            <option value="">-- Lecture Type --</option>
-                                                            {LECTURE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                                                        </select>
-                                                    </div>
-                                                    <div className="col-span-12 sm:col-span-6 lg:col-span-1">
-                                                        <select value={entry.unitNumber || ""} onChange={e => updateEntry(idx, "unitNumber", e.target.value)}
-                                                            disabled={isFrozen} title="Unit Number"
-                                                            className="w-full px-1 py-1.5 bg-zinc-800 border border-zinc-700 rounded text-[10px] text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50">
-                                                            <option value="">Unit</option>
-                                                            {UNIT_NUMBERS.map(u => <option key={u} value={u}>Unit {u}</option>)}
-                                                        </select>
-                                                    </div>
-                                                    <div className="col-span-12 sm:col-span-12 lg:col-span-9">
-                                                        <div className="w-full px-2 py-1.5 bg-zinc-900/60 border border-dashed border-zinc-700 rounded text-[10px] text-zinc-300 truncate" title="Class (filled automatically from Stream, Year and Section)" data-testid="plan-class-auto">
-                                                            <span className="text-zinc-500">Class:</span> <span className="font-semibold text-white">{autoClassName(entry) || "—"}</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
+                    {/* Day chips + day stats + Add Slot */}
+                    <div className="flex flex-col xl:flex-row xl:items-center gap-3">
+                        <div className="grid grid-cols-6 gap-1.5 sm:gap-2 pt-2 pr-2 xl:flex xl:shrink-0" role="tablist" data-testid="day-chips">
+                            {weekInfo.dates.map(d => {
+                                const on = d.date === selDay.date;
+                                const n = entries.filter(e => e.date === d.date || e.day === d.day).length;
+                                const bad = invalidIndices.some(i => entries[i] && (entries[i].date === d.date || entries[i].day === d.day));
+                                return (
+                                    <button key={d.date} role="tab" aria-selected={on} onClick={() => setSelDate(d.date)} data-testid={`day-${d.day}`}
+                                        className={`relative min-w-0 w-full xl:w-[68px] h-[54px] rounded-xl border flex flex-col items-center justify-center transition-colors ${on ? "border-emerald-500/60 bg-emerald-500/10 text-white" : "border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:border-zinc-600"}`}>
+                                        <span className="text-[13px] font-bold">{d.day.charAt(0) + d.day.slice(1).toLowerCase()}</span>
+                                        <span className="text-[10px] sm:text-[10.5px] text-zinc-400 whitespace-nowrap">{new Date(d.date + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span>
+                                        {n > 0 && <span className={`absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black flex items-center justify-center ${bad ? "bg-red-500 text-white" : "bg-zinc-700 text-zinc-100"}`}>{n}</span>}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 xl:flex xl:flex-1">
+                            {([[BookOpen, "Total Classes", String(dayList.length)], [Clock, "Scheduled Hours", hm(dayMinutes)], [Settings, "Free Time", freeText]] as const).map(([Icon, l, v]) => (
+                                <div key={l} className="min-w-0 h-[54px] px-3 flex items-center gap-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60" data-testid="day-stat">
+                                    <Icon size={15} className="text-zinc-500 shrink-0 hidden sm:block" />
+                                    <div className="min-w-0"><p className="text-[10px] text-zinc-500 truncate">{l}</p><p className="text-sm font-black text-white tabular-nums truncate">{v}</p></div>
+                                </div>
+                            ))}
+                        </div>
+                        {!isFrozen && (
+                            <button onClick={() => openNewSlot(selDay.day, selDay.date)} data-testid="add-slot"
+                                className={`${btnBase} h-[54px] xl:h-11 px-5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm`}><Plus size={16} /> Add Slot</button>
+                        )}
+                    </div>
+
+                    {/* Day table + Add / Edit form */}
+                    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-3 items-start">
+                        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden min-w-0">
+                            <div className="px-4 py-3 border-b border-zinc-800 flex items-center gap-2">
+                                <CalendarDays size={15} className="text-zinc-400" />
+                                <h2 className="text-sm font-bold text-white">{dayLongName(selDay.date)}</h2>
+                                {workSchedules.length > 0 && (() => {
+                                    const sch = workSchedules.find(s => s.date === selDay.date || s.date?.toUpperCase() === selDay.day || (s.date && s.date.replace(/[-\/]/g, "") === selDay.date.replace(/[-\/]/g, "")));
+                                    return sch ? <span className="ml-auto text-[10px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded-md" title="Daily work location">{sch.location}</span> : null;
+                                })()}
                             </div>
-                        );
-                    })}
+                            {dayList.length === 0 ? (
+                                <div className="py-12 text-center" data-testid="day-empty">
+                                    <p className="text-sm text-zinc-400">No classes on this day.</p>
+                                    {!isFrozen && <button onClick={() => openNewSlot(selDay.day, selDay.date)} className="mt-2 text-xs font-bold text-emerald-400 hover:text-emerald-300">+ Add the first slot</button>}
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Table (tablet / desktop) */}
+                                    {/* Day table (design): # · Time Slot · Subject · Course / Stream · Year – Sem · Section · Duration · Status · Actions.
+                                        In a narrow box Section joins Year – Sem and Duration goes under the time, so Status + Actions stay visible */}
+                                    <div className="@container" style={{ display: isMd ? "block" : "none" }}>
+                                        <table className="w-full table-fixed text-left border-separate border-spacing-0" data-testid="slot-table">
+                                            <thead>
+                                                <tr className="text-[10.5px] font-semibold text-zinc-400">
+                                                    {([["#", "w-9 text-center"], ["Time Slot", "w-[150px] @min-[820px]:w-[172px]"], ["Subject", ""], ["Course / Stream", "w-[19%]"], ["Year – Sem", "w-[104px]"], ["Section", `${wideCol} w-[70px]`], ["Duration", `${wideCol} w-[76px]`], ["Status", "w-[96px]"], ["Actions", "w-[84px] text-center"]] as const).map(([h, w]) => (
+                                                        <th key={h} className={`h-10 px-3 bg-zinc-900/90 border-b border-zinc-800 whitespace-nowrap overflow-hidden text-ellipsis ${w}`}>{h}</th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {dayList.map(({ e, idx }, n) => {
+                                                    const bad = invalidIndices.includes(idx);
+                                                    const editingRow = slotForm?.idx === idx;
+                                                    return (
+                                                        <tr key={idx} data-testid="plan-entry" className={`text-xs ${bad ? "bg-red-500/10" : editingRow ? "bg-emerald-500/[0.07]" : "hover:bg-zinc-800/30"}`}>
+                                                            <td className={`${tdc} py-3 text-center text-zinc-400 tabular-nums`}>{n + 1}</td>
+                                                            <td className={`${tdc} py-3 tabular-nums`} data-col="time">
+                                                                <span className={`block font-semibold whitespace-nowrap leading-4 ${bad ? "text-red-300" : "text-zinc-100"}`}>{to12(e.timeStart)} – {to12(e.timeStop)}</span>
+                                                                <span className="block @min-[820px]:hidden text-[10.5px] leading-[14px] text-zinc-500 mt-0.5">{dur(e) ? hm(dur(e)) : "—"}</span>
+                                                            </td>
+                                                            <td className={`${tdc} py-3`} data-col="subject">
+                                                                <span className="block font-bold text-white leading-4 [overflow-wrap:anywhere]" title={[e.subjectName, e.topics].filter(Boolean).join(" · ")}>{e.subjectName || <span className="text-red-300 font-semibold">Subject needed</span>}</span>
+                                                                {e.topics ? <span className="block text-[10.5px] leading-[14px] text-zinc-500 mt-0.5 truncate" title={e.topics}>{e.topics}</span> : null}
+                                                            </td>
+                                                            <td className={`${tdc} py-3`} data-col="stream"><span className="block text-zinc-200 leading-4 [overflow-wrap:anywhere]" title={e.stream}>{e.stream || "—"}</span></td>
+                                                            <td className={`${tdc} py-3`} data-col="year-sem">
+                                                                {/* full Year, then Semester (+ Section when that column is hidden) */}
+                                                                <span className="block text-zinc-200 leading-4 [overflow-wrap:anywhere]">{e.year || "—"}</span>
+                                                                <span className="block text-[10.5px] leading-[14px] text-zinc-400 mt-0.5 [overflow-wrap:anywhere]">{e.semester || "—"}{e.section ? <span className="@min-[820px]:hidden"> · Sec {e.section}</span> : null}</span>
+                                                            </td>
+                                                            <td className={`${tdc} ${wideCol} py-3 text-zinc-200`}>{e.section || "—"}</td>
+                                                            <td className={`${tdc} ${wideCol} py-3 whitespace-nowrap text-zinc-200 tabular-nums`}>{dur(e) ? hm(dur(e)) : "—"}</td>
+                                                            <td className={`${tdc} py-3`}>
+                                                                {isFrozen
+                                                                    ? <span className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg border bg-emerald-500/10 text-emerald-300 border-emerald-500/30 text-[11px] font-bold"><CheckCircle2 size={12} /> Finalized</span>
+                                                                    : <span className="inline-flex items-center gap-1 h-7 px-2.5 rounded-lg border bg-amber-500/10 text-amber-300 border-amber-500/40 text-[11px] font-bold"><Edit2 size={12} /> Draft</span>}
+                                                            </td>
+                                                            <td className={`${tdc} py-3`}>
+                                                                <div className="flex items-center justify-center gap-1.5">
+                                                                    <button onClick={() => openEditSlot(idx)} disabled={isFrozen} aria-label="Edit slot" title={isFrozen ? "Plan is locked" : "Edit slot"} data-testid="edit-slot"
+                                                                        className="w-8 h-8 rounded-lg border border-zinc-700 bg-zinc-800/70 hover:bg-zinc-700 text-zinc-200 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"><Edit2 size={13} /></button>
+                                                                    {!isFrozen && <button onClick={() => deleteSlot(idx)} aria-label="Delete slot" title="Delete slot" data-testid="delete-slot"
+                                                                        className="w-8 h-8 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-300 flex items-center justify-center"><Trash2 size={13} /></button>}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    {/* Phone: compact rows */}
+                                    <ul className="divide-y divide-zinc-800/70" style={{ display: isMd ? "none" : "block" }} data-testid="slot-list-mobile">
+                                        {dayList.map(({ e, idx }, n) => (
+                                            <li key={idx} data-testid="plan-entry-mobile" className={`px-3 py-2.5 flex items-start gap-3 ${invalidIndices.includes(idx) ? "bg-red-500/10" : ""}`}>
+                                                <span className="shrink-0 w-6 h-6 rounded-md bg-zinc-800 text-[11px] font-bold text-zinc-300 flex items-center justify-center">{n + 1}</span>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-[11px] font-semibold text-zinc-300 tabular-nums">{to12(e.timeStart)} – {to12(e.timeStop)} · {dur(e) ? hm(dur(e)) : "—"}</p>
+                                                    <p className="text-[13px] font-bold text-white truncate">{e.subjectName || <span className="text-red-300">Subject needed</span>}</p>
+                                                    <p className="text-[11px] text-zinc-500 [overflow-wrap:anywhere]">{[e.stream, e.year, e.semester, e.section ? `Sec ${e.section}` : ""].filter(Boolean).join(" · ")}</p>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <button onClick={() => openEditSlot(idx)} disabled={isFrozen} aria-label="Edit slot" data-testid="edit-slot" className="w-9 h-9 rounded-lg border border-zinc-700 bg-zinc-800/70 text-zinc-200 flex items-center justify-center disabled:opacity-40"><Edit2 size={14} /></button>
+                                                    {!isFrozen && <button onClick={() => deleteSlot(idx)} aria-label="Delete slot" data-testid="delete-slot" className="w-9 h-9 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 flex items-center justify-center"><Trash2 size={14} /></button>}
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </>
+                            )}
+                        </div>
+
+                        {/* Add / Edit Slot */}
+                        <div ref={slotFormRef} className="rounded-2xl border border-zinc-800 bg-zinc-900/60 xl:sticky xl:top-4 scroll-mt-4" data-testid="slot-form">
+                            <div className="px-4 py-3 border-b border-zinc-800 flex items-center gap-2">
+                                <Edit2 size={14} className="text-zinc-400" />
+                                <h2 className="text-sm font-bold text-white">Add / Edit Slot</h2>
+                                {slotForm && <span className="ml-auto text-[10.5px] text-zinc-500" data-testid="slot-form-mode">{slotForm.idx < 0 ? "New slot" : "Editing"} · {new Date(slotForm.data.date + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" })}</span>}
+                            </div>
+                            {!slotForm ? (
+                                <div className="px-4 py-4" data-testid="slot-form-help">
+                                    {isFrozen ? <p className="text-xs text-zinc-400">The plan is locked. Press <b className="text-orange-300">Unlock Sprint Plan</b> to change slots.</p> : (
+                                        <ul className="space-y-2.5 text-xs text-zinc-300">
+                                            <li className="flex items-start gap-2"><CheckCircle2 size={15} className="text-emerald-400 shrink-0 mt-px" /><span>Click <b className="text-white">“Add Slot”</b> to create a new class.</span></li>
+                                            <li className="flex items-start gap-2"><CheckCircle2 size={15} className="text-emerald-400 shrink-0 mt-px" /><span>Fill in the <b className="text-white">Time, Subject, Year – Sem</b> and other details.</span></li>
+                                            <li className="flex items-start gap-2"><CheckCircle2 size={15} className="text-emerald-400 shrink-0 mt-px" /><span>Use <b className="text-white">Edit</b> <Edit2 size={11} className="inline -mt-0.5" /> to update or <b className="text-red-300">Delete</b> <Trash2 size={11} className="inline -mt-0.5 text-red-300" /> to remove.</span></li>
+                                        </ul>
+                                    )}
+                                </div>
+                            ) : (() => {
+                                const d = slotForm.data;
+                                return (
+                                    <div className="p-4 space-y-3">
+                                        <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+                                            <div className="min-w-0"><span className={lbl}>Start Time *</span>
+                                                <button type="button" onClick={() => setActiveTimePicker({ idx: -1, field: "timeStart" })} className={`${fieldCls} text-left flex items-center gap-2`} data-testid="f-start"><Clock size={13} className="text-zinc-500" /> {to12(d.timeStart)}</button>
+                                            </div>
+                                            <div className="min-w-0"><span className={lbl}>End Time *</span>
+                                                <button type="button" onClick={() => setActiveTimePicker({ idx: -1, field: "timeStop" })} className={`${fieldCls} text-left flex items-center gap-2`} data-testid="f-end"><Clock size={13} className="text-zinc-500" /> {to12(d.timeStop)}</button>
+                                            </div>
+                                            <label className="col-span-2 min-w-0"><span className={lbl}>Subject *</span>
+                                                <div className="flex gap-1.5">
+                                                    <select value={d.subjectCode} onChange={ev => updateSlotForm("subjectCode", ev.target.value)} className={fieldCls} data-testid="f-subject">
+                                                        <option value="">-- Select --</option>
+                                                        {Object.entries(facultySubjects).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+                                                    </select>
+                                                    <button type="button" onClick={() => { setPrefTab("SUBJECTS"); setShowPrefModal(true); }} title="Manage subjects" aria-label="Manage subjects" className="shrink-0 w-9 h-9 rounded-lg border border-zinc-800 bg-zinc-950/70 text-zinc-400 hover:text-white flex items-center justify-center"><Settings size={13} /></button>
+                                                </div>
+                                            </label>
+                                            <label className="col-span-2 min-w-0"><span className={lbl}>Topic *</span>
+                                                <input value={d.topics} onChange={ev => updateSlotForm("topics", ev.target.value)} placeholder="Topic of the class" className={fieldCls} data-testid="f-topic" />
+                                            </label>
+                                            <label className="min-w-0"><span className={lbl}>Branch / Stream *</span>
+                                                <div className="flex gap-1.5">
+                                                    <select value={d.stream} onChange={ev => updateSlotForm("stream", ev.target.value)} className={fieldCls} data-testid="f-stream">
+                                                        {facultyStreams.map(s => <option key={s} value={s}>{s}</option>)}
+                                                    </select>
+                                                    <button type="button" onClick={() => { setPrefTab("STREAMS"); setShowPrefModal(true); }} title="Manage streams" aria-label="Manage streams" className="shrink-0 w-9 h-9 rounded-lg border border-zinc-800 bg-zinc-950/70 text-zinc-400 hover:text-white flex items-center justify-center"><Settings size={13} /></button>
+                                                </div>
+                                            </label>
+                                            <label className="min-w-0"><span className={lbl}>Section *</span>
+                                                <input value={d.section} onChange={ev => updateSlotForm("section", ev.target.value)} placeholder="Section" className={fieldCls} data-testid="f-section" />
+                                            </label>
+                                            <label className="min-w-0"><span className={lbl}>Year *</span>
+                                                <select value={d.year} onChange={ev => updateSlotForm("year", ev.target.value)} className={fieldCls} data-testid="f-year">{YEARS.map(y => <option key={y} value={y}>{y}</option>)}</select>
+                                            </label>
+                                            <label className="min-w-0"><span className={lbl}>Semester *</span>
+                                                <select value={d.semester} onChange={ev => updateSlotForm("semester", ev.target.value)} className={fieldCls} data-testid="f-semester">{SEMESTERS.map(s => <option key={s} value={s}>{s}</option>)}</select>
+                                            </label>
+                                            <label className="min-w-0"><span className={lbl}>Lecture Type</span>
+                                                <select value={d.lectureType || ""} onChange={ev => updateSlotForm("lectureType", ev.target.value)} className={fieldCls} data-testid="f-type">
+                                                    <option value="">-- Type --</option>{LECTURE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                                </select>
+                                            </label>
+                                            <label className="min-w-0"><span className={lbl}>Unit</span>
+                                                <select value={d.unitNumber || ""} onChange={ev => updateSlotForm("unitNumber", ev.target.value)} className={fieldCls} data-testid="f-unit">
+                                                    <option value="">Unit</option>{UNIT_NUMBERS.map(u => <option key={u} value={u}>Unit {u}</option>)}
+                                                </select>
+                                            </label>
+                                            <div className="col-span-2 min-w-0">
+                                                {/* Class: filled automatically from Stream, Year and Section (as before, not editable) */}
+                                                <div className="w-full px-2.5 py-2 bg-zinc-900/60 border border-dashed border-zinc-700 rounded-lg text-xs text-zinc-300 truncate" title="Class (filled automatically from Stream, Year and Section)" data-testid="plan-class-auto">
+                                                    <span className="text-zinc-500">Class:</span> <span className="font-semibold text-white">{autoClassName(d) || "—"}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {slotError && <p className="text-xs text-red-400 flex items-center gap-1.5" data-testid="slot-error"><AlertTriangle size={13} /> {slotError}</p>}
+                                        <div className="flex justify-end gap-2 pt-1">
+                                            <button onClick={() => { setSlotForm(null); setSlotError(""); }} className={`${btnBase} bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700`} data-testid="f-cancel">Cancel</button>
+                                            <button onClick={saveSlotForm} className={`${btnBase} bg-emerald-600 hover:bg-emerald-500 text-white`} data-testid="f-save"><Check size={14} /> Save Changes</button>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    </div>
                 </div>
             )}
 
-            {/* Actions */}
-            <div className="flex flex-wrap gap-3 sticky bottom-6 z-20 bg-zinc-950/80 backdrop-blur-md p-3 sm:p-4 rounded-3xl border border-zinc-800/80 shadow-2xl">
+            {/* ── Actions (same Save Draft / Finalize & Lock / Unlock as before) ── */}
+            <div className="sticky bottom-3 sm:bottom-4 z-20 flex flex-col md:flex-row md:items-center gap-2 md:gap-3 bg-zinc-950/85 backdrop-blur-md px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl border border-zinc-800 shadow-2xl">
                 {!isFrozen ? (
                     <>
-                        <button onClick={savePlan} disabled={saving || submitting}
-                            className="flex-1 sm:flex-none flex items-center justify-center gap-3 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase tracking-wider rounded-2xl transition-all shadow-xl shadow-indigo-500/10 active:scale-95 disabled:opacity-50">
-                            <Save size={16} /> {saving ? "Synchronizing..." : planStatus === "DRAFT" || planStatus === "UNLOCKED_FOR_REVISION" ? "Save Draft" : "Save Changes"}
-                        </button>
-                        <button onClick={submitWeek} disabled={saving || submitting || (entries.length === 0 && planStatus !== "UNLOCKED_FOR_REVISION")} data-testid="submit-week"
-                            className="flex-1 sm:flex-none flex items-center justify-center gap-3 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider rounded-2xl transition-all shadow-xl shadow-emerald-500/10 active:scale-95 disabled:opacity-50">
-                            <Lock size={16} /> {submitting ? "Locking..." : planStatus === "UNLOCKED_FOR_REVISION" ? "Save & Re-Lock" : "Finalize & Lock"}
-                        </button>
-                        <span className="w-full sm:w-auto sm:ml-auto self-center text-[11px] font-medium flex items-center gap-1.5" data-testid="draft-status">
+                        <div className="flex gap-2">
+                            <button onClick={savePlan} disabled={saving || submitting} data-testid="save-draft"
+                                className={`${btnBase} flex-1 md:flex-none h-10 px-5 bg-zinc-900 hover:bg-zinc-800 text-zinc-100 border border-zinc-600`}>
+                                <Save size={15} /> {saving ? "Saving..." : planStatus === "DRAFT" || planStatus === "UNLOCKED_FOR_REVISION" ? "Save Draft" : "Save Changes"}
+                            </button>
+                            <button onClick={submitWeek} disabled={saving || submitting || (entries.length === 0 && planStatus !== "UNLOCKED_FOR_REVISION")} data-testid="submit-week"
+                                className={`${btnBase} flex-1 md:flex-none h-10 px-5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-200 border border-emerald-500/60`}>
+                                <Lock size={15} /> {submitting ? "Locking..." : planStatus === "UNLOCKED_FOR_REVISION" ? "Save & Re-Lock" : "Finalize & Lock"}
+                            </button>
+                        </div>
+                        <span className="md:ml-auto text-[11px] font-medium flex items-center gap-1.5 min-w-0" data-testid="draft-status">
                             {draftInfo ? (
                                 <><span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" /><span className="text-amber-200">Unsaved changes — kept safely on this device{draftInfo.savedAt ? ` (${new Date(draftInfo.savedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true })})` : ""}. Not sent until you save.</span></>
                             ) : (
-                                <><span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" /><span className="text-zinc-400">All changes saved</span></>
+                                <><span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" /><span className="text-zinc-400">All changes saved{savedWhen ? ` ${savedWhen}` : ""}</span></>
                             )}
                         </span>
                     </>
                 ) : (
-                    <>
-                        <div className="flex-1 flex items-center justify-center gap-3 px-6 py-3 bg-amber-500/5 text-amber-400 text-xs font-black uppercase tracking-wider rounded-2xl border border-amber-500/20">
-                            <Lock size={16} /> {planStatus === "LOCKED_AGAIN" ? "Updated & Re-Locked" : "Plan locked"}
+                    <div className="flex flex-col sm:flex-row gap-2 md:flex-1">
+                        <div className="flex-1 h-10 flex items-center justify-center gap-2 px-5 bg-emerald-500/5 text-emerald-300 text-xs font-bold rounded-lg border border-emerald-500/20">
+                            <Lock size={15} /> {planStatus === "LOCKED_AGAIN" ? "Updated & Re-Locked" : "Plan finalized & locked"}
                         </div>
                         <button onClick={unlockPlan} disabled={unlocking} data-testid="unlock-plan"
-                            className="flex-1 sm:flex-none flex items-center justify-center gap-3 px-6 py-3 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 text-xs font-black uppercase tracking-wider rounded-2xl border border-orange-500/30 transition-all active:scale-95 disabled:opacity-50">
-                            <Unlock size={16} /> {unlocking ? "Unlocking..." : "Unlock Sprint Plan"}
+                            className={`${btnBase} h-10 px-5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 border border-orange-500/30`}>
+                            <Unlock size={15} /> {unlocking ? "Unlocking..." : "Unlock Sprint Plan"}
                         </button>
-                    </>
+                    </div>
                 )}
             </div>
 
@@ -1155,9 +1280,11 @@ export default function SprintPlanPage() {
             <AnimatePresence>
                 {activeTimePicker && (
                     <TimePicker
-                        value={entries[activeTimePicker.idx]?.[activeTimePicker.field] || (activeTimePicker.field === "timeStart" ? "09:20" : "10:10")}
+                        value={(activeTimePicker.idx < 0 ? slotForm?.data[activeTimePicker.field] : entries[activeTimePicker.idx]?.[activeTimePicker.field]) || (activeTimePicker.field === "timeStart" ? "09:20" : "10:10")}
                         onChange={(time) => {
-                            updateEntry(activeTimePicker.idx, activeTimePicker.field, time);
+                            // idx -1 = the Add / Edit Slot form; otherwise a class in the list (as before)
+                            if (activeTimePicker.idx < 0) updateSlotForm(activeTimePicker.field, time);
+                            else updateEntry(activeTimePicker.idx, activeTimePicker.field, time);
                             setActiveTimePicker(null);
                         }}
                         onClose={() => setActiveTimePicker(null)}

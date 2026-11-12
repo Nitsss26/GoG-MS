@@ -11,8 +11,9 @@
  *  - Refreshes every 30 seconds and whenever `refreshKey` changes (after a save / lock / unlock).
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clock, Users, Layers, RefreshCw, Save, AlertTriangle, Check, Lock, Pencil, Building2, Download, FileImage } from "lucide-react";
+import { Clock, Users, Layers, RefreshCw, Save, AlertTriangle, Check, Lock, Pencil, Building2, Download, FileImage, BookOpen, FlaskConical, Coffee, CalendarDays, History } from "lucide-react";
 import { FACULTY_CARD_THEMES } from "@/components/academic/SprintPlanTimetableGrid";
+import { useMinWidth } from "@/components/academic/LectureTable";
 
 type Entry = {
     _id?: string; planId?: string; facultyId: string; facultyName: string; day: string; date: string;
@@ -39,6 +40,9 @@ const when = (iso?: string) => {
 /** Plan state shown on a class card: only two simple states — Locked (final) or Draft (can still change) */
 const isLockedStatus = (s?: string) => ["LOCKED", "LOCKED_AGAIN", "UNLOCK_REQUESTED"].includes(s || "");
 // Download sheet: the same light, colourful look as the earlier timetable sheet (inline colours so the file keeps them)
+/** Sprint Plan grid: one accent per subject (dark cards, coloured edge + icon). Hex + inline styles, so the
+ *  colours always show; no yellow (that colour means "Draft"). Subjects get colours in the order they appear. */
+const SUBJECT_COLORS = ["#38bdf8", "#f472b6", "#34d399", "#a78bfa", "#22d3ee", "#fb923c", "#818cf8", "#a3e635", "#fb7185", "#2dd4bf"];
 const SHEET_THEMES = [
     { bg: "#e8c4d8", border: "#caa1b8", text: "#18181b", sub: "#3f3f46" },
     { bg: "#fdeaa2", border: "#e6ce78", text: "#18181b", sub: "#3f3f46" },
@@ -50,10 +54,16 @@ const SHEET_THEMES = [
     { bg: "#e7e2c4", border: "#cfc79a", text: "#18181b", sub: "#3f3f46" },
 ];
 
-export default function DynamicCollegeTimetable({ weekStart, weekDates, currentUserId, refreshKey = 0, mineOnly = false }: {
+export default function DynamicCollegeTimetable({ weekStart, weekDates, currentUserId, refreshKey = 0, mineOnly = false, statusLabel = "Draft", statusTone = "text-amber-300", lastUpdated, editSignal = 0, onEditOpened, onTimingSaved }: {
     weekStart: string; weekDates: { day: string; date: string }[]; currentUserId?: string; refreshKey?: number;
     /** Sprint Plan page: only the viewer's own classes (the college-wide view is in the Weekly Calendar) */
     mineOnly?: boolean;
+    /** Sprint Plan info bar: plan status text / colour and last saved time (from the page; display only) */
+    statusLabel?: string; statusTone?: string; lastUpdated?: string;
+    /** Bump to open the college-timings form (e.g. "Update Timings" in the slot editor) */
+    editSignal?: number; onEditOpened?: () => void;
+    /** Called after the college timings were saved (the page refreshes its own copy) */
+    onTimingSaved?: () => void;
 }) {
     const [entries, setEntries] = useState<Entry[]>([]);
     const [college, setCollege] = useState<{ id: string; name: string } | null>(null);
@@ -74,6 +84,7 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
     const sheetRef = useRef<HTMLDivElement>(null);
     const [exporting, setExporting] = useState<"" | "png" | "pdf">("");
     const [exportError, setExportError] = useState("");
+    const isMd = useMinWidth(768); // grid vs. phone list
     const [tMsg, setTMsg] = useState<{ type: "success" | "error"; text: string; list?: string[] } | null>(null);
 
     const load = useCallback(async () => {
@@ -94,6 +105,14 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
     }, [weekStart]);
 
     useEffect(() => { setLoading(true); load(); }, [load, refreshKey]);
+    // "Update Timings" from the slot editor: open the form once the permission is known
+    useEffect(() => {
+        if (!editSignal || !canEdit) return;
+        setEditing(true); setTMsg(null);
+        setStart(timing?.startTime || "09:00"); setEnd(timing?.endTime || "17:00");
+        onEditOpened?.();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editSignal, canEdit]);
     useEffect(() => {
         const t = setInterval(() => { if (document.visibilityState === "visible") load(); }, 30000);
         return () => clearInterval(t);
@@ -188,6 +207,7 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
             }
             setTiming(data.timing); setEditing(false);
             setTMsg({ type: "success", text: data.message || "College timings saved." });
+            onTimingSaved?.();
         } finally { setSaving(false); }
     };
 
@@ -224,6 +244,275 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
             setExportError("Could not create the file. Please try again.");
         } finally { setExporting(""); }
     };
+
+    // Download sheet (kept off screen; drawn into the PDF / PNG) — same for both layouts
+    const sheet = (rows.length > 0 && (
+                <div aria-hidden="true" style={{ position: "fixed", left: "-100000px", top: 0, pointerEvents: "none" }}>
+                    <div ref={sheetRef} style={{ width: 1400, background: "#ffffff", padding: 16, fontFamily: "Inter, Arial, sans-serif", color: "#18181b" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", border: "2px solid #27272a", fontSize: 12 }}>
+                            <thead>
+                                <tr>
+                                    <th style={{ width: 130, background: "#ffcc66", border: "2px solid #27272a", padding: "10px 6px", fontSize: 12, fontWeight: 900, lineHeight: 1.25 }}>
+                                        GoG &lt;&gt; {college?.name || "College"}
+                                        <div style={{ fontSize: 10, fontWeight: 700, marginTop: 3 }}>[{weekText}]</div>
+                                    </th>
+                                    <th colSpan={weekDates.length} style={{ background: "#f4f4f5", border: "2px solid #27272a", padding: "12px 8px", fontSize: 18, fontWeight: 900, textAlign: "center" }}>
+                                        Sprint Plan - {college?.name || "College"} &lt;&gt; GoG{filterText ? ` : ${filterText}` : ""}
+                                        {timing && <div style={{ fontSize: 11, fontWeight: 700, color: "#52525b", marginTop: 3 }}>College Timings: {fmt12(timing.startTime)} – {fmt12(timing.endTime)}</div>}
+                                    </th>
+                                </tr>
+                                <tr>
+                                    <th style={{ background: "#e4e4e7", border: "1px solid #27272a", padding: "8px 4px", fontSize: 11, fontWeight: 900 }}>TIME / DAY</th>
+                                    {weekDates.map(d => (
+                                        <th key={d.date} style={{ background: "#bfe0f7", border: "1px solid #27272a", padding: "8px 4px", fontSize: 12, fontWeight: 900, letterSpacing: 1 }}>
+                                            {d.day}<div style={{ fontSize: 10, fontWeight: 700, opacity: 0.7 }}>{d.date.slice(8)}/{d.date.slice(5, 7)}</div>
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rows.map((m, r) => (
+                                    <tr key={m}>
+                                        <td style={{ background: "#f4f4f5", border: "1px solid #a1a1aa", padding: "8px 6px", fontWeight: 900, fontSize: 11, textAlign: "center", verticalAlign: "top", whiteSpace: "nowrap" }}>
+                                            {fmt12(fromMin(m))} – {fmt12(fromMin(bounds[r + 1]))}
+                                        </td>
+                                        {weekDates.map(d => {
+                                            const cell = layout.get(d.date)?.get(r);
+                                            if (cell === "covered") return null;
+                                            if (!cell) return <td key={d.date} style={{ border: "1px solid #d4d4d8", textAlign: "center", color: "#d4d4d8", fontSize: 11 }}>—</td>;
+                                            return (
+                                                <td key={d.date} rowSpan={cell.span} style={{ border: "1px solid #d4d4d8", padding: 5, verticalAlign: "top" }}>
+                                                    {cell.items.map((x, i) => {
+                                                        const t = sheetTheme(x.facultyId);
+                                                        return (
+                                                            <div key={(x._id || "") + i} style={{ background: t.bg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 7px", marginTop: i ? 5 : 0, color: t.text }}>
+                                                                <div style={{ fontSize: 10, fontWeight: 800, color: t.sub }}>{fmt12(x.timeStart)} – {fmt12(x.timeStop)}</div>
+                                                                <div style={{ fontSize: 12, fontWeight: 900, lineHeight: 1.25 }}>{x.subjectName || "Class"}</div>
+                                                                {x.topics && <div style={{ fontSize: 10, fontWeight: 600, color: t.sub }}>{x.topics}</div>}
+                                                                <div style={{ fontSize: 10, fontWeight: 800, marginTop: 2 }}>{x.facultyName}{classLabel(x) ? ` · ${classLabel(x)}` : ""}</div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            ));
+
+    // ───────── Sprint Plan page (mineOnly): info bar + weekly grid in the Sprint Management design ─────────
+    if (mineOnly) {
+        const todayYmd = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        const dmy = (ymd?: string) => ymd ? new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "";
+        const dayLong = (ymd: string) => new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long" });
+        const inHours = (m: number) => !timing || (m >= toMin(timing.startTime) && m < toMin(timing.endTime));
+        // Distinct colour per subject of this week (first come, first coloured)
+        const subjOrder = Array.from(new Set([...weekEntries].sort((a, b) => (a.date + a.timeStart).localeCompare(b.date + b.timeStart)).map(e => (e.subjectName || "Class").trim().toLowerCase())));
+        const subjColor = (name?: string) => SUBJECT_COLORS[Math.max(0, subjOrder.indexOf((name || "Class").trim().toLowerCase())) % SUBJECT_COLORS.length];
+        const Card = ({ x }: { x: Entry }) => {
+            const clash = clashIds.has(`${x.facultyId}|${x._id}`);
+            const locked = isLockedStatus(x.planStatus);
+            const c = subjColor(x.subjectName);
+            const lab = /lab|practical/i.test(`${x.lectureType || ""} ${x.subjectName || ""}`);
+            const Icon = lab ? FlaskConical : BookOpen;
+            return (
+                <div data-testid="tt-card" title={`${fmt12(x.timeStart)} – ${fmt12(x.timeStop)} · ${x.subjectName || "Class"}${classLabel(x) ? ` · ${classLabel(x)}` : ""}${x.topics ? `\nTopic: ${x.topics}` : ""}\n${locked ? "Finalized (locked)" : "Draft — can still change"}`}
+                    className={`relative h-full overflow-hidden rounded-xl border bg-zinc-900/90 pl-3.5 pr-2.5 py-2.5 ${clash ? "border-red-500 ring-2 ring-red-500/50" : ""}`}
+                    style={clash ? undefined : { borderColor: `${c}59`, backgroundImage: `linear-gradient(135deg, ${c}14, transparent 60%)` }} data-color={c}>
+                    <span className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: c }} />
+                    <div className="flex items-start gap-2 min-w-0">
+                        <span className="shrink-0 w-6 h-6 rounded-md border flex items-center justify-center" style={{ color: c, background: `${c}26`, borderColor: `${c}59` }}><Icon size={13} /></span>
+                        <p className="text-[12.5px] font-black leading-snug text-white [overflow-wrap:anywhere] min-w-0">{x.subjectName || "Class"}</p>
+                    </div>
+                    {classLabel(x) && <p className="mt-1.5 text-[10.5px] font-semibold text-zinc-300 [overflow-wrap:anywhere]">{[x.stream, x.year].filter(Boolean).join(" · ") || classLabel(x)}</p>}
+                    {x.section && <p className="text-[10.5px] text-zinc-400">Sec {x.section}</p>}
+                    <p className="mt-1 flex items-center gap-1 text-[10.5px] font-semibold text-zinc-300 tabular-nums"><Clock size={11} className="text-zinc-500 shrink-0" /> {fmt12(x.timeStart)} – {fmt12(x.timeStop)}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-1">
+                        {locked
+                            ? <span className="inline-flex items-center gap-1 h-5 px-1.5 rounded-md border bg-emerald-500/10 text-emerald-300 border-emerald-500/30 text-[10px] font-bold" data-testid="tt-status"><Check size={10} /> Finalized</span>
+                            : <span className="inline-flex items-center gap-1 h-5 px-1.5 rounded-md border bg-amber-500/10 text-amber-300 border-amber-500/30 text-[10px] font-bold" data-testid="tt-status"><Pencil size={10} /> Draft</span>}
+                        {clash && <span className="h-5 px-1.5 rounded-md bg-red-600 text-white text-[9px] font-black uppercase tracking-wider inline-flex items-center">Clash</span>}
+                    </div>
+                </div>
+            );
+        };
+        // Same info bar as the Day-by-Day Slot Editor: College · College Timing · Week · Update Timings
+        const info: { icon: any; label: string; value: React.ReactNode; testId?: string }[] = [
+            { icon: Building2, label: "College", value: college?.name || (loadError ? "—" : "Not mapped"), testId: "college-name" },
+            { icon: Clock, label: "College Timing", value: timing ? `${fmt12(timing.startTime)} – ${fmt12(timing.endTime)}` : "Not set", testId: "college-timing-value" },
+            { icon: CalendarDays, label: "Week", value: `${dmy(weekDates[0]?.date)} – ${dmy(weekDates[weekDates.length - 1]?.date)}` },
+        ];
+        return (
+            <div className="space-y-3" data-testid="college-timetable">
+                {/* Info bar */}
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-3 sm:p-3.5">
+                    <div className="flex flex-col md:flex-row md:items-center gap-3">
+                        <div className="grid grid-cols-2 md:flex md:flex-1 md:divide-x md:divide-zinc-800 gap-x-4 gap-y-3 min-w-0">
+                            {info.map(it => (
+                                <div key={it.label} className={`flex items-start gap-2.5 min-w-0 md:px-4 first:md:pl-1 ${it.label === "Week" ? "col-span-2 md:col-span-1" : ""}`}>
+                                    <it.icon size={15} className="text-zinc-500 mt-0.5 shrink-0" />
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{it.label}</p>
+                                        <p className="text-xs font-bold text-white [overflow-wrap:anywhere]" data-testid={it.testId}>{it.value}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        {canEdit && !editing && (
+                            <button onClick={() => { setEditing(true); setTMsg(null); setStart(timing?.startTime || "09:00"); setEnd(timing?.endTime || "17:00"); }}
+                                data-testid="edit-college-timing"
+                                className="self-start md:self-center shrink-0 h-9 inline-flex items-center justify-center gap-2 px-3.5 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 whitespace-nowrap">
+                                <Pencil size={13} /> {timing ? "Update Timings" : "Set Timings"}
+                            </button>
+                        )}
+                    </div>
+                    {loadError && <p className="mt-3 text-xs text-red-400 flex items-center gap-1.5" data-testid="college-load-error"><AlertTriangle size={13} /> {loadError}</p>}
+                    {!loadError && noCollege && (
+                        <p className="mt-3 text-xs text-amber-300" data-testid="college-missing">
+                            {noCollege === "NOT_PROFESSOR" ? "College timings are set by the professors of a college." : "Your college is not mapped yet. Ask HR to set your Location (college) in your employee profile — the timetable, college timings and conflicts all use it."}
+                        </p>
+                    )}
+                    {!loadError && !noCollege && !timing && <p className="mt-3 text-xs text-amber-300" data-testid="college-timing-empty">College timings not set yet{canEdit ? " — set the start and end time once; it is used for every week." : "."}</p>}
+                    {!editing && (
+                        <p className="mt-2 text-[10.5px] text-zinc-500" data-testid="tt-plan-status">
+                            Plan: <span className={statusTone}>{statusLabel}</span>{lastUpdated ? ` · last saved ${when(lastUpdated)}` : ""}
+                            {timing && (timing.updatedByName || timing.configuredByName) ? ` · timings ${timing.updatedByName ? `updated by ${timing.updatedByName}${timing.updatedAt ? ` (${when(timing.updatedAt)})` : ""}` : `set by ${timing.configuredByName}`}, apply to all weeks` : ""}
+                        </p>
+                    )}
+                    {editing && (
+                        <div className="mt-3 pt-3 border-t border-zinc-800 flex flex-wrap items-end gap-3" data-testid="timing-form">
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Start
+                                <input type="time" value={start} onChange={e => setStart(e.target.value)} data-testid="college-start" className="mt-1 block h-9 bg-zinc-950 border border-zinc-700 rounded-lg px-3 text-sm text-white [color-scheme:dark]" />
+                            </label>
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">End
+                                <input type="time" value={end} onChange={e => setEnd(e.target.value)} data-testid="college-end" className="mt-1 block h-9 bg-zinc-950 border border-zinc-700 rounded-lg px-3 text-sm text-white [color-scheme:dark]" />
+                            </label>
+                            <button onClick={saveTiming} disabled={saving} data-testid="save-college-timing" className="h-9 flex items-center gap-1.5 px-4 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">
+                                <Save size={13} /> {saving ? "Saving..." : timing ? "Update" : "Save"}
+                            </button>
+                            <button onClick={() => { setEditing(false); setTMsg(null); }} className="h-9 px-3 rounded-lg text-xs font-bold text-zinc-400 hover:text-white">Cancel</button>
+                        </div>
+                    )}
+                    {tMsg && (
+                        <div className={`mt-3 rounded-xl px-3 py-2 text-xs ${tMsg.type === "success" ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"}`} data-testid="college-timing-msg">
+                            <p className="flex items-center gap-1.5">{tMsg.type === "success" ? <Check size={12} /> : <AlertTriangle size={12} />} {tMsg.text}</p>
+                            {tMsg.list && tMsg.list.length > 0 && <ul className="mt-1.5 ml-5 list-disc space-y-0.5 text-[11px] text-red-300/90">{tMsg.list.map((l, i) => <li key={i}>{l}</li>)}</ul>}
+                        </div>
+                    )}
+                </div>
+
+                {/* Toolbar: count, class filter, downloads, refresh */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <p className="text-[11px] text-zinc-500">{weekEntries.length} class{weekEntries.length === 1 ? "" : "es"} this week{cls !== "ALL" ? " (filtered)" : ""} · the whole college is in the Weekly Calendar</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <label className="flex items-center gap-1.5 text-[11px] text-zinc-400"><Layers size={13} />
+                            <select value={cls} onChange={e => setCls(e.target.value)} data-testid="tt-class" className="h-8 bg-zinc-900 border border-zinc-700 rounded-lg px-2 text-xs text-white max-w-[180px] [color-scheme:dark]">
+                                <option value="ALL">All Classes / Sections</option>
+                                {classes.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                            </select>
+                        </label>
+                        <button onClick={() => download("pdf")} disabled={!!exporting || rows.length === 0} data-testid="tt-download-pdf" className="h-8 flex items-center gap-1.5 px-3 rounded-lg text-[11px] font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 disabled:opacity-50">
+                            <Download size={13} /> {exporting === "pdf" ? "Preparing..." : "PDF"}
+                        </button>
+                        <button onClick={() => download("png")} disabled={!!exporting || rows.length === 0} data-testid="tt-download-png" title="Download as image" className="h-8 flex items-center gap-1.5 px-3 rounded-lg text-[11px] font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 disabled:opacity-50">
+                            <FileImage size={13} /> {exporting === "png" ? "Preparing..." : "Image"}
+                        </button>
+                        <button onClick={() => load()} title="Refresh" aria-label="Refresh" className="h-8 w-8 flex items-center justify-center rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white"><RefreshCw size={13} className={loading ? "animate-spin" : ""} /></button>
+                    </div>
+                </div>
+                {(anyClash || (timing && rows.some(m => !inHours(m)))) && (
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]" data-testid="tt-key">
+                        {timing && rows.some(m => !inHours(m)) && <span className="flex items-center gap-1.5 text-red-300"><span className="w-3 h-3 rounded bg-red-950 border border-red-800" /> Red time = outside college hours</span>}
+                        {anyClash && <span className="flex items-center gap-1.5 text-red-300"><span className="w-3 h-3 rounded border-2 border-red-500" /> Red border = same class booked twice</span>}
+                    </div>
+                )}
+
+                {/* Grid (tablet / desktop): time rows × days */}
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-950/40 overflow-hidden">
+                    {loading && !entries.length ? (
+                        <div className="py-14 flex justify-center"><div className="w-7 h-7 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" /></div>
+                    ) : rows.length === 0 ? (
+                        <p className="py-14 px-4 text-center text-sm text-zinc-500" data-testid="tt-empty">No classes {cls !== "ALL" ? "match this filter" : "in your plan"} this week{timing ? "" : ". Set the college timings to see the full day"}.</p>
+                    ) : (
+                        <>
+                            <div className="overflow-x-auto custom-scrollbar" style={{ display: isMd ? "block" : "none" }}>
+                                <table className="w-full table-fixed border-separate border-spacing-0 text-xs min-w-[860px]" data-testid="tt-grid">
+                                    <thead>
+                                        <tr>
+                                            <th className="sticky left-0 z-10 bg-zinc-900 text-left px-3 py-3 text-[10px] font-black uppercase tracking-widest text-zinc-500 w-[92px] border-b border-r border-zinc-800">Time</th>
+                                            {weekDates.map(d => {
+                                                const today = d.date === todayYmd;
+                                                return (
+                                                    <th key={d.date} className={`text-center px-2 py-2.5 border-b border-r border-zinc-800 last:border-r-0 ${today ? "bg-indigo-500/15" : "bg-zinc-900/80"}`} data-testid={`tt-day-${d.day}`}>
+                                                        <span className={`block text-[12px] font-bold ${today ? "text-indigo-200" : "text-white"}`}>{dayLong(d.date)}</span>
+                                                        <span className={`block text-[10.5px] font-medium ${today ? "text-indigo-300" : "text-zinc-500"}`}>{dmy(d.date).slice(0, 6)}</span>
+                                                    </th>
+                                                );
+                                            })}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {rows.map((m, r) => {
+                                            const outside = !inHours(m);
+                                            return (
+                                                <tr key={m} data-testid="tt-row">
+                                                    <td className={`sticky left-0 z-10 px-3 py-2.5 align-top whitespace-nowrap border-b border-r border-zinc-800 ${outside ? "bg-red-950/60 text-red-300" : "bg-zinc-900 text-zinc-300"}`}>
+                                                        <span className="font-semibold text-[11px]">{fmt12(fromMin(m))}</span>
+                                                        <span className="block text-[10px] text-zinc-500">to {fmt12(fromMin(bounds[r + 1]))}</span>
+                                                    </td>
+                                                    {weekDates.map(d => {
+                                                        const cell = layout.get(d.date)?.get(r);
+                                                        const today = d.date === todayYmd;
+                                                        if (cell === "covered") return null;
+                                                        if (!cell) return (
+                                                            <td key={d.date} className={`border-b border-r border-zinc-800/70 last:border-r-0 p-1.5 align-middle ${today ? "bg-indigo-500/[0.04]" : ""}`} data-testid="tt-free">
+                                                                {outside ? <span className="block text-center text-[10px] text-zinc-700">—</span> : (
+                                                                    <div className="h-full min-h-[52px] rounded-xl border border-dashed border-zinc-800 flex flex-col items-center justify-center gap-1 text-zinc-500">
+                                                                        <Coffee size={13} className="text-zinc-600" /><span className="text-[10.5px] font-medium">Free Period</span>
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                        );
+                                                        return (
+                                                            <td key={d.date} rowSpan={cell.span} className={`border-b border-r border-zinc-800/70 last:border-r-0 p-1.5 align-top ${today ? "bg-indigo-500/[0.04]" : ""}`}>
+                                                                <div className="space-y-1.5 h-full">{cell.items.map((x, i) => <Card key={(x._id || "") + i} x={x} />)}</div>
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {/* Phone: one block per day */}
+                            <div className="divide-y divide-zinc-800" style={{ display: isMd ? "none" : "block" }} data-testid="tt-mobile">
+                                {weekDates.map(d => {
+                                    const list = weekEntries.filter(e => e.date === d.date).sort((a, b) => toMin(a.timeStart) - toMin(b.timeStart));
+                                    const today = d.date === todayYmd;
+                                    return (
+                                        <div key={d.date} className={`p-3 space-y-2 ${today ? "bg-indigo-500/[0.06]" : ""}`}>
+                                            <p className="flex items-baseline gap-2"><span className={`text-sm font-bold ${today ? "text-indigo-200" : "text-white"}`}>{dayLong(d.date)}</span><span className="text-[11px] text-zinc-500">{dmy(d.date)}</span><span className="ml-auto text-[10.5px] text-zinc-500">{list.length} class{list.length === 1 ? "" : "es"}</span></p>
+                                            {list.length === 0
+                                                ? <div className="rounded-xl border border-dashed border-zinc-800 py-3 flex items-center justify-center gap-1.5 text-[11px] text-zinc-500"><Coffee size={13} /> Free day</div>
+                                                : <div className="grid grid-cols-1 min-[480px]:grid-cols-2 gap-2">{list.map((x, i) => <Card key={(x._id || "") + i} x={x} />)}</div>}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    )}
+                </div>
+                {exportError && <p className="text-xs text-red-400 flex items-center gap-1.5"><AlertTriangle size={12} /> {exportError}</p>}
+                {sheet}
+                <p className="text-[10px] text-zinc-600 px-1">Rows follow the real class times{timing ? " and the college hours" : ""}. Only your college is shown.{lastLoaded ? ` Updated ${lastLoaded.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })} · refreshes automatically.` : ""}</p>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-4" data-testid="college-timetable">
@@ -422,64 +711,7 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
             </div>
             {exportError && <p className="text-xs text-red-400 flex items-center gap-1.5"><AlertTriangle size={12} /> {exportError}</p>}
 
-            {/* Download sheet (kept off screen; drawn into the PDF / PNG) */}
-            {rows.length > 0 && (
-                <div aria-hidden="true" style={{ position: "fixed", left: "-100000px", top: 0, pointerEvents: "none" }}>
-                    <div ref={sheetRef} style={{ width: 1400, background: "#ffffff", padding: 16, fontFamily: "Inter, Arial, sans-serif", color: "#18181b" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", border: "2px solid #27272a", fontSize: 12 }}>
-                            <thead>
-                                <tr>
-                                    <th style={{ width: 130, background: "#ffcc66", border: "2px solid #27272a", padding: "10px 6px", fontSize: 12, fontWeight: 900, lineHeight: 1.25 }}>
-                                        GoG &lt;&gt; {college?.name || "College"}
-                                        <div style={{ fontSize: 10, fontWeight: 700, marginTop: 3 }}>[{weekText}]</div>
-                                    </th>
-                                    <th colSpan={weekDates.length} style={{ background: "#f4f4f5", border: "2px solid #27272a", padding: "12px 8px", fontSize: 18, fontWeight: 900, textAlign: "center" }}>
-                                        Sprint Plan - {college?.name || "College"} &lt;&gt; GoG{filterText ? ` : ${filterText}` : ""}
-                                        {timing && <div style={{ fontSize: 11, fontWeight: 700, color: "#52525b", marginTop: 3 }}>College Timings: {fmt12(timing.startTime)} – {fmt12(timing.endTime)}</div>}
-                                    </th>
-                                </tr>
-                                <tr>
-                                    <th style={{ background: "#e4e4e7", border: "1px solid #27272a", padding: "8px 4px", fontSize: 11, fontWeight: 900 }}>TIME / DAY</th>
-                                    {weekDates.map(d => (
-                                        <th key={d.date} style={{ background: "#bfe0f7", border: "1px solid #27272a", padding: "8px 4px", fontSize: 12, fontWeight: 900, letterSpacing: 1 }}>
-                                            {d.day}<div style={{ fontSize: 10, fontWeight: 700, opacity: 0.7 }}>{d.date.slice(8)}/{d.date.slice(5, 7)}</div>
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {rows.map((m, r) => (
-                                    <tr key={m}>
-                                        <td style={{ background: "#f4f4f5", border: "1px solid #a1a1aa", padding: "8px 6px", fontWeight: 900, fontSize: 11, textAlign: "center", verticalAlign: "top", whiteSpace: "nowrap" }}>
-                                            {fmt12(fromMin(m))} – {fmt12(fromMin(bounds[r + 1]))}
-                                        </td>
-                                        {weekDates.map(d => {
-                                            const cell = layout.get(d.date)?.get(r);
-                                            if (cell === "covered") return null;
-                                            if (!cell) return <td key={d.date} style={{ border: "1px solid #d4d4d8", textAlign: "center", color: "#d4d4d8", fontSize: 11 }}>—</td>;
-                                            return (
-                                                <td key={d.date} rowSpan={cell.span} style={{ border: "1px solid #d4d4d8", padding: 5, verticalAlign: "top" }}>
-                                                    {cell.items.map((x, i) => {
-                                                        const t = sheetTheme(x.facultyId);
-                                                        return (
-                                                            <div key={(x._id || "") + i} style={{ background: t.bg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 7px", marginTop: i ? 5 : 0, color: t.text }}>
-                                                                <div style={{ fontSize: 10, fontWeight: 800, color: t.sub }}>{fmt12(x.timeStart)} – {fmt12(x.timeStop)}</div>
-                                                                <div style={{ fontSize: 12, fontWeight: 900, lineHeight: 1.25 }}>{x.subjectName || "Class"}</div>
-                                                                {x.topics && <div style={{ fontSize: 10, fontWeight: 600, color: t.sub }}>{x.topics}</div>}
-                                                                <div style={{ fontSize: 10, fontWeight: 800, marginTop: 2 }}>{x.facultyName}{classLabel(x) ? ` · ${classLabel(x)}` : ""}</div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </td>
-                                            );
-                                        })}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
+            {sheet}
 
             <p className="text-[10px] text-zinc-600 px-1">
                 Rows follow the real class times{timing ? " and the college hours" : ""}. Only your college is shown.{lastLoaded ? ` Updated ${lastLoaded.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })} · refreshes automatically.` : ""}

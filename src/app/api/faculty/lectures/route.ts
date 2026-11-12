@@ -142,6 +142,7 @@ export async function GET(req: Request) {
                     className: entry.className || "",
                     lectureType: entry.lectureType || "",
                     unitNumber: entry.unitNumber || "",
+                    content: entry.content || "",
                     pipelineStatus: existing ? getClassStatus(existing) : "PENDING_PROFESSOR",
                     classEnded: hasClassEnded(targetDate, entry.timeStop),
                     defaultTotalStudents: existing?.totalStudents || await classStrength(facultyId, entry)

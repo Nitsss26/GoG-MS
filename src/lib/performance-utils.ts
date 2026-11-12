@@ -1,3 +1,4 @@
+import { holidayForEmployee, holidayExcludes } from '@/lib/holiday-scope';
 export const LEADERBOARD_START_DATE = new Date("2026-05-01");
 
 export interface AuditEntry {
@@ -157,7 +158,7 @@ export function calculatePerformance(
         const hDate = new Date(h.date);
         const isAfterStart = hDate >= START_DATE;
         const isApproved = h.status === "Approved";
-        const isForMe = h.forAll || (employeeLocation && h.collegeIds?.includes(employeeLocation));
+        const isForMe = h.employeeIds?.length ? holidayForEmployee(h, employeeId) : !holidayExcludes(h, employeeId) && (h.forAll || (employeeLocation && h.collegeIds?.includes(employeeLocation)));
         const isSunday = hDate.getDay() === 0;
         const hasWorkRecord = holidayDatesWithAttendance.has(h.date);
         

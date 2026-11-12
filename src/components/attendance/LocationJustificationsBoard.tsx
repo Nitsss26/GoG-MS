@@ -117,7 +117,7 @@ export default function LocationJustificationsBoard() {
                     </div>
                 )}
             </div>
-            <p className="text-[11px] text-zinc-500">Clock-ins at an assigned location other than the day&apos;s scheduled location. The justification is submitted before the clock-in is recorded.</p>
+            <p className="text-[11px] text-zinc-500">Clock-ins at an assigned location other than the day&apos;s scheduled location(s), and HOI field visits / meetings (Automatic Location Fetch). The reason is submitted before the clock-in is recorded.</p>
 
             <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-4 sm:p-5 space-y-4">
                 {reviewer && view === "review" && (
@@ -147,7 +147,7 @@ export default function LocationJustificationsBoard() {
                                     <tr key={r.id} className="border-b border-zinc-800/60 hover:bg-white/[0.02] cursor-pointer" onClick={() => openItem(r)} data-testid="lj-row">
                                         <td className="py-2.5 px-2"><p className="font-bold text-white truncate">{r.employeeName}</p><p className="text-[10px] text-zinc-500">{r.employeeId} · {r.employeeRole}</p></td>
                                         <td className="py-2.5 px-2 text-zinc-300">{dmy(r.date)}</td><td className="py-2.5 px-2 text-zinc-300">{t12(r.clockIn)}{r.lateAlso && <span className="block text-[9px] text-yellow-300">Late too</span>}</td>
-                                        <td className="py-2.5 px-2 text-zinc-300 [overflow-wrap:anywhere]">{r.scheduledLocationName}</td><td className="py-2.5 px-2 text-sky-300 [overflow-wrap:anywhere]">{r.actualLocationName}</td>
+                                        <td className="py-2.5 px-2 text-zinc-300 [overflow-wrap:anywhere]">{r.scheduledLocationName}</td><td className="py-2.5 px-2 text-sky-300 [overflow-wrap:anywhere]">{r.actualLocationName}{r.kind === "FIELD_VISIT" && <span className="block mt-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-300" data-testid="lj-fieldvisit">Field Visit / Meeting</span>}</td>
                                         <td className="py-2.5 px-2 text-zinc-400"><p className="line-clamp-2 [overflow-wrap:anywhere]">{r.justification}</p></td>
                                         <td className="py-2.5 px-2"><Pill s={r.status} /></td><td className="py-2.5 px-2 text-zinc-300 [overflow-wrap:anywhere]">{decision(r)}</td>
                                         <td className="py-2.5 px-2 text-right">{r.status === "rejected" ? <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", EMAIL_STYLE[r.emailStatus])}>{EMAIL_LABEL[r.emailStatus] || r.emailStatus}</span> : <span className="text-zinc-600">—</span>}</td>
@@ -159,7 +159,7 @@ export default function LocationJustificationsBoard() {
                                 {shown.map(r => (
                                     <button key={r.id} onClick={() => openItem(r)} data-testid="lj-card" className="text-left rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-2 hover:border-zinc-700 min-w-0">
                                         <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="font-bold text-white text-sm truncate">{r.employeeName}</p><p className="text-[10px] text-zinc-500">{r.employeeId} · {r.employeeRole} · {dmy(r.date)} · {t12(r.clockIn)}</p></div><Pill s={r.status} /></div>
-                                        <div className="grid grid-cols-2 gap-2 text-[11px]"><div className="min-w-0"><p className="text-zinc-500">Scheduled</p><p className="text-zinc-200 [overflow-wrap:anywhere]">{r.scheduledLocationName}</p></div><div className="min-w-0"><p className="text-zinc-500">Actual</p><p className="text-sky-300 [overflow-wrap:anywhere]">{r.actualLocationName}</p></div></div>
+                                        <div className="grid grid-cols-2 gap-2 text-[11px]"><div className="min-w-0"><p className="text-zinc-500">Scheduled</p><p className="text-zinc-200 [overflow-wrap:anywhere]">{r.scheduledLocationName}</p></div><div className="min-w-0"><p className="text-zinc-500">Actual</p><p className="text-sky-300 [overflow-wrap:anywhere]">{r.actualLocationName}</p>{r.kind === "FIELD_VISIT" && <span className="block mt-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-300" data-testid="lj-fieldvisit">Field Visit / Meeting</span>}</div></div>
                                         <p className="text-[11px] text-zinc-400 line-clamp-2 [overflow-wrap:anywhere]">{r.justification}</p>
                                         {r.status !== "pending" && <p className="text-[10px] text-zinc-400">{decision(r)}{r.status === "rejected" && <> · Email: <span className={cn("font-bold px-1 rounded", EMAIL_STYLE[r.emailStatus])}>{EMAIL_LABEL[r.emailStatus]}</span></>}</p>}
                                     </button>
@@ -176,10 +176,17 @@ export default function LocationJustificationsBoard() {
                             <button onClick={() => setOpen(null)} className="p-1.5 rounded-lg hover:bg-white/5 text-zinc-400" aria-label="Close"><X size={16} /></button>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                            <div className="rounded-lg border border-zinc-800 p-2.5 min-w-0"><p className="text-[10px] text-zinc-500">Scheduled Location</p><p className="font-bold text-white [overflow-wrap:anywhere]">{open.scheduledLocationName}</p></div>
+                            <div className="rounded-lg border border-zinc-800 p-2.5 min-w-0"><p className="text-[10px] text-zinc-500">{(open.scheduledLocations || []).length > 1 ? "Scheduled Locations" : "Scheduled Location"}</p><p className="font-bold text-white [overflow-wrap:anywhere]">{open.scheduledLocationName}</p></div>
                             <div className="rounded-lg border border-sky-500/25 p-2.5 min-w-0"><p className="text-[10px] text-zinc-500">Actual Location</p><p className="font-bold text-sky-300 [overflow-wrap:anywhere]">{open.actualLocationName}</p></div>
                             <div className="rounded-lg border border-zinc-800 p-2.5 sm:col-span-2 min-w-0"><p className="text-[10px] text-zinc-500">Assigned Locations</p><p className="text-zinc-300 [overflow-wrap:anywhere]">{(open.assignedLocations || []).map((l: any) => l.name).join(", ") || "—"}</p></div>
-                            <div className="rounded-lg border border-zinc-800 p-2.5 sm:col-span-2 min-w-0"><p className="text-[10px] text-zinc-500">Justification</p><p className="text-zinc-200 whitespace-pre-wrap [overflow-wrap:anywhere]">{open.justification}</p></div>
+                            {open.kind === "FIELD_VISIT" && (
+                                <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.04] p-2.5 sm:col-span-2 min-w-0 space-y-1" data-testid="lj-fv-detail">
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-300">Field Visit / Meeting (Automatic Location Fetch)</p>
+                                    <p className="text-zinc-200 [overflow-wrap:anywhere]">{open.detectedAddress || "Coordinates Available — Address Unavailable"}</p>
+                                    {typeof open.lat === "number" && <p className="text-[11px] text-zinc-400 tabular-nums">Latitude {open.lat.toFixed(6)} · Longitude {open.lng.toFixed(6)}{typeof open.accuracyMeters === "number" ? ` · ±${open.accuracyMeters} m` : ""}</p>}
+                                </div>
+                            )}
+                            <div className="rounded-lg border border-zinc-800 p-2.5 sm:col-span-2 min-w-0"><p className="text-[10px] text-zinc-500">{open.kind === "FIELD_VISIT" ? "Field Visit / Meeting Reason" : "Justification"}</p><p className="text-zinc-200 whitespace-pre-wrap [overflow-wrap:anywhere]">{open.justification}</p></div>
                         </div>
                         <div className="flex items-center gap-2 text-xs"><span className="text-zinc-500">Status:</span><Pill s={open.status} />{open.reviewedByName && <span className="text-zinc-500">by {open.reviewedByName} ({open.reviewedByRole}) · {dt(open.reviewedAt)}</span>}</div>
                         {open.status === "rejected" && (

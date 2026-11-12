@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { MapPin, Loader2, Search, Trash2, Save, History, CalendarDays } from "lucide-react";
+import { MapPin, Loader2, Search, Trash2, Save, History, CalendarDays, X, Navigation } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
+import { AUTO_FETCH_LABEL } from "@/lib/hoi-daily-locations";
 
 /**
  * HOI / OM Location Management — assigned colleges and date-wise (or weekday) scheduled locations.
@@ -13,7 +14,7 @@ import { cn } from "@/lib/utils";
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const dmy = (d?: string) => (d && /^\d{4}/.test(d) ? d.split("-").reverse().join("-") : d || "—");
 const dt = (v?: string) => (v ? new Date(v).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }) : "—");
-const KIND: Record<string, string> = { assigned: "Assigned colleges changed", scheduled: "Scheduled location set", schedule_removed: "Scheduled location removed" };
+const KIND: Record<string, string> = { assigned: "Assigned colleges changed", scheduled: "Scheduled location(s) set", schedule_removed: "Scheduled location removed" };
 
 export default function LocationManagementPage() {
     const { user } = useAuth();
@@ -26,6 +27,8 @@ export default function LocationManagementPage() {
     const [assigned, setAssigned] = useState<string[]>([]);
     const [sched, setSched] = useState({ kind: "date", date: "", weekday: "Mon", location: "" });
     const [busy, setBusy] = useState("");
+    // HOI + every weekday (Mon … Sun, repeats each week): several allowed colleges and / or Automatic Location Fetch (Field Visit / Meeting)
+    const [daily, setDaily] = useState<{ ids: string[]; auto: boolean; q: string; open: boolean }>({ ids: [], auto: false, q: "", open: false });
 
     const loadList = useCallback(async () => {
         try {
@@ -35,13 +38,15 @@ export default function LocationManagementPage() {
             setList(d); setError("");
         } catch (e: any) { setError(e.message); }
     }, []);
-    const loadDetail = useCallback(async (id: string) => {
+    const loadDetail = useCallback(async (id: string, keep = false) => {
         if (!id) { setDetail(null); return; }
         const r = await fetch(`/api/attendance/location-management?employeeId=${encodeURIComponent(id)}`, { cache: "no-store" });
         const d = await r.json();
         if (!r.ok) { setError(d.error || "Could not load."); return; }
         setDetail(d); setAssigned((d.employee.assigned || []).map((a: any) => a.id));
         setSched(s => ({ ...s, location: "" }));
+        // a reload after saving keeps the daily selection panel as it is (it is refilled from the saved day)
+        if (!keep) setDaily({ ids: [], auto: false, q: "", open: false });
     }, []);
     useEffect(() => { if (allowed) loadList(); }, [allowed, loadList]);
     useEffect(() => { setMsg(""); setError(""); loadDetail(sel); }, [sel, loadDetail]);
@@ -52,7 +57,7 @@ export default function LocationManagementPage() {
             const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
             const d = await r.json().catch(() => ({}));
             if (!r.ok) { setError(d.error || "Could not save."); return false; }
-            setMsg(d.message || "Saved."); await Promise.all([loadDetail(sel), loadList()]); return true;
+            setMsg(d.message || "Saved."); await Promise.all([loadDetail(sel, true), loadList()]); return true;
         } finally { setBusy(""); }
     };
     const saveAssigned = () => { if (!assigned.length) { setError("Choose at least one college."); return; } call("assigned", "PUT", { employeeId: sel, attendanceLocations: assigned }); };
@@ -61,6 +66,19 @@ export default function LocationManagementPage() {
         if (!date) { setError("Choose a date."); return; }
         if (!sched.location) { setError("Choose the scheduled location."); return; }
         call("sched", "POST", { employeeId: sel, date, location: sched.location });
+    };
+    const isHoiDaily = detail?.employee?.role === "HOI" && sched.kind === "weekday";
+    // choosing a weekday that already has locations → start from them
+    useEffect(() => {
+        if (!isHoiDaily || !sched.weekday) return;
+        const row = (detail?.schedules || []).find((s: any) => s.date === sched.weekday);
+        setDaily(d => ({ ...d, ids: row?.locations || (row?.location && row.location !== "FIELD_VISIT" ? [row.location] : []), auto: !!row?.autoLocationFetch }));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sched.weekday, isHoiDaily, detail]);
+    const saveDaily = () => {
+        if (!sched.weekday) { setError("Choose a weekday."); return; }
+        if (!daily.ids.length && !daily.auto) { setError("Select at least one college or Automatic Location Fetch."); return; }
+        call("sched", "POST", { employeeId: sel, date: sched.weekday, locations: daily.ids, autoLocationFetch: daily.auto });
     };
     const removeSched = (date: string) => call(`del-${date}`, "DELETE", undefined, `/api/attendance/location-management?employeeId=${encodeURIComponent(sel)}&date=${encodeURIComponent(date)}`);
 
@@ -117,11 +135,50 @@ export default function LocationManagementPage() {
                                 {sched.kind === "date"
                                     ? <input type="date" min={list?.today} value={sched.date} onChange={e => setSched({ ...sched, date: e.target.value })} data-testid="lm-date" className="px-2 py-2 rounded-lg bg-zinc-950/70 border border-zinc-800 text-xs text-white [color-scheme:dark] min-w-0" />
                                     : <select value={sched.weekday} onChange={e => setSched({ ...sched, weekday: e.target.value })} aria-label="Weekday" className="px-2 py-2.5 rounded-lg bg-zinc-950/70 border border-zinc-800 text-xs text-white">{WEEKDAYS.map(w => <option key={w}>{w}</option>)}</select>}
-                                <select value={sched.location} onChange={e => setSched({ ...sched, location: e.target.value })} data-testid="lm-sched-loc" aria-label="Location" className="px-2 py-2.5 rounded-lg bg-zinc-950/70 border border-zinc-800 text-xs text-white min-w-0">
+                                {!isHoiDaily && <select value={sched.location} onChange={e => setSched({ ...sched, location: e.target.value })} data-testid="lm-sched-loc" aria-label="Location" className="px-2 py-2.5 rounded-lg bg-zinc-950/70 border border-zinc-800 text-xs text-white min-w-0">
                                     <option value="">Choose location</option>{(detail.employee.assigned || []).map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                                </select>
-                                <button onClick={saveSched} disabled={!!busy} data-testid="lm-save-sched" className="px-4 py-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold disabled:opacity-50">{busy === "sched" ? "Saving…" : "Save"}</button>
+                                </select>}
+                                {!isHoiDaily && <button onClick={saveSched} disabled={!!busy} data-testid="lm-save-sched" className="px-4 py-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold disabled:opacity-50">{busy === "sched" ? "Saving…" : "Save"}</button>}
                             </div>
+                            {/* HOI, every weekday: Select Allowed Clock-In Locations (multi-select, repeats every week) */}
+                            {isHoiDaily && (
+                                <div className="space-y-2" data-testid="lm-daily">
+                                    <p className="text-[11px] font-bold text-zinc-300">Select Allowed Clock-In Locations<span className="text-zinc-500 font-normal"> · Every {sched.weekday} (each week)</span></p>
+                                    <div className="relative">
+                                        <button type="button" onClick={() => setDaily(d => ({ ...d, open: !d.open }))} aria-expanded={daily.open} data-testid="lm-daily-toggle"
+                                            className="w-full min-h-[42px] px-2.5 py-2 rounded-lg bg-zinc-950/70 border border-zinc-800 text-xs text-left flex flex-wrap items-center gap-1.5">
+                                            {daily.ids.length === 0 && !daily.auto && <span className="text-zinc-500">Choose colleges / Automatic Location Fetch</span>}
+                                            {daily.ids.map(id => (
+                                                <span key={id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/30 text-sky-200 text-[11px] font-semibold" data-testid="lm-daily-chip">
+                                                    {(detail.employee.assigned || []).find((a: any) => a.id === id)?.name || id}
+                                                    <span role="button" tabIndex={0} aria-label="Remove" onClick={e => { e.stopPropagation(); setDaily(d => ({ ...d, ids: d.ids.filter(x => x !== id) })); }} className="p-0.5 rounded-full hover:bg-white/10"><X size={10} /></span>
+                                                </span>
+                                            ))}
+                                            {daily.auto && <span className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] font-semibold" data-testid="lm-daily-chip-auto"><Navigation size={10} /> Automatic Location Fetch
+                                                <span role="button" tabIndex={0} aria-label="Remove" onClick={e => { e.stopPropagation(); setDaily(d => ({ ...d, auto: false })); }} className="p-0.5 rounded-full hover:bg-white/10"><X size={10} /></span></span>}
+                                        </button>
+                                        {daily.open && (
+                                            <div className="mt-1.5 rounded-lg border border-zinc-800 bg-zinc-950 p-2 space-y-1" data-testid="lm-daily-list">
+                                                <div className="relative"><Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
+                                                    <input value={daily.q} onChange={e => setDaily(d => ({ ...d, q: e.target.value }))} placeholder="Search colleges" data-testid="lm-daily-search" className="w-full pl-7 pr-2 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-white outline-none" /></div>
+                                                {(detail.employee.assigned || []).filter((a: any) => !daily.q || a.name.toLowerCase().includes(daily.q.toLowerCase())).map((a: any) => (
+                                                    <label key={a.id} className="flex items-center gap-2.5 px-2 py-2.5 rounded-lg hover:bg-white/5 text-xs text-zinc-200 cursor-pointer min-h-[40px]">
+                                                        <input type="checkbox" className="w-4 h-4" checked={daily.ids.includes(a.id)} onChange={() => setDaily(d => ({ ...d, ids: d.ids.includes(a.id) ? d.ids.filter(x => x !== a.id) : [...d.ids, a.id] }))} data-testid={`lm-daily-${a.id}`} />
+                                                        <span className="[overflow-wrap:anywhere]">{a.name}</span>
+                                                    </label>
+                                                ))}
+                                                {(detail.employee.assigned || []).length === 0 && <p className="px-2 py-2 text-[11px] text-zinc-500">No assigned colleges — save Assigned Colleges first.</p>}
+                                                <label className="flex items-start gap-2.5 px-2 py-2.5 rounded-lg border-t border-zinc-800 mt-1 hover:bg-white/5 text-xs text-amber-200 cursor-pointer min-h-[40px]">
+                                                    <input type="checkbox" className="w-4 h-4 mt-0.5" checked={daily.auto} onChange={() => setDaily(d => ({ ...d, auto: !d.auto }))} data-testid="lm-daily-auto" />
+                                                    <span><b>{AUTO_FETCH_LABEL}</b><span className="block text-[10px] text-zinc-500">Every {sched.weekday} (each week). Outside the colleges the HOI clocks in at the actual GPS location with a mandatory reason.</span></span>
+                                                </label>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <p className="text-[10px] text-zinc-500">Any selected college = normal clock-in. Another assigned college needs a justification. The HOI&apos;s assigned colleges are not changed.</p>
+                                    <button onClick={saveDaily} disabled={!!busy} data-testid="lm-save-daily" className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50">{busy === "sched" ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Clock-In Locations for Every {sched.weekday}</button>
+                                </div>
+                            )}
                             {(detail.schedules || []).length === 0 ? <p className="text-xs text-zinc-500">No schedule entries — the Original Location is used.</p> : (
                                 <ul className="divide-y divide-zinc-800/70" data-testid="lm-sched-list">
                                     {detail.schedules.map((s: any) => (
@@ -137,7 +194,7 @@ export default function LocationManagementPage() {
                         <div className={cn(card, "space-y-2")} data-testid="lm-audit">
                             <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-1.5"><History size={13} /> Audit Log</p>
                             {(detail.audit || []).length === 0 ? <p className="text-xs text-zinc-500">No changes yet.</p> : (
-                                <ul className="space-y-1.5 max-h-72 overflow-y-auto text-[11px]">
+                                <ul className="space-y-1.5 max-h-72 overflow-y-auto text-[11px]" data-testid="lm-audit-list">
                                     {detail.audit.map((a: any) => (
                                         <li key={a.id} className="text-zinc-400 [overflow-wrap:anywhere]"><span className="text-zinc-500">{dt(a.at)}</span> · <b className="text-zinc-200">{KIND[a.kind] || a.kind}</b>{a.date ? ` (${WEEKDAYS.includes(a.date) ? `every ${a.date}` : dmy(a.date)})` : ""}: {a.fromName || "—"} → {a.toName || "—"} · {a.byName}{a.byRole ? ` (${a.byRole})` : ""}</li>
                                     ))}

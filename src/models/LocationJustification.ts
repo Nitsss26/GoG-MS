@@ -31,6 +31,10 @@ const LocationJustificationSchema = new Schema({
     lateAlso: { type: Boolean, default: false },
     lateJustificationId: { type: String },
     justification: { type: String, required: true },
+    // LOCATION_MISMATCH (another assigned college) | FIELD_VISIT (HOI, Automatic Location Fetch: outside the assigned colleges)
+    kind: { type: String },
+    scheduledLocations: [{ id: String, name: String }],   // HOI: every college selected for the day
+    detectedAddress: { type: String },                    // FIELD_VISIT: reverse-geocoded address (empty when unavailable)
     reviewerHoiIds: [String],                                          // OM: respective HOI(s) at submission time
     status: { type: String, default: 'pending', index: true },        // pending | approved | rejected
     reviewedBy: { type: String }, reviewedByName: { type: String }, reviewedByRole: { type: String }, reviewedAt: { type: String },

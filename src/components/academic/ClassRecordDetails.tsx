@@ -287,6 +287,15 @@ export function ClassRecordDetails({ record }: { record: any }) {
                             </div>
                         ) : <p className="text-xs text-zinc-500">No notes yet</p>}
                         {record.lectureNotes?.notesContent && <p className="text-[12px] text-zinc-300 whitespace-pre-wrap [overflow-wrap:anywhere]">{record.lectureNotes.notesContent}</p>}
+                        {/* Topic coverage (older records have no answer) */}
+                        {typeof record.topicFullyCovered === "boolean" && (record.topicFullyCovered
+                            ? <p className="text-[12px] text-zinc-400" data-testid="topic-covered">Topic fully covered: <span className="text-emerald-400 font-semibold">Yes</span></p>
+                            : (
+                                <div className="space-y-1 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2.5" data-testid="topic-covered">
+                                    <p className="text-xs text-amber-300 font-bold">Topic not fully covered</p>
+                                    <p className="text-xs text-zinc-200 whitespace-pre-wrap [overflow-wrap:anywhere]">Topics left: {record.topicsLeft || "—"}</p>
+                                </div>
+                            ))}
                         <p className="text-[12px] text-zinc-400">Submitted to Groups: <span className={record.submittedToGroup ? "text-emerald-400 font-semibold" : "text-zinc-300"}>{record.submittedToGroup ? `Yes${record.submittedToGroupType ? ` — ${notesGroupLabel(record.submittedToGroupType)}` : ""}` : "No"}</span></p>
                         {record.submittedToGroupByName && record.submittedToGroup && <p className="text-[11px] text-zinc-500">{record.submittedToGroupByName} · {fmtLong(record.submittedToGroupAt)}</p>}
                     </div>
@@ -637,8 +646,8 @@ export function ClassRecordActions({ record, role, userId, onDone }: { record: a
                 </div>
             )}
 
-            {/* HOI: assignment added after the class record was completed */}
-            {role === "HOI" && st === "COMPLETED" && !record.virtual && record.assignment?.hasAssignment && record.assignment?.verificationStatus === "Pending" && (
+            {/* CL / CH / HOI / AD: assignment added after the class record was completed */}
+            {(isHOI || isClCh) && st === "COMPLETED" && !record.virtual && record.assignment?.hasAssignment && record.assignment?.verificationStatus === "Pending" && (
                 <div className="space-y-2 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5" data-testid="hoi-assignment-review">
                     <p className="text-[10px] font-black text-amber-300 uppercase tracking-widest">Assignment added later — verify</p>
                     <textarea value={comment} onChange={e => setComment(e.target.value)} data-testid="assignment-comment"

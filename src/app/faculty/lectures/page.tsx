@@ -1,18 +1,19 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
     Play, Square, Clock, Timer, AlertTriangle, CheckCircle2,
     BookOpen, Upload, Camera, FileText, Mic, Users, X, Loader2,
     Calendar, Download, GraduationCap, Building2, ChevronDown, Search, RotateCcw,
-    CalendarDays, Eye, MoreVertical, Info, ClipboardList, ExternalLink
+    CalendarDays, Eye, MoreVertical, Info, ClipboardList, ExternalLink, Plus
 } from "lucide-react";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
-import { ClassRecordDetails, ClassRecordActions, ClassStatusBadge } from "@/components/academic/ClassRecordDetails";
+import { ClassRecordDetails, ClassRecordActions } from "@/components/academic/ClassRecordDetails";
 import AddAssignmentDialog from "@/components/academic/AddAssignmentDialog";
+import LectureTable, { LectureDrawer, RowButton, toLectureRow } from "@/components/academic/LectureTable";
 import { PROFESSOR_EDITABLE_CLASS_STATUSES, DEFAULT_CLASS_STRENGTH } from "@/lib/academic-status";
 
 interface Lecture {
@@ -102,7 +103,8 @@ export default function LecturesPage() {
         // Notes
         notesUrl: "",
         notesContent: "",
-        isNotesSharedWithStudents: true,
+        // "Notes shared with the students" is filled by the OM (Submitted to Groups), not in this form
+        isNotesSharedWithStudents: false,
         notesNotSharedRemarks: "",
         // Assignment
         hasAssignment: false,
@@ -114,10 +116,13 @@ export default function LecturesPage() {
         totalStudentsExpected: "",
         // Notes not submitted → reason (goes to OM)
         notesMissing: false,
-        notesMissingReason: ""
+        notesMissingReason: "",
+        // Topic fully covered? (null = not answered yet) · topics left when "No"
+        topicFullyCovered: null as boolean | null,
+        topicsLeft: ""
     });
     const [snapshotFiles, setSnapshotFiles] = useState<File[]>([]);
-    const [viewRecord, setViewRecord] = useState<Lecture | null>(null);
+    const [drawerKey, setDrawerKey] = useState<string | null>(null);
     const [openLectureParam, setOpenLectureParam] = useState<number | null>(null);
     const [recordingFile, setRecordingFile] = useState<File | null>(null);
     const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -141,9 +146,9 @@ export default function LecturesPage() {
     const [todayCount, setTodayCount] = useState<number | null>(null);
     const [menuFor, setMenuFor] = useState<string | null>(null);
     const [menuPos, setMenuPos] = useState<{ top: number; right: number; up: boolean }>({ top: 0, right: 0, up: false });
-    const [planInfo, setPlanInfo] = useState<Lecture | null>(null);
     const [asgFor, setAsgFor] = useState<Lecture | null>(null);
     const [nowTick, setNowTick] = useState(Date.now());
+    const [rangeOpen, setRangeOpen] = useState(false); // Date Range popover
 
     useEffect(() => {
         if (user?.id) fetchLectures();
@@ -191,7 +196,7 @@ export default function LecturesPage() {
         if (!lectures.some(l => l.date === selectedDate)) return;
         const lec = lectures.find(l => l.lectureNumber === openLectureParam && l.date === selectedDate);
         if (lec && lec.classEnded && PROFESSOR_EDITABLE_CLASS_STATUSES.includes(lec.pipelineStatus || "PENDING_PROFESSOR")) openReport(lec);
-        else if (lec) setViewRecord(lec);
+        else if (lec) openDrawer(lec);
         setOpenLectureParam(null);
     }, [lectures, loading, openLectureParam]);
 
@@ -213,9 +218,13 @@ export default function LecturesPage() {
             reasonForLessAttendance: r.reasonForLessAttendance || "",
             notesUrl: r.lectureNotes?.notesUrl || "",
             notesContent: "",
-            isNotesSharedWithStudents: r.lectureNotes ? Boolean(r.lectureNotes.isSharedWithStudents) : true,
+            // kept as the OM set it (re-submitting does not change it)
+            isNotesSharedWithStudents: Boolean(r.lectureNotes?.isSharedWithStudents),
+            notesNotSharedRemarks: r.lectureNotes?.notSharedRemarks || "",
             notesMissing: Boolean(r.notesMissing),
             notesMissingReason: r.notesMissingReason || "",
+            topicFullyCovered: typeof r.topicFullyCovered === "boolean" ? r.topicFullyCovered : null,
+            topicsLeft: r.topicsLeft || "",
             hasAssignment: Boolean(r.assignment?.hasAssignment),
             assignmentTitle: r.assignment?.title || "",
             assignmentDescription: r.assignment?.description || "",
@@ -244,6 +253,13 @@ export default function LecturesPage() {
         }
     };
 
+
+    // Table rows (derived from the same lecture list; nothing is changed)
+    // nowTick: Scheduled → In Progress flips without a reload
+    const rows = useMemo(() => lectures.map(l => ({ ...toLectureRow(l, "lecture"), college: campusName || undefined })), [lectures, nowTick, campusName]); // eslint-disable-line react-hooks/exhaustive-deps
+    const drawerRow = drawerKey ? rows.find(r => r.key === drawerKey) || null : null;
+    const openDrawer = (lec: Lecture) => { setMenuFor(null); setDrawerKey(toLectureRow(lec, "lecture").key); };
+    const closeDrawer = () => setDrawerKey(null);
 
     const handleRecordingSelect = (file: File) => {
         setRecordingFile(file);
@@ -281,6 +297,14 @@ export default function LecturesPage() {
         }
         if (!hasNotes && reportData.notesMissingReason.trim().length < 10) {
             setMessage({ type: "error", text: "Please explain why the notes could not be submitted (at least 10 characters)." });
+            return;
+        }
+        if (reportData.topicFullyCovered === null) {
+            setMessage({ type: "error", text: "Choose whether the topic was fully covered (Yes / No)." });
+            return;
+        }
+        if (reportData.topicFullyCovered === false && reportData.topicsLeft.trim().length < 5) {
+            setMessage({ type: "error", text: "Write which topics are still left (at least 5 characters)." });
             return;
         }
         setUploading(true);
@@ -334,6 +358,8 @@ export default function LecturesPage() {
                     notesFileUrl,
                     notesMissing: !hasNotes && reportData.notesMissing,
                     notesMissingReason: reportData.notesMissingReason,
+                    topicFullyCovered: reportData.topicFullyCovered,
+                    topicsLeft: reportData.topicFullyCovered ? "" : reportData.topicsLeft.trim(),
                     snapshotUrls,
                     courseName: reportData.courseName,
                     topicsCovered: reportData.topicsCovered,
@@ -396,7 +422,7 @@ export default function LecturesPage() {
             courseName: "",
             notesUrl: "",
             notesContent: "",
-            isNotesSharedWithStudents: true,
+            isNotesSharedWithStudents: false,
             notesNotSharedRemarks: "",
             hasAssignment: false,
             assignmentTitle: "",
@@ -406,7 +432,9 @@ export default function LecturesPage() {
             studentsCompletedCount: "",
             totalStudentsExpected: "",
             notesMissing: false,
-            notesMissingReason: ""
+            notesMissingReason: "",
+            topicFullyCovered: null,
+            topicsLeft: ""
         });
         setSnapshotFiles([]);
         setRecordingFile(null);
@@ -479,22 +507,6 @@ export default function LecturesPage() {
     const completedCount = lectures.filter(isRecorded).length;
     const pendingCount = lectures.length - completedCount;
     const rangeLabel = selectedDate === rangeEnd ? fmtShort(selectedDate) : `${fmtShort(selectedDate)} – ${fmtShort(rangeEnd)}`;
-    // minutes until a class starts (IST); negative once it has started
-    const minsToStart = (l: Lecture) => {
-        if (!l.date || !l.timeStart) return null;
-        const start = new Date(`${l.date}T${l.timeStart.padStart(5, "0")}:00+05:30`).getTime();
-        return Math.round((start - nowTick) / 60000);
-    };
-    const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-    const typeStyle = (t?: string) => {
-        const x = (t || "").toLowerCase();
-        if (x.includes("practical") || x.includes("lab")) return "bg-violet-500/15 text-violet-300 border-violet-500/30";
-        if (x.includes("tutorial")) return "bg-pink-500/15 text-pink-300 border-pink-500/30";
-        if (x.includes("revision")) return "bg-amber-500/15 text-amber-300 border-amber-500/30";
-        if (x.includes("test") || x.includes("assessment")) return "bg-red-500/15 text-red-300 border-red-500/30";
-        if (x) return "bg-sky-500/15 text-sky-300 border-sky-500/30";
-        return "";
-    };
     const applyRange = () => {
         let a = startDate, b = endDate;
         if (!a || !b) return;
@@ -502,101 +514,100 @@ export default function LecturesPage() {
         setStartDate(a); setEndDate(b); setSelectedDate(a); setRangeEnd(b);
     };
     const resetRange = () => { const t = todayYmd(); setStartDate(t); setEndDate(t); setSelectedDate(t); setRangeEnd(t); };
-    const lecKey = (l: Lecture) => `${l.date}#${l.lectureNumber}#${l._id || ""}`;
-    const inputCls = "w-full px-3 py-2.5 bg-zinc-950/70 border border-zinc-800 rounded-xl text-xs font-bold text-white focus:outline-none focus:border-emerald-500/50 transition-all cursor-pointer [color-scheme:dark]";
+    const inputCls = "w-full h-9 px-3 bg-zinc-950/70 border border-zinc-800 rounded-lg text-xs font-bold text-white focus:outline-none focus:border-emerald-500/50 transition-all cursor-pointer [color-scheme:dark]";
+    // ── Header / cards (Lecture Reports design) ──
+    const shiftYmd = (ymd: string, n: number) => { const d = new Date(ymd + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+    const weekStart = (ymd: string) => { const d = new Date(ymd + "T00:00:00Z"); const dow = d.getUTCDay(); return shiftYmd(ymd, dow === 0 ? -6 : 1 - dow); };
+    const statCounts = {
+        total: rows.length,
+        submitted: rows.filter(r => r.report === "SUBMITTED" || r.report === "VERIFIED").length,
+        pending: rows.filter(r => r.report === "PENDING").length,
+        reverted: rows.filter(r => r.report === "REVERTED").length,
+        upcoming: rows.filter(r => r.report === "SCHEDULED" || r.report === "IN_PROGRESS").length,
+    };
+    const STATS = [
+        { label: "Total Lectures", value: statCounts.total, icon: BookOpen, ring: "border-emerald-500/30 shadow-[0_0_24px_-12px_rgba(16,185,129,0.6)]", ic: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", glow: "from-emerald-500/10" },
+        { label: "Submitted", value: statCounts.submitted, icon: CheckCircle2, ring: "border-sky-500/30 shadow-[0_0_24px_-12px_rgba(14,165,233,0.6)]", ic: "bg-sky-500/15 text-sky-300 border-sky-500/30", glow: "from-sky-500/10" },
+        { label: "Report Pending", value: statCounts.pending, icon: Clock, ring: "border-amber-500/35 shadow-[0_0_24px_-12px_rgba(245,158,11,0.6)]", ic: "bg-amber-500/15 text-amber-300 border-amber-500/30", glow: "from-amber-500/10" },
+        { label: "Reverted", value: statCounts.reverted, icon: RotateCcw, ring: "border-red-500/30 shadow-[0_0_24px_-12px_rgba(239,68,68,0.6)]", ic: "bg-red-500/15 text-red-300 border-red-500/30", glow: "from-red-500/10" },
+        { label: "Upcoming", value: statCounts.upcoming, icon: CalendarDays, ring: "border-violet-500/30 shadow-[0_0_24px_-12px_rgba(139,92,246,0.6)]", ic: "bg-violet-500/15 text-violet-300 border-violet-500/30", glow: "from-violet-500/10" },
+    ];
+    /** Oldest class in the range whose report can be submitted / re-submitted now (same rules as the row buttons) */
+    const nextDue = [...lectures].sort((a, b) => (a.date + (a.timeStart || "")).localeCompare(b.date + (b.timeStart || "")))
+        .find(l => !!l.sprintEntryId && (["OM_REVERTED", "CL_CH_REVERTED"].includes(l.pipelineStatus || "") || ((l.pipelineStatus || "PENDING_PROFESSOR") === "PENDING_PROFESSOR" && !!l.classEnded)));
+
 
     return (
-        <div className="max-w-7xl mx-auto pt-6 pb-20 px-4 sm:px-6 space-y-5 min-h-screen w-full [contain:inline-size]">
-            {/* ── Header banner ── */}
-            <div className="relative overflow-hidden rounded-3xl border border-emerald-500/20 bg-gradient-to-r from-emerald-950/90 via-teal-950/70 to-zinc-900 p-6 sm:p-7">
-                <div className="absolute -top-24 -left-16 w-72 h-72 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
-                <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                    <div className="flex items-start gap-4 min-w-0">
-                        <div className="shrink-0 w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.15)]">
-                            <GraduationCap size={28} className="text-emerald-400" />
-                        </div>
-                        <div className="min-w-0">
-                            <h1 className="text-3xl font-black text-white tracking-tight">My Lectures</h1>
-                            <p className="text-sm text-zinc-400 mt-0.5">View and manage your scheduled lectures, attendance, notes and assignments</p>
-                            <div className="flex flex-wrap items-center gap-2 mt-3">
-                                <label className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-[11px] font-bold cursor-pointer hover:bg-emerald-500/15">
-                                    <Calendar size={13} />
-                                    <span>{fmtLong(selectedDate === rangeEnd ? selectedDate : todayStr)}</span>
-                                    <ChevronDown size={12} className="opacity-70" />
-                                    {/* pick one day */}
-                                    <input type="date" value={selectedDate} aria-label="Pick a day"
-                                        onChange={e => { const d = e.target.value; if (!d) return; setStartDate(d); setEndDate(d); setSelectedDate(d); setRangeEnd(d); }}
-                                        className="absolute inset-0 opacity-0 cursor-pointer [color-scheme:dark]" />
-                                </label>
-                                <span className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/25 text-[11px] font-bold text-zinc-300">
-                                    <Building2 size={13} className="text-indigo-300" /> Assigned Campus: <span className="text-indigo-300">{campusName || "Not assigned"}</span>
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                    {/* Decorative: books + plant */}
-                    <div className="hidden lg:flex items-end gap-4 pr-2 select-none" aria-hidden>
-                        <svg width="150" height="92" viewBox="0 0 150 92" fill="none">
-                            <path d="M18 70 C10 52 16 34 28 24 C26 40 30 54 30 70Z" fill="#34d399" opacity=".55" />
-                            <path d="M30 70 C30 48 40 30 56 22 C48 40 44 56 40 70Z" fill="#10b981" opacity=".7" />
-                            <path d="M26 70 C18 58 6 54 0 56 C8 62 14 68 20 72Z" fill="#6ee7b7" opacity=".45" />
-                            <rect x="16" y="68" width="30" height="22" rx="4" fill="#b45309" opacity=".85" />
-                            <rect x="58" y="74" width="88" height="16" rx="3" fill="#0f766e" />
-                            <rect x="62" y="60" width="80" height="14" rx="3" fill="#be185d" opacity=".85" />
-                            <rect x="56" y="47" width="86" height="13" rx="3" fill="#a16207" opacity=".9" />
-                            <rect x="66" y="35" width="72" height="12" rx="3" fill="#1d4ed8" opacity=".85" />
-                            <rect x="58" y="79" width="84" height="2" fill="#99f6e4" opacity=".5" />
-                            <rect x="62" y="65" width="76" height="2" fill="#fbcfe8" opacity=".5" />
-                            <rect x="56" y="52" width="82" height="2" fill="#fde68a" opacity=".5" />
-                        </svg>
-                        <p className="text-emerald-100/80 text-xl leading-6 -rotate-6 pb-6" style={{ fontFamily: "'Brush Script MT', 'Segoe Script', cursive" }}>
-                            Keep<br />Teaching,<br />Keep Inspiring <span className="text-pink-400">♥</span>
+        <div className="max-w-[1600px] mx-auto pt-6 pb-20 px-4 sm:px-6 space-y-4 min-h-screen w-full [contain:inline-size]">
+            {/* ── Header (Lecture Reports design) ── */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="shrink-0 w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shadow-[0_0_24px_-6px_rgba(16,185,129,0.45)]"><FileText size={22} className="text-emerald-400" /></div>
+                    <div className="min-w-0">
+                        <h1 className="text-2xl sm:text-[28px] font-black text-white tracking-tight leading-tight">My Lectures</h1>
+                        <p className="text-xs sm:text-sm text-zinc-400">Manage, submit and track your lecture reports, notes and assignments.</p>
+                        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500">
+                            <span className="flex items-center gap-1"><Building2 size={12} /> Assigned Campus: <span className="text-indigo-300 font-semibold">{campusName || "Not assigned"}</span></span>
+                            <span className="flex items-center gap-1" data-testid="today-count"><CalendarDays size={12} /> Today: <span className="text-zinc-300 font-semibold">{todayCount ?? "—"} lecture{todayCount === 1 ? "" : "s"}</span></span>
                         </p>
                     </div>
                 </div>
-            </div>
-
-            {/* ── Date range + download ── */}
-            <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-                <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-end gap-3">
-                    <div className="space-y-1.5 col-span-1">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5"><Calendar size={12} className="text-emerald-500" /> Date From</label>
-                        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={`${inputCls} sm:w-44`} data-testid="date-from" />
+                <div className="flex flex-wrap items-center gap-2">
+                    {/* Date range (same From / To / Apply / Reset as before) */}
+                    <div className="relative">
+                        <button onClick={() => setRangeOpen(v => !v)} aria-expanded={rangeOpen} data-testid="range-button"
+                            className="h-11 flex items-center gap-3 pl-3 pr-3.5 rounded-xl border border-zinc-800 bg-zinc-900/70 hover:border-emerald-500/40 text-left">
+                            <Calendar size={16} className="text-emerald-400 shrink-0" />
+                            <span className="min-w-0">
+                                <span className="block text-[9.5px] font-bold uppercase tracking-wider text-zinc-500 leading-3">Date Range</span>
+                                <span className="block text-xs font-bold text-white whitespace-nowrap" data-testid="range-text">{rangeLabel}</span>
+                            </span>
+                            <ChevronDown size={14} className={`text-zinc-500 transition-transform ${rangeOpen ? "rotate-180" : ""}`} />
+                        </button>
+                        {rangeOpen && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setRangeOpen(false)} />
+                                <div className="absolute left-0 top-full mt-2 z-50 w-[min(290px,calc(100vw-2rem))] rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-3 space-y-3" data-testid="range-popover">
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {([["Today", todayStr, todayStr], ["This week", weekStart(todayStr), shiftYmd(weekStart(todayStr), 5)], ["Last 7 days", shiftYmd(todayStr, -6), todayStr], ["Next 7 days", todayStr, shiftYmd(todayStr, 6)]] as const).map(([l, a, b]) => (
+                                            <button key={l} onClick={() => { setStartDate(a); setEndDate(b); setSelectedDate(a); setRangeEnd(b); setRangeOpen(false); }}
+                                                className="h-7 px-2.5 rounded-lg border border-zinc-800 bg-zinc-950/50 text-[11px] font-bold text-zinc-300 hover:text-white hover:border-emerald-500/40">{l}</button>
+                                        ))}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <label className="space-y-1"><span className="block text-[9.5px] font-black uppercase tracking-widest text-zinc-500">From</span><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={inputCls} data-testid="date-from" /></label>
+                                        <label className="space-y-1"><span className="block text-[9.5px] font-black uppercase tracking-widest text-zinc-500">To</span><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={inputCls} data-testid="date-to" /></label>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => { applyRange(); setRangeOpen(false); }} data-testid="apply-range" className="flex-1 h-9 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black"><Search size={13} /> Apply</button>
+                                        <button onClick={() => { resetRange(); setRangeOpen(false); }} className="h-9 px-3 flex items-center gap-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-black"><RotateCcw size={13} /> Reset</button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
-                    <div className="space-y-1.5 col-span-1">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5"><Calendar size={12} className="text-emerald-500" /> Date To</label>
-                        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={`${inputCls} sm:w-44`} data-testid="date-to" />
-                    </div>
-                    <button onClick={applyRange} data-testid="apply-range"
-                        className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition-all active:scale-95">
-                        <Search size={14} /> Apply
+                    <button onClick={downloadExcelReport} disabled={exportLoading} title="Download Excel report for the selected dates" data-testid="download"
+                        className="h-11 px-3.5 flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-800 text-zinc-200 text-xs font-bold disabled:opacity-50">
+                        {exportLoading ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} <span>Download</span>
                     </button>
-                    <button onClick={resetRange}
-                        className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-black transition-all active:scale-95">
-                        <RotateCcw size={14} /> Reset
+                    {/* + Add Report: opens the report form of the oldest class still waiting for it (same form as Submit Report) */}
+                    <button onClick={() => { if (nextDue) openReport(nextDue); }} disabled={!nextDue} data-testid="add-report"
+                        title={nextDue ? `Next report due: ${nextDue.courseName} · ${fmtShort(nextDue.date)}` : "No report is due in the selected dates"}
+                        className="h-11 px-4 flex items-center gap-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-sm font-black shadow-[0_0_24px_-8px_rgba(16,185,129,0.8)] active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none">
+                        <Plus size={16} strokeWidth={3} /> Add Report
                     </button>
                 </div>
-                <button onClick={downloadExcelReport} disabled={exportLoading}
-                    className="flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-black shadow-lg transition-all active:scale-95 disabled:opacity-50">
-                    {exportLoading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                    {exportLoading ? "Generating…" : "Download Report"}
-                </button>
             </div>
 
-            {/* ── Summary ── */}
-            <div className="grid grid-cols-2 xl:grid-cols-4 gap-3" data-testid="lecture-stats">
-                {[
-                    { label: "Total Lectures", value: lectures.length, sub: selectedDate === rangeEnd ? "For selected date" : "For selected date range", icon: BookOpen, tone: "from-emerald-500/15 border-emerald-500/25", ic: "bg-emerald-500/20 text-emerald-300", tc: "text-emerald-200" },
-                    { label: "Completed", value: completedCount, sub: "Class records submitted", icon: CheckCircle2, tone: "from-indigo-500/15 border-indigo-500/25", ic: "bg-indigo-500/25 text-indigo-200", tc: "text-indigo-200" },
-                    { label: "Pending", value: pendingCount, sub: "Yet to be conducted / recorded", icon: Clock, tone: "from-orange-500/15 border-orange-500/25", ic: "bg-orange-500/25 text-orange-200", tc: "text-orange-200" },
-                    { label: "Today's Lectures", value: todayCount ?? "—", sub: `On ${fmtShort(todayStr)}`, icon: CalendarDays, tone: "from-pink-500/15 border-pink-500/25", ic: "bg-pink-500/25 text-pink-200", tc: "text-pink-200" },
-                ].map(c => (
-                    <div key={c.label} className={`flex items-center gap-3 sm:gap-4 p-4 rounded-2xl border bg-gradient-to-br to-zinc-900/40 ${c.tone}`}>
-                        <div className={`shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center ${c.ic}`}><c.icon size={22} /></div>
-                        <div className="min-w-0">
-                            <p className={`text-[11px] font-bold ${c.tc}`}>{c.label}</p>
-                            <p className="text-2xl font-black text-white leading-tight tabular-nums">{c.value}</p>
-                            <p className="text-[10px] text-zinc-400 truncate">{c.sub}</p>
+            {/* ── Summary (5 cards, same status rules as the table) ── */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3" data-testid="lecture-stats">
+                {STATS.map(c => (
+                    <div key={c.label} className={`relative overflow-hidden flex items-center gap-3 px-4 py-3.5 rounded-2xl border bg-zinc-900/60 ${c.ring}`} data-testid="stat-card">
+                        <div className={`absolute inset-0 bg-gradient-to-br ${c.glow} to-transparent pointer-events-none`} />
+                        <div className={`relative shrink-0 w-11 h-11 rounded-xl border flex items-center justify-center ${c.ic}`}><c.icon size={20} /></div>
+                        <div className="relative min-w-0">
+                            <p className="text-[11px] font-bold text-zinc-300 truncate">{c.label}</p>
+                            <p className="text-[26px] font-black text-white tabular-nums leading-none mt-0.5">{loading ? "—" : c.value}</p>
                         </div>
                     </div>
                 ))}
@@ -613,190 +624,98 @@ export default function LecturesPage() {
                 </div>
             )}
 
-            {/* ── Lectures: table on wide screens, cards on smaller ones (no sideways scrolling) ── */}
-            {loading ? (
-                <div className="flex flex-col items-center justify-center py-24 gap-4">
-                    <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
-                    <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Loading lectures…</p>
-                </div>
-            ) : lectures.length === 0 ? (
-                <div className="rounded-2xl bg-zinc-900/30 border border-dashed border-zinc-800 p-16 text-center">
-                    <div className="w-16 h-16 bg-zinc-800/60 rounded-full flex items-center justify-center mx-auto mb-4"><BookOpen size={28} className="text-zinc-600" /></div>
-                    <h3 className="text-lg font-black text-white">No lectures for {rangeLabel}</h3>
-                    <p className="text-zinc-500 text-sm mt-1">Submit your <span className="text-emerald-400 font-bold">Sprint Plan</span> to see your classes here.</p>
-                </div>
-            ) : (() => {
-                // ── shared cell renderers ──
-                const info = (lec: Lecture) => {
-                    const recorded = isRecorded(lec);
-                    const editable = PROFESSOR_EDITABLE_CLASS_STATUSES.includes(lec.pipelineStatus || "PENDING_PROFESSOR") && !!lec.sprintEntryId;
-                    const m = minsToStart(lec);
-                    const running = !lec.classEnded && m !== null && m <= 0;
-                    const att = lec.report?.numberOfAttendees;
-                    const tot = lec.report?.totalStudents || lec.defaultTotalStudents || DEFAULT_CLASS_STRENGTH;
-                    const pct = recorded && typeof att === "number" && tot ? Math.min(100, (att / tot) * 100) : 0;
-                    return { key: lecKey(lec), recorded, editable, m, running, att, tot, pct };
-                };
-                const classLine = (lec: Lecture) => [lec.className, lec.section ? `Sec ${lec.section}` : "", lec.semester, lec.year].filter(Boolean);
-
-                const Lesson = ({ lec }: { lec: Lecture }) => (
-                    <div className="min-w-0">
-                        <p className="text-sm font-black text-white leading-snug">{lec.courseName}</p>
-                        {lec.topicsCovered && <p className="text-[11px] text-zinc-500 line-clamp-1 mt-0.5" title={lec.topicsCovered}>{lec.topicsCovered}</p>}
-                        <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                            {lec.lectureType && <span className={`px-1.5 py-0.5 rounded-md border text-[10px] font-bold ${typeStyle(lec.lectureType)}`}>{lec.lectureType}</span>}
-                            {lec.unitNumber && <span className="px-1.5 py-0.5 rounded-md border border-zinc-700 bg-zinc-800/60 text-[10px] font-bold text-zinc-300">Unit {lec.unitNumber}</span>}
-                        </div>
-                        <p className="text-[11px] text-zinc-400 mt-1.5 leading-snug">
-                            {lec.stream && <span className="text-indigo-300 font-semibold">{lec.stream}</span>}
-                            {classLine(lec).length > 0 && <span> · {classLine(lec).join(" · ")}</span>}
-                        </p>
-                    </div>
-                );
-                const Schedule = ({ lec }: { lec: Lecture }) => (
-                    <div>
-                        <div className="flex items-center gap-1.5 text-xs font-black text-white tabular-nums whitespace-nowrap"><Clock size={13} className="text-amber-400" /> {lec.timeStart} – {lec.timeStop}</div>
-                        {lec.scheduledDuration ? <p className="text-[10px] text-zinc-500 mt-0.5">{lec.scheduledDuration} mins</p> : null}
-                        <p className="text-[10px] text-zinc-400 mt-0.5 flex items-center gap-1 whitespace-nowrap"><Calendar size={10} className="text-zinc-500" /> {fmtShort(lec.date)}</p>
-                    </div>
-                );
-                const Attendance = ({ lec }: { lec: Lecture }) => {
-                    const i = info(lec);
-                    return i.recorded && typeof i.att === "number" ? (
-                        <div className="w-full max-w-[8rem]">
-                            <div className="flex items-center gap-1.5 text-xs font-black text-white tabular-nums"><Users size={13} className="text-emerald-400" /> {i.att} / {i.tot}</div>
-                            <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden mt-1.5"><div className={`h-full rounded-full ${i.pct < 50 ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${i.pct}%` }} /></div>
-                        </div>
-                    ) : (
-                        <div className="w-full max-w-[8rem]">
-                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-500 whitespace-nowrap"><Users size={12} /> Not Marked Yet</div>
-                            <div className="h-1.5 w-full bg-zinc-800 rounded-full mt-1.5" />
-                        </div>
-                    );
-                };
-                const Status = ({ lec }: { lec: Lecture }) => {
-                    const i = info(lec);
-                    const reverted = ["OM_REVERTED", "CL_CH_REVERTED"].includes(lec.pipelineStatus || "");
-                    if (i.recorded) return (
-                        <div className="space-y-1.5 min-w-0">
-                            <div className="[&>span]:whitespace-normal [&>span]:leading-tight"><ClassStatusBadge status={lec.pipelineStatus} /></div>
-                            {reverted && (
-                                <p className="text-[10px] font-bold text-red-300 whitespace-pre-wrap [overflow-wrap:anywhere] line-clamp-3" data-testid="revert-comment">
-                                    {(lec.pipelineStatus === "OM_REVERTED" ? lec.report?.omVerification?.comment : (lec.report?.finalVerification?.comment || lec.report?.clChVerification?.comment || lec.report?.hoiVerification?.comment)) || ""}
-                                </p>
-                            )}
-                            <div className="flex flex-wrap gap-1 text-[9px] font-bold">
-                                {lec.report?.notesMissing ? <span className="text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">Notes missing</span>
-                                    : lec.report?.lectureNotes?.notesUrl ? <span className="text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">Notes</span> : null}
-                                {lec.report?.assignment?.hasAssignment && <span className="text-purple-300 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20">Assignment</span>}
-                                {(lec.report?.delayFlags || []).some((f: any) => f.status === "OPEN") && <span className="text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">Notes pending</span>}
-                            </div>
-                        </div>
-                    );
-                    const box = (tone: string, icon: React.ReactNode, title: string, sub: string) => (
-                        <div className={`inline-flex items-start gap-2 px-2.5 py-2 rounded-xl border ${tone}`}>
-                            {icon}<div><p className="text-[10px] font-black uppercase tracking-wider">{title}</p><p className="text-[10px] text-zinc-400 whitespace-nowrap">{sub}</p></div>
-                        </div>
-                    );
-                    if (lec.classEnded) return box("bg-red-500/10 border-red-500/25 text-red-300", <AlertTriangle size={14} className="mt-0.5 shrink-0" />, "Report Pending", `Ended at ${lec.timeStop}`);
-                    if (i.running) return box("bg-emerald-500/10 border-emerald-500/25 text-emerald-300", <span className="mt-1 w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />, "In Progress", `Ends at ${lec.timeStop}`);
-                    return box("bg-orange-500/10 border-orange-500/25 text-orange-300", <Clock size={14} className="mt-0.5 shrink-0" />, "Upcoming", i.m !== null && i.m < 24 * 60 ? `Starts in ${hhmm(i.m)} hrs` : `On ${fmtShort(lec.date)}`);
-                };
-                const Actions = ({ lec, full }: { lec: Lecture; full?: boolean }) => {
-                    const i = info(lec);
-                    // The class record (report) is submitted ONCE; afterwards only View + Assignment
-                    const notSubmitted = (lec.pipelineStatus || "PENDING_PROFESSOR") === "PENDING_PROFESSOR";
-                    const dayStarted = !!lec.date && lec.date <= todayStr;
-                    const hasAsg = !!lec.report?.assignment?.hasAssignment;
-                    const btn = "flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-black whitespace-nowrap transition-all active:scale-95";
-                    // Re-submit only when OM or CL / CH / HOI reverted the report back to the professor
-                    const reverted = ["OM_REVERTED", "CL_CH_REVERTED"].includes(lec.pipelineStatus || "");
-                    let first: React.ReactNode;
-                    if (reverted && lec.sprintEntryId) {
-                        first = <button onClick={() => openReport(lec)} data-testid="resubmit-report" title="Reverted to you — correct and re-submit"
-                            className={`${btn} w-full bg-amber-500 hover:bg-amber-400 text-zinc-950`}><RotateCcw size={13} /> Re-submit Report</button>;
-                    } else if (notSubmitted && lec.sprintEntryId && lec.classEnded) {
-                        first = <button onClick={() => openReport(lec)} data-testid="submit-report" className={`${btn} w-full bg-emerald-600 hover:bg-emerald-500 text-white`}><Upload size={13} /> Submit Report</button>;
-                    } else if (notSubmitted) {
-                        first = <button disabled title={lec.sprintEntryId ? `Available after the class ends (${lec.timeStop})` : "Not linked to a sprint plan entry"} data-testid="submit-report-disabled"
-                            className={`${btn} w-full bg-zinc-800/60 text-zinc-500 border border-zinc-800 cursor-not-allowed`}><Upload size={13} /> Submit Report</button>;
-                    } else {
-                        first = <span className={`${btn} w-full bg-emerald-500/5 text-emerald-400/90 border border-emerald-500/20 cursor-default`} data-testid="report-submitted"><CheckCircle2 size={13} /> Report Submitted</span>;
-                    }
-                    return (
-                        <div className={`flex ${full ? "flex-col sm:flex-row" : "flex-col"} items-stretch gap-1.5`}>
-                            <div className={full ? "sm:flex-1" : ""}>{first}</div>
-                            <div className={`flex items-center gap-1.5 ${full ? "sm:flex-[1.4]" : ""}`}>
-                                {i.recorded && lec.report ? (
-                                    <button onClick={() => setViewRecord(lec)} data-testid="view-record" className={`${btn} flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700`}><Eye size={13} /> View</button>
-                                ) : (
-                                    <button onClick={() => setPlanInfo(lec)} data-testid="lecture-details" className={`${btn} flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700`}><Info size={13} /> Plan</button>
-                                )}
-                                <button onClick={() => setAsgFor(lec)} disabled={!dayStarted} data-testid="add-assignment"
-                                    title={dayStarted ? (hasAsg ? "Update the assignment" : "Add an assignment for this class") : "Available from the class day"}
-                                    className={`${btn} flex-1 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/25 disabled:opacity-40 disabled:cursor-not-allowed`}>
-                                    <ClipboardList size={13} /> {hasAsg ? "Edit Asg." : "Assignment"}
-                                </button>
-                                <button onClick={(e) => {
-                                    e.stopPropagation();
-                                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                    const up = window.innerHeight - r.bottom < 260;
-                                    setMenuPos({ top: up ? r.top - 4 : r.bottom + 4, right: window.innerWidth - r.right, up });
-                                    setMenuFor(menuFor === i.key ? null : i.key);
-                                }} aria-label="More actions" data-testid="row-menu"
-                                    className="shrink-0 p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 border border-transparent hover:border-zinc-700"><MoreVertical size={15} /></button>
-                            </div>
-                        </div>
-                    );
-                };
-                const open = lectures.find(l => lecKey(l) === menuFor);
-
+            {/* ── Lectures: compact table (one row per lecture) ── */}
+            {(() => {
+                // Same rules as before: report once after the class ends, re-submit only when reverted
+                const canSubmit = (lec: Lecture) => (lec.pipelineStatus || "PENDING_PROFESSOR") === "PENDING_PROFESSOR" && !!lec.sprintEntryId && !!lec.classEnded;
+                const isReverted = (lec: Lecture) => ["OM_REVERTED", "CL_CH_REVERTED"].includes(lec.pipelineStatus || "") && !!lec.sprintEntryId;
+                const open = rows.find(r => r.key === menuFor)?.raw as Lecture | undefined;
                 return (
-                    <div className="rounded-2xl bg-zinc-900/40 border border-zinc-800/80 overflow-hidden">
-                        {/* One card per lecture — same layout on every screen size (phone, tablet, laptop, full screen) */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3" data-testid="lectures-cards">
-                            {lectures.map(lec => {
-                                const i = info(lec);
+                    <>
+                        <LectureTable
+                            rows={rows}
+                            loading={loading}
+                            variant="report"
+                            onOpen={(r) => openDrawer(r.raw)}
+                            activeKey={drawerKey}
+                            resetKey={`${selectedDate}|${rangeEnd}`}
+                            emptyText={`No lectures for ${rangeLabel}. Submit your Sprint Plan to see your classes here.`}
+                            renderActions={(r) => {
+                                const lec = r.raw as Lecture;
                                 return (
-                                    <div key={i.key} className={`p-4 space-y-3 rounded-xl border flex flex-col ${i.running ? "border-emerald-500/30 bg-emerald-500/[0.04]" : "border-zinc-800 bg-zinc-900/50"}`} data-testid="lecture-card">
-                                        <div className="flex items-start gap-3">
-                                            <span className="shrink-0 w-9 h-9 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-sm font-black text-zinc-300">{lec.lectureNumber || "—"}</span>
-                                            <div className="flex-1 min-w-0"><Lesson lec={lec} /></div>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <Schedule lec={lec} />
-                                            <Attendance lec={lec} />
-                                        </div>
-                                        <Status lec={lec} />
-                                        <div className="mt-auto pt-1"><Actions lec={lec} full /></div>
-                                    </div>
+                                    <>
+                                        {isReverted(lec) ? <RowButton tone="warn" icon={RotateCcw} onClick={() => openReport(lec)} title="Reverted to you — correct and re-submit" testId="resubmit-report">Re-submit</RowButton>
+                                            : canSubmit(lec) ? <RowButton tone="primary" icon={Upload} onClick={() => openReport(lec)} testId="submit-report">Submit Report</RowButton>
+                                                : r.recorded ? <RowButton icon={Eye} onClick={() => openDrawer(lec)} testId="view-record">View Report</RowButton>
+                                                    : <RowButton icon={Info} onClick={() => openDrawer(lec)} title={lec.sprintEntryId ? `Report opens after the class ends (${lec.timeStop})` : "Not linked to a sprint plan entry"} testId="lecture-details">View Plan</RowButton>}
+                                        <RowButton tone="ghost" icon={MoreVertical} title="More actions" testId="row-menu" onClick={(e) => {
+                                            e.stopPropagation();
+                                            const b = e.currentTarget.getBoundingClientRect();
+                                            // the app zooms 1.1× on desktop: fixed-position values are in zoomed units
+                                            const z = (e.currentTarget as any).currentCSSZoom || 1;
+                                            const up = window.innerHeight - b.bottom < 260 * z;
+                                            setMenuPos({ top: (up ? b.top - 4 : b.bottom + 4) / z, right: Math.max(8, Math.min((window.innerWidth - b.right) / z, window.innerWidth / z - 232)), up }); // keep the 224px menu on screen
+                                            setMenuFor(menuFor === r.key ? null : r.key);
+                                        }} />
+                                    </>
                                 );
-                            })}
-                        </div>
-
-                        <div className="px-4 py-2.5 border-t border-zinc-800 text-[11px] text-zinc-500 flex flex-wrap justify-between gap-2">
-                            <span>Showing {lectures.length} lecture{lectures.length === 1 ? "" : "s"} · {rangeLabel}</span>
-                            <span>The report is submitted once after the class ends — re-submit only if OM / CL / CH / HOI reverts it. Assignments can be added any time.</span>
-                        </div>
+                            }}
+                        />
+                        {!loading && lectures.length > 0 && (
+                            <p className="text-[11px] text-zinc-500 px-1">The report is submitted once after the class ends — re-submit only if OM / CL / CH / HOI reverts it. Assignments can be added any time from the class day.</p>
+                        )}
 
                         {/* ⋮ menu (fixed, so it is never cut off) */}
                         {open && (
                             <div className="fixed z-[90] w-56 rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-1 text-left" data-testid="row-menu-list"
                                 style={{ top: menuPos.top, right: menuPos.right, transform: menuPos.up ? "translateY(-100%)" : undefined }} onClick={e => e.stopPropagation()}>
-                                {(() => { const i = info(open); const notSubmitted = (open.pipelineStatus || "PENDING_PROFESSOR") === "PENDING_PROFESSOR"; return (<>
-                                    {notSubmitted && open.sprintEntryId && open.classEnded && <MenuItem icon={Upload} label="Submit report" onClick={() => { openReport(open); setMenuFor(null); }} />}
-                                    {["OM_REVERTED", "CL_CH_REVERTED"].includes(open.pipelineStatus || "") && open.sprintEntryId && <MenuItem icon={RotateCcw} label="Correct & re-submit report" onClick={() => { openReport(open); setMenuFor(null); }} />}
-                                    {i.recorded && open.report && <MenuItem icon={FileText} label="View class record" onClick={() => { setViewRecord(open); setMenuFor(null); }} />}
-                                    {open.date <= todayStr && <MenuItem icon={ClipboardList} label={open.report?.assignment?.hasAssignment ? "Update assignment" : "Add assignment"} onClick={() => { setAsgFor(open); setMenuFor(null); }} />}
-                                    {open.report?.notesMissing && i.recorded && <MenuItem icon={FileText} label="Upload missing notes" onClick={() => { setViewRecord(open); setMenuFor(null); }} />}
-                                    {open.report?.lectureNotes?.notesUrl && <MenuItem icon={ExternalLink} label="Open notes" onClick={() => { window.open(open.report!.lectureNotes!.notesUrl, "_blank", "noopener"); setMenuFor(null); }} />}
-                                    {open.report?.assignment?.assignmentUrl && <MenuItem icon={ExternalLink} label="Open assignment" onClick={() => { window.open(open.report!.assignment!.assignmentUrl, "_blank", "noopener"); setMenuFor(null); }} />}
-                                    <MenuItem icon={Info} label="Class plan details" onClick={() => { setPlanInfo(open); setMenuFor(null); }} />
-                                    <MenuItem icon={CalendarDays} label="Open in Weekly Calendar" onClick={() => { window.location.href = `/academic/weekly-calendar?week=${open.date}`; }} />
-                                </>); })()}
+                                {canSubmit(open) && <MenuItem icon={Upload} label="Submit report" onClick={() => { openReport(open); setMenuFor(null); }} />}
+                                {isReverted(open) && <MenuItem icon={RotateCcw} label="Correct & re-submit report" onClick={() => { openReport(open); setMenuFor(null); }} />}
+                                {isRecorded(open) && open.report && <MenuItem icon={FileText} label="View class record" onClick={() => { openDrawer(open); setMenuFor(null); }} />}
+                                {open.date <= todayStr && <MenuItem icon={ClipboardList} label={open.report?.assignment?.hasAssignment ? "Update assignment" : "Add assignment"} onClick={() => { setAsgFor(open); setMenuFor(null); }} />}
+                                {open.report?.notesMissing && isRecorded(open) && <MenuItem icon={FileText} label="Upload missing notes" onClick={() => { openDrawer(open); setMenuFor(null); }} />}
+                                {open.report?.lectureNotes?.notesUrl && <MenuItem icon={ExternalLink} label="Open notes" onClick={() => { window.open(open.report!.lectureNotes!.notesUrl, "_blank", "noopener"); setMenuFor(null); }} />}
+                                {open.report?.assignment?.assignmentUrl && <MenuItem icon={ExternalLink} label="Open assignment" onClick={() => { window.open(open.report!.assignment!.assignmentUrl, "_blank", "noopener"); setMenuFor(null); }} />}
+                                <MenuItem icon={Info} label="Lecture details" onClick={() => { openDrawer(open); setMenuFor(null); }} />
+                                <MenuItem icon={CalendarDays} label="Open in Weekly Calendar" onClick={() => { window.location.href = `/academic/weekly-calendar?week=${open.date}`; }} />
                             </div>
                         )}
-                    </div>
+
+                        {/* Lecture details drawer: plan + class record + existing actions */}
+                        <LectureDrawer row={drawerRow} onClose={closeDrawer}
+                            actions={drawerRow && (() => {
+                                const lec = drawerRow.raw as Lecture;
+                                return (<>
+                                    {isReverted(lec) && <RowButton tone="warn" icon={RotateCcw} onClick={() => { closeDrawer(); openReport(lec); }} testId="drawer-resubmit">Correct & Re-submit</RowButton>}
+                                    {canSubmit(lec) && <RowButton tone="primary" icon={Upload} onClick={() => { closeDrawer(); openReport(lec); }} testId="drawer-submit">Submit Report</RowButton>}
+                                    {lec.date <= todayStr && <RowButton icon={ClipboardList} onClick={() => setAsgFor(lec)} testId="drawer-assignment">{lec.report?.assignment?.hasAssignment ? "Update Assignment" : "Upload Assignment"}</RowButton>}
+                                    {lec.report?.lectureNotes?.notesUrl && <RowButton icon={ExternalLink} onClick={() => window.open(lec.report!.lectureNotes!.notesUrl, "_blank", "noopener")}>Open Notes</RowButton>}
+                                    {lec.report?.assignment?.assignmentUrl && <RowButton icon={ExternalLink} onClick={() => window.open(lec.report!.assignment!.assignmentUrl, "_blank", "noopener")}>Open Assignment</RowButton>}
+                                    <RowButton icon={CalendarDays} onClick={() => { window.location.href = `/academic/weekly-calendar?week=${lec.date}`; }}>Weekly Calendar</RowButton>
+                                </>);
+                            })()}>
+                            {drawerRow && (() => {
+                                const lec = drawerRow.raw as Lecture;
+                                if (lec.report && isRecorded(lec)) return (
+                                    <>
+                                        {/* lecture fields first, so the record card shows subject / class / professor; the report's own values win */}
+                                        <ClassRecordDetails record={{ facultyName: user.name, college: campusName, courseName: lec.courseName, topicsCovered: lec.topicsCovered, className: lec.className, section: lec.section, stream: lec.stream, year: lec.year, semester: lec.semester, date: lec.date, ...lec.report, pipelineStatus: lec.pipelineStatus, timeStart: lec.timeStart, timeStop: lec.timeStop }} />
+                                        <ClassRecordActions
+                                            record={{ ...lec.report, _id: lec.report._id, pipelineStatus: lec.pipelineStatus, classEnded: true }}
+                                            role={user.role} userId={user.id}
+                                            onDone={(m) => { setMessage({ type: "success", text: m }); closeDrawer(); fetchLectures(); }} />
+                                    </>
+                                );
+                                return (
+                                    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-xs text-zinc-400" data-testid="drawer-no-record">
+                                        {!lec.sprintEntryId ? "This class is not linked to a sprint plan entry."
+                                            : lec.classEnded ? <>The class has ended. Submit the class record (attendance, snapshots, notes, assignment) with <b className="text-emerald-300">Submit Report</b>.</>
+                                                : <>The class record can be submitted after the class ends ({lec.timeStop}).</>}
+                                    </div>
+                                );
+                            })()}
+                        </LectureDrawer>
+                    </>
                 );
             })()}
 
@@ -804,57 +723,6 @@ export default function LecturesPage() {
             {asgFor && (
                 <AddAssignmentDialog lecture={asgFor} facultyId={user.id} onClose={() => setAsgFor(null)}
                     onSaved={(m) => { setAsgFor(null); setMessage({ type: "success", text: m }); fetchLectures(); }} />
-            )}
-
-            {/* Class plan details (from the sprint plan) */}
-            {planInfo && (
-                <div className="fixed inset-0 bg-zinc-950/80 backdrop-blur-xl z-[100] flex items-center justify-center p-4" onClick={() => setPlanInfo(null)}>
-                    <div className="bg-zinc-900 border border-zinc-800 w-full max-w-lg rounded-2xl overflow-hidden" onClick={e => e.stopPropagation()} data-testid="plan-info-modal">
-                        <div className="p-5 border-b border-zinc-800 flex items-start justify-between gap-3">
-                            <div>
-                                <h2 className="text-lg font-black text-white">{planInfo.courseName}{planInfo.subjectCode ? ` (${planInfo.subjectCode})` : ""}</h2>
-                                <p className="text-xs text-zinc-400">{fmtLong(planInfo.date)} · {planInfo.timeStart}–{planInfo.timeStop}</p>
-                            </div>
-                            <button onClick={() => setPlanInfo(null)} className="p-1.5 hover:bg-white/5 rounded-lg text-zinc-500 hover:text-white"><X size={18} /></button>
-                        </div>
-                        <div className="p-5 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
-                            {([["Lecture", planInfo.lectureNumber ? `#${planInfo.lectureNumber}` : ""], ["Topic", planInfo.topicsCovered], ["Lecture Type", planInfo.lectureType], ["Unit", planInfo.unitNumber],
-                            ["Class", planInfo.className], ["Section", planInfo.section], ["Stream", planInfo.stream], ["Year / Semester", [planInfo.year, planInfo.semester].filter(Boolean).join(" / ")],
-                            ["Duration", planInfo.scheduledDuration ? `${planInfo.scheduledDuration} mins` : ""], ["Class Record", planInfo.classEnded ? (isRecorded(planInfo) ? "Submitted" : "Pending — submit now") : "After the class ends"]] as [string, any][]).map(([k, v]) => (
-                                <div key={k} className="min-w-0"><p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">{k}</p><p className="text-zinc-200 [overflow-wrap:anywhere]">{v || "—"}</p></div>
-                            ))}
-                        </div>
-                        <div className="px-5 pb-5 flex flex-wrap gap-2">
-                            {PROFESSOR_EDITABLE_CLASS_STATUSES.includes(planInfo.pipelineStatus || "PENDING_PROFESSOR") && planInfo.sprintEntryId && planInfo.classEnded && (
-                                <button onClick={() => { const l = planInfo; setPlanInfo(null); openReport(l); }} className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[11px] font-black"><Upload size={13} /> Submit Class Record</button>
-                            )}
-                            <a href={`/academic/weekly-calendar?week=${planInfo.date}`} className="flex items-center gap-1.5 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-[11px] font-black"><CalendarDays size={13} /> Weekly Calendar</a>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Class record details: verification stages, comments, history; add assignment / notes later */}
-            {viewRecord && viewRecord.report && (
-                <div className="fixed inset-0 bg-zinc-950/80 backdrop-blur-xl z-[100] flex items-center justify-center py-10 px-4 overflow-y-auto" onClick={() => setViewRecord(null)}>
-                    <div className="bg-zinc-900 border border-zinc-800 w-full max-w-3xl rounded-[2rem] overflow-hidden my-auto" onClick={e => e.stopPropagation()} data-testid="record-modal">
-                        <div className="p-6 border-b border-zinc-800 flex items-start justify-between gap-3">
-                            <div>
-                                <h2 className="text-lg font-black text-white">{viewRecord.courseName}</h2>
-                                <p className="text-[11px] text-zinc-500">{viewRecord.date} · {viewRecord.timeStart}–{viewRecord.timeStop}</p>
-                                <div className="mt-2"><ClassStatusBadge status={viewRecord.pipelineStatus} /></div>
-                            </div>
-                            <button onClick={() => setViewRecord(null)} className="p-2 hover:bg-white/5 rounded-lg text-zinc-500 hover:text-white"><X size={18} /></button>
-                        </div>
-                        <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                            <ClassRecordDetails record={{ ...viewRecord.report, pipelineStatus: viewRecord.pipelineStatus, timeStart: viewRecord.timeStart, timeStop: viewRecord.timeStop }} />
-                            <ClassRecordActions
-                                record={{ ...viewRecord.report, _id: viewRecord.report._id, pipelineStatus: viewRecord.pipelineStatus, classEnded: true }}
-                                role={user.role} userId={user.id}
-                                onDone={(m) => { setMessage({ type: "success", text: m }); setViewRecord(null); fetchLectures(); }} />
-                        </div>
-                    </div>
-                </div>
             )}
 
             {/* Lecture Report Modal */}
@@ -1016,21 +884,34 @@ export default function LecturesPage() {
                                     </div>
                                 )}
 
-                                <div className="mt-4 pt-4 border-t border-zinc-800 space-y-3">
-                                    <CheckRow checked={reportData.isNotesSharedWithStudents}
-                                        onChange={v => setReportData(p => ({ ...p, isNotesSharedWithStudents: v }))}
-                                        label="Lecture notes have been shared with the students" />
-                                    {!reportData.isNotesSharedWithStudents && (
+                                {/* Topic coverage: Yes / No (required); No → topics still left */}
+                                <div className="mt-4 pt-4 border-t border-zinc-800 space-y-3" data-testid="topic-coverage">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <span className="text-xs font-semibold text-zinc-200">Topic fully covered? <span className="text-red-400">*</span></span>
+                                        <div className="inline-flex rounded-lg border border-zinc-700 overflow-hidden" role="radiogroup" aria-label="Topic fully covered">
+                                            {([[true, "Yes"], [false, "No"]] as const).map(([v, l]) => (
+                                                <button key={l} type="button" role="radio" aria-checked={reportData.topicFullyCovered === v} data-testid={`topic-covered-${l.toLowerCase()}`}
+                                                    onClick={() => setReportData(p => ({ ...p, topicFullyCovered: v }))}
+                                                    className={`h-9 min-w-[64px] px-4 text-xs font-bold transition-colors ${reportData.topicFullyCovered === v
+                                                        ? (v ? "bg-emerald-600 text-white" : "bg-amber-500 text-zinc-950")
+                                                        : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"}`}>
+                                                    {l}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    {reportData.topicFullyCovered === false && (
                                         <div>
-                                            <FieldLabel htmlFor="rep-not-shared" tone="warn">Reason notes were not shared * (checked by CL / OM)</FieldLabel>
-                                            <textarea id="rep-not-shared"
-                                                value={reportData.notesNotSharedRemarks}
-                                                onChange={e => setReportData(p => ({ ...p, notesNotSharedRemarks: e.target.value }))}
-                                                placeholder="Explain why notes were not shared with students today"
+                                            <FieldLabel htmlFor="rep-topics-left" tone="warn">Which topics are left? *</FieldLabel>
+                                            <textarea id="rep-topics-left" data-testid="topics-left"
+                                                value={reportData.topicsLeft}
+                                                onChange={e => setReportData(p => ({ ...p, topicsLeft: e.target.value }))}
+                                                placeholder="e.g. Deletion in linked lists and practice questions — to be covered in the next class"
                                                 className={REPORT_TEXTAREA + " border-amber-500/30 focus:border-amber-500/60"} />
                                         </div>
                                     )}
                                 </div>
+
                             </ReportSection>
 
                             <ReportSection step={5} accent="violet" title="Assignment" icon={<ClipboardList size={14} className="text-violet-400" />} tag="Optional · Verified by CL">

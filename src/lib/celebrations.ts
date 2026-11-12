@@ -1,0 +1,304 @@
+/**
+ * SERVER-ONLY: Celebration Management.
+ *
+ *  resolveToday(actor)  → the logged-in employee's celebration for today (IST): dashboard banner, colleagues'
+ *                         birthdays and the global animation effect.
+ *    Birthday employee: Personal Birthday > Festival > Vacation > normal header (confetti, opening once per birthday).
+ *    Everyone else:     Festival > Vacation > Colleague Birthday > normal header (festival theme effect only —
+ *                       birthday confetti is shown ONLY in the birthday employee's own session, never to colleagues).
+ *    Vacation banner    = a holiday announcement with "Dashboard Vacation Banner" on, only on its approved holiday
+ *                         days that apply to this employee (Holiday records + exclusions — the source of truth).
+ *  The opening animation is recorded per employee + celebration + date (CelebrationSeen), so it runs once.
+ *  Management (HR / HR Executive / Founder): templates, active banners, per-employee overrides, DOB edit, festivals.
+ */
+import { randomBytes } from 'crypto';
+import { Employee, Holiday, Notice, Location } from '@/models/Schemas';
+import { CelebrationTemplate, CelebrationSetting, EmployeeCelebrationConfig, FestivalCelebration, CelebrationSeen, CelebrationAudit } from '@/models/Celebration';
+import { zonedNow, isValidYmd } from '@/lib/academic';
+import { holidayCoversEmployee } from '@/lib/holiday-flag-removal';
+import {
+    DEFAULTS, FESTIVALS, FESTIVAL_THEME_KEYS, festivalOf, isCssColor, birthdayBanner, festivalBanner, vacationBanner,
+    type BannerData, type ColleagueBirthday, type EffectData, type TodayCelebration,
+} from '@/lib/celebration-themes';
+
+const INACTIVE = /^(inactive|removed|exited|resigned|terminated)$/i;
+export const canManageCelebrations = (a: any) => !!a && ['HR', 'FOUNDER'].includes(a.role);
+const nowIso = () => new Date().toISOString();
+const newId = (p: string) => `${p}-${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`.toUpperCase();
+const roleLabel = (a: any) => (a?.hrExecutive ? 'HR Executive' : a?.role === 'FOUNDER' ? 'Founder' : a?.role || '');
+export const HTTPS = (u: any) => typeof u === 'string' && /^https:\/\//i.test(u) && u.length < 2048;
+const ALIGNS = ['left', 'center', 'right'];
+const PHOTO = ['left', 'right', 'center', 'none'];
+
+// ── DOB ──
+/** Month / day of the stored DOB (dateOfBirth first, then the onboarding date_of_birth). YYYY-MM-DD or DD-MM-YYYY / DD/MM/YYYY */
+export function dobParts(e: any): { y?: number; m: number; d: number; raw: string } | null {
+    const raw = String(e?.dateOfBirth || e?.date_of_birth || '').trim();
+    const p = raw.split(/[-/.]/).map(x => x.trim());
+    if (p.length < 3) return null;
+    const [a, b, c] = p.map(Number);
+    let y: number, m: number, d: number;
+    if (p[0].length === 4) { y = a; m = b; d = c; } else { d = a; m = b; y = c; }
+    if (!m || !d || m > 12 || d > 31) return null;
+    return { y, m, d, raw };
+}
+const leap = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+/** Birthday on this IST date? (29 Feb birthdays are celebrated on 28 Feb in other years) */
+export function isBirthdayOn(e: any, ymd: string) {
+    const p = dobParts(e); if (!p) return false;
+    const [y, m, d] = ymd.split('-').map(Number);
+    if (p.m === 2 && p.d === 29 && !leap(y)) return m === 2 && d === 28;
+    return p.m === m && p.d === d;
+}
+export const dobIso = (e: any) => { const p = dobParts(e); return p && p.y ? `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}` : ''; };
+
+// ── banners: built by the shared builders (lib/celebration-themes) — the same code the previews use ──
+/** Clean the vacation banner settings sent with a holiday announcement (HR) */
+export function cleanVacationBanner(vb: any) {
+    if (!vb || vb.enabled !== true) return null;
+    const images = (Array.isArray(vb.images) ? vb.images : []).filter(HTTPS).slice(0, 10);
+    const active = HTTPS(vb.activeImage) && images.includes(vb.activeImage) ? vb.activeImage : images[0] || '';
+    const col = (v: any, d: string) => (isCssColor(v) ? v : d);
+    return {
+        enabled: true, images, activeImage: active,
+        heading: String(vb.heading || '').trim().slice(0, 120), subheading: String(vb.subheading ?? '').trim().slice(0, 240),
+        headingColor: col(vb.headingColor, DEFAULTS.vacation.headingColor), textColor: col(vb.textColor, DEFAULTS.vacation.textColor),
+        bgColor: col(vb.bgColor, DEFAULTS.vacation.bgColor), overlayColor: col(vb.overlayColor, DEFAULTS.vacation.overlayColor),
+        align: ALIGNS.includes(vb.align) ? vb.align : 'left',
+    };
+}
+
+async function locationNames() {
+    const locs: any[] = await Location.find({}).select('id name shortName').lean();
+    const keyToId = new Map<string, string>();
+    locs.forEach(l => [l.id, l.name, l.shortName].filter(Boolean).forEach(k => keyToId.set(String(k), String(l.id))));
+    const name = (v?: string) => { const id = v ? keyToId.get(String(v)) : ''; const l = locs.find(x => x.id === id); return l ? (l.shortName || l.name) : v || ''; };
+    return { collegeOf: (v?: string) => (v ? keyToId.get(String(v)) || String(v) : ''), name };
+}
+const personOf = (e: any, college: string) => ({ name: e.name, designation: e.designation || e.current_designation_at_gog || '', college, photoUrl: e.photoUrl || e.passport_size_photo || '' });
+
+async function templatesById(ids: string[]) {
+    const list = ids.filter(Boolean);
+    if (!list.length) return new Map<string, any>();
+    const rows: any[] = await CelebrationTemplate.find({ id: { $in: list } }).lean();
+    return new Map(rows.map(r => [r.id, r]));
+}
+
+/** Today's celebration for the logged-in employee */
+export async function resolveToday(actor: any, at?: string): Promise<TodayCelebration> {
+    const today = at && isValidYmd(at) ? at : zonedNow().ymd;
+    const me: any = actor.employee?.toObject ? actor.employee.toObject() : actor.employee || {};
+    const loc = await locationNames();
+    const myCollege = loc.collegeOf(me.location);
+    const [setting, festival, emps]: any[] = await Promise.all([
+        CelebrationSetting.findOne({ key: 'birthday' }).lean(),
+        FestivalCelebration.findOne({ date: today, status: 'Active' }).sort({ createdAt: 1 }).lean(),
+        Employee.find({ $or: [{ dateOfBirth: { $nin: [null, ''] } }, { date_of_birth: { $nin: [null, ''] } }] })
+            .select('id name role designation current_designation_at_gog location photoUrl passport_size_photo dateOfBirth date_of_birth status').lean(),
+    ]);
+    const bdays = (emps as any[]).filter(e => !INACTIVE.test(String(e.status || '')) && isBirthdayOn(e, today));
+    const birthdaySelf = bdays.some(e => e.id === actor.id);
+    const others = bdays.filter(e => e.id !== actor.id);
+    const overrides: any[] = bdays.length ? await EmployeeCelebrationConfig.find({ employeeId: { $in: bdays.map(e => e.id) } }).lean() : [];
+    const ov = new Map(overrides.map(o => [o.employeeId, o]));
+    const tpl = await templatesById([setting?.selfTemplateId, setting?.colleagueTemplateId, festival?.bannerTemplateId, ...overrides.flatMap(o => [o.selfTemplateId, o.colleagueTemplateId])]);
+
+    const colleagues: ColleagueBirthday[] = others.map(e => {
+        const p = personOf(e, loc.name(e.location));
+        const t = tpl.get(ov.get(e.id)?.colleagueTemplateId) || tpl.get(setting?.colleagueTemplateId);
+        return { id: e.id, ...p, banner: birthdayBanner('birthday-colleague', t, p) };
+    });
+
+    // vacation: approved holiday today that applies to me + its announcement has the banner on
+    let vacation: BannerData | null = null;
+    const hols: any[] = await Holiday.find({ date: today, status: 'Approved', announcementId: { $nin: [null, ''] } }).select('id name date forAll collegeIds employeeIds excludedEmployeeIds announcementId').lean();
+    const mine = hols.filter(h => holidayCoversEmployee(h, { id: actor.id, location: myCollege }) || holidayCoversEmployee(h, { id: actor.id, location: me.location }));
+    if (mine.length) {
+        const notices: any[] = await Notice.find({ id: { $in: mine.map(h => h.announcementId) } }).select('id title vacationBanner').lean();
+        const n = notices.find(x => x.vacationBanner?.enabled);
+        if (n) vacation = vacationBanner(n.vacationBanner, mine.find(h => h.announcementId === n.id)?.name || n.title);
+    }
+    const fest = festival ? festivalBanner(festival, tpl.get(festival.bannerTemplateId)) : null;
+
+    let banner: BannerData | null = null;
+    if (birthdaySelf) {
+        const p = personOf(me, loc.name(me.location));
+        banner = birthdayBanner('birthday-self', tpl.get(ov.get(actor.id)?.selfTemplateId) || tpl.get(setting?.selfTemplateId), p);
+    } else banner = fest || vacation || (colleagues.length === 1 ? colleagues[0].banner : null);
+
+    // one effect at a time: own birthday confetti wins; then the festival theme
+    let effect: EffectData | null = null;
+    const seen = async (key: string) => !!(await CelebrationSeen.exists({ key: `${actor.id}|${key}|${today}` }));
+    if (birthdaySelf) {
+        const key = `BIRTHDAY:${today.slice(0, 4)}`;
+        effect = { type: 'birthday', theme: 'CONFETTI', key, opening: !(await seen(key)), subtle: true };
+    } else if (festival && festival.animation !== false) {
+        const key = `FESTIVAL:${festival.id}`;
+        effect = { type: 'festival', theme: festival.theme, key, opening: !(await seen(key)), subtle: festival.subtle !== false };
+    }
+    // Birthday confetti ONLY for the employee whose birthday it is (matched by the signed-in employee's id above) —
+    // never because of a colleague's birthday; colleagues get the clean colleague banner only.
+    return { date: today, banner, colleagues: banner?.kind === 'birthday-colleague' ? [] : colleagues, effect, birthdaySelf };
+}
+
+export async function markOpeningSeen(actor: any, key: string) {
+    if (!/^(BIRTHDAY|FESTIVAL):[A-Z0-9-]+$/i.test(key)) return false;
+    const today = zonedNow().ymd;
+    await CelebrationSeen.create({ key: `${actor.id}|${key}|${today}`, employeeId: actor.id, celebrationKey: key, date: today, at: nowIso() }).catch((e: any) => { if (e?.code !== 11000) throw e; });
+    return true;
+}
+
+// ───────────────────────── management (HR / HR Executive / Founder) ─────────────────────────
+const audit = (actor: any, action: string, x: { entityId?: string; employeeId?: string; before?: any; after?: any }) =>
+    CelebrationAudit.create({ id: newId('CA'), action, ...x, by: actor.id, byName: actor.name, byRole: roleLabel(actor), at: nowIso() }).catch((e: any) => console.error('[celebration-audit]', e?.message));
+
+export async function managementData() {
+    const [templates, setting, overrides, festivals, emps, loc]: any[] = await Promise.all([
+        CelebrationTemplate.find({}).sort({ createdAt: -1 }).lean(),
+        CelebrationSetting.findOne({ key: 'birthday' }).lean(),
+        EmployeeCelebrationConfig.find({}).lean(),
+        FestivalCelebration.find({}).sort({ date: -1 }).lean(),
+        Employee.find({}).select('id name role designation current_designation_at_gog dept location photoUrl passport_size_photo dateOfBirth date_of_birth status').lean(),
+        locationNames(),
+    ]);
+    const ov = new Map((overrides as any[]).map(o => [o.employeeId, o]));
+    const employees = (emps as any[]).filter(e => !INACTIVE.test(String(e.status || ''))).map(e => {
+        const p = dobParts(e); const o = ov.get(e.id);
+        return {
+            id: e.id, name: e.name, role: e.role, designation: e.designation || e.current_designation_at_gog || e.role, dept: e.dept || '',
+            college: loc.name(e.location), photoUrl: e.photoUrl || e.passport_size_photo || '', dob: dobIso(e) || (p ? `--${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}` : ''),
+            dobMonth: p?.m || 0, dobDay: p?.d || 0, selfTemplateId: o?.selfTemplateId || '', colleagueTemplateId: o?.colleagueTemplateId || '', configured: !!(o?.selfTemplateId || o?.colleagueTemplateId),
+        };
+    }).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    return { templates, setting: setting || { key: 'birthday', selfTemplateId: '', colleagueTemplateId: '' }, employees, festivals, festivalsList: FESTIVALS };
+}
+
+const tplFields = (b: any) => {
+    const out: any = {};
+    if (b.name !== undefined) out.name = String(b.name || '').trim().slice(0, 80);
+    if (b.greeting !== undefined) out.greeting = String(b.greeting || '').trim().slice(0, 140);
+    if (b.subtext !== undefined) out.subtext = String(b.subtext || '').trim().slice(0, 240);
+    for (const k of ['headingColor', 'textColor', 'overlayColor', 'bgColor']) if (b[k] !== undefined && isCssColor(b[k])) out[k] = b[k];
+    if (b.align !== undefined && ALIGNS.includes(b.align)) out.align = b.align;
+    if (b.photoPosition !== undefined && PHOTO.includes(b.photoPosition)) out.photoPosition = b.photoPosition;
+    return out;
+};
+const CATS = ['BIRTHDAY_SELF', 'BIRTHDAY_COLLEAGUE', 'FESTIVAL'];
+const fail = (status: number, error: string) => ({ ok: false as const, status, error });
+
+/** Is a template in use (active birthday banner, an employee override or a festival)? */
+async function templateUse(id: string) {
+    const [s, o, f]: any[] = await Promise.all([
+        CelebrationSetting.exists({ $or: [{ selfTemplateId: id }, { colleagueTemplateId: id }] }),
+        EmployeeCelebrationConfig.exists({ $or: [{ selfTemplateId: id }, { colleagueTemplateId: id }] }),
+        FestivalCelebration.exists({ bannerTemplateId: id }),
+    ]);
+    return !!(s || o || f);
+}
+
+export async function manage(actor: any, b: any) {
+    const action = String(b.action || '');
+    const now = nowIso();
+    const by = { updatedBy: actor.id, updatedByName: actor.name, updatedAt: now };
+    switch (action) {
+        case 'template_create': {
+            if (!CATS.includes(b.category)) return fail(400, 'Choose the banner type.');
+            if (!HTTPS(b.imageUrl)) return fail(400, 'Upload the banner image.');
+            if (b.category === 'FESTIVAL' && !festivalOf(b.festivalKey)) return fail(400, 'Choose the festival.');
+            const doc = { id: newId('CT'), category: b.category, ...(b.category === 'FESTIVAL' ? { festivalKey: b.festivalKey } : {}), imageUrl: b.imageUrl, ...tplFields(b), createdBy: actor.id, createdByName: actor.name, createdAt: now, ...by };
+            if (!doc.name) doc.name = `Banner ${new Date().toLocaleDateString('en-GB')}`;
+            await CelebrationTemplate.create(doc);
+            await audit(actor, 'TEMPLATE_CREATE', { entityId: doc.id, after: doc });
+            return { ok: true as const, id: doc.id, message: 'Banner uploaded.' };
+        }
+        case 'template_update': {
+            const t: any = await CelebrationTemplate.findOne({ id: String(b.id || '') }).lean();
+            if (!t) return fail(404, 'Banner not found.');
+            const set: any = { ...tplFields(b), ...by };
+            if (b.imageUrl !== undefined) { if (!HTTPS(b.imageUrl)) return fail(400, 'Upload a valid image.'); set.imageUrl = b.imageUrl; }
+            await CelebrationTemplate.updateOne({ id: t.id }, { $set: set });
+            await audit(actor, b.imageUrl ? 'TEMPLATE_REPLACE' : 'TEMPLATE_UPDATE', { entityId: t.id, before: t, after: set });
+            return { ok: true as const, message: b.imageUrl ? 'Banner image replaced.' : 'Banner saved.' };
+        }
+        case 'template_delete': {
+            const t: any = await CelebrationTemplate.findOne({ id: String(b.id || '') }).lean();
+            if (!t) return fail(404, 'Banner not found.');
+            if (await templateUse(t.id)) return fail(409, 'This banner is in use (selected as active, for an employee or a festival). Select another banner first.');
+            await CelebrationTemplate.deleteOne({ id: t.id });
+            await audit(actor, 'TEMPLATE_DELETE', { entityId: t.id, before: t });
+            return { ok: true as const, message: 'Banner deleted.' };
+        }
+        case 'set_active': {
+            const field = b.category === 'BIRTHDAY_SELF' ? 'selfTemplateId' : b.category === 'BIRTHDAY_COLLEAGUE' ? 'colleagueTemplateId' : '';
+            if (!field) return fail(400, 'Choose the banner type.');
+            const id = String(b.id || '');
+            if (id) { const t: any = await CelebrationTemplate.findOne({ id, category: b.category }).lean(); if (!t) return fail(404, 'Banner not found.'); }
+            const before: any = await CelebrationSetting.findOne({ key: 'birthday' }).lean();
+            await CelebrationSetting.findOneAndUpdate({ key: 'birthday' }, { $set: { [field]: id, ...by } }, { upsert: true, new: true });
+            await audit(actor, 'SET_ACTIVE', { entityId: field, before: before?.[field] || '', after: id });
+            return { ok: true as const, message: id ? 'Active banner selected.' : 'Default banner selected.' };
+        }
+        case 'employee_config': {
+            const emp: any = await Employee.findOne({ id: String(b.employeeId || '') }).select('id name').lean();
+            if (!emp) return fail(404, 'Employee not found.');
+            const check = async (id: any, cat: string) => (!id || !!(await CelebrationTemplate.exists({ id, category: cat })));
+            if (!(await check(b.selfTemplateId, 'BIRTHDAY_SELF')) || !(await check(b.colleagueTemplateId, 'BIRTHDAY_COLLEAGUE'))) return fail(400, 'Choose a banner from the library.');
+            const before: any = await EmployeeCelebrationConfig.findOne({ employeeId: emp.id }).lean();
+            await EmployeeCelebrationConfig.findOneAndUpdate({ employeeId: emp.id }, { $set: { selfTemplateId: b.selfTemplateId || '', colleagueTemplateId: b.colleagueTemplateId || '', ...by } }, { upsert: true, new: true });
+            await audit(actor, 'EMPLOYEE_CONFIG', { employeeId: emp.id, before, after: { selfTemplateId: b.selfTemplateId || '', colleagueTemplateId: b.colleagueTemplateId || '' } });
+            return { ok: true as const, message: `Birthday banners saved for ${emp.name}.` };
+        }
+        case 'edit_dob': {
+            const dob = String(b.dob || '');
+            if (!isValidYmd(dob)) return fail(400, 'Enter a valid date of birth.');
+            const today = zonedNow().ymd;
+            if (dob > today) return fail(400, 'The date of birth cannot be in the future.');
+            if (dob < '1930-01-01') return fail(400, 'Enter a valid date of birth.');
+            const emp: any = await Employee.findOne({ id: String(b.employeeId || '') }).select('id name dateOfBirth date_of_birth').lean();
+            if (!emp) return fail(404, 'Employee not found.');
+            // both DOB fields get the same date (dateOfBirth keeps its existing format: DD-MM-YYYY stays DD-MM-YYYY)
+            const [y, m, d] = dob.split('-');
+            const oldDob = String(emp.dateOfBirth || '');
+            const dateOfBirth = /^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(oldDob) ? `${d}${oldDob.includes('/') ? '/' : '-'}${m}${oldDob.includes('/') ? '/' : '-'}${y}` : dob;
+            await Employee.updateOne({ id: emp.id }, { $set: { dateOfBirth, date_of_birth: dob } });
+            await audit(actor, 'EDIT_DOB', { employeeId: emp.id, before: { dateOfBirth: emp.dateOfBirth || '', date_of_birth: emp.date_of_birth || '' }, after: { dateOfBirth, date_of_birth: dob } });
+            return { ok: true as const, message: `Date of birth saved for ${emp.name}.` };
+        }
+        case 'festival_save': {
+            const fk = festivalOf(b.festivalKey);
+            if (!fk) return fail(400, 'Choose the festival.');
+            const date = String(b.date || '');
+            if (!isValidYmd(date)) return fail(400, 'Choose the celebration date.');
+            if (!FESTIVAL_THEME_KEYS.includes(b.theme)) return fail(400, 'Choose the festival theme.');
+            const bannerTemplateId = String(b.bannerTemplateId || '');
+            if (bannerTemplateId && !(await CelebrationTemplate.exists({ id: bannerTemplateId, category: 'FESTIVAL' }))) return fail(400, 'Choose a banner from the library.');
+            const name = String(b.name || '').trim().slice(0, 80) || fk.name;
+            const doc: any = {
+                festivalKey: fk.key, name, date, theme: b.theme, bannerTemplateId, greeting: String(b.greeting || '').trim().slice(0, 200) || fk.greeting,
+                textColor: isCssColor(b.textColor) ? b.textColor : DEFAULTS.festival.textColor, bgColor: isCssColor(b.bgColor) ? b.bgColor : DEFAULTS.festival.bgColor,
+                animation: b.animation !== false, subtle: b.subtle !== false, status: 'Active', ...by,
+            };
+            const clash: any = await FestivalCelebration.findOne({ date, status: 'Active', ...(b.id ? { id: { $ne: b.id } } : {}) }).lean();
+            if (clash) return fail(409, `"${clash.name}" is already set for this date. Edit it, or choose another date.`);
+            if (b.id) {
+                const before: any = await FestivalCelebration.findOne({ id: String(b.id) }).lean();
+                if (!before) return fail(404, 'Festival not found.');
+                await FestivalCelebration.updateOne({ id: before.id }, { $set: doc });
+                await audit(actor, 'FESTIVAL_UPDATE', { entityId: before.id, before, after: doc });
+                return { ok: true as const, id: before.id, message: `${name} saved.` };
+            }
+            const id = newId('FC');
+            await FestivalCelebration.create({ id, ...doc, createdBy: actor.id, createdByName: actor.name, createdAt: now });
+            await audit(actor, 'FESTIVAL_CREATE', { entityId: id, after: doc });
+            return { ok: true as const, id, message: `${name} celebration saved for ${date.split('-').reverse().join('-')}.` };
+        }
+        case 'festival_delete': {
+            const f: any = await FestivalCelebration.findOne({ id: String(b.id || '') }).lean();
+            if (!f) return fail(404, 'Festival not found.');
+            await FestivalCelebration.deleteOne({ id: f.id });
+            await audit(actor, 'FESTIVAL_DELETE', { entityId: f.id, before: f });
+            return { ok: true as const, message: `${f.name} celebration removed. Holidays are not changed.` };
+        }
+        default: return fail(400, 'Unknown action.');
+    }
+}

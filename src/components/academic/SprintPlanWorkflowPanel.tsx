@@ -162,8 +162,10 @@ export function PlanHistoryModal({ plan, onClose }: { plan: any; onClose: () => 
     );
 }
 
-export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact = false }: {
+export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact = false, layout = "row", statusHint }: {
     plan: any; mode: "professor" | "reviewer"; onChanged: (plan: any, message: string) => void; compact?: boolean;
+    /** "cards" (Sprint Plan page): a "Locked Status" card + a "History · View Changes" card; same data and dialogs */
+    layout?: "row" | "cards"; statusHint?: string;
 }) {
     const st = getPlanStatus(plan);
     const [busy, setBusy] = useState(false);
@@ -198,7 +200,27 @@ export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact
         : "flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50";
 
     return (
-        <div className={compact ? "space-y-2" : "space-y-3"} data-testid="plan-workflow">
+        <div className={layout === "cards" ? "" : compact ? "space-y-2" : "space-y-3"} data-testid="plan-workflow">
+            {layout === "cards" ? (
+                <div className="flex flex-wrap items-stretch gap-2" data-testid="plan-cards">
+                    <div className="min-w-[200px] flex items-center gap-3 px-3.5 py-2 rounded-xl border border-violet-500/25 bg-zinc-900/70" title={statusHint || ""} data-testid="plan-status-card">
+                        <span className="shrink-0 w-9 h-9 rounded-lg border border-violet-500/30 bg-violet-500/15 text-violet-300 flex items-center justify-center">{["LOCKED", "LOCKED_AGAIN", "UNLOCK_REQUESTED"].includes(st) ? <Lock size={16} /> : <Unlock size={16} />}</span>
+                        <div className="min-w-0">
+                            <p className="text-[10px] font-semibold text-zinc-500">Locked Status</p>
+                            <p className="text-[13px] font-bold text-white leading-tight" data-testid="plan-status-value">{PLAN_STATUS_LABEL[st] || st}</p>
+                            {st === "UNLOCKED_FOR_REVISION" && plan.unlockedByName && <p className="text-[10px] text-zinc-500">Unlocked by {plan.unlockedByName} ({roleShort(plan.unlockedByRole)})</p>}
+                            {["LOCKED", "LOCKED_AGAIN"].includes(st) && (planReads(plan).length > 0
+                                ? <p className="text-[10px] text-teal-300" data-testid="plan-read" title={planReads(plan).map((r: any) => `${r.byName} · ${fmt(r.at)}`).join("\n")}>Read by HOI</p>
+                                : mode === "professor" ? <p className="text-[10px] text-zinc-500" data-testid="plan-unread">Not yet read by HOI</p> : null)}
+                        </div>
+                    </div>
+                    <button onClick={() => setDialog("history")} data-testid="plan-history-card"
+                        className="min-w-[160px] flex items-center gap-3 px-3.5 py-2 rounded-xl border border-zinc-700 bg-zinc-900/70 hover:bg-zinc-800 text-left transition-colors">
+                        <span className="shrink-0 w-9 h-9 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-300 flex items-center justify-center"><History size={16} /></span>
+                        <span className="min-w-0"><span className="block text-[10px] font-semibold text-zinc-500">History</span><span className="block text-[13px] font-bold text-white leading-tight">View Changes</span></span>
+                    </button>
+                </div>
+            ) : (
             <div className="flex flex-wrap items-center gap-2">
                 <PlanStatusBadge plan={plan} />
                 <PlanApprovalBadge plan={plan} />
@@ -251,6 +273,8 @@ export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact
                     </>
                 )}
             </div>
+
+            )}
 
             {mode === "reviewer" && <RelockChanges plan={plan} compact={compact} />}
 

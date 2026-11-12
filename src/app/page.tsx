@@ -1,5 +1,6 @@
 "use client";
 import { ddmmyyyy, ddmmyyyyText } from "@/lib/date-display";
+import { holidayForEmployee } from "@/lib/holiday-scope";
 import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect, useMemo } from "react";
 import { cn, resolveImageUrl } from "@/lib/utils";
@@ -14,10 +15,12 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import PostOnboardingChecklist from "@/components/onboarding/PostOnboardingChecklist";
+import DashboardCelebration, { useWelcomeText } from "@/components/celebrations/DashboardCelebration";
+import { useHeaderBanner, HeaderBannerBackground, HeaderBannerLine, HeaderGreeting } from "@/components/celebrations/HeaderCelebration";
 import { motion, AnimatePresence } from "framer-motion";
 
 // â”€â”€â”€ ATTENDANCE CALENDAR â”€â”€â”€
-function AttendanceCalendar({ records, holidays }: { records: any[]; holidays: any[] }) {
+function AttendanceCalendar({ records, holidays, employeeId }: { records: any[]; holidays: any[]; employeeId?: string }) {
     const [viewDate, setViewDate] = useState(new Date());
     const [calData, setCalData] = useState<{ year: number; month: number; daysInMonth: number; monthName: string; todayDate: number; todayMonth: number; todayYear: number; firstDay: number } | null>(null);
 
@@ -72,7 +75,7 @@ function AttendanceCalendar({ records, holidays }: { records: any[]; holidays: a
                     const day = i + 1;
                     const dateStr = `${calData.year}-${String(calData.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
                     const rec = records.find((r: any) => r.date === dateStr);
-                    const holidayMatch = holidays.find((h: any) => h.date === dateStr && h.status === "Approved");
+                    const holidayMatch = holidays.find((h: any) => h.date === dateStr && h.status === "Approved" && holidayForEmployee(h, employeeId));
                     const indianHol = INDIAN_HOLIDAYS_2026.find(h => h.date === dateStr);
                     const isHoliday = !!holidayMatch || !!indianHol;
                     const holidayName = holidayMatch?.name || indianHol?.name || "";
@@ -255,6 +258,9 @@ export default function Home() {
     const [mounted, setMounted] = useState(false);
     const [todayStr, setTodayStr] = useState("");
     const [selectedNotice, setSelectedNotice] = useState<any>(null);
+    // "Welcome back" → "Happy Birthday, …!" on the employee's own birthday
+    const welcomeText = useWelcomeText(user?.name);
+    const headerBanner = useHeaderBanner();
 
     useEffect(() => { setMounted(true); setTodayStr(new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })); }, []);
 
@@ -366,15 +372,22 @@ export default function Home() {
             )}
 
             {/* Welcome */}
-            <header className="lg:hidden flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3 sm:gap-0">
+            <header className={cn("lg:hidden flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3 sm:gap-0", headerBanner && "relative rounded-2xl border border-white/10 px-4 py-4 sm:px-5 sm:py-5 min-h-[110px] sm:items-center")} data-testid="dash-header" data-banner={headerBanner?.kind || ""}>
+                {headerBanner && <HeaderBannerBackground banner={headerBanner} rounded />}
+                <HeaderGreeting banner={headerBanner} compact>
                 <div className="lg:hidden">
                     <p className="text-[9px] sm:text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
                         {role === "HR" ? ((user as any).hrExecutive ? "HR Executive" : "HR Administration") : role === "FOUNDER" ? "Founder" : ["AD", "HOI", "TL"].includes(role) ? `${role} · ${emp.designation || ""}` : "Employee"} Dashboard
                     </p>
-                    <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight mt-0.5 sm:mt-1">Welcome back, {user.name}</h1>
-                    {todayStr && <p className="text-[11px] text-zinc-400 mt-0.5">{todayStr}</p>}
+                    <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight mt-0.5 sm:mt-1" data-testid="dash-welcome">{welcomeText}</h1>
+                    {headerBanner && <HeaderBannerLine banner={headerBanner} welcome={welcomeText} compact />}
+                    {todayStr && <p className={cn("text-[11px] mt-0.5", headerBanner ? "text-zinc-300" : "text-zinc-400")}>{todayStr}</p>}
                 </div>
+                </HeaderGreeting>
             </header>
+
+            {/* A colleague's birthday banner + birthday strip (vacation / festival / own birthday are in the header above) */}
+            <DashboardCelebration />
 
             {/* Today's Schedule: shift · work location · campus presence (same data as before, new layout) */}
             {!isManagerRole && role !== "HR" && role !== "FOUNDER" && (() => {
@@ -443,7 +456,7 @@ export default function Home() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {/* Attendance Calendar */}
                 <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-5 lg:col-span-1">
-                    <AttendanceCalendar records={myAttendance} holidays={holidays} />
+                    <AttendanceCalendar records={myAttendance} holidays={holidays} employeeId={user.id} />
                 </div>
 
                 {/* Enhanced Leaderboard */}

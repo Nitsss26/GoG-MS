@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { Holiday, Employee, Location } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
+import { removeFlagsForHolidays } from '@/lib/holiday-flag-removal';
 import { sendMailInternal } from '@/lib/mail-server';
 import { getHolidayFacultyTemplate } from '@/lib/mail-templates';
 import { isValidYmd, addDays } from '@/lib/academic';
@@ -26,7 +27,8 @@ async function resolveCollegeId(value?: string | null): Promise<string | null> {
  */
 async function getHolidayRecipients(holiday: any) {
     const collegeIds: string[] = holiday.collegeIds || [];
-    const query: any = { role: { $in: TEACHER_ROLES }, status: "Active" };
+    // All colleges → teachers (as before). Selected colleges → that college's professors, OMs and HOIs.
+    const query: any = { role: { $in: holiday.forAll ? TEACHER_ROLES : [...TEACHER_ROLES, "OM", "HOI"] }, status: "Active" };
     let collegeName = "all colleges";
 
     if (!holiday.forAll) {
@@ -34,7 +36,8 @@ async function getHolidayRecipients(holiday: any) {
         const colleges = await Location.find({ id: { $in: collegeIds } });
         const keys = new Set<string>(collegeIds);
         colleges.forEach((c: any) => { keys.add(c.name); keys.add(c.shortName); });
-        query.location = { $in: Array.from(keys).filter(Boolean) };
+        // Original Location = the college, or the college is one of the professor's authorised attendance locations
+        query.$or = [{ location: { $in: Array.from(keys).filter(Boolean) } }, { attendanceLocations: { $in: collegeIds } }];
         collegeName = colleges.map((c: any) => c.name).join(", ") || collegeIds.join(", ");
     }
 
@@ -115,6 +118,7 @@ export async function POST(req: Request) {
                 if (docs.length) await Holiday.deleteMany({ id: { $in: docs.map(x => x.id) } });
                 throw e;
             }
+            if (data.status === "Approved") await removeFlagsForHolidays(docs.map(x => x.toObject()), actor); // holiday days: flags removed (no e-mail)
             return NextResponse.json({ ...docs[0].toObject(), endDate, days: docs.map(x => x.toObject()) });
         }
 
@@ -125,9 +129,11 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: 'A holiday with this id already exists.' }, { status: 409 });
             }
             const newItem = await Holiday.create(data);
+            if (data.status === "Approved") await removeFlagsForHolidays([newItem.toObject()], actor);
             return NextResponse.json(newItem);
         } else {
             const newItem = await Holiday.create({ ...data, id: `HOL${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}` });
+            if (data.status === "Approved") await removeFlagsForHolidays([newItem.toObject()], actor);
             return NextResponse.json(newItem);
         }
     } catch (error: any) {
@@ -175,6 +181,8 @@ export async function PUT(req: Request) {
         if (status !== "Approved") {
             return NextResponse.json({ ...updated.toObject(), emailInfo: { sent: false, reason: "Rejected" } });
         }
+        // approved → the holiday day's attendance flags are removed automatically (no e-mail for that)
+        await removeFlagsForHolidays([updated.toObject()], actor);
 
         // Claim the notification first (set once), then send it
         const claimed = await Holiday.findOneAndUpdate(

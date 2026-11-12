@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import { Employee } from '@/models/Schemas';
 import { CorrectionTicket, PayableCorrection } from '@/models/SalaryModule';
 import { getSessionUser } from '@/lib/session-user';
+import { hoiLocationsForMonth } from '@/lib/hoi-payable-locations';
 import { canViewSalaryAdmin, canCorrectPayable, isMonth, istToday, monthLabel, payableDaysFor, employeeCard, collegeName, CORRECTION_CATEGORIES, NON_PAYABLE_CATEGORIES } from '@/lib/salary-module';
 
 export const dynamic = 'force-dynamic';
@@ -27,6 +28,11 @@ export async function GET(req: Request) {
             PayableCorrection.find({ employeeId: id }).sort({ correctedAt: -1 }).limit(200).lean(),
             CorrectionTicket.find({ employeeId: id }).sort({ createdAt: -1 }).lean(),
         ]);
+        // HOI only: the day's assigned location(s) and the actual clock-in location (+ field visit reason) — display only
+        if (emp.role === 'HOI') {
+            const locs = await hoiLocationsForMonth(emp, month).catch(() => null);
+            if (locs) (calc as any).days = ((calc as any).days || []).map((d: any) => ({ ...d, hoiLocation: locs[d.date] || null }));
+        }
         return NextResponse.json({
             employee: { ...employeeCard(emp, await collegeName(emp.location)), joiningDate: emp.joiningDate || '', reportingManager: managers.map(m => `${m.name} (${m.role})`).join(', ') },
             month, monthLabel: monthLabel(month), calc,

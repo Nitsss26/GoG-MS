@@ -8,6 +8,9 @@ import { useServerClock, istLongDate, istClock } from "@/lib/server-clock";
 import Sidebar from "./Sidebar";
 import OnboardingModal from "./OnboardingModal";
 import NotificationBell from "./NotificationBell";
+import { CelebrationProvider } from "./celebrations/GlobalCelebrationEffects";
+import { useWelcomeText } from "./celebrations/DashboardCelebration";
+import { useHeaderBanner, HeaderBannerBackground, HeaderBannerLine, HeaderGreeting } from "./celebrations/HeaderCelebration";
 
 /** Same label the dashboard used ("HR Administration Dashboard", "Employee Dashboard", …) */
 function dashboardLabel(user: any) {
@@ -16,6 +19,25 @@ function dashboardLabel(user: any) {
     if (role === "FOUNDER") return "Founder";
     if (["AD", "HOI", "TL"].includes(role)) return `${role} · ${user?.designation || ""}`;
     return "Employee";
+}
+
+/** Desktop top bar greeting ("Happy Birthday, …!" on the employee's own birthday) — on the dashboard a vacation / festival / own-birthday banner fills the header background */
+function TopBarGreeting({ label, name, dashboard }: { label: string; name?: string; dashboard: boolean }) {
+    const text = useWelcomeText(name);
+    const banner = useHeaderBanner();
+    const b = dashboard ? banner : null;
+    return (
+        <>
+            {b && <HeaderBannerBackground banner={b} />}
+            <HeaderGreeting banner={b}>
+                <div className={`min-w-0 ${b ? "min-h-[76px] flex flex-col justify-center py-1" : ""}`} data-testid="top-bar-greeting" data-banner={b?.kind || ""}>
+                    <p className={`text-[10px] uppercase tracking-widest font-bold ${b ? "text-zinc-300" : "text-zinc-500"}`}>{label} Dashboard</p>
+                    <p className="text-xl font-extrabold text-white tracking-tight truncate" data-testid="top-bar-welcome">{dashboard ? text : `Welcome back, ${name || ""}`}</p>
+                    {b && <HeaderBannerLine banner={b} welcome={text} />}
+                </div>
+            </HeaderGreeting>
+        </>
+    );
 }
 
 export default function SidebarWrapper({ children }: { children: React.ReactNode }) {
@@ -81,6 +103,8 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
     const showSidebar = user && !isAuthPage;
 
     return (
+        // Celebrations (birthday / festival effects) for every signed-in page; banners only on the dashboard
+        <CelebrationProvider userId={showSidebar ? user?.id : undefined}>
         <div className="flex h-screen w-full overflow-hidden bg-background">
             {showSidebar && (
                 <Sidebar 
@@ -116,12 +140,9 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
                 {/* Desktop top bar: dashboard greeting on the left, notification bell at the top right */}
                 {showSidebar && isDesktop && (
                     <div className="items-center justify-between gap-4 px-8 py-3 border-b border-zinc-900 bg-[#0a0a0b]/80 backdrop-blur-md shrink-0 relative z-[60]" style={{ display: "flex" }} data-testid="top-bar">
-                        <div className="min-w-0" data-testid="top-bar-greeting">
-                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">{dashboardLabel(user)} Dashboard</p>
-                            <p className="text-xl font-extrabold text-white tracking-tight truncate">Welcome back, {user?.name}</p>
-                        </div>
+                        <TopBarGreeting label={dashboardLabel(user)} name={user?.name} dashboard={pathname === "/"} />
                         {/* Date + time to the left of the notification bell */}
-                        <div className="flex items-center gap-3 shrink-0">
+                        <div className="relative flex items-center gap-3 shrink-0">
                             {srvNow && (
                                 <div className="flex items-center gap-3 px-4 py-2 rounded-xl border border-zinc-800 bg-zinc-900/70" data-testid="top-bar-date">
                                     <CalendarDays size={18} className="text-zinc-400 shrink-0" />
@@ -154,5 +175,6 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
             {/* Global Mandatoy Onboarding for New Joinees */}
             <OnboardingModal />
         </div>
+        </CelebrationProvider>
     );
 }

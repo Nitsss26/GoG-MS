@@ -219,6 +219,8 @@ export type SubmitInput = {
     snapshotUrls?: string[]; classPhotoUrl?: string; classPhotoLat?: number; classPhotoLng?: number;
     recordingUrl?: string; recordingDurationSeconds?: number;
     issuesFaced?: string; reasonForLessAttendance?: string; topicsCovered?: string;
+    /** Topic fully covered? (required) — when false, topicsLeft says what is still left */
+    topicFullyCovered?: boolean; topicsLeft?: string;
 };
 
 /** Class strength already stored for this class (latest record of the same class), else the default */
@@ -259,6 +261,10 @@ export async function submitClassRecord(actor: Actor, input: SubmitInput): Promi
     const reason = String(input.notesMissingReason || '').trim();
     if (notesMissing && !input.notesMissing) return fail(400, 'Upload the notes or add a notes link. If you cannot, choose "Unable to Submit Notes" and give the reason.');
     if (notesMissing && reason.length < 10) return fail(400, 'Please explain why the notes could not be submitted (at least 10 characters).');
+    // Topic coverage: Yes / No is required; for No, the topics still left
+    if (typeof input.topicFullyCovered !== 'boolean') return fail(400, 'Choose whether the topic was fully covered (Yes / No).');
+    const topicsLeft = String(input.topicsLeft || '').trim();
+    if (input.topicFullyCovered === false && topicsLeft.length < 5) return fail(400, 'Write which topics are still left (at least 5 characters).');
 
     // Optional assignment + snapshots (Module 10)
     const assignmentUrl = String(input.assignmentUrl || '').trim();
@@ -312,6 +318,8 @@ export async function submitClassRecord(actor: Actor, input: SubmitInput): Promi
         },
         notesMissing,
         notesMissingReason: notesMissing ? reason : '',
+        topicFullyCovered: input.topicFullyCovered,
+        topicsLeft: input.topicFullyCovered ? '' : topicsLeft,
         notesReasonStatus: notesMissing ? 'PENDING' : undefined,
         notesReasonReviewedBy: '', notesReasonReviewedByName: '', notesReasonReviewedAt: '', notesReasonComment: '',
         assignment: hasAssignment ? {
@@ -700,7 +708,8 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
         // ── HOI: verify an assignment added after the class record was completed ──
         case 'hoi_assignment_verify':
         case 'hoi_assignment_revert': {
-            if (!isHOI) return fail(403, 'Only the HOI can verify an assignment added later.');
+            // CL / CH / HOI / AD — the same final verifiers as the class record
+            if (!(isHOI || isClCh || actor.role === 'AD')) return fail(403, 'Only CL / CH / HOI / AD can verify an assignment added later.');
             if (status !== 'COMPLETED') return fail(409, 'This assignment is verified with the class record (final verification).');
             if (!record.assignment?.hasAssignment || record.assignment?.verificationStatus !== 'Pending') return fail(409, 'There is no assignment waiting for verification.');
             const revert = input.action === 'hoi_assignment_revert';
@@ -780,7 +789,7 @@ export async function buildClassList(professors: any[], from: string, to: string
                         date, lectureNumber: num, sprintPlanId: String(plan._id), sprintEntryId: String(entry._id),
                         courseName: entry.subjectName, subjectCode: entry.subjectCode, topicsCovered: entry.topics,
                         stream: entry.stream, year: entry.year, semester: entry.semester, section: entry.section,
-                        className: entry.className, lectureType: entry.lectureType, unitNumber: entry.unitNumber,
+                        className: entry.className, lectureType: entry.lectureType, unitNumber: entry.unitNumber, content: entry.content || '',
                         timeStart: entry.timeStart, timeStop: entry.timeStop,
                         pipelineStatus: 'PENDING_PROFESSOR', classEnded: hasClassEnded(date, entry.timeStop), delayFlags: [],
                     });

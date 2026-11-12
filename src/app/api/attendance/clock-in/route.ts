@@ -8,7 +8,8 @@ import { getSessionUser } from '@/lib/session-user';
 import { recordViolation } from '@/lib/attendance-violations';
 import { createLateAtClockIn, discardLateAtClockIn, finishLateAtClockIn } from '@/lib/late-justification';
 import { createAtClockIn as createLocationJustification, discardAtClockIn as discardLocationJustification, finishAtClockIn as finishLocationJustification } from '@/lib/location-justification';
-import { assignedLocationsOf, matchAssignedLocation, makeVisit, locationLabel, MAX_VISIT_ACCURACY_M, UNASSIGNED_LOCATION_ERROR, tracksDetectedAddress, matchedVisitExtras, recordUnmatchedAttempt, unmatchedPlace } from '@/lib/multi-location-attendance';
+import { assignedLocationsOf, matchAssignedLocation, makeVisit, locationLabel, MAX_VISIT_ACCURACY_M, UNASSIGNED_LOCATION_ERROR, tracksDetectedAddress, matchedVisitExtras, recordUnmatchedAttempt, unmatchedPlace, NO_ADDRESS_LABEL } from '@/lib/multi-location-attendance';
+import { hoiDailyLocations, FIELD_VISIT_LOCATION, FIELD_VISIT_LABEL } from '@/lib/hoi-daily-locations';
 
 /** Minutes after the scheduled clock-in time that still count as on time (more than 2 minutes late = Late Clock-In) */
 const LATE_GRACE_MINUTES = 2;
@@ -16,7 +17,7 @@ const LATE_GRACE_MINUTES = 2;
 export async function POST(req: Request) {
     try {
         await dbConnect();
-        const { employeeId, lat, lng, dressCodeImageUrl, mode, accuracy, preview, lateReason, locationReason } = await req.json();
+        const { employeeId, lat, lng, dressCodeImageUrl, mode, accuracy, preview, lateReason, locationReason, fieldVisitReason } = await req.json();
         // Official time and date come only from this server's clock: any time / date / override sent by the browser is ignored
         const isOverride = false, overrideDate: string | undefined = undefined;
         // Only the logged-in employee can clock in for themself
@@ -66,6 +67,10 @@ export async function POST(req: Request) {
             expectedIn = resolved.in;
             expectedLocationId = resolved.location;
         }
+
+        // HOI only: the colleges / Automatic Location Fetch HR selected for today's weekday (Every Mon … Sun).
+        // A specific-date entry for today (single location) wins, exactly like the scheduled location above.
+        const daily = employee.role === 'HOI' ? hoiDailyLocations(schedule, today) : { ids: [] as string[], autoFetch: false, set: false };
 
         const [schedHours, schedMins] = expectedIn.split(':').map(Number);
         const schedTime = schedHours * 60 + schedMins;
@@ -167,10 +172,17 @@ export async function POST(req: Request) {
             if (preview && assignedLocs.length) {
                 if (!hasCoords) return NextResponse.json({ error: "Location coordinates missing from request." }, { status: 400 });
                 const match = await matchAssignedLocation(lat, lng, assignedLocs);
-                if (!match) return refusedUnassigned();
+                if (!match) {
+                    // HOI with Automatic Location Fetch today: an external place is allowed with a field visit reason
+                    if (daily.set && daily.autoFetch) {
+                        const fv = await unmatchedPlace(lat, lng);
+                        return NextResponse.json({ preview: true, firstClockIn: true, fieldVisit: true, detected: { id: fv.place.id, name: fv.place.name, unmatched: true }, detectedAddress: fv.detectedAddress || null, late: isLate });
+                    }
+                    return refusedUnassigned();
+                }
                 const schedLoc = String(expectedLocationId || '');
                 return NextResponse.json({ preview: true, firstClockIn: true, detected: { id: match.location.id, name: locationLabel(match.location), distanceKm: match.distanceKm, ambiguous: match.ambiguous },
-                    scheduledLocationId: schedLoc, locationMismatch: !!schedLoc && schedLoc.toLowerCase() !== 'wfh' && match.location.id !== schedLoc, late: isLate });
+                    scheduledLocationId: schedLoc, locationMismatch: daily.set ? !daily.ids.includes(match.location.id) : !!schedLoc && schedLoc.toLowerCase() !== 'wfh' && match.location.id !== schedLoc, late: isLate });
             }
         }
         if (preview) return NextResponse.json({ preview: true, detected: null });
@@ -204,6 +216,13 @@ export async function POST(req: Request) {
                 // geofence contains the device; nowhere else
                 const match = await matchAssignedLocation(lat, lng, assignedLocs);
                 if (match) campus = match.location;
+                else if (daily.set && daily.autoFetch) {
+                    // CASE C with Automatic Location Fetch (HR selected it for today): the actual GPS position is used —
+                    // only with reliable coordinates (accuracy reported by the device, not worse than the visit limit)
+                    if (gpsAccuracy === undefined) return NextResponse.json({ error: 'Your device did not report the location accuracy. Turn on precise location and try again.', gpsAccuracyLow: true }, { status: 422 });
+                    if (gpsAccuracy > MAX_VISIT_ACCURACY_M) return NextResponse.json({ error: `GPS accuracy is too low (±${Math.round(gpsAccuracy)} m). Move to an open area and try again.`, gpsAccuracyLow: true }, { status: 422 });
+                    hoiUnmatched = await unmatchedPlace(lat, lng);
+                }
                 else return await blockUnassigned();
             } else if (employee.role === "HOI" || employee.role === "MARKETING_TEAM" || employee.role === "TECH_TEAM" || employee.role === "TECH_INTERN") {
                 // (OM without allotted Clock-In Locations: only the scheduled / assigned location — the branch below)
@@ -244,22 +263,35 @@ export async function POST(req: Request) {
         //   - Late Clock-In (after the grace period): every employee
         //   - HOI / OM with assigned locations: an assigned location other than today's scheduled one
         const scheduledLocId = String(expectedLocationId || '');
-        const locationMismatch = assignedLocs.length > 0 && !!campus && !isWFH && !useWfhApp && !!scheduledLocId
-            && scheduledLocId.toLowerCase() !== 'wfh' && campus.id !== scheduledLocId;
+        // HOI daily locations: inside ANY selected college = normal; another assigned college = location justification
+        const locationMismatch = assignedLocs.length > 0 && !!campus && !isWFH && !useWfhApp && (daily.set
+            ? !daily.ids.includes(campus.id)
+            : !!scheduledLocId && scheduledLocId.toLowerCase() !== 'wfh' && campus.id !== scheduledLocId);
+        // HOI outside every assigned college with Automatic Location Fetch → mandatory field visit / meeting reason
+        const fieldVisit = !!hoiUnmatched && !isWFH && !useWfhApp;
         const lateText = typeof lateReason === 'string' ? lateReason.trim() : '';
         const locText = typeof locationReason === 'string' ? locationReason.trim() : '';
+        const fvText = typeof fieldVisitReason === 'string' ? fieldVisitReason.trim() : '';
+        const dailyNames = async () => {
+            if (!daily.set) return '';
+            const ls: any[] = daily.ids.length ? await Location.find({ id: { $in: daily.ids } }).select('id name shortName').lean() : [];
+            return [...daily.ids.map(id => { const l = ls.find(x => x.id === id); return l?.shortName || l?.name || id; }), ...(daily.autoFetch ? [FIELD_VISIT_LABEL] : [])].join(', ');
+        };
         const missing: string[] = [];
         if (isLate && !isOverride && !lateText) missing.push('late');
         if (locationMismatch && !locText) missing.push('location');
+        if (fieldVisit && !fvText) missing.push('fieldVisit');
         if (missing.length) {
             const hm = (m: number) => `${Math.floor(m / 60).toString().padStart(2, '0')}:${(m % 60).toString().padStart(2, '0')}`;
             let scheduledLocationName = scheduledLocId;
-            if (locationMismatch) { const sl: any = await Location.findOne({ id: scheduledLocId }).select('name shortName').lean(); scheduledLocationName = sl?.shortName || sl?.name || scheduledLocId; }
+            if (daily.set) scheduledLocationName = await dailyNames();
+            else if (locationMismatch) { const sl: any = await Location.findOne({ id: scheduledLocId }).select('name shortName').lean(); scheduledLocationName = sl?.shortName || sl?.name || scheduledLocId; }
             return NextResponse.json({
-                error: missing.length === 2 ? 'Please submit both justifications before clocking in.' : missing[0] === 'late' ? 'Please submit your late arrival justification before clocking in.' : 'Please submit your location change justification before clocking in.',
+                error: missing.length === 2 ? 'Please submit both justifications before clocking in.' : missing[0] === 'late' ? 'Please submit your late arrival justification before clocking in.' : missing[0] === 'fieldVisit' ? 'Please submit your field visit / meeting reason before clocking in.' : 'Please submit your location change justification before clocking in.',
                 justificationRequired: true, requires: missing,
                 ...(isLate ? { late: { scheduledTime: expectedIn, currentTime: hm(currentTime), lateMinutes: currentTime - schedTime } } : {}),
-                ...(locationMismatch ? { location: { scheduledLocationId: scheduledLocId, scheduledLocationName, actualLocationId: campus.id, actualLocationName: locationLabel(campus) } } : {}),
+                ...(locationMismatch ? { location: { scheduledLocationId: scheduledLocId, scheduledLocationName, actualLocationId: campus.id, actualLocationName: locationLabel(campus), autoFetch: daily.autoFetch } } : {}),
+                ...(fieldVisit ? { fieldVisit: { scheduledLocationName, address: hoiUnmatched.detectedAddress || null, addressLabel: hoiUnmatched.detectedAddress || NO_ADDRESS_LABEL, lat, lng, accuracyMeters: typeof gpsAccuracy === 'number' ? Math.round(gpsAccuracy) : null } } : {}),
             }, { status: 428 });
         }
 
@@ -283,9 +315,11 @@ export async function POST(req: Request) {
         };
         // Clock-in: "short leave" no longer excuses a late clock-in (same rule for everyone) — not stored here any more
         // HOI / OM with assigned locations: the first clock-in opens the day's location timeline
-        if (assignedLocs.length && campus && !isWFH && !useWfhApp) {
-            updateData.currentLocationId = campus.id;
-            updateData.locationVisits = [{ ...makeVisit('CLOCK_IN', campus, now, updateData.clockIn, lat, lng, gpsAccuracy), ...(hoiUnmatched ? hoiUnmatched.extras : await matchedVisitExtras(employee, lat, lng)) }];
+        if (assignedLocs.length && (campus || hoiUnmatched) && !isWFH && !useWfhApp) {
+            // a field visit (Automatic Location Fetch) opens the timeline at the actual GPS place
+            const place = campus || hoiUnmatched.place;
+            updateData.currentLocationId = place.id;
+            updateData.locationVisits = [{ ...makeVisit('CLOCK_IN', place, now, updateData.clockIn, lat, lng, gpsAccuracy), ...(hoiUnmatched ? hoiUnmatched.extras : await matchedVisitExtras(employee, lat, lng)) }];
         }
 
         // Justifications are saved first; if the attendance cannot be written they are removed again
@@ -293,10 +327,13 @@ export async function POST(req: Request) {
         let attendance: any;
         try {
             if (isLate && !isOverride) lateJustId = await createLateAtClockIn(employee, { date: today, scheduled: expectedIn, actual: updateData.clockIn, lateMinutes: currentTime - schedTime, reason: lateText });
+            const dailyIds = daily.set ? [...daily.ids, ...(daily.autoFetch ? [FIELD_VISIT_LOCATION] : [])] : undefined;
             if (locationMismatch) locJust = await createLocationJustification(employee, {
                 date: today, scheduledLocationId: scheduledLocId, actual: campus, assignedIds: assignedLocs, clockIn: updateData.clockIn, at: now,
-                lat, lng, accuracy: gpsAccuracy, justification: locText, lateAlso: !!lateJustId,
+                lat, lng, accuracy: gpsAccuracy, justification: locText, lateAlso: !!lateJustId, scheduledLocationIds: dailyIds,
             });
+            // field visit / meeting (Automatic Location Fetch, allowed by HR for that day): a normal clock-in — no approval step.
+            // The reason, the actual GPS position and the address are saved on the attendance (shown in history / payable days).
             attendance = await Attendance.findOneAndUpdate(
                 { employeeId, date: today },
                 { $set: updateData },
@@ -328,6 +365,15 @@ export async function POST(req: Request) {
         // Link the justifications to the saved attendance and notify the reviewers
         if (lateJustId) await finishLateAtClockIn(lateJustId, String(attendance._id)).catch(() => {});
         if (locJust) await finishLocationJustification(locJust.id, String(attendance._id), lateJustId, locJust.hois).catch(() => {});
+        // HOI daily locations: the day's attendance keeps what HR allowed + the actual GPS position (history / review)
+        if (daily.set && !isWFH && !useWfhApp) {
+            await Attendance.collection.updateOne({ _id: attendance._id }, { $set: {
+                hoiDailyLocations: daily.ids, hoiDailyLocationsLabel: await dailyNames(), autoLocationFetch: daily.autoFetch,
+                ...(typeof lat === 'number' ? { clockInLat: lat, clockInLng: lng, ...(typeof gpsAccuracy === 'number' ? { clockInAccuracyMeters: Math.round(gpsAccuracy) } : {}) } : {}),
+                ...(fieldVisit ? { fieldVisit: true, fieldVisitAddress: hoiUnmatched.detectedAddress || '', fieldVisitReason: fvText.slice(0, 2000) } : {}),
+            } }).catch(() => {});
+            attendance = await Attendance.findById(attendance._id);
+        }
 
         // 7. Update Employee Points (+2 for correct clock-in)
         const currentPeriod = "Mar 01 - Mar 15, 2026";

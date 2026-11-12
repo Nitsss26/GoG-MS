@@ -240,7 +240,7 @@ export interface MeetingRequest {
 }
 export interface Notice {
     id: string; title: string; content: string;
-    category: "General" | "Policy" | "Event" | "Urgent" | "Update" | "HR" | "Achievement" | "Training" | "Birthday" | "Welcome";
+    category: "General" | "Policy" | "Event" | "Urgent" | "Update" | "HR" | "Achievement" | "Training" | "Birthday" | "Welcome" | "Holiday";
     createdBy: string; createdAt: string;
     readBy?: string[]; isEdited?: boolean; editedAt?: string; imageUrls?: string[];
 }
@@ -286,6 +286,8 @@ export interface Holiday {
     id: string; name: string; date: string; collegeIds?: string[];
     status: "Proposed" | "Approved" | "Rejected"; proposedBy: string; proposedByName?: string;
     proofUrl?: string; customMessage?: string; forAll?: boolean;
+    // HR "Manually Assign Holiday": a holiday only for these employees (empty = the college / all-college rules)
+    employeeIds?: string[]; employeeNames?: string[]; batchId?: string; source?: string; reason?: string;
     proposedAt?: string;
     approvedBy?: string; approvedByName?: string; approvedAt?: string;
     rejectedBy?: string; rejectedByName?: string; rejectedAt?: string; rejectionReason?: string;
@@ -310,7 +312,8 @@ export interface WorkSchedule {
     employeeId: string; employeeName?: string; approvedByHR?: boolean; // approvedByHR = read / acknowledged by HR
     assignedBy?: string; assignedByName?: string; reason?: string;
     changedAt?: string; hrReadBy?: string; hrReadByName?: string; hrReadAt?: string;
-    dayWise: { [key: string]: { location: string; clockInTime: string; clockOutTime: string; }; };
+    // HOI weekday rule (Work Location): several allowed colleges and / or Automatic Location Fetch for that day
+    dayWise: { [key: string]: { location: string; clockInTime: string; clockOutTime: string; locations?: string[]; autoLocationFetch?: boolean; }; };
 }
 export interface MisbehaviourReport {
     id: string; reportedBy: string; reportedByName: string; employeeId: string; employeeName: string;
@@ -799,12 +802,15 @@ const birthdayEmailsSent = new Set<string>();
  * Clears browser storage (security kill switch) but keeps the professors' unsaved Sprint Plan drafts
  * ("gog.sprintDraft.v1:<professor>:<week>" — only timetable entries, nothing sensitive) so a reload, a closed tab,
  * a page change or a logout does not lose them. Drafts older than 30 days are dropped.
+ * Also kept: the per-employee "celebration animations off" flag.
  */
 const clearStorageKeepDrafts = () => {
     try {
         const keep: [string, string][] = [];
         for (let i = 0; i < localStorage.length; i++) {
             const k = localStorage.key(i) || "";
+            // the employee's "celebration animations off" choice (a plain on/off flag) is kept too
+            if (k.startsWith("gog_celebration_motion_off:")) { if (localStorage.getItem(k) === "1") keep.push([k, "1"]); continue; }
             if (!k.startsWith("gog.sprintDraft.v1:")) continue;
             const v = localStorage.getItem(k) || "";
             try {
@@ -1103,7 +1109,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         acc[curr.employeeId].dayWise[curr.date] = {
                             location: curr.location,
                             clockInTime: curr.clockInTime,
-                            clockOutTime: curr.clockOutTime
+                            clockOutTime: curr.clockOutTime,
+                            // HOI: several colleges / Automatic Location Fetch (only while still valid for that day's location)
+                            ...(Array.isArray(curr.locations) && curr.locationsFor === curr.location ? { locations: curr.locations, autoLocationFetch: !!curr.autoLocationFetch } : {})
                         };
                         // If any day is not approved, keep status pending for the group (optional)
                         if (curr.status !== "Approved") acc[curr.employeeId].approvedByHR = false;
@@ -1393,6 +1401,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     const addAnnouncement = addNotice;
 
+    /**
+     * Holiday announcement from HR (create / approve). "All Colleges" → everyone, as before.
+     * Selected colleges → the announcement is scoped to those colleges and the e-mail goes ONLY to the professors, OMs
+     * and HOIs of those colleges (HR / HR Executive / AD / admin are copied automatically by the mail server) (Original Location = the college, or the college is one of their authorised attendance locations).
+     * skipMail: the server already e-mailed them (HR approval of a request) — no second copy.
+     */
+    const announceHoliday = async (h: { id?: string; name: string; forAll?: boolean; collegeIds?: string[]; days?: { id: string }[] }, content: string, opts: { skipMail?: boolean } = {}) => {
+        if (!user) return;
+        const ids = (h.collegeIds || []).filter(Boolean);
+        // every holiday day this announcement is for — deleting the announcement removes them (normal days again)
+        const holidayIds = Array.from(new Set([...(h.days || []).map(d => d.id), ...(h.id ? [h.id] : [])].filter(Boolean)));
+        if (h.forAll || ids.length === 0) { await addNotice({ title: `Holiday: ${h.name}`, content, category: "Holiday", ...(holidayIds.length ? { holidayIds } : {}) } as any); return; }
+        const keys = new Set<string>(ids);
+        colleges.filter(c => ids.includes(c.id)).forEach(c => { if (c.name) keys.add(c.name); if (c.shortName) keys.add(c.shortName); });
+        const newNotice: any = { title: `Holiday: ${h.name}`, content, category: "Holiday", id: `N${uid()} `, createdBy: user.name, createdById: user.id, createdAt: new Date().toISOString().split("T")[0], readBy: [], collegeIds: ids, ...(holidayIds.length ? { holidayIds } : {}) };
+        try {
+            const res = await fetch("/api/notices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newNotice) });
+            const data = await res.json();
+            if (!data.id) return;
+            setNotices(prev => [data, ...prev]);
+            const to = Array.from(new Set(employees
+                .filter(e => e.email && e.status === "Active" && ["PROFESSOR", "FACULTY", "OM", "HOI"].includes(e.role as string) && (keys.has(String(e.location || "")) || ((e as any).attendanceLocations || []).some((x: string) => ids.includes(x))))
+                .map(e => e.email as string)));
+            if (to.length && !opts.skipMail) {
+                const { subject: mailSub, html: mailHtml } = getAnnouncementTemplate(newNotice);
+                sendMail({ to, subject: mailSub, html: mailHtml });
+            }
+        } catch (err) { console.error(err); }
+    };
+
     const editNotice = async (id: string, data: { title?: string; content?: string; category?: Notice["category"] }) => {
         if (!user) return;
         try {
@@ -1409,9 +1447,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch (err) { console.error(err); }
     };
 
+    // Read announcements are also saved on the server (sidebar unread badge); several reads are sent in one request
+    const readQueue = useRef<Set<string>>(new Set());
+    const readTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const markAnnouncementRead = (noticeId: string) => {
         if (!user) return;
         setNotices(prev => prev.map(n => n.id === noticeId ? { ...n, readBy: [...(n.readBy || []), user.id] } : n));
+        readQueue.current.add(noticeId);
+        if (readTimer.current) return;
+        readTimer.current = setTimeout(() => {
+            const ids = Array.from(readQueue.current);
+            readQueue.current = new Set();
+            readTimer.current = null;
+            if (ids.length) fetch("/api/notices", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }).catch(() => { });
+        }, 300);
     };
 
     // ─── ATTENDANCE ───
@@ -2303,9 +2352,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     const msg = h.customMessage || (multi
                         ? `${h.name} from ${saved.date} to ${saved.endDate} (${dayRecords.length} days) is declared as a holiday.`
                         : `${h.name} on ${h.date} is declared as a holiday.`);
-                    addAnnouncement({
-                        title: `Holiday: ${h.name}`, content: msg, category: "General"
-                    });
+                    await announceHoliday(saved, msg);
                 }
 
                 const ccEmails = getAuthorityEmails(user, employees);
@@ -2343,9 +2390,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 sendMail({ to: founders, cc: ccEmails, subject: mailSub, html: mailHtml });
 
                 const msg = customMessage || `${updated.name} on ${updated.date} has been approved as an official holiday.`;
-                addAnnouncement({
-                    title: `Holiday: ${updated.name}`, content: msg, category: "General"
-                });
+                await announceHoliday(updated, msg, { skipMail: true });
             }
             return updated;
         } catch (err) { console.error(err); }
@@ -2655,6 +2700,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         location: details.location,
                         clockInTime: details.clockInTime,
                         clockOutTime: details.clockOutTime,
+                        ...(Array.isArray((details as any).locations) ? { locations: (details as any).locations, autoLocationFetch: !!(details as any).autoLocationFetch } : {}),
                         assignedBy: user?.id,
                         assignedByName: user?.name,
                         role: user?.role

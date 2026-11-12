@@ -1,6 +1,7 @@
 "use client";
 
 import { clockInCutoff } from "@/lib/time-utils";
+import { holidayForEmployee } from '@/lib/holiday-scope';
 import { useAuth } from "@/context/AuthContext";
 import { FLAG_CONFIG, INDIAN_HOLIDAYS_2026 } from "@/lib/colleges";
 import { cn } from "@/lib/utils";
@@ -170,7 +171,7 @@ export default function FlagCalendarPage() {
 
     const dateStr = (day: number) => `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 
-    const getApprovedHolidays = (d: string) => holidays.filter(h => h.date === d && h.status === "Approved");
+    const getApprovedHolidays = (d: string) => holidays.filter(h => h.date === d && h.status === "Approved" && holidayForEmployee(h, selectedEmployeeId));
     const getIndianHoliday = (d: string) => INDIAN_HOLIDAYS_2026.find(h => h.date === d);
     const getLeaveStatus = (d: string) => leaves?.find(l => l.employeeId === selectedEmployeeId && l.status === "Approved" && d >= l.startDate && d <= l.endDate);
 

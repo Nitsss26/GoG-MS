@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Megaphone, X, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Mail } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
+import { HolidayImageField } from "@/components/celebrations/HolidayMediaFields";
 
 /**
  * HOI Portal → Holidays → Announce Holiday (no HR approval).
@@ -18,7 +19,7 @@ export default function HoiHolidayAnnouncements() {
     const { reloadHolidaysAndNotices } = useAuth();
     const [data, setData] = useState<{ colleges: { id: string; name: string }[]; types: string[]; holidays: any[] } | null>(null);
     const [open, setOpen] = useState(false);
-    const blank = () => ({ title: "", collegeId: "", date: todayIST(), endDate: "", holidayType: "", reason: "", description: "" });
+    const blank = () => ({ title: "", collegeId: "", date: todayIST(), endDate: "", holidayType: "", reason: "", description: "", announcementImageUrl: "" });
     const [form, setForm] = useState(blank());
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
@@ -39,7 +40,7 @@ export default function HoiHolidayAnnouncements() {
         if (form.endDate && form.endDate < form.date) { setError('The "To" date cannot be before the "From" date.'); return; }
         setBusy(true);
         try {
-            const r = await fetch("/api/holidays/announce", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, endDate: form.endDate || undefined }) });
+            const r = await fetch("/api/holidays/announce", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, endDate: form.endDate || undefined, announcementImageUrl: form.announcementImageUrl || undefined }) });
             const d = await r.json();
             if (!r.ok) throw new Error(d.error || "Could not announce the holiday.");
             setOpen(false); setForm(blank()); flash(d.message); await reloadHolidaysAndNotices(); load();
@@ -118,6 +119,7 @@ export default function HoiHolidayAnnouncements() {
                                 <input required value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} className={input} placeholder="Why is the holiday announced?" data-testid="hoi-reason" /></label>
                             <label className="block space-y-1"><span className={label}>Description <span className="normal-case font-normal">(optional)</span></span>
                                 <textarea rows={2} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className={cn(input, "resize-none")} data-testid="hoi-description" /></label>
+                            <HolidayImageField value={form.announcementImageUrl} onChange={u => setForm({ ...form, announcementImageUrl: u })} testId="hoi-img" />
                             {error && <p className="text-[11px] text-red-400 flex items-center gap-1.5" data-testid="hoi-announce-error"><AlertTriangle size={12} /> {error}</p>}
                         </div>
                         <div className="px-5 py-4 border-t border-zinc-800 flex justify-end gap-2">

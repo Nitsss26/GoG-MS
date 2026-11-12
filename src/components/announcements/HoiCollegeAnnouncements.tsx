@@ -5,6 +5,7 @@ import { Megaphone, X, Loader2, Search, Check, Eye, Send, RefreshCw, Users, Uplo
 import { cn } from "@/lib/utils";
 import { useMinWidth } from "@/lib/use-min-width";
 import { uploadToCloudinary } from "@/lib/cloudinary";
+import { HolidayImageField, VacationBannerFields, blankVacationBanner, vacationPayload, type VacationBannerValue } from "@/components/celebrations/HolidayMediaFields";
 
 /**
  * HOI college-wise announcement (part of the existing Announcements page).
@@ -230,15 +231,18 @@ export function HoiAnnouncementHistory({ reloadKey = 0 }: { reloadKey?: number }
  * HR / HR Executive / Founder → Add Announcement: General (everyone) or selected college(s); category Holiday adds
  * the holiday (approved) for everyone / those colleges. E-mail goes only to the chosen audience (one e-mail each).
  */
-export function HrAnnouncementModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+export function HrAnnouncementModal({ onClose, onCreated, initialCategory }: { onClose: () => void; onCreated: () => void; initialCategory?: string }) {
     const [colleges, setColleges] = useState<College[] | null>(null);
     const [cats, setCats] = useState<string[]>([]);
-    const [form, setForm] = useState({ category: "General", title: "", content: "", holidayDate: "" });
+    const [form, setForm] = useState({ category: initialCategory || "General", title: "", content: "", holidayDate: "", holidayEndDate: "" });
     const [scope, setScope] = useState<"GENERAL" | "COLLEGES">("GENERAL");
     const [sel, setSel] = useState<string[]>([]);
     const [q, setQ] = useState(""); const [dd, setDd] = useState(false);
     const [count, setCount] = useState<number | null>(null); const [counting, setCounting] = useState(false);
     const [images, setImages] = useState<string[]>([]); const [uploading, setUploading] = useState(false);
+    // Holiday only: announcement image (above the text) + Dashboard Vacation Banner
+    const [holImage, setHolImage] = useState("");
+    const [vac, setVac] = useState<VacationBannerValue>(blankVacationBanner());
     const [step, setStep] = useState<"form" | "preview" | "done">("form");
     const [err, setErr] = useState(""); const [busy, setBusy] = useState(false); const [done, setDone] = useState("");
     const fileRef = useRef<HTMLInputElement>(null);
@@ -251,6 +255,9 @@ export function HrAnnouncementModal({ onClose, onCreated }: { onClose: () => voi
         return () => { live = false; };
     }, [scope, sel]);
     const isHoliday = form.category === "Holiday";
+    // From … To (To is optional — empty = one day)
+    const holidayTo = form.holidayEndDate || form.holidayDate;
+    const holidayDays = form.holidayDate && holidayTo >= form.holidayDate ? Math.round((Date.parse(`${holidayTo}T00:00:00Z`) - Date.parse(`${form.holidayDate}T00:00:00Z`)) / 86400000) + 1 : 0;
     const list = (colleges || []).filter(c => !q || c.name.toLowerCase().includes(q.toLowerCase()));
     const allOn = !!colleges?.length && sel.length === colleges.length;
     const toggle = (id: string) => setSel(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
@@ -260,6 +267,8 @@ export function HrAnnouncementModal({ onClose, onCreated }: { onClose: () => voi
         if (!form.category) return "Select the category.";
         if (scope === "COLLEGES" && !sel.length) return "Select at least one college, or choose General (everyone).";
         if (isHoliday && !form.holidayDate) return "Select the holiday date.";
+        if (isHoliday && form.holidayEndDate && form.holidayEndDate < form.holidayDate) return "The \"To\" date cannot be before the \"From\" date.";
+        if (isHoliday && holidayDays > 31) return "A holiday can cover at most 31 days.";
         if (form.title.trim().length < 2) return "Enter the announcement title.";
         if (form.content.trim().length < 2) return "Enter the announcement content.";
         if (count === 0) return "There are no active employees in the selected college(s).";
@@ -270,7 +279,8 @@ export function HrAnnouncementModal({ onClose, onCreated }: { onClose: () => voi
         const e = check(); if (e) { setErr(e); setStep("form"); return; }
         setBusy(true); setErr("");
         try {
-            const r = await fetch("/api/notices/college", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, scope, collegeIds: scope === "GENERAL" ? [] : sel, imageUrls: images }) });
+            const r = await fetch("/api/notices/college", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, holidayEndDate: isHoliday && form.holidayEndDate && form.holidayEndDate !== form.holidayDate ? form.holidayEndDate : "", scope, collegeIds: scope === "GENERAL" ? [] : sel, imageUrls: images,
+                ...(isHoliday ? { announcementImageUrl: holImage || undefined, vacationBanner: vacationPayload(vac, form.title) } : {}) }) });
             const d = await r.json().catch(() => ({}));
             if (!r.ok) { setErr(d.error || "Could not publish."); setStep("form"); return; }
             setDone(d.message || "Announcement published."); setStep("done"); onCreated();
@@ -287,7 +297,7 @@ export function HrAnnouncementModal({ onClose, onCreated }: { onClose: () => voi
         <div className="fixed inset-0 z-[100] bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" data-testid="hr-ann-modal">
             <div className="w-full sm:max-w-2xl bg-zinc-950 border border-zinc-800 rounded-t-2xl sm:rounded-2xl max-h-[94vh] overflow-y-auto">
                 <div className="sticky top-0 z-10 bg-zinc-950 border-b border-zinc-800 px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
-                    <h2 className="text-sm font-black text-white flex items-center gap-2"><Megaphone size={16} className="text-primary" /> {step === "preview" ? "Preview Announcement" : step === "done" ? "Announcement Published" : "Add Announcement"}</h2>
+                    <h2 className="text-sm font-black text-white flex items-center gap-2"><Megaphone size={16} className="text-primary" /> {step === "preview" ? "Preview Announcement" : step === "done" ? "Announcement Published" : initialCategory === "Holiday" ? "Announce Holiday" : "Add Announcement"}</h2>
                     <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5 text-zinc-400" aria-label="Close"><X size={16} /></button>
                 </div>
                 <div className="p-4 sm:p-6 space-y-4">
@@ -300,10 +310,11 @@ export function HrAnnouncementModal({ onClose, onCreated }: { onClose: () => voi
                         </div>
                     ) : step === "preview" ? (<>
                         <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-3" data-testid="hr-ann-preview">
+                            {isHoliday && holImage && <img src={holImage} alt="" className="block w-full h-auto max-h-56 object-contain rounded-xl bg-zinc-950" data-testid="hr-ann-preview-image" />}
                             <span className="inline-block text-[9px] font-black px-2 py-0.5 rounded-full border border-primary/30 bg-primary/10 text-primary uppercase">{form.category}</span>
                             <h3 className="text-base font-bold text-white [overflow-wrap:anywhere]">{form.title}</h3>
                             <p className="text-[11px] text-sky-300 [overflow-wrap:anywhere]">Audience: {audience}</p>
-                            {isHoliday && <p className="text-[11px] text-zinc-400">Holiday Date: <b className="text-white">{dmy(form.holidayDate)}</b></p>}
+                            {isHoliday && <p className="text-[11px] text-zinc-400" data-testid="hr-ann-preview-dates">{holidayDays > 1 ? <>Holiday Dates: <b className="text-white">{dmy(form.holidayDate)} to {dmy(holidayTo)}</b> ({holidayDays} days)</> : <>Holiday Date: <b className="text-white">{dmy(form.holidayDate)}</b></>}</p>}
                             <p className="text-xs text-zinc-300 whitespace-pre-wrap [overflow-wrap:anywhere]">{form.content}</p>
                             {images.length > 0 && <div className="flex flex-wrap gap-2">{images.map(u => <img key={u} src={u} alt="" className="w-16 h-16 rounded-lg object-cover border border-zinc-800" />)}</div>}
                         </div>
@@ -319,8 +330,14 @@ export function HrAnnouncementModal({ onClose, onCreated }: { onClose: () => voi
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div><label className={label} htmlFor="hr-cat">Category *</label>
                                 <select id="hr-cat" data-testid="hr-ann-cat" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className={field}>{cats.map(c => <option key={c}>{c}</option>)}</select></div>
-                            {isHoliday && <div><label className={label} htmlFor="hr-hdate">Holiday Date *</label><input id="hr-hdate" type="date" data-testid="hr-ann-hdate" value={form.holidayDate} onChange={e => setForm({ ...form, holidayDate: e.target.value })} className={cn(field, "[color-scheme:dark]")} /></div>}
                         </div>
+                        {isHoliday && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="hr-ann-holiday-dates">
+                                <div><label className={label} htmlFor="hr-hdate">From Date *</label><input id="hr-hdate" type="date" data-testid="hr-ann-hdate" value={form.holidayDate} onChange={e => setForm({ ...form, holidayDate: e.target.value, holidayEndDate: form.holidayEndDate && form.holidayEndDate < e.target.value ? "" : form.holidayEndDate })} className={cn(field, "[color-scheme:dark]")} /></div>
+                                <div><label className={label} htmlFor="hr-hdate-to">To Date <span className="normal-case tracking-normal font-medium text-zinc-500">(optional — for more than one day)</span></label><input id="hr-hdate-to" type="date" data-testid="hr-ann-hdate-to" min={form.holidayDate || undefined} value={form.holidayEndDate} onChange={e => setForm({ ...form, holidayEndDate: e.target.value })} className={cn(field, "[color-scheme:dark]")} /></div>
+                                {holidayDays > 0 && <p className="sm:col-span-2 text-[11px] text-zinc-400" data-testid="hr-ann-days">{holidayDays === 1 ? "1 day holiday" : `${holidayDays} days holiday (${dmy(form.holidayDate)} to ${dmy(holidayTo)})`}</p>}
+                            </div>
+                        )}
                         <div>
                             <label className={label}>Send To *</label>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -355,6 +372,8 @@ export function HrAnnouncementModal({ onClose, onCreated }: { onClose: () => voi
                         </p>
                         <div><label className={label} htmlFor="hr-title">Title *</label><input id="hr-title" data-testid="hr-ann-title" maxLength={200} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className={field} /></div>
                         <div><label className={label} htmlFor="hr-content">Content *</label><textarea id="hr-content" data-testid="hr-ann-content" rows={5} maxLength={10000} value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} className={field} /></div>
+                        {isHoliday && <HolidayImageField value={holImage} onChange={setHolImage} />}
+                        {isHoliday && <VacationBannerFields value={vac} onChange={setVac} holidayName={form.title} from={form.holidayDate} to={holidayTo} />}
                         <div>
                             <label className={label}>Images (optional)</label>
                             <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={e => upload(e.target.files)} />

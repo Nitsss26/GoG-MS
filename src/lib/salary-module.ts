@@ -4,6 +4,7 @@
  * writes to them. Calculation rules: src/lib/payable-days.ts.
  */
 import { Employee, Attendance, LeaveRequest, Holiday, AttendanceViolation, ExitRecord, Location, Notification } from '@/models/Schemas';
+import { holidayForEmployee, holidayExcludes } from '@/lib/holiday-scope';
 import { FlagRemoval, SalaryCounter, PayableCorrection } from '@/models/SalaryModule';
 import { LateJustification } from '@/models/LateJustification';
 import { isNewPolicy, dressLadder } from '@/lib/attendance-policy';
@@ -69,7 +70,7 @@ export async function payableForMany(emps: any[], month: string) {
         Attendance.find({ employeeId: { $in: ids }, date: { $gte: start, $lte: end } })
             .select('_id employeeId date status clockIn clockOut workMode location dressCodeStatus dressCodeRejectionReasons').lean(),
         LeaveRequest.find({ employeeId: { $in: ids }, startDate: { $lte: end }, endDate: { $gte: start } }).select('employeeId id type leaveType startDate endDate days status').lean(),
-        Holiday.find({ date: { $gte: start, $lte: end }, status: 'Approved' }).select('date forAll collegeIds').lean(),
+        Holiday.find({ date: { $gte: start, $lte: end }, status: 'Approved' }).select('date forAll collegeIds employeeIds excludedEmployeeIds').lean(),
         AttendanceViolation.find({ employeeId: { $in: ids }, date: { $gte: start, $lte: end } }).select('employeeId id date type level instance proposedDeduction hrStatus scheduledTime actualTime').lean(),
         ExitRecord.find({ employeeId: { $in: ids } }).select('employeeId lastWorkingDay').lean(),
         FlagRemoval.find({ employeeId: { $in: ids }, flagDate: { $gte: start, $lte: end } }).select('employeeId flagId removedAt removedByName removalReason').lean(),
@@ -86,7 +87,8 @@ export async function payableForMany(emps: any[], month: string) {
     const asOf = month === today.slice(0, 7) ? today : undefined;
     const out = new Map<string, PayableWithMoney>();
     for (const emp of emps) {
-        const holidays = (hol as any[]).filter(h => h.forAll || !h.collegeIds?.length || (emp.location && h.collegeIds.includes(emp.location))).map(h => h.date);
+        // a holiday HR assigned to particular employees counts only for them (holiday-scope)
+        const holidays = (hol as any[]).filter(h => h.employeeIds?.length ? holidayForEmployee(h, emp.id) : !holidayExcludes(h, emp.id) && (h.forAll || !h.collegeIds?.length || (emp.location && h.collegeIds.includes(emp.location)))).map(h => h.date);
         const monetaryPenalties = (locPen.money.get(emp.id) || []).sort((a, b) => a.date.localeCompare(b.date));
         out.set(emp.id, withMoney(monetaryPenalties, calculatePayableDays({
             month, asOf,

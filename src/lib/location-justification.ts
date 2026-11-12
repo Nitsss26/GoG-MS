@@ -67,6 +67,8 @@ export const view = (j: any, actor?: any) => ({
     date: j.date, clockIn: j.clockIn || '', scheduledLocationId: j.scheduledLocationId, scheduledLocationName: j.scheduledLocationName,
     actualLocationId: j.actualLocationId, actualLocationName: j.actualLocationName, assignedLocations: j.assignedLocations || [],
     lateAlso: !!j.lateAlso, justification: j.justification, status: j.status,
+    kind: j.kind || 'LOCATION_MISMATCH', scheduledLocations: j.scheduledLocations || [], detectedAddress: j.detectedAddress || '',
+    lat: typeof j.lat === 'number' ? j.lat : null, lng: typeof j.lng === 'number' ? j.lng : null, accuracyMeters: typeof j.accuracyMeters === 'number' ? j.accuracyMeters : null,
     reviewedByName: j.reviewedByName || '', reviewedByRole: j.reviewedByRole || '', reviewedAt: j.reviewedAt || '',
     action: j.action || '', actionLabel: j.action ? ACTION_LABEL[j.action] : '', customAction: j.customAction || '',
     penaltyAmount: typeof j.penaltyAmount === 'number' ? j.penaltyAmount : null, decisionReason: j.decisionReason || '', remarks: j.remarks || '',
@@ -90,16 +92,22 @@ async function omHois(om: any, actualLocationId?: string) {
 export async function createAtClockIn(emp: any, input: {
     date: string; scheduledLocationId: string; actual: any; assignedIds: string[]; clockIn: string; at: Date;
     lat?: number; lng?: number; accuracy?: number; justification: string; lateAlso: boolean;
+    // HOI daily locations: every college selected for the day; FIELD_VISIT = outside the assigned colleges (Automatic Location Fetch)
+    scheduledLocationIds?: string[]; kind?: 'LOCATION_MISMATCH' | 'FIELD_VISIT'; detectedAddress?: string | null;
 }) {
-    const locs: any[] = await Location.find({ id: { $in: Array.from(new Set([input.scheduledLocationId, ...input.assignedIds])) } }).select('id name shortName').lean();
-    const nameOf = (id: string) => locName(locs.find(l => l.id === id)) || id;
+    const schedIds = (input.scheduledLocationIds || []).filter(Boolean);
+    const locs: any[] = await Location.find({ id: { $in: Array.from(new Set([input.scheduledLocationId, ...input.assignedIds, ...schedIds])) } }).select('id name shortName').lean();
+    const nameOf = (id: string) => (id === 'FIELD_VISIT' ? 'Automatic Location Fetch' : locName(locs.find(l => l.id === id)) || id);
+    const schedName = schedIds.length ? schedIds.map(nameOf).join(', ') : nameOf(input.scheduledLocationId);
     const hois = emp.role === 'OM' ? await omHois(emp, input.actual?.id) : [];
     const now = nowIso();
     const doc = {
         id: `LMJ-${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`.toUpperCase(), key: `${emp.id}:${input.date}`,
         employeeId: emp.id, employeeName: emp.name, employeeRole: emp.role, employeeEmail: emp.email || '',
         designation: emp.current_designation_at_gog || emp.designation || '',
-        date: input.date, scheduledLocationId: input.scheduledLocationId, scheduledLocationName: nameOf(input.scheduledLocationId),
+        date: input.date, scheduledLocationId: input.scheduledLocationId, scheduledLocationName: schedName,
+        ...(schedIds.length ? { scheduledLocations: schedIds.map(id => ({ id, name: nameOf(id) })) } : {}),
+        kind: input.kind || 'LOCATION_MISMATCH', ...(input.detectedAddress ? { detectedAddress: input.detectedAddress } : {}),
         actualLocationId: input.actual?.id, actualLocationName: locName(input.actual),
         assignedLocations: input.assignedIds.map(id => ({ id, name: nameOf(id) })),
         clockIn: input.clockIn, clockInAt: input.at,
@@ -133,12 +141,17 @@ export async function finishAtClockIn(id: string, attendanceId: string, lateJust
     // not awaited: the clock-in answer does not wait for the e-mails (in-app + mail are sent in the background)
     void notifySafe({
         recipients: [...staff, ...hois.filter((h: any) => h.id !== j.employeeId)],
-        title: 'Location Mismatch Justification', message: `${j.employeeName} (${j.employeeRole}) clocked in at a location other than the scheduled one and submitted a justification for review.`,
+        title: j.kind === 'FIELD_VISIT' ? 'Field Visit / Meeting Clock-In' : 'Location Mismatch Justification',
+        message: j.kind === 'FIELD_VISIT'
+            ? `${j.employeeName} (${j.employeeRole}) clocked in from an external location (Automatic Location Fetch) and submitted a field visit / meeting reason for review.`
+            : `${j.employeeName} (${j.employeeRole}) clocked in at a location other than the scheduled one and submitted a justification for review.`,
         type: 'LOCATION_JUSTIFICATION_SUBMITTED', link: REVIEW_LINK, entityType: 'LocationJustification', entityId: id,
         actor: { id: j.employeeId, name: j.employeeName },
         rows: [{ label: 'Employee', value: `${j.employeeName} (${j.employeeId}) · ${j.employeeRole}` }, { label: 'Date', value: longDate(j.date) },
         { label: 'Clock-In', value: fmt12(j.clockIn) }, { label: 'Scheduled Location', value: j.scheduledLocationName || '—' },
-        { label: 'Actual Location', value: j.actualLocationName || '—' }, { label: 'Justification', value: j.justification }],
+        { label: 'Actual Location', value: j.actualLocationName || '—' },
+        ...(j.kind === 'FIELD_VISIT' && typeof j.lat === 'number' ? [{ label: 'Latitude / Longitude', value: `${j.lat.toFixed(6)}, ${j.lng.toFixed(6)}` }] : []),
+        { label: j.kind === 'FIELD_VISIT' ? 'Field Visit / Meeting Reason' : 'Justification', value: j.justification }],
     });
 }
 
