@@ -78,7 +78,7 @@ export function toOrgPerson(e: any, override?: { name?: string; designation?: st
         designation: String(override?.designation || e.designation || fallback[role] || role.replace(/_/g, " ")).trim(),
         role,
         dept: String(e.dept || "").trim(),
-        photo: e.passportPhotoUrl || e.photoUrl || undefined,
+        photo: e.photoUrl || e.passportPhotoUrl || undefined,   // profile photo (HR can replace it) first
         reportsTo: (Array.isArray(e.reportsTo) ? e.reportsTo : e.reportsTo ? [e.reportsTo] : []).map(String),
     };
 }

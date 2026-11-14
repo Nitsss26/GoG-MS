@@ -120,8 +120,9 @@ export default function MyPayableDaysPage() {
     const c = data?.calc;
     const days = useMemo(() => (c?.days || []).filter((d: any) => !onlyIssues || ["Non-Payable", "Partly Payable"].includes(d.payableStatus) || d.penalties.length || d.correction), [c, onlyIssues]);
     const counted = (c?.penalties || []).filter((p: any) => p.status !== "Removed");
-    const dressPen = counted.filter((p: any) => p.type === "DRESS_CODE");
-    const attPen = counted.filter((p: any) => p.type !== "DRESS_CODE");
+    // Full Attire penalties are dress-code type (same warnings / fines)
+    const dressPen = counted.filter((p: any) => p.type === "DRESS_CODE" || p.type === "FULL_ATTIRE");
+    const attPen = counted.filter((p: any) => p.type !== "DRESS_CODE" && p.type !== "FULL_ATTIRE");
     const sumDays = (l: any[]) => l.reduce((x: number, p: any) => x + (p.deductedDays || 0), 0);
     const shownPen = penKind === "DRESS" ? dressPen : penKind === "ATTENDANCE" ? attPen : counted;
     const removed = (c?.penalties || []).filter((p: any) => p.status === "Removed");
@@ -141,7 +142,7 @@ export default function MyPayableDaysPage() {
         { label: "Unpaid Leaves", value: n(c.unpaidLeaves), sub: "Approved leave beyond paid", icon: CalendarX, tone: "amber" },
         { label: "Non-Payable Days", value: n(c.nonPayableDays ?? c.lopDays), sub: c.correctedDays || c.hrDeductedDays ? `HR: +${n(c.correctedDays || 0)} payable / −${n(c.hrDeductedDays || 0)} non-payable` : "Leave without pay / absent / penalties", icon: Ban, tone: "red" },
         { label: "Penalty Deductions", value: `${n(c.penaltyDays)} day${c.penaltyDays === 1 ? "" : "s"}`, sub: c.pendingPenalties ? `${c.pendingPenalties} pending HR verification` : "Counted in payable days", icon: AlertTriangle, tone: "red" },
-        { label: "Dress Code Penalty", value: dressPen.length, sub: `${sumDays(dressPen) ? `${n(sumDays(dressPen))} day deduction · ` : ""}${(c.dressCodeFines || []).length ? `Fine: ${(c.dressCodeFines || []).map((f: any) => `${f.percent}%`).join(" + ")} of a day's gross · ` : ""}${dressPen.length ? "Click to see the days" : "None this month"}`, icon: Shirt, tone: "amber", click: "DRESS" as const },
+        { label: (c.fullAttireViolations || 0) > 0 ? "Dress Code / Full Attire Penalty" : "Dress Code Penalty", value: dressPen.length, sub: `${sumDays(dressPen) ? `${n(sumDays(dressPen))} day deduction · ` : ""}${[...(c.dressCodeFines || []), ...(c.fullAttireFines || [])].length ? `Fine: ${[...(c.dressCodeFines || []), ...(c.fullAttireFines || [])].map((f: any) => `${f.percent}%`).join(" + ")} of a day's gross · ` : ""}${dressPen.length ? "Click to see the days" : "None this month"}`, icon: Shirt, tone: "amber", click: "DRESS" as const },
         { label: "Attendance Penalty", value: attPen.length, sub: `${sumDays(attPen) ? `${n(sumDays(attPen))} day deduction · ` : ""}${attPen.length ? "Late / early / missing clock-out — click to see the days" : "None this month"}`, icon: Flag, tone: "red", click: "ATTENDANCE" as const },
     ] : [];
     const TONE: Record<string, string> = {

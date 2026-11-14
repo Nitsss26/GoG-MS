@@ -11,7 +11,9 @@ const FLAG_CONFIG: typeof BASE_FLAGS = {
     missingOut: { label: "Missing Clock-Out", emoji: "🔷", color: "text-cyan-300 bg-cyan-500/10 border-cyan-500/20", dotColor: "bg-cyan-400" },
 };
 const FLAG_KEY: Record<string, string> = { LATE_IN: "late", EARLY_OUT: "earlyOut", MISSING_OUT: "missingOut", DRESS_CODE: "dressCode", LOCATION_MISMATCH: "locationDiff" };
-type ServerFlag = { flagId: string; date: string; type: string; typeLabel: string; levelLabel?: string; deduction?: string; hrStatus?: string; detail?: string };
+type ServerFlag = { flagId: string; date: string; type: string; typeLabel: string; levelLabel?: string; deduction?: string; hrStatus?: string; detail?: string; instance?: number | null };
+/** 1 → "1st", 2 → "2nd" … */
+const ordinal = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th"}`;
 /** Today in the organisation's time zone (IST) — not the UTC date, which is still "yesterday" before 5:30 AM */
 const istToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 import { cn } from "@/lib/utils";
@@ -483,15 +485,20 @@ export default function FlagCalendarPage() {
                                             )}
 
                                             {/* Individual Flag Pills */}
-                                            {flags.filter(f => f !== "absent").map(f => (
+                                            {flags.filter(f => f !== "absent").map(f => {
+                                                // this month's instance of the flag (1st, 2nd …), same as in the day details
+                                                const inst = serverFlags.find(x => x.date === ds && FLAG_KEY[x.type] === f && x.instance)?.instance;
+                                                return (
                                                 <div key={f} className={cn(
                                                     "flex items-center gap-1 px-1.5 py-[3px] rounded-md border",
                                                     FLAG_CONFIG[f]?.color || "text-zinc-500 bg-zinc-800/30 border-zinc-700/30"
                                                 )}>
                                                     <span className="text-[7px] leading-none">{FLAG_CONFIG[f]?.emoji}</span>
                                                     <span className="text-[7px] font-bold truncate leading-tight">{FLAG_CONFIG[f]?.label}</span>
+                                                    {inst ? <span className="ml-auto shrink-0 px-1 rounded bg-black/30 text-white text-[7px] font-black leading-tight" data-testid="fc-grid-instance">{ordinal(inst)}</span> : null}
                                                 </div>
-                                            ))}
+                                                );
+                                            })}
 
                                             {/* Future day (no data yet) */}
                                             {isFuture && !isHoliday && !isSunday && (
@@ -749,17 +756,22 @@ export default function FlagCalendarPage() {
                                         <div className="space-y-2">
                                             <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Active Flags</p>
                                             <div className="flex gap-2 flex-wrap">
-                                                {recFlags.map((k) => (
-                                                    <span key={k} className={cn("text-[10px] font-bold px-3 py-1.5 rounded-full border flex items-center gap-1.5", FLAG_CONFIG[k]?.color)}>
-                                                        <span>{FLAG_CONFIG[k]?.emoji}</span> {FLAG_CONFIG[k]?.label}
-                                                    </span>
-                                                ))}
+                                                {recFlags.map((k) => {
+                                                    // this month's instance of the flag (1st, 2nd …) from the server's flag list
+                                                    const n = serverFlags.find(f => f.date === selectedDay && FLAG_KEY[f.type] === k && f.instance)?.instance;
+                                                    return (
+                                                        <span key={k} className={cn("text-[10px] font-bold px-3 py-1.5 rounded-full border flex items-center gap-1.5", FLAG_CONFIG[k]?.color)}>
+                                                            <span>{FLAG_CONFIG[k]?.emoji}</span> {FLAG_CONFIG[k]?.label}
+                                                            {n ? <span className="ml-0.5 px-1.5 py-px rounded-full bg-black/30 text-white text-[9px]" data-testid="fc-pill-instance">{ordinal(n)} instance</span> : null}
+                                                        </span>
+                                                    );
+                                                })}
                                             </div>
                                             {dayServerFlags.length > 0 && (
                                                 <div className="space-y-1" data-testid="fc-flag-details">
                                                     {dayServerFlags.map(f => (
                                                         <p key={f.flagId} className="text-[10px] text-zinc-400 [overflow-wrap:anywhere]">
-                                                            <b className="text-zinc-200">{f.typeLabel}</b>{f.levelLabel ? ` · ${f.levelLabel}` : ""}{f.deduction && f.deduction !== "None" ? ` · ${f.deduction}` : ""}{f.hrStatus ? ` · ${f.hrStatus}` : ""}{f.detail ? ` — ${f.detail}` : ""}
+                                                            <b className="text-zinc-200">{f.typeLabel}</b>{f.instance ? <> · <b className="text-amber-200" data-testid="fc-instance">{ordinal(f.instance)} instance</b></> : null}{f.levelLabel ? ` · ${f.levelLabel}` : ""}{f.deduction && f.deduction !== "None" ? ` · ${f.deduction}` : ""}{f.hrStatus ? ` · ${f.hrStatus}` : ""}{f.detail ? ` — ${f.detail}` : ""}
                                                         </p>
                                                     ))}
                                                 </div>

@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { CalendarDays, Calendar, ArrowLeft, ArrowRight, RefreshCw, X, Filter, LayoutGrid, List, ExternalLink, AlertTriangle, Building2, Network, ChevronDown, Users, BookOpen, GraduationCap, GitBranch, Layers, SlidersHorizontal, RotateCcw, Download, FileSpreadsheet, FileText, Loader2, Coffee, Clock, FlaskConical } from "lucide-react";
+import { CalendarDays, Calendar, ArrowLeft, ArrowRight, RefreshCw, X, Filter, LayoutGrid, List, ExternalLink, AlertTriangle, Building2, Network, ChevronDown, Users, BookOpen, GraduationCap, GitBranch, Layers, SlidersHorizontal, RotateCcw, Download, FileSpreadsheet, FileText, Loader2, Coffee, Clock, FlaskConical, ImageDown, ChevronUp } from "lucide-react";
 import * as XLSX from "xlsx";
 import { CALENDAR_ROLES, PROFESSOR_ROLES, PLAN_STATUS_LABEL, PROFESSOR_EDITABLE_CLASS_STATUSES, CLASS_STATUS_LABEL, CLASS_STATUS_STYLE } from "@/lib/academic-status";
-import { FACULTY_CARD_THEMES } from "@/components/academic/SprintPlanTimetableGrid";
 import { ClassStatusBadge, ClassRecordActions } from "@/components/academic/ClassRecordDetails";
 
 /**
@@ -35,6 +34,43 @@ const toMin = (t?: string) => { if (!t || !/^\d{1,2}:\d{2}$/.test(t)) return 0; 
 const istToday = () => { const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const shiftWeek = (ymd: string, weeks: number) => { const d = new Date(ymd + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + weeks * 7); return d.toISOString().slice(0, 10); };
 const dmy = (s: string) => s.split("-").reverse().join("-");
+/** "2026-11-09" → "09 Nov 2026" */
+const shortDmy = (s: string) => (s ? new Date(s + "T00:00:00Z").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }) : "");
+/** View modes (HOI / OM / AD / Founder / CL / CH): the selected college(s) as one timetable, one per year or one per semester */
+type ViewMode = "full" | "year" | "sem";
+const VIEW_MODES: { key: ViewMode; label: string }[] = [{ key: "full", label: "Full College" }, { key: "year", label: "Year-Wise" }, { key: "sem", label: "Semester-Wise" }];
+/** first number in a value ("2nd Year" → 2, "Semester 3" → 3); no number → after the numbered ones */
+const ordNum = (v: string) => { const m = String(v || "").match(/\d+/); return m ? Number(m[0]) : 999; };
+const yearOf = (c: any) => String(c.year || "").trim();
+const semOf = (c: any) => String(c.semester || "").trim();
+const semText = (v: string) => (/^\d+$/.test(v) ? `Semester ${v}` : v);
+/** Groups of classes by the year / semester stored on the sprint plan entries (no guessing; missing → "… not set") */
+const groupClasses = (list: any[], mode: ViewMode): { key: string; label: string; list: any[] }[] => {
+    if (mode === "full") return [{ key: "all", label: "", list }];
+    const map = new Map<string, { key: string; label: string; y: string; s: string; list: any[] }>();
+    for (const c of list) {
+        const y = yearOf(c), sm = semOf(c);
+        const key = mode === "year" ? y.toLowerCase() : `${y.toLowerCase()}||${sm.toLowerCase()}`;
+        const label = mode === "year" ? (y || "Year not set") : [y, sm ? semText(sm) : "Semester not set"].filter(Boolean).join(" / ");
+        if (!map.has(key)) map.set(key, { key, label, y, s: sm, list: [] });
+        map.get(key)!.list.push(c);
+    }
+    return Array.from(map.values()).sort((a, b) =>
+        ordNum(a.y) - ordNum(b.y) || a.y.localeCompare(b.y) || (mode === "sem" ? ordNum(a.s) - ordNum(b.s) || a.s.localeCompare(b.s) : 0));
+};
+/**
+ * Logo on the downloaded timetable (image / PDF). Put your own logo file at  public/calendar-logo.png  (PNG or JPG
+ * renamed to .png) — it is used first. Without it, the sidebar logo is used; if that cannot load, "Geeks of Gurukul" text.
+ */
+const CALENDAR_LOGO_URLS = ["/calendar-logo.png", "https://i.ibb.co/qYQkmMDR/unnamed-1.png"];
+/** Download sheet colours: 12 clearly different light fills (+ strong edge), one per professor in that timetable */
+const SHEET_COLORS = [
+    { fill: "#fbcfe8", line: "#db2777" }, { fill: "#fde68a", line: "#d97706" }, { fill: "#bae6fd", line: "#0284c7" },
+    { fill: "#bbf7d0", line: "#16a34a" }, { fill: "#ddd6fe", line: "#7c3aed" }, { fill: "#fed7aa", line: "#ea580c" },
+    { fill: "#99f6e4", line: "#0d9488" }, { fill: "#fecaca", line: "#dc2626" }, { fill: "#d9f99d", line: "#65a30d" },
+    { fill: "#c7d2fe", line: "#4f46e5" }, { fill: "#a5f3fc", line: "#0891b2" }, { fill: "#f5d0fe", line: "#c026d3" },
+];
+const safeFile = (v: string) => String(v || "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 
 export default function WeeklyCalendarPage() {
     const { user } = useAuth();
@@ -55,6 +91,13 @@ export default function WeeklyCalendarPage() {
     const [notice, setNotice] = useState("");
     const [dlOpen, setDlOpen] = useState(false);
     const [pdfBusy, setPdfBusy] = useState(false);
+    const [mode, setMode] = useState<ViewMode>("full");
+    const [imgBusy, setImgBusy] = useState("");          // file name of the image being created
+    const [exportMsg, setExportMsg] = useState("");      // progress of "Download Complete Calendar"
+    const [sheet, setSheet] = useState<{ id: string; college: string; sub: string; list: any[]; logo: string | null } | null>(null);   // image / PDF page being drawn
+    const logoRef = useRef<string | null | undefined>(undefined);
+    const sheetRef = useRef<HTMLDivElement | null>(null);
+    const [closedTables, setClosedTables] = useState<Record<string, boolean>>({});   // collapsed timetables (by image file name)
 
     useEffect(() => {
         const w = new URLSearchParams(window.location.search).get("week");
@@ -98,10 +141,8 @@ export default function WeeklyCalendarPage() {
     ), [classes, filters]);
 
     // Same colour per professor across the grid (Sprint Plan timetable palette)
-    const profIds = useMemo(() => Array.from(new Set(classes.map(c => c.facultyId))), [classes]);
     /** "13:05" → "1:05 PM" */
     const t12 = (s?: string) => { if (!s || !/^\d{1,2}:\d{2}$/.test(s)) return s || ""; const m = toMin(s); const h = Math.floor(m / 60); return `${((h + 11) % 12) + 1}:${String(m % 60).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`; };
-    const profTheme = (id: string) => Math.max(0, profIds.indexOf(id)) % FACULTY_CARD_THEMES.length;
     const legend = useMemo(() => {
         const seen = new Map<string, string>();
         shown.forEach(c => { if (!seen.has(c.facultyId)) seen.set(c.facultyId, c.facultyName); });
@@ -169,6 +210,11 @@ export default function WeeklyCalendarPage() {
         }
         return list;
     }, [data?.colleges, classes]);
+    // HOI / OM … with exactly one college: that college is selected automatically
+    useEffect(() => {
+        if (isProf || campus !== "ALL" || campusList.length !== 1 || campusList[0].id === "__none__") return;
+        setCampus(campusList[0].id);
+    }, [isProf, campusList, campus]);
     const campusOf = (c: any) => campusList.find(x => x.keys.includes(String(c.college || "")))?.id || String(c.college || "");
     const campusName = (id: string) => campusList.find(x => x.id === id)?.name || id;
     const multiCampusView = view === "college";
@@ -217,112 +263,315 @@ export default function WeeklyCalendarPage() {
     };
 
     /** Colourful PDF of the calendar (same professor colours as the timetable) — one landscape page per campus */
+    // ── Downloads (image + PDF): one printable timetable "sheet" — white page, landscape, colourful, GoG logo ──
+    // every calendar role (HOI, OM, AD, Founder, CL / CH and Professors) gets the view modes and the downloads;
+    // a professor's "My Schedule" is one group of its own (their own classes), the college view works as for HOI / OM
+    const canGroup = true;
+    const MINE = "__mine__";
+    const campusesInView: { id: string; name: string; keys: string[] }[] = view === "mine"
+        ? [{ id: MINE, name: `My Weekly Schedule — ${user.name}`, keys: [] }]
+        : campus === "ALL" ? campusList : campusList.filter(x => x.id === campus);
+    const classesOf = (cpId: string) => (cpId === MINE ? shown : shown.filter(c => campusOf(c) === cpId));
+    const singleSection = view === "mine" || campus !== "ALL";
+    const weekText = data?.weekStart && data?.weekEnd ? `${dmy(data.weekStart)} to ${dmy(data.weekEnd)}` : "";
+    const modeTitle = mode === "year" ? "Year-Wise" : mode === "sem" ? "Semester-Wise" : "Full College";
+    /** short college name for file names: the location's short name, else the initials ("Sage University Bhopal" → SUB) */
+    const collegeShort = (id: string) => {
+        if (id === MINE) return `${safeFile(user.name)}_My_Schedule`;
+        const cp = campusList.find(x => x.id === id);
+        if (!cp) return safeFile(id);
+        const k = cp.keys.find(x => x && x !== cp.id && x !== cp.name && x.length <= 12);
+        return safeFile(k || cp.name.split(/\s+/).filter(Boolean).map(w => w[0]).join("").toUpperCase() || cp.name);
+    };
+    const imageFile = (campusId: string, label: string) => `${collegeShort(campusId)}_${safeFile(label || "Full_College")}_Weekly_Calendar.png`;
+
+    /** the GoG logo as a data URL (needed inside the image); null → the "Geeks of Gurukul" wordmark is drawn instead */
+    const loadLogo = async () => {
+        // read again on every download, so a newly added / changed logo file is used at once (no page refresh needed)
+        logoRef.current = null;
+        for (const src of CALENDAR_LOGO_URLS) {
+            try {
+                const r = await fetch(src, { mode: "cors", cache: "no-cache" });
+                if (!r.ok || !String(r.headers.get("content-type") || "").startsWith("image/")) continue;
+                const blob = await r.blob();
+                logoRef.current = await new Promise<string>((ok, bad) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result)); fr.onerror = bad; fr.readAsDataURL(blob); });
+                break;
+            } catch { /* next */ }
+        }
+        return logoRef.current;
+    };
+    /** draw one sheet off screen and turn it into a PNG (landscape, A4 ratio) */
+    const sheetToPng = async (spec: { college: string; sub: string; list: any[] }) => {
+        const logo = await loadLogo();
+        const id = `${Date.now()}-${Math.random()}`;
+        setSheet({ ...spec, id, logo });
+        let el: HTMLDivElement | null = null;
+        for (let i = 0; i < 80; i++) { el = sheetRef.current; if (el && el.dataset.sheetId === id) break; await new Promise(r => setTimeout(r, 25)); }
+        if (!el || el.dataset.sheetId !== id) throw new Error("sheet not ready");
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const base = Number(el.dataset.baseWidth) || 1600;
+        el.style.width = `${base}px`; el.style.minHeight = "0px";
+        if (el.scrollHeight > base / 1.414) el.style.width = `${Math.min(4800, Math.max(base, Math.ceil(el.scrollHeight * 1.25)))}px`;
+        const W = el.scrollWidth;
+        el.style.minHeight = `${Math.ceil(W / 1.414)}px`;
+        const H = el.scrollHeight;
+        const { toPng } = await import("html-to-image");
+        const opts: any = { width: W, height: H, pixelRatio: 2, backgroundColor: "#ffffff", cacheBust: true };
+        let url = "";
+        try { url = await toPng(el, opts); } catch { url = await toPng(el, { ...opts, skipFonts: true }); }
+        if (!url || url.length < 100) throw new Error("empty image");
+        return { url, W, H };
+    };
+    /** several sheets → one landscape A4 PDF (one page per sheet) */
+    const sheetsToPdf = async (specs: { college: string; sub: string; list: any[] }[], fileName: string, progress = false) => {
+        const { jsPDF } = await import("jspdf");
+        const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+        const PW = doc.internal.pageSize.getWidth(), PH = doc.internal.pageSize.getHeight();
+        for (let i = 0; i < specs.length; i++) {
+            if (progress) setExportMsg(`Creating PDF… ${i + 1} of ${specs.length}`);
+            const img = await sheetToPng(specs[i]);
+            if (i > 0) doc.addPage();
+            const k = Math.min(PW / img.W, PH / img.H);
+            doc.addImage(img.url, "PNG", (PW - img.W * k) / 2, (PH - img.H * k) / 2, img.W * k, img.H * k, undefined, "FAST");
+        }
+        doc.save(fileName);
+    };
+
     const downloadPdf = async () => {
         setDlOpen(false);
         const sections = multiCampusView && campus === "ALL"
-            ? campusList.map(cp => ({ name: cp.name, list: shown.filter(c => campusOf(c) === cp.id) })).filter(x => x.list.length)
-            : [{ name: view === "mine" ? `My Weekly Schedule — ${user.name}` : (multiCampusView && campus !== "ALL" ? campusName(campus) : collegeTitle), list: shownCampus }];
+            ? campusList.map(cp => ({ college: cp.name, sub: "Full College • Weekly Timetable", list: shown.filter(c => campusOf(c) === cp.id) })).filter(x => x.list.length)
+            : [{ college: view === "mine" ? `My Weekly Schedule — ${user.name}` : (multiCampusView && campus !== "ALL" ? campusName(campus) : collegeTitle), sub: view === "mine" ? "My Classes • Weekly Timetable" : "Full College • Weekly Timetable", list: shownCampus }];
         if (!sections.length || !sections.some(x => x.list.length)) { setNotice("No classes to download for these filters."); setTimeout(() => setNotice(""), 3000); return; }
         setPdfBusy(true);
         try {
-            const { jsPDF } = await import("jspdf");
-            const autoTable = (await import("jspdf-autotable")).default;
-            const hex = (h: string): [number, number, number] => [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
-            // light-mode colours of FACULTY_CARD_THEMES, e.g. "bg-[#e8c4d8]/90"
-            const palette = FACULTY_CARD_THEMES.map(t => ({
-                fill: hex((t.bg.match(/bg-\[#([0-9a-f]{6})\]/i) || [, "e4e4e7"])[1] as string),
-                line: hex((t.border.match(/border-\[#([0-9a-f]{6})\]/i) || [, "a1a1aa"])[1] as string),
-            }));
-            const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
-            const W = doc.internal.pageSize.getWidth(), M = 28;
-            sections.forEach((sec, si) => {
-                if (si > 0) doc.addPage();
-                // Title band
-                doc.setFillColor(179, 134, 0); doc.roundedRect(M, M, 150, 40, 4, 4, "F");
-                doc.setTextColor(20, 20, 20); doc.setFont("helvetica", "bold"); doc.setFontSize(10);
-                doc.text("GoG Weekly Calendar", M + 75, M + 17, { align: "center" });
-                doc.setFontSize(8); doc.setFont("helvetica", "normal");
-                doc.text(`${dmy(data.weekStart)} to ${dmy(data.weekEnd)}`, M + 75, M + 31, { align: "center" });
-                doc.setFillColor(24, 24, 27); doc.roundedRect(M + 156, M, W - 2 * M - 156, 40, 4, 4, "F");
-                doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(14);
-                doc.text(sec.name, M + 170, M + 25, { maxWidth: W - 2 * M - 300 });
-                doc.setFontSize(9); doc.setTextColor(161, 161, 170);
-                doc.text(`${sec.list.length} class${sec.list.length === 1 ? "" : "es"}`, W - M - 14, M + 25, { align: "right" });
-
-                const grid = rowsFor(sec.list);
-                const rows = grid.rows;
-                // classes of the cell that starts at [row][day] (a class spans its rows, never split)
-                const cellClasses: any[][][] = rows.map((r, ri) => dates.map(d => { const at = grid.cellAt(ri, d.date); return at && at !== "covered" ? at.items : []; }));
-                const body = rows.map((r, ri) => [
-                    r.other ? `${r.label}\n(check time)` : r.label,
-                    ...dates.flatMap((d, di) => {
-                        const at = grid.cellAt(ri, d.date);
-                        if (at === "covered") return [];
-                        const text = cellClasses[ri][di].map(c =>
-                            `${c.subjectName || c.topics || "Lecture"}\n${view === "college" ? c.facultyName : (c.className || c.branch || "")}${c.section ? ` · Sec ${c.section}` : ""}\n${c.timeStart}–${c.timeStop}`).join("\n\n") || "—";
-                        return [at && at.span > 1 ? { content: text, rowSpan: at.span } : text];
-                    }),
-                ]);
-                autoTable(doc, {
-                    startY: M + 50,
-                    margin: { left: M, right: M },
-                    head: [["TIME / DAY", ...dates.map(d => `${d.code}\n${d.date.split("-").reverse().slice(0, 2).join("/")}`)]],
-                    body,
-                    theme: "grid",
-                    styles: { font: "helvetica", fontSize: 7.5, cellPadding: 4, valign: "middle", halign: "center", lineColor: [212, 212, 216], lineWidth: 0.6, textColor: [39, 39, 42], overflow: "linebreak" },
-                    headStyles: { fillColor: [26, 56, 82], textColor: [224, 242, 254], fontStyle: "bold", fontSize: 8.5, halign: "center" },
-                    columnStyles: { 0: { cellWidth: 74, fontStyle: "bold", fillColor: [244, 244, 245], textColor: [24, 24, 27] } },
-                    didParseCell: (h: any) => {
-                        if (h.section !== "body") return;
-                        const r = rows[h.row.index];
-                        if (r.isLunch) { h.cell.styles.fillColor = h.column.index === 0 ? [102, 59, 20] : [254, 243, 199]; h.cell.styles.textColor = h.column.index === 0 ? [254, 243, 199] : [146, 64, 14]; h.cell.styles.fontStyle = "bold"; return; }
-                        if (h.column.index === 0) return;
-                        const list = cellClasses[h.row.index][h.column.index - 1];
-                        if (!list.length) { h.cell.styles.textColor = [161, 161, 170]; return; }
-                        h.cell.styles.fillColor = palette[profTheme(list[0].facultyId)].fill;
-                        h.cell.styles.textColor = [24, 24, 27];
-                    },
-                    didDrawCell: (h: any) => {
-                        if (h.section !== "body" || h.column.index === 0 || rows[h.row.index].isLunch) return;
-                        const list = cellClasses[h.row.index][h.column.index - 1];
-                        if (!list.length) return;
-                        // coloured left edge = professor colour
-                        doc.setFillColor(...palette[profTheme(list[0].facultyId)].line);
-                        doc.rect(h.cell.x, h.cell.y, 3, h.cell.height, "F");
-                    },
-                });
-                // Professor colour legend
-                const profs = Array.from(new Map(sec.list.map(c => [c.facultyId, c.facultyName])).entries());
-                let y = (doc as any).lastAutoTable.finalY + 14, x = M;
-                if (view === "college" && profs.length) {
-                    doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(82, 82, 91);
-                    doc.text("PROFESSORS:", x, y + 7); x += 64;
-                    doc.setFont("helvetica", "normal");
-                    profs.forEach(([id, name]) => {
-                        const w = doc.getTextWidth(String(name)) + 22;
-                        if (x + w > W - M) { x = M + 64; y += 14; }
-                        const p = palette[profTheme(id)];
-                        doc.setFillColor(...p.fill); doc.setDrawColor(...p.line); doc.roundedRect(x, y, 10, 10, 2, 2, "FD");
-                        doc.setTextColor(39, 39, 42); doc.text(String(name), x + 14, y + 8);
-                        x += w;
-                    });
-                }
-            });
-            const pages = doc.getNumberOfPages();
-            for (let i = 1; i <= pages; i++) {
-                doc.setPage(i); doc.setFontSize(7); doc.setTextColor(161, 161, 170);
-                doc.text(`Generated ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} · Page ${i} of ${pages}`, W - M, doc.internal.pageSize.getHeight() - 14, { align: "right" });
-            }
-            doc.save(`Weekly_Calendar_${campus === "ALL" || !multiCampusView ? (multiCampusView ? "All_Campuses" : "My_Schedule") : campusName(campus).replace(/\s+/g, "_")}_${data?.weekStart}.pdf`);
+            await sheetsToPdf(sections.filter(x => x.list.length), `Weekly_Calendar_${campus === "ALL" || !multiCampusView ? (multiCampusView ? "All_Campuses" : "My_Schedule") : campusName(campus).replace(/\s+/g, "_")}_${data?.weekStart}.pdf`);
         } catch (e: any) {
+            console.error("[weekly-calendar] pdf failed", e);
             setNotice(`Could not create the PDF: ${e.message}`); setTimeout(() => setNotice(""), 4000);
         } finally {
-            setPdfBusy(false);
+            setSheet(null); setPdfBusy(false);
         }
     };
 
+    /** Download Image of one timetable */
+    const downloadImage = async (file: string, list: any[], college: string, sub: string) => {
+        if (imgBusy || pdfBusy || !list.length) return;
+        setImgBusy(file);
+        try {
+            const img = await sheetToPng({ college, sub, list });
+            const a = document.createElement("a"); a.href = img.url; a.download = file; a.click();
+        } catch (e: any) {
+            console.error("[weekly-calendar] image failed", e);
+            setNotice("Could not create the image. Please try again."); setTimeout(() => setNotice(""), 4000);
+        } finally {
+            setSheet(null); setImgBusy("");
+        }
+    };
+    const imageButton = (file: string, list: any[], college: string, sub: string) => (
+        <button type="button" data-export-hide="1" data-testid="download-image" data-file={file} disabled={!!imgBusy || pdfBusy}
+            onClick={() => downloadImage(file, list, college, sub)}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 text-[11px] font-black hover:bg-emerald-500/20 disabled:opacity-60">
+            {imgBusy === file ? <Loader2 size={13} className="animate-spin" /> : <ImageDown size={13} />} {imgBusy === file ? "Preparing…" : "Download Image"}
+        </button>
+    );
+    /** "Download Complete Calendar": the selected college(s), week and view mode → one PDF, one page per timetable */
+    const downloadComplete = async () => {
+        const specs: { college: string; sub: string; list: any[] }[] = [];
+        for (const cp of campusesInView) {
+            const list = classesOf(cp.id);
+            if (!list.length) continue;
+            for (const g of groupClasses(list, mode)) specs.push({ college: cp.name, sub: `${modeTitle} • ${g.label || "Weekly Timetable"}`, list: g.list });
+        }
+        if (!specs.length) { setNotice("No classes to download for this college and week."); setTimeout(() => setNotice(""), 3000); return; }
+        setPdfBusy(true); setExportMsg("Creating PDF…");
+        try {
+            const where = view === "mine" ? collegeShort(MINE) : campus === "ALL" ? (campusesInView.length === 1 ? collegeShort(campusesInView[0].id) : "All_Colleges") : collegeShort(campus);
+            await sheetsToPdf(specs, `${where}_${safeFile(modeTitle)}_Weekly_Calendar_${data?.weekStart}.pdf`, true);
+        } catch (e: any) {
+            console.error("[weekly-calendar] pdf failed", e);
+            setNotice(`Could not create the PDF: ${e.message}`); setTimeout(() => setNotice(""), 4000);
+        } finally { setSheet(null); setPdfBusy(false); setExportMsg(""); }
+    };
+
+    /** the printable sheet (white page; each class from its start time to its end time; same start = one below the other; empty periods = "Free") */
+    const renderSheet = () => {
+        if (!sheet || !data) return null;
+        const list = sheet.list;
+        // Download layout: each class starts in the row of ITS OWN start time and its box reaches down to its end time.
+        // Classes with the same start time are one box (one below the other); classes that overlap but start at different
+        // times sit side by side in that day (the day column is split only where needed). No running class → "Free".
+        const validList = list.filter(c => toMin(c.timeStop) > toMin(c.timeStart));
+        const invalid = list.filter(c => !(toMin(c.timeStop) > toMin(c.timeStart)));
+        const bounds = Array.from(new Set(validList.flatMap(c => [toMin(c.timeStart), toMin(c.timeStop)]))).sort((x, y) => x - y);
+        const sheetRows: { from: number; to: number; other?: boolean }[] = [
+            ...bounds.slice(0, -1).map((m, i) => ({ from: m, to: bounds[i + 1] })),
+            ...(invalid.length ? [{ from: -1, to: -1, other: true }] : []),
+        ];
+        const hmLabel = (m: number) => { const h = Math.floor(m / 60); return `${((h + 11) % 12) + 1}:${String(m % 60).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`; };
+        type SheetGroup = { start: number; end: number; items: any[]; lane: number };
+        const lanes = dates.map(d => {
+            const byStart = new Map<number, SheetGroup>();
+            for (const c of validList.filter(x => x.date === d.date)) {
+                const st = toMin(c.timeStart), en = toMin(c.timeStop);
+                const g = byStart.get(st) || { start: st, end: en, items: [], lane: 0 };
+                g.items.push(c); g.end = Math.max(g.end, en); byStart.set(st, g);
+            }
+            const groups = Array.from(byStart.values()).sort((a, b) => a.start - b.start);
+            groups.forEach(g => g.items.sort((x, y) => toMin(x.timeStop) - toMin(y.timeStop) || String(x.subjectName || "").localeCompare(String(y.subjectName || ""))));
+            const laneEnd: number[] = [];
+            for (const g of groups) {
+                let k = laneEnd.findIndex(e => e <= g.start);
+                if (k < 0) { k = laneEnd.length; laneEnd.push(0); }
+                g.lane = k; laneEnd[k] = g.end;
+            }
+            return { groups, count: Math.max(1, laneEnd.length) };
+        });
+        const freeStyle: React.CSSProperties = { textAlign: "center", color: "#9ca3af", fontSize: 13, fontWeight: 600, padding: "16px 0" };
+        const profs = Array.from(new Map([...list].sort((x, y) => (x.date + x.timeStart).localeCompare(y.date + y.timeStart)).map(c => [String(c.facultyId), c.facultyName])).entries());
+        // colour = professor; every professor of this timetable gets a different colour
+        const pal = (id: string) => SHEET_COLORS[Math.max(0, profs.findIndex(([pid]) => pid === String(id))) % SHEET_COLORS.length];
+        const GREEN = "#0b4a2e", LINE = "#d4d4d8";
+        const extraLanes = lanes.reduce((n, l) => n + l.count - 1, 0);
+        const baseWidth = 1600 + 230 * extraLanes;
+        const shortDay = (ymd: string) => new Date(ymd + "T00:00:00Z").toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
+        const gen = new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }).replace(" am", " AM").replace(" pm", " PM");
+        const line = (Icon: any, text: React.ReactNode, bold = false) => (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 3, fontSize: 12, lineHeight: 1.3, color: bold ? "#18181b" : "#3f3f46", fontWeight: bold ? 800 : 600 }}>
+                <Icon size={13} style={{ flexShrink: 0, marginTop: 1, color: "#3f3f46" }} /><span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{text}</span>
+            </div>
+        );
+        const sup = (v: string) => { const m = String(v || "").match(/^(\d+)(st|nd|rd|th)(.*)$/i); return m ? <>{m[1]}<sup style={{ fontSize: "0.7em" }}>{m[2]}</sup>{m[3]}</> : v; };
+        const cards = (items: any[], filled = false) => (
+                                                        <div style={{ display: "flex", flexDirection: "column", gap: 5, height: "100%" }}>
+                                                            {items.map((c: any) => {
+                                                                const p = pal(c.facultyId);
+                                                                const lab = /lab|practical/i.test(`${c.lectureType || ""} ${c.subjectName || ""}`);
+                                                                const strong = (v: React.ReactNode) => <b style={{ fontWeight: 900, color: "#18181b" }}>{v}</b>;   // year / semester stand out
+                                                                const meta = [c.branch || c.className, c.year ? strong(sup(String(c.year))) : "", c.semester ? strong(semText(String(c.semester))) : "", c.section ? `Sec ${c.section}` : ""].filter(Boolean);
+                                                                return (
+                                                                    <div key={c.id} data-testid="sheet-class" style={{ flex: "1 1 auto", background: filled ? "transparent" : p.fill, borderLeft: `5px solid ${filled ? "transparent" : p.line}`, borderRadius: 8, padding: "7px 8px", textAlign: "left" }}>
+                                                                        <div style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 13.5, fontWeight: 900, color: "#18181b", lineHeight: 1.25 }}>
+                                                                            {lab ? <FlaskConical size={15} style={{ flexShrink: 0, marginTop: 1, color: p.line }} /> : <BookOpen size={15} style={{ flexShrink: 0, marginTop: 1, color: p.line }} />}
+                                                                            <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{c.subjectName || c.topics || "Lecture"}{c.subjectCode ? <span style={{ fontWeight: 600 }}> ({c.subjectCode})</span> : null}</span>
+                                                                        </div>
+                                                                        {c.facultyName && line(Users, c.facultyName, true)}
+                                                                        {meta.length > 0 && line(GraduationCap, meta.map((m, i) => <React.Fragment key={i}>{i > 0 ? " • " : ""}{m}</React.Fragment>))}
+                                                                        {line(Clock, `${t12(c.timeStart)} – ${t12(c.timeStop)}${c.lectureType ? ` • ${c.lectureType}` : ""}`, true)}
+                                                                        {(c.unitNumber || (c.topics && c.subjectName)) && line(Layers, [c.unitNumber ? `Unit ${c.unitNumber}` : "", c.topics && c.subjectName ? `Topic: ${c.topics}` : ""].filter(Boolean).join(" • "))}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+        );
+        return (
+            <div aria-hidden="true" style={{ position: "fixed", left: "-100000px", top: 0, pointerEvents: "none" }}>
+                <div ref={sheetRef} data-sheet-id={sheet.id} data-base-width={baseWidth} data-testid="image-sheet" style={{ width: baseWidth, background: "#ffffff", padding: 26, fontFamily: "Inter, 'Segoe UI', Arial, Helvetica, sans-serif", color: "#18181b", boxSizing: "border-box" }}>
+                    {/* header: logo · Weekly Calendar | college (green band) · dates · classes */}
+                    <div style={{ display: "flex", alignItems: "stretch", border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden", marginBottom: 14 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "12px 22px", background: "#ffffff" }}>
+                            {sheet.logo
+                                ? <img src={sheet.logo} alt="Geeks of Gurukul" data-testid="sheet-logo" style={{ height: 50, width: "auto", objectFit: "contain" }} />
+                                : <div data-testid="sheet-logo-text" style={{ lineHeight: 1 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#15803d", letterSpacing: 1 }}>— Geeks of —</div><div style={{ fontSize: 30, fontWeight: 900, color: "#166534" }}>Gurukul</div></div>}
+                            <div style={{ width: 1, alignSelf: "stretch", background: LINE }} />
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                <CalendarDays size={28} style={{ color: "#27272a" }} />
+                                <div>
+                                    <div style={{ fontSize: 24, fontWeight: 900, color: "#18181b", lineHeight: 1.1 }}>Weekly Calendar</div>
+                                    <div style={{ fontSize: 13, fontWeight: 600, color: "#52525b", marginTop: 3 }} data-testid="sheet-sub">{sheet.sub}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, background: GREEN, padding: "12px 22px 12px 48px", clipPath: "polygon(28px 0, 100% 0, 100% 100%, 0 100%)" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                                <Building2 size={28} style={{ color: "#ffffff", flexShrink: 0 }} />
+                                <div style={{ fontSize: 26, fontWeight: 900, color: "#ffffff", lineHeight: 1.15 }} data-testid="sheet-college">{sheet.college}</div>
+                            </div>
+                            <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 7, border: "1px solid rgba(255,255,255,.45)", borderRadius: 999, padding: "7px 14px", color: "#ffffff", fontSize: 13, fontWeight: 800 }}><CalendarDays size={15} /> {shortDmy(data.weekStart)} – {shortDmy(data.weekEnd)}</div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 7, border: "1px solid rgba(255,255,255,.45)", borderRadius: 999, padding: "7px 14px", color: "#ffffff", fontSize: 13, fontWeight: 800 }}><Layers size={15} /> {list.length} Class{list.length === 1 ? "" : "es"}</div>
+                            </div>
+                        </div>
+                    </div>
+                    {/* timetable */}
+                    <div style={{ border: `1px solid ${LINE}`, borderRadius: 12, overflow: "hidden" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                            <colgroup>
+                                <col style={{ width: 150 }} />
+                                {dates.map((d, di) => Array.from({ length: lanes[di].count }, (_, k) => <col key={`${d.date}-${k}`} />))}
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th style={{ background: GREEN, color: "#ffffff", padding: "12px 8px", fontSize: 14, fontWeight: 800, borderRight: "1px solid rgba(255,255,255,.2)" }}>
+                                        <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><CalendarDays size={16} /> Time / Day</span>
+                                    </th>
+                                    {dates.map((d, di) => (
+                                        <th key={d.date} colSpan={lanes[di].count} style={{ background: GREEN, color: "#ffffff", padding: "10px 6px", fontSize: 17, fontWeight: 900, borderRight: "1px solid rgba(255,255,255,.2)" }}>
+                                            {d.name}<div style={{ fontSize: 12.5, fontWeight: 600, color: "#d1fae5", marginTop: 2 }}>{shortDay(d.date)}</div>
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {sheetRows.map((row, rIdx) => (
+                                    <tr key={rIdx}>
+                                        <td style={{ background: "#eaf5ee", borderTop: `1px solid ${LINE}`, borderRight: `1px solid ${LINE}`, padding: "10px 12px", verticalAlign: "middle" }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13.5, fontWeight: 800, color: "#18181b", lineHeight: 1.3 }}>
+                                                <Clock size={17} style={{ flexShrink: 0, color: "#27272a" }} />
+                                                <span data-testid="sheet-time">{row.other ? <>Other times<br /><span style={{ fontSize: 11, fontWeight: 600, color: "#71717a" }}>check time</span></> : <>{hmLabel(row.from)} –<br />{hmLabel(row.to)}</>}</span>
+                                            </div>
+                                        </td>
+                                        {dates.map((d, di) => {
+                                            const L = lanes[di];
+                                            const cellStyle = (busy: boolean): React.CSSProperties => ({ borderTop: `1px solid ${LINE}`, borderRight: `1px solid ${LINE}`, padding: 6, verticalAlign: "top", background: busy ? "#f8faf9" : "#ffffff", height: 1 });
+                                            if (row.other) {
+                                                const items = invalid.filter(c => c.date === d.date);
+                                                return <td key={d.date} colSpan={L.count} data-testid="sheet-cell" data-count={items.length} style={cellStyle(false)}>{items.length ? cards(items) : <div data-testid="sheet-free" style={freeStyle}>Free</div>}</td>;
+                                            }
+                                            const running = L.groups.some(g => g.start < row.to && g.end > row.from);
+                                            if (!running) return <td key={d.date} colSpan={L.count} data-testid="sheet-cell" data-count={0} style={cellStyle(false)}><div data-testid="sheet-free" style={freeStyle}>Free</div></td>;
+                                            return Array.from({ length: L.count }, (_, k) => {
+                                                const g = L.groups.find(x => x.lane === k && x.start === row.from);
+                                                if (g) {
+                                                    const span = bounds.indexOf(g.end) - rIdx;
+                                                    // the coloured box fills the cell down to the class's end line (one class); several classes
+                                                    // starting together: a light box to the end line with their cards inside, one below the other
+                                                    const one = g.items.length === 1, p0 = pal(g.items[0].facultyId);
+                                                    return (
+                                                        <td key={`${d.date}-${k}`} rowSpan={span > 1 ? span : undefined} data-testid="sheet-cell" data-count={g.items.length} data-span={span} style={{ ...cellStyle(false), position: "relative" }}>
+                                                            <div data-testid="sheet-box" style={{ position: "absolute", inset: 6, borderRadius: 8, background: one ? p0.fill : "#f1f5f3", borderLeft: one ? `5px solid ${p0.line}` : "none", border: one ? undefined : "1px dashed #a1a1aa" }} />
+                                                            <div style={{ position: "relative" }}>{cards(g.items, one)}</div>
+                                                        </td>
+                                                    );
+                                                }
+                                                if (L.groups.some(x => x.lane === k && x.start < row.from && x.end > row.from)) return null;   // covered by a class above
+                                                return <td key={`${d.date}-${k}`} data-testid="sheet-cell" data-count={0} data-busy="1" style={cellStyle(true)} />;
+                                            });
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    {/* professors · generated on */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 14 }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, fontSize: 13 }}>
+                            {profs.length > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, color: "#27272a", background: "#f4f4f5", borderRadius: 999, padding: "6px 12px" }}><Users size={14} /> Professors:</span>}
+                            {profs.map(([id, name]) => { const p = pal(String(id)); return (
+                                <span key={String(id)} style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700, color: "#27272a", background: "#f4f4f5", borderRadius: 999, padding: "6px 12px" }}>
+                                    <span style={{ width: 14, height: 14, borderRadius: 4, background: p.fill, border: `2px solid ${p.line}` }} />{name}
+                                </span>
+                            ); })}
+                        </div>
+                        <div style={{ fontSize: 12.5, color: "#52525b", fontWeight: 600, whiteSpace: "nowrap" }}>Generated on: {gen}</div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     // ── Timetable (same look and colours as the Sprint Plan timetable). compact = all-campuses overview ──
-    const Timetable = ({ list, compact, title, badge }: { list: any[]; compact?: boolean; title?: string; badge?: string }) => {
+    const Timetable = ({ list, compact, title, badge, exportFile, sheetCollege, sheetLabel }: { list: any[]; compact?: boolean; title?: string; badge?: string; exportFile?: string; sheetCollege?: string; sheetLabel?: string }) => {
         const grid = rowsFor(list);
         const rows = grid.rows;
         const profsHere = Array.from(new Map(list.map(c => [c.facultyId, c.facultyName])).entries());
@@ -333,23 +582,38 @@ export default function WeeklyCalendarPage() {
             : Array.from(new Set([...list].sort((x, y) => (x.date + x.timeStart).localeCompare(y.date + y.timeStart)).map(c => String(c.subjectName || c.topics || "Lecture").toLowerCase())));
         const colorOf = (c: any) => CARD_COLORS[Math.max(0, colorKeys.indexOf(showProfessor ? String(c.facultyId) : String(c.subjectName || c.topics || "Lecture").toLowerCase())) % CARD_COLORS.length];
         const shortDate = (ymd: string) => new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+        const closed = !!(exportFile && !compact && closedTables[exportFile]);
         return (
-            <div className={compact ? "bg-zinc-950/40" : "rounded-2xl border border-zinc-800 bg-zinc-950/40 overflow-hidden"} data-testid="calendar-grid">
-                {!compact && <div className="px-4 py-3 border-b border-zinc-800 flex flex-wrap items-center justify-between gap-2 bg-zinc-900/60">
-                    <p className="text-sm font-bold text-white min-w-0">{title}<span className="ml-2 text-[11px] font-semibold text-zinc-500">({list.length} class{list.length === 1 ? "" : "es"})</span></p>
-                    <p className="text-[11px] text-zinc-500">{badge ? `${badge} · ` : ""}{dmy(data.weekStart)} to {dmy(data.weekEnd)}</p>
+            <div className={compact ? "bg-zinc-950/40" : "rounded-2xl border border-zinc-800 bg-zinc-950/40 overflow-hidden"} data-testid="calendar-grid" {...(exportFile && !compact ? { "data-export-root": "1" } : {})}>
+                {!compact && <div className={`px-4 py-3 ${closed ? "" : "border-b"} border-zinc-800 flex flex-wrap items-center justify-between gap-2 bg-zinc-900/60`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                        {exportFile && (
+                            <button type="button" data-export-hide="1" data-testid="table-toggle" aria-expanded={!closed} title={closed ? "Show timetable" : "Hide timetable"}
+                                onClick={() => setClosedTables(m => ({ ...m, [exportFile]: !closed }))}
+                                className="shrink-0 w-7 h-7 rounded-lg border border-zinc-700 bg-zinc-950 hover:bg-zinc-800 text-zinc-300 flex items-center justify-center">
+                                {closed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+                            </button>
+                        )}
+                        <p className="text-sm sm:text-base font-black text-white min-w-0 [overflow-wrap:anywhere]" data-testid="calendar-title">{title}</p>
+                        <span className="shrink-0 px-2.5 py-0.5 rounded-full border border-zinc-700 bg-zinc-950 text-[10.5px] font-bold text-zinc-200 tabular-nums" data-testid="calendar-count">{list.length} Class{list.length === 1 ? "" : "es"}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <p className="flex items-center gap-1.5 text-[11px] text-zinc-400">{!exportFile && badge ? `${badge} · ` : ""}<Calendar size={13} className="text-zinc-500" /> {shortDmy(data.weekStart)} – {shortDmy(data.weekEnd)}</p>
+                        {exportFile && imageButton(exportFile, list, sheetCollege || String(title || "").replace(/^Weekly Schedule — /, ""), `${modeTitle} • ${sheetLabel || "Weekly Timetable"}`)}
+                    </div>
                 </div>}
+                {!closed && (<>
                 <div className="overflow-x-auto custom-scrollbar">
                     <table className="w-full table-fixed border-separate border-spacing-0 text-xs min-w-[860px]">
                         <thead>
                             <tr>
-                                <th className="sticky left-0 z-10 bg-zinc-900 text-left px-3 py-3 text-[10px] font-black uppercase tracking-widest text-zinc-500 w-[92px] border-b border-r border-zinc-800">Time</th>
+                                <th className="sticky left-0 z-10 bg-[#0b4a2e] text-left px-3 py-3 text-[10px] font-black uppercase tracking-widest text-emerald-100 w-[92px] border-b border-r border-emerald-900">Time</th>
                                 {dates.map(d => {
                                     const isToday = d.date === today;
                                     return (
-                                        <th key={d.date} className={`text-center px-2 py-2.5 border-b border-r border-zinc-800 last:border-r-0 ${isToday ? "bg-indigo-500/15" : "bg-zinc-900/80"}`} data-testid={`wc-day-${d.code}`}>
-                                            <span className={`block text-[12px] font-bold ${isToday ? "text-indigo-200" : "text-white"}`}>{d.name}</span>
-                                            <span className={`block text-[10.5px] font-medium ${isToday ? "text-indigo-300" : "text-zinc-500"}`}>{shortDate(d.date)}{isToday ? " · Today" : ""}</span>
+                                        <th key={d.date} className={`text-center px-2 py-2.5 border-b border-r border-emerald-900 last:border-r-0 ${isToday ? "bg-emerald-700" : "bg-[#0b4a2e]"}`} data-testid={`wc-day-${d.code}`}>
+                                            <span className="block text-[12px] font-bold text-white">{d.name}</span>
+                                            <span className={`block text-[10.5px] font-medium ${isToday ? "text-emerald-50" : "text-emerald-200/80"}`}>{shortDate(d.date)}{isToday ? " · Today" : ""}</span>
                                         </th>
                                     );
                                 })}
@@ -368,11 +632,11 @@ export default function WeeklyCalendarPage() {
                                 </tr>
                             ) : (
                                 <tr key={rIdx}>
-                                    <td className={`sticky left-0 z-10 px-3 py-2.5 align-top whitespace-nowrap border-b border-r border-zinc-800 ${row.other ? "bg-zinc-800 text-zinc-300" : "bg-zinc-900 text-zinc-300"}`}>
+                                    <td className={`sticky left-0 z-10 px-3 py-2.5 align-top whitespace-nowrap border-b border-r border-zinc-800 ${row.other ? "bg-zinc-800 text-zinc-300" : "bg-[#0f2a1f] text-emerald-50"}`}>
                                         {row.label.includes(" – ") ? (
                                             <>
                                                 <span className="font-semibold text-[11px]">{row.label.split(" – ")[0]}</span>
-                                                <span className="block text-[10px] text-zinc-500">to {row.label.split(" – ")[1]}</span>
+                                                <span className="block text-[10px] text-emerald-200/70">to {row.label.split(" – ")[1]}</span>
                                             </>
                                         ) : <span className="font-semibold text-[11px]">{row.label}</span>}
                                         {row.other && <span className="block text-[9px] text-zinc-500 tracking-wider">CHECK TIME</span>}
@@ -403,9 +667,9 @@ export default function WeeklyCalendarPage() {
                                                                 return (
                                                                     <button key={c.id} onClick={() => setSelected(c)} data-testid="calendar-class" data-color={col} data-dense="1"
                                                                         title={`${c.subjectName || ""}${c.facultyName ? ` · ${c.facultyName}` : ""}\n${meta}\n${t12(c.timeStart)} – ${t12(c.timeStop)} · ${CLASS_STATUS_LABEL[st] || st}\nClick for details`}
-                                                                        className="relative w-full overflow-hidden rounded-lg border bg-zinc-900/90 pl-3 pr-2 py-1.5 text-left cursor-pointer hover:brightness-125 transition"
-                                                                        style={{ borderColor: `${col}59`, backgroundImage: `linear-gradient(135deg, ${col}14, transparent 60%)` }}>
-                                                                        <span className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: col }} />
+                                                                        className="relative w-full overflow-hidden rounded-lg border bg-zinc-900 pl-3 pr-2 py-1.5 text-left cursor-pointer hover:brightness-125 transition"
+                                                                        style={{ borderColor: `${col}80`, backgroundImage: `linear-gradient(135deg, ${col}40, ${col}1f)` }}>
+                                                                        <span className="absolute left-0 top-0 bottom-0 w-[4px]" style={{ background: col }} />
                                                                         <span className="flex items-center gap-1.5 min-w-0">
                                                                             <Icon size={12} className="shrink-0" style={{ color: col }} />
                                                                             <span className="text-[11.5px] font-black leading-tight text-white truncate min-w-0">{c.subjectName || c.topics || "Lecture"}</span>
@@ -421,9 +685,9 @@ export default function WeeklyCalendarPage() {
                                                             return (
                                                                 <button key={c.id} onClick={() => setSelected(c)} data-testid="calendar-class" data-color={col}
                                                                     title={`${t12(c.timeStart)} – ${t12(c.timeStop)} · ${c.subjectName || ""} · ${c.facultyName || ""} — click for details`}
-                                                                    className="relative w-full flex-1 overflow-hidden rounded-xl border bg-zinc-900/90 pl-3.5 pr-2.5 py-2.5 text-left cursor-pointer hover:brightness-125 transition"
-                                                                    style={{ borderColor: `${col}59`, backgroundImage: `linear-gradient(135deg, ${col}14, transparent 60%)` }}>
-                                                                    <span className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: col }} />
+                                                                    className="relative w-full flex-1 overflow-hidden rounded-xl border bg-zinc-900 pl-3.5 pr-2.5 py-2.5 text-left cursor-pointer hover:brightness-125 transition"
+                                                                    style={{ borderColor: `${col}80`, backgroundImage: `linear-gradient(135deg, ${col}40, ${col}1f)` }}>
+                                                                    <span className="absolute left-0 top-0 bottom-0 w-[4px]" style={{ background: col }} />
                                                                     <span className="flex items-start gap-1.5 min-w-0">
                                                                         <span className="shrink-0 w-5 h-5 rounded-md border flex items-center justify-center" style={{ color: col, background: `${col}26`, borderColor: `${col}59` }}><Icon size={12} /></span>
                                                                         <span lang="en" className="text-[12px] font-black leading-snug text-white break-words hyphens-auto min-w-0">{c.subjectName || c.topics || "Lecture"}</span>
@@ -458,6 +722,7 @@ export default function WeeklyCalendarPage() {
                         <span className="sm:ml-auto text-[11px] text-zinc-500">Small label on a class = its class-record status. Click any class to see full details.</span>
                     </div>
                 )}
+                </>)}
             </div>
         );
     };
@@ -465,128 +730,140 @@ export default function WeeklyCalendarPage() {
     return (
         <div className="max-w-[1400px] mx-auto pt-6 pb-16 px-4 sm:px-6 space-y-4 w-full [contain:inline-size]">
             {/* ── Header ── */}
-            <div className="relative overflow-hidden rounded-3xl border border-indigo-500/20 bg-gradient-to-r from-indigo-950/70 via-zinc-900 to-emerald-950/50 p-5 sm:p-6">
-                <div className="absolute -top-20 -left-10 w-64 h-64 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
-                <div className="relative flex flex-col xl:flex-row xl:items-center gap-4">
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 sm:p-5" data-testid="wc-header">
+                <div className="flex flex-col lg:flex-row lg:items-center gap-4">
                     <div className="flex items-center gap-4 min-w-0 flex-1">
-                        <div className="shrink-0 w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center"><CalendarDays size={24} className="text-indigo-300" /></div>
+                        <div className="shrink-0 w-12 h-12 rounded-2xl bg-zinc-950 border border-zinc-700 flex items-center justify-center"><CalendarDays size={24} className="text-zinc-200" /></div>
                         <div className="min-w-0">
                             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Weekly Calendar</h1>
-                            <p className="text-xs sm:text-sm text-zinc-400">From submitted sprint plans · {multiCampusView && campus !== "ALL" ? campusName(campus) : campusList.length > 1 ? "Manage schedules across campuses" : (campusList[0]?.name || "your college")}</p>
+                            <p className="text-xs sm:text-sm text-zinc-400 truncate">View and manage weekly teaching schedules.</p>
                         </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                        <button onClick={() => setWeek(w => shiftWeek(w, -1))} title="Previous week" className="p-2.5 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 border border-zinc-700"><ArrowLeft size={16} /></button>
+                        <button onClick={() => setWeek(w => shiftWeek(w, -1))} title="Previous week" className="p-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-zinc-300 border border-zinc-700"><ArrowLeft size={16} /></button>
                         <div className="relative">
                             <select value={weekPreset} onChange={e => { const v = e.target.value; setWeek(shiftWeek(istToday(), v === "last" ? -1 : v === "next" ? 1 : 0)); }}
-                                className="appearance-none pl-3 pr-8 py-2.5 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-xs font-bold text-white cursor-pointer outline-none" data-testid="week-preset">
+                                className="appearance-none pl-3.5 pr-9 py-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 border border-zinc-700 text-xs font-bold text-white cursor-pointer outline-none" data-testid="week-preset">
                                 <option value="this">This Week</option>
                                 <option value="last">Last Week</option>
                                 <option value="next">Next Week</option>
                                 {weekPreset === "other" && <option value="other">Other Week</option>}
                             </select>
-                            <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                            <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
                         </div>
-                        <label className="relative flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-xs font-black text-white whitespace-nowrap cursor-pointer" data-testid="week-range" title="Pick any date to jump to its week">
-                            <Calendar size={14} className="text-indigo-300" /> {data ? `${dmy(data.weekStart)} – ${dmy(data.weekEnd)}` : "…"}
+                        <label className="relative flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 border border-zinc-700 text-xs font-black text-white whitespace-nowrap cursor-pointer" data-testid="week-range" title="Pick any date to jump to its week">
+                            <Calendar size={14} className="text-zinc-300" /> {data ? `${shortDmy(data.weekStart)} – ${shortDmy(data.weekEnd)}` : "…"}
                             <input type="date" value={week} onChange={e => e.target.value && setWeek(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer [color-scheme:dark]" aria-label="Pick a week" />
                         </label>
-                        <button onClick={() => setWeek(w => shiftWeek(w, 1))} title="Next week" className="p-2.5 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 border border-zinc-700"><ArrowRight size={16} /></button>
-                        <button onClick={load} title="Refresh" className="p-2.5 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 border border-zinc-700"><RefreshCw size={16} className={loading ? "animate-spin" : ""} /></button>
-                    </div>
-                    {/* decorative */}
-                    <div className="hidden 2xl:flex items-end gap-2 select-none" aria-hidden>
-                        <svg width="74" height="58" viewBox="0 0 74 58" fill="none">
-                            <path d="M50 40 C44 28 48 14 58 6 C56 20 58 30 58 40Z" fill="#34d399" opacity=".6" />
-                            <path d="M58 40 C58 24 64 12 74 6 C68 20 66 30 64 40Z" fill="#10b981" opacity=".75" />
-                            <rect x="48" y="38" width="20" height="16" rx="3" fill="#0e7490" />
-                            <rect x="2" y="44" width="44" height="10" rx="2" fill="#0f766e" /><rect x="5" y="35" width="40" height="9" rx="2" fill="#be185d" opacity=".85" /><rect x="1" y="27" width="42" height="8" rx="2" fill="#1d4ed8" opacity=".85" />
-                        </svg>
-                        <p className="text-emerald-100/80 text-sm leading-4 -rotate-6 pb-2" style={{ fontFamily: "'Brush Script MT', 'Segoe Script', cursive" }}>Plan · Track<br />Teach · Grow</p>
+                        <button onClick={() => setWeek(w => shiftWeek(w, 1))} title="Next week" className="p-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-zinc-300 border border-zinc-700"><ArrowRight size={16} /></button>
+                        <button onClick={load} title="Refresh" className="p-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-zinc-300 border border-zinc-700"><RefreshCw size={16} className={loading ? "animate-spin" : ""} /></button>
                     </div>
                 </div>
             </div>
 
-            {/* ── Filters ── */}
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-5" data-testid="filter-panel">
-                <div className="flex items-start gap-3">
-                    <div className="hidden sm:flex shrink-0 w-9 h-9 mt-5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 items-center justify-center"><Filter size={15} className="text-indigo-300" /></div>
-                    <div className={`flex-1 grid grid-cols-2 md:grid-cols-4 gap-3 ${showProfessor ? "xl:grid-cols-[1.7fr_repeat(7,minmax(0,1fr))]" : "xl:grid-cols-4"}`}>
-                        {showProfessor && field("Professor", Users, (
-                            <select value={draftFaculty} onChange={e => setDraftFaculty(e.target.value)} data-testid="filter-professor" className={fieldCls}>
-                                <option value="All">All Professors</option>
-                                {(data?.professors || []).filter((p: any) => campus === "ALL" || (campusList.find(x => x.id === campus)?.keys || []).includes(String(p.location || ""))).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
-                        ))}
-                        {sel("day", "Day", CalendarDays, DAYS.map(d => d.code))}
-                        {sel("subject", "Subject", BookOpen, options.subject)}
-                        {sel("className", "Class", GraduationCap, options.className)}
-                        {sel("section", "Section", LayoutGrid, options.section)}
-                        {showProfessor && sel("branch", "Branch", GitBranch, options.branch)}
-                        {showProfessor && sel("year", "Year", Calendar, options.year)}
-                        {showProfessor && sel("semester", "Semester", Layers, options.semester)}
+            {/* ── Filters (one row on wide screens: filters · Apply · Reset · Download) ── */}
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4" data-testid="filter-panel">
+                <div className="flex flex-col min-[1400px]:flex-row min-[1400px]:items-end gap-3 min-[1400px]:gap-2">
+                    <div className="flex items-end gap-3 xl:gap-2 flex-1 min-w-0">
+                        <div className="hidden sm:flex xl:hidden 2xl:flex shrink-0 w-9 h-9 rounded-xl bg-zinc-950 border border-zinc-700 items-center justify-center"><Filter size={15} className="text-zinc-300" /></div>
+                        <div className={`flex-1 min-w-0 grid grid-cols-2 md:grid-cols-4 gap-3 xl:gap-2 ${showProfessor ? "xl:grid-cols-[1.25fr_repeat(7,minmax(0,1fr))]" : "xl:grid-cols-4"}`}>
+                            {showProfessor && field("Professor", Users, (
+                                <select value={draftFaculty} onChange={e => setDraftFaculty(e.target.value)} data-testid="filter-professor" className={fieldCls}>
+                                    <option value="All">All Professors</option>
+                                    {(data?.professors || []).filter((p: any) => campus === "ALL" || (campusList.find(x => x.id === campus)?.keys || []).includes(String(p.location || ""))).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                            ))}
+                            {sel("day", "Day", CalendarDays, DAYS.map(d => d.code))}
+                            {sel("subject", "Subject", BookOpen, options.subject)}
+                            {sel("className", "Class", GraduationCap, options.className)}
+                            {sel("section", "Section", LayoutGrid, options.section)}
+                            {showProfessor && sel("branch", "Branch", GitBranch, options.branch)}
+                            {showProfessor && sel("year", "Year", Calendar, options.year)}
+                            {showProfessor && sel("semester", "Semester", Layers, options.semester)}
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-2 shrink-0">
+                        <button onClick={applyFilters} data-testid="apply-filters" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black active:scale-95"><SlidersHorizontal size={14} /> Apply Filters{pendingChanges ? " •" : ""}</button>
+                        <button onClick={resetFilters} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-zinc-200 border border-zinc-700 text-xs font-black active:scale-95"><RotateCcw size={14} /> Reset</button>
+                        <div className="relative">
+                            <button onClick={() => setDlOpen(o => !o)} disabled={pdfBusy} data-testid="download-report" title="Download PDF / Excel" className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-zinc-200 border border-zinc-700 text-xs font-black active:scale-95 disabled:opacity-60">
+                                {pdfBusy && !exportMsg ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} <span className="xl:hidden 2xl:inline">Download</span> <ChevronDown size={13} className={`transition-transform ${dlOpen ? "rotate-180" : ""}`} />
+                            </button>
+                            {dlOpen && (
+                                <>
+                                    <div className="fixed inset-0 z-30" onClick={() => setDlOpen(false)} />
+                                    <div className="absolute right-0 mt-2 z-40 w-60 rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-1.5" data-testid="download-menu">
+                                        <button onClick={downloadPdf} data-testid="download-pdf" className="w-full flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-zinc-800 text-left">
+                                            <FileText size={15} className="text-rose-300 mt-0.5 shrink-0" />
+                                            <span><span className="block text-xs font-bold text-white">Download PDF</span><span className="block text-[10px] text-zinc-500">Colourful calendar, one page per campus</span></span>
+                                        </button>
+                                        <button onClick={() => { setDlOpen(false); downloadReport(); }} data-testid="download-excel" className="w-full flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-zinc-800 text-left">
+                                            <FileSpreadsheet size={15} className="text-emerald-300 mt-0.5 shrink-0" />
+                                            <span><span className="block text-xs font-bold text-white">Download Excel</span><span className="block text-[10px] text-zinc-500">All classes as rows (.xlsx)</span></span>
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     </div>
                 </div>
-                <div className="flex flex-wrap justify-end gap-2 mt-4">
-                    <button onClick={applyFilters} data-testid="apply-filters" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black active:scale-95"><SlidersHorizontal size={14} /> Apply Filters{pendingChanges ? " •" : ""}</button>
-                    <button onClick={resetFilters} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-black active:scale-95"><RotateCcw size={14} /> Reset</button>
-                    <div className="relative">
-                        <button onClick={() => setDlOpen(o => !o)} disabled={pdfBusy} data-testid="download-report" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-black active:scale-95 disabled:opacity-60">
-                            {pdfBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Download <ChevronDown size={13} className={`transition-transform ${dlOpen ? "rotate-180" : ""}`} />
+            </div>
+
+            {/* ── Campus chips (+ My / College tabs for professors) ── */}
+            <div className="flex flex-wrap items-center gap-2" data-testid="campus-chips">
+                {isProf && (
+                    <div className="flex gap-1 p-1 rounded-xl bg-zinc-900 border border-zinc-800 mr-1">
+                        <button onClick={() => { setView("mine"); setFacultyId("All"); setDraftFaculty("All"); }} data-testid="tab-mine" className={`px-3 py-1.5 rounded-lg text-[11px] font-black ${view === "mine" ? "bg-indigo-500 text-white" : "text-zinc-400 hover:text-white"}`}>My Schedule</button>
+                        <button onClick={() => setView("college")} data-testid="tab-college" className={`px-3 py-1.5 rounded-lg text-[11px] font-black ${view === "college" ? "bg-indigo-500 text-white" : "text-zinc-400 hover:text-white"}`}>College Schedule</button>
+                    </div>
+                )}
+                {multiCampusView && campusList.length > 0 && (
+                    <>
+                        <button onClick={() => { setCampus("ALL"); setFacultyId("All"); setDraftFaculty("All"); }} data-testid="chip-all"
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-black transition-all ${campus === "ALL" ? "bg-emerald-500/20 border-emerald-400/60 text-emerald-200" : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"}`}>
+                            <Network size={14} /> All Campuses
                         </button>
-                        {dlOpen && (
-                            <>
-                                <div className="fixed inset-0 z-30" onClick={() => setDlOpen(false)} />
-                                <div className="absolute right-0 mt-2 z-40 w-60 rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-1.5" data-testid="download-menu">
-                                    <button onClick={downloadPdf} data-testid="download-pdf" className="w-full flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-zinc-800 text-left">
-                                        <FileText size={15} className="text-rose-300 mt-0.5 shrink-0" />
-                                        <span><span className="block text-xs font-bold text-white">Download PDF</span><span className="block text-[10px] text-zinc-500">Colourful calendar, one page per campus</span></span>
-                                    </button>
-                                    <button onClick={() => { setDlOpen(false); downloadReport(); }} data-testid="download-excel" className="w-full flex items-start gap-2.5 px-3 py-2 rounded-lg hover:bg-zinc-800 text-left">
-                                        <FileSpreadsheet size={15} className="text-emerald-300 mt-0.5 shrink-0" />
-                                        <span><span className="block text-xs font-bold text-white">Download Excel</span><span className="block text-[10px] text-zinc-500">All classes as rows (.xlsx)</span></span>
-                                    </button>
-                                </div>
-                            </>
-                        )}
-                    </div>
-                </div>
+                        {campusList.map((cp, i) => {
+                            const a = CAMPUS_ACCENTS[i % CAMPUS_ACCENTS.length];
+                            const active = campus === cp.id;
+                            const n = shown.filter(c => campusOf(c) === cp.id).length;
+                            return (
+                                <button key={cp.id} onClick={() => { setCampus(cp.id); setFacultyId("All"); setDraftFaculty("All"); }} data-testid="chip-campus"
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-black transition-all ${active ? a.chipActive : a.chipIdle}`}>
+                                    <Building2 size={14} /> {cp.name}
+                                    <span className={`px-1.5 rounded-md text-[10px] ${active ? "bg-black/20" : "bg-zinc-800"} tabular-nums`}>{n}</span>
+                                </button>
+                            );
+                        })}
+                    </>
+                )}
             </div>
 
-            {/* ── Campus switch (left) + My/College tabs + Calendar / List view (right) ── */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2" data-testid="campus-chips">
-                    {isProf && (
-                        <div className="flex gap-1 p-1 rounded-xl bg-zinc-900 border border-zinc-800 mr-1">
-                            <button onClick={() => { setView("mine"); setFacultyId("All"); setDraftFaculty("All"); }} data-testid="tab-mine" className={`px-3 py-1.5 rounded-lg text-[11px] font-black ${view === "mine" ? "bg-indigo-500 text-white" : "text-zinc-400 hover:text-white"}`}>My Schedule</button>
-                            <button onClick={() => setView("college")} data-testid="tab-college" className={`px-3 py-1.5 rounded-lg text-[11px] font-black ${view === "college" ? "bg-indigo-500 text-white" : "text-zinc-400 hover:text-white"}`}>College Schedule</button>
+            {/* ── Calendar / List view · View Mode · Download Complete Calendar ── */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/50 px-3 py-2.5" data-testid="mode-bar-row">
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                    <div className="flex gap-1 p-1 rounded-xl bg-zinc-950 border border-zinc-800">
+                        <button onClick={() => setLayout("grid")} data-testid="view-calendar" className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black ${layout === "grid" ? "bg-emerald-600 text-white" : "text-zinc-400 hover:text-white"}`}><LayoutGrid size={13} /> Calendar View</button>
+                        <button onClick={() => setLayout("list")} data-testid="view-list" className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black ${layout === "list" ? "bg-emerald-600 text-white" : "text-zinc-400 hover:text-white"}`}><List size={13} /> List View</button>
+                    </div>
+                    {canGroup && (
+                        <div className="flex flex-wrap items-center gap-2" data-testid="mode-bar">
+                            <span className="text-[11px] font-semibold text-zinc-400">View Mode:</span>
+                            <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-zinc-950 border border-zinc-800" role="tablist">
+                                {VIEW_MODES.map(m => (
+                                    <button key={m.key} role="tab" aria-selected={mode === m.key} onClick={() => { setMode(m.key); setLayout("grid"); }} data-testid={`mode-${m.key}`}
+                                        className={`px-3 py-1.5 rounded-lg text-[11px] font-black ${mode === m.key ? "bg-emerald-600 text-white" : "text-zinc-300 hover:text-white"}`}>{m.label}</button>
+                                ))}
+                            </div>
                         </div>
                     )}
-                    {multiCampusView && campusList.length > 0 && (
-                        <>
-                            <button onClick={() => { setCampus("ALL"); setFacultyId("All"); setDraftFaculty("All"); }} data-testid="chip-all"
-                                className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-black transition-all ${campus === "ALL" ? "bg-emerald-500/20 border-emerald-400/60 text-emerald-200 shadow-[0_0_18px_rgba(16,185,129,0.18)]" : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white"}`}>
-                                <Network size={14} /> Show All Campuses
-                            </button>
-                            {campusList.map((cp, i) => {
-                                const a = CAMPUS_ACCENTS[i % CAMPUS_ACCENTS.length];
-                                const active = campus === cp.id;
-                                const n = shown.filter(c => campusOf(c) === cp.id).length;
-                                return (
-                                    <button key={cp.id} onClick={() => { setCampus(cp.id); setFacultyId("All"); setDraftFaculty("All"); }} data-testid="chip-campus"
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-black transition-all ${active ? a.chipActive : a.chipIdle}`}>
-                                        <Building2 size={14} /> {cp.name}
-                                        <span className={`px-1.5 rounded-md text-[10px] ${active ? "bg-black/20" : "bg-zinc-800"} tabular-nums`}>{n}</span>
-                                    </button>
-                                );
-                            })}
-                        </>
-                    )}
                 </div>
-                <div className="flex gap-1 p-1 rounded-xl bg-zinc-900 border border-zinc-800">
-                    <button onClick={() => setLayout("grid")} data-testid="view-calendar" className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black ${layout === "grid" ? "bg-emerald-600 text-white" : "text-zinc-400 hover:text-white"}`}><LayoutGrid size={13} /> Calendar View</button>
-                    <button onClick={() => setLayout("list")} data-testid="view-list" className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black ${layout === "list" ? "bg-emerald-600 text-white" : "text-zinc-400 hover:text-white"}`}><List size={13} /> List View</button>
-                </div>
+                {canGroup && (
+                    <button onClick={downloadComplete} disabled={pdfBusy || !data} data-testid="download-complete"
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black active:scale-95 disabled:opacity-60">
+                        {pdfBusy && exportMsg ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} {exportMsg || "Download Complete Calendar"}
+                    </button>
+                )}
             </div>
 
             {notice && <div className="rounded-xl px-4 py-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">{notice}</div>}
@@ -619,6 +896,31 @@ export default function WeeklyCalendarPage() {
                         );
                     })}
                 </div>
+            ) : canGroup && mode !== "full" ? (
+                /* Year-Wise / Semester-Wise: one timetable per year / semester, one below the other (per college) */
+                <div className="space-y-6" data-testid="group-sections" data-mode={mode}>
+                    {campusesInView.map((cp, i) => {
+                        const list = classesOf(cp.id);
+                        const groups = groupClasses(list, mode);
+                        const a = CAMPUS_ACCENTS[i % CAMPUS_ACCENTS.length];
+                        const tables = groups.map(g => (
+                            <div key={g.key} data-testid="group-table" data-group={g.label}>
+                                <Timetable list={g.list} title={`${cp.name} — ${g.label}`} exportFile={imageFile(cp.id, g.label)} sheetCollege={cp.name} sheetLabel={g.label} />
+                            </div>
+                        ));
+                        if (singleSection) return <div key={cp.id} className="space-y-4">{tables.length ? tables : <p className="py-10 text-center text-xs text-zinc-500">No classes this week.</p>}</div>;
+                        return (
+                            <section key={cp.id} className={`rounded-2xl border-2 ${a.border} bg-zinc-950/40 overflow-hidden`} data-testid="group-college">
+                                <div className={`flex flex-wrap items-center gap-3 px-4 py-3 ${a.headBg}`}>
+                                    <span className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${a.iconBg}`}><Building2 size={18} className={a.text} /></span>
+                                    <h2 className="text-base sm:text-lg font-black text-white truncate">{cp.name}</h2>
+                                    <span className={`shrink-0 px-2.5 py-0.5 rounded-full border text-[10px] font-black ${a.pill}`}>{groups.length && list.length ? `${groups.length} ${mode === "year" ? "year" : "semester"}${groups.length === 1 ? "" : "s"}` : "No classes"}</span>
+                                </div>
+                                {list.length === 0 ? <p className="px-4 py-6 text-center text-xs text-zinc-500">No classes at this campus this week.</p> : <div className="p-3 sm:p-4 space-y-4">{tables}</div>}
+                            </section>
+                        );
+                    })}
+                </div>
             ) : multiCampusView && campus === "ALL" ? (
                 /* All campuses: one compact timetable per campus, one below the other */
                 <div className="space-y-4" data-testid="campus-sections">
@@ -626,17 +928,21 @@ export default function WeeklyCalendarPage() {
                         const list = shown.filter(c => campusOf(c) === cp.id);
                         const a = CAMPUS_ACCENTS[i % CAMPUS_ACCENTS.length];
                         return (
-                            <section key={cp.id} className={`rounded-2xl border-2 ${a.border} bg-zinc-950/40 overflow-hidden`} data-testid="campus-section">
+                            <section key={cp.id} className={`rounded-2xl border-2 ${a.border} bg-zinc-950/40 overflow-hidden`} data-testid="campus-section" {...(canGroup && list.length ? { "data-export-root": "1" } : {})}>
                                 <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 ${a.headBg}`}>
                                     <div className="flex items-center gap-3 min-w-0">
                                         <span className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${a.iconBg}`}><Building2 size={18} className={a.text} /></span>
                                         <h2 className="text-base sm:text-lg font-black text-white truncate">{cp.name}</h2>
                                         <span className={`shrink-0 px-2.5 py-0.5 rounded-full border text-[10px] font-black ${a.pill}`}>{list.length} class{list.length === 1 ? "" : "es"}</span>
+                                        {canGroup && <span className="shrink-0 text-[11px] text-zinc-400">{weekText}</span>}
                                     </div>
-                                    <button onClick={() => { setCampus(cp.id); setFacultyId("All"); window.scrollTo({ top: 0, behavior: "smooth" }); }} data-testid="view-campus"
-                                        className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border text-[11px] font-black transition-all hover:brightness-125 ${a.btn}`}>
-                                        View Campus Details <ArrowRight size={13} />
-                                    </button>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        {canGroup && list.length > 0 && imageButton(imageFile(cp.id, "Full_College"), list, cp.name, "Full College • Weekly Timetable")}
+                                        <button onClick={() => { setCampus(cp.id); setFacultyId("All"); window.scrollTo({ top: 0, behavior: "smooth" }); }} data-testid="view-campus" data-export-hide="1"
+                                            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border text-[11px] font-black transition-all hover:brightness-125 ${a.btn}`}>
+                                            View Campus Details <ArrowRight size={13} />
+                                        </button>
+                                    </div>
                                 </div>
                                 {list.length === 0 ? (
                                     <p className="px-4 py-6 text-center text-xs text-zinc-500">No classes at this campus this week.</p>
@@ -647,8 +953,12 @@ export default function WeeklyCalendarPage() {
                 </div>
             ) : (
                 <Timetable list={shownCampus} title={view === "mine" ? `My Weekly Schedule — ${user.name}` : `Weekly Schedule — ${multiCampusView && campus !== "ALL" ? campusName(campus) : collegeTitle}`}
-                    badge={multiCampusView && campus !== "ALL" ? campusName(campus) : collegeTitle} />
+                    badge={multiCampusView && campus !== "ALL" ? campusName(campus) : collegeTitle}
+                    exportFile={view === "mine" ? imageFile(MINE, "Full_Week") : canGroup && campus !== "ALL" ? imageFile(campus, "Full_College") : undefined}
+                    sheetCollege={view === "mine" ? `My Weekly Schedule — ${user.name}` : campus !== "ALL" ? campusName(campus) : collegeTitle} />
             )}
+
+            {renderSheet()}
 
             {selected && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[120] flex items-center justify-center p-4" onClick={() => setSelected(null)}>

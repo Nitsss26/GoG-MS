@@ -21,9 +21,9 @@ async function canRate(session: { userId: string; email: string; role: string },
     switch (session.role) {
         case 'CURRICULUM_HEAD': return ['CURRICULUM_LEAD', 'FACULTY', 'PROFESSOR'].includes(role);
         case 'CURRICULUM_LEAD': return ['FACULTY', 'PROFESSOR'].includes(role);
-        case 'AD': return isReportee && ['HOI', 'FACULTY', 'PROFESSOR', 'OM', 'MARKETING_TEAM', 'TECH_TEAM', 'CURRICULUM_HEAD', 'CURRICULUM_LEAD'].includes(role);
+        case 'AD': return isReportee && ['HOI', 'FACULTY', 'PROFESSOR', 'OM', 'MARKETING_TEAM', 'TECH_TEAM', 'PLACEMENT_INTERN_HEAD', 'CURRICULUM_HEAD', 'CURRICULUM_LEAD'].includes(role);
         case 'HOI': {
-            if (!['FACULTY', 'PROFESSOR', 'OM', 'MARKETING_TEAM', 'TECH_TEAM'].includes(role)) return false;
+            if (!['FACULTY', 'PROFESSOR', 'OM', 'MARKETING_TEAM', 'TECH_TEAM', 'PLACEMENT_INTERN_HEAD'].includes(role)) return false;
             if (isReportee) return true;
             const hasAssignedHOI = assigned.length > 0 && !!(await Employee.exists({ id: { $in: assigned }, role: 'HOI' }));
             return !hasAssignedHOI && !!actor.location && target.location === actor.location;

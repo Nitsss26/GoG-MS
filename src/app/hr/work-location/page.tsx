@@ -8,7 +8,7 @@ import AssignManagerTab from "@/components/hr/AssignManagerTab";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // Roles that appear in an HOI's employee/faculty list
-const HOI_ASSIGNABLE_ROLES = ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM"];
+const HOI_ASSIGNABLE_ROLES = ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM", "PLACEMENT_INTERN_HEAD"];
 
 // HR version of the manager "Work Location Assignment" screen (src/app/manager/work-location).
 // Same UI and same save logic; the only difference is that HR can pick any employee.
@@ -17,7 +17,7 @@ const HOI_ASSIGNABLE_ROLES = ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "T
 /** Designation shown under the name: designation → designation from the onboarding form → role (never "No Designation" when the role is known) */
 const ROLE_TITLE: Record<string, string> = {
     FOUNDER: "Founder", HR: "HR", HR_EXECUTIVE: "HR Executive", AD: "AD", TL: "Tech Lead", HOI: "HOI", OM: "Operations Manager", FACULTY: "Professor", PROFESSOR: "Professor",
-    MARKETING_TEAM: "Marketing Team", TECH_TEAM: "Tech Team", TECH_INTERN: "Tech Intern", CURRICULUM_HEAD: "Curriculum Head", CURRICULUM_LEAD: "Curriculum Lead",
+    MARKETING_TEAM: "Marketing Team", TECH_TEAM: "Tech Team", PLACEMENT_INTERN_HEAD: "Placement & Intern Head", TECH_INTERN: "Tech Intern", CURRICULUM_HEAD: "Curriculum Head", CURRICULUM_LEAD: "Curriculum Lead",
 };
 /**
  * HOI only — one weekday (repeats every week): several allowed clock-in colleges (from the HOI's assigned clock-in

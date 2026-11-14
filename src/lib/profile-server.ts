@@ -89,6 +89,7 @@ export async function profilePayload(emp: any, actor: Actor) {
         missing: missingItems(emp), profileStatus: profileStatus(emp),
         editable: editableFields(actor, emp.id).map(f => f.key),
         editableDocs: editableDocs(actor, emp.id).map(d => d.key),
+        canChangePhoto: canManageProfiles(actor),
         // Performance Metrics are shown read-only (never editable here)
         metrics: { chancesRemaining: emp.chancesRemaining ?? null, markPresentUsed: emp.markPresentUsed ?? 0 },
     };
@@ -101,7 +102,7 @@ export class ProfileError extends Error { constructor(public status: number, msg
  * Older field names that the record still uses are kept in step, and the change is written to the employee's
  * existing activity log (who, when, which fields — bank / identity values themselves are not logged).
  */
-export async function applyProfileEdit(actor: Actor, targetId: string, body: { fields?: Record<string, any>; documents?: Record<string, any> }) {
+export async function applyProfileEdit(actor: Actor, targetId: string, body: { fields?: Record<string, any>; documents?: Record<string, any>; photoUrl?: any }) {
     if (!canView(actor, targetId)) throw new ProfileError(403, 'You can only edit your own profile.');
     const emp: any = await Employee.findOne({ id: targetId, isRemoved: { $ne: true } }).lean();
     if (!emp) throw new ProfileError(404, 'Employee not found.');
@@ -144,6 +145,14 @@ export async function applyProfileEdit(actor: Actor, targetId: string, body: { f
         if (v === readField(emp, d)) continue;
         setWithNames(d, v);
         changed.push(`${d.label} (${readField(emp, d) ? 'replaced' : 'uploaded'})`);
+    }
+    // Profile photo (shown everywhere: sidebar, directory, org chart, celebrations): HR / HR Executive / Founder may replace it
+    if (body.photoUrl !== undefined) {
+        if (!canManageProfiles(actor)) throw new ProfileError(403, 'Only HR can change another employee\'s photo.');
+        const v = String(body.photoUrl ?? '').trim();
+        if (!v) errors.push('Profile photo: choose an image to upload.');
+        else if (!/^https:\/\/[^\s"'<>]+$/i.test(v)) errors.push('Profile photo: upload failed (invalid file link).');
+        else if (v !== String(emp.photoUrl || '')) { $set.photoUrl = v; changed.push(emp.photoUrl ? 'Profile Photo (replaced)' : 'Profile Photo (uploaded)'); }
     }
     if (errors.length) throw new ProfileError(400, errors.join(' '));
     if (!changed.length) return { changed: [], employee: emp };

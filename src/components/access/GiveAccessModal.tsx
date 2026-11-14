@@ -16,7 +16,7 @@ type Mode = "SELECTED" | "ALL" | "ALL_DYNAMIC";
 
 const CAT_LABEL: Record<string, string> = {
     FOUNDER: "Founder", HR: "HR", AD: "AD", HOI: "HOI", PROFESSOR: "Professor", OM: "OM", CURRICULUM_LEAD: "CL", CURRICULUM_HEAD: "CH",
-    TL: "Tech Lead", TECH_TEAM: "Tech Team", MARKETING_TEAM: "Marketing",
+    TL: "Tech Lead", TECH_TEAM: "Tech Team", PLACEMENT_INTERN_HEAD: "Placement & Intern Head", MARKETING_TEAM: "Marketing",
 };
 const label = (c: string) => CAT_LABEL[c] || c.replace(/_/g, " ");
 const ICON: Record<string, any> = {

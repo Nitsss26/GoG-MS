@@ -424,7 +424,7 @@ export default function CampusDailyMoMPage() {
     );
 }
 
-const ROLE_TEXT: Record<string, string> = { HR: "HR Administrator", FOUNDER: "Founder", AD: "Associate Director", HOI: "Head of Institute", OM: "Operations Manager", TL: "Tech Lead", CURRICULUM_LEAD: "Curriculum Lead", CURRICULUM_HEAD: "Curriculum Head", PROFESSOR: "Professor", FACULTY: "Faculty", HR_EXECUTIVE: "HR Executive", TECH_TEAM: "Tech Team", MARKETING_TEAM: "Marketing Team" };
+const ROLE_TEXT: Record<string, string> = { HR: "HR Administrator", FOUNDER: "Founder", AD: "Associate Director", HOI: "Head of Institute", OM: "Operations Manager", TL: "Tech Lead", CURRICULUM_LEAD: "Curriculum Lead", CURRICULUM_HEAD: "Curriculum Head", PROFESSOR: "Professor", FACULTY: "Faculty", HR_EXECUTIVE: "HR Executive", TECH_TEAM: "Tech Team", PLACEMENT_INTERN_HEAD: "Placement & Intern Head", MARKETING_TEAM: "Marketing Team" };
 function roleText(r?: string) { return (r && ROLE_TEXT[r]) || r || ""; }
 
 function CardHead({ icon, title, desc, tone = "emerald" }: { icon: React.ReactNode; title: string; desc: string; tone?: "emerald" | "rose" | "zinc" }) {

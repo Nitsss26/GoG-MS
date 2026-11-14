@@ -10,7 +10,7 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 /** Designation shown under the name: designation → designation from the onboarding form → role (never "No Designation" when the role is known) */
 const ROLE_TITLE: Record<string, string> = {
     FOUNDER: "Founder", HR: "HR", HR_EXECUTIVE: "HR Executive", AD: "AD", TL: "Tech Lead", HOI: "HOI", OM: "Operations Manager", FACULTY: "Professor", PROFESSOR: "Professor",
-    MARKETING_TEAM: "Marketing Team", TECH_TEAM: "Tech Team", CURRICULUM_HEAD: "Curriculum Head", CURRICULUM_LEAD: "Curriculum Lead",
+    MARKETING_TEAM: "Marketing Team", TECH_TEAM: "Tech Team", PLACEMENT_INTERN_HEAD: "Placement & Intern Head", CURRICULUM_HEAD: "Curriculum Head", CURRICULUM_LEAD: "Curriculum Lead",
 };
 const designationOf = (e: any) => String(e?.designation || e?.current_designation_at_gog || "").trim() || ROLE_TITLE[e?.role] || e?.role || "No Designation";
 

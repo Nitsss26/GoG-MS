@@ -55,7 +55,7 @@ export default function LeaderboardPage() {
         return stats
             .filter(s => {
                 const r = s.emp?.role?.toUpperCase();
-                return r === "OM" || r === "MARKETING_TEAM" || r === "TECH_TEAM";
+                return r === "OM" || r === "MARKETING_TEAM" || r === "TECH_TEAM" || r === "PLACEMENT_INTERN_HEAD";
             })
             .sort((a, b) => b.totalPoints - a.totalPoints || a.flagsCount - b.flagsCount);
     }, [stats]);
@@ -553,6 +553,7 @@ const roleLabel = (emp: any) =>
         emp?.role === "OM" ? "Operation Manager" :
             emp?.role === "MARKETING_TEAM" ? "Marketing Team" :
                 emp?.role === "TECH_TEAM" ? "Tech Team" :
+                emp?.role === "PLACEMENT_INTERN_HEAD" ? "Placement & Intern Head" :
                     emp?.role === "PROFESSOR" ? "Professor" :
                         emp?.designation || "Faculty";
 

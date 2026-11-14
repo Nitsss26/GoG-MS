@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Search, ShieldAlert, Eye, FileSpreadsheet, FileDown, Loader2, ChevronLeft, ChevronRight, RefreshCw, BookUser, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchReport, tablePdf, tableExcel, fileNames } from "@/lib/report-export";
-import EmployeeSheet from "@/components/directory/EmployeeSheet";
+import { useRouter } from "next/navigation";
 import { useMinWidth } from "@/lib/use-min-width";
 
 type Row = {
@@ -35,7 +35,9 @@ export default function EmployeeDirectoryPage() {
     const [sort, setSort] = useState<(typeof SORTS)[number][0]>("name-asc");
     const [page, setPage] = useState(1);
     const [size, setSize] = useState(25);
-    const [view, setView] = useState<string | null>(null);
+    // View opens the employee's own page (/hr/employee-directory/<id>) instead of a side panel
+    const router = useRouter();
+    const setView = (id: string) => router.push(`/hr/employee-directory/${encodeURIComponent(id)}`);
     const [exporting, setExporting] = useState<"" | "pdf" | "xlsx">("");
     const [exportErr, setExportErr] = useState("");
     const allowed = !!user && (user.role === "HR" || user.role === "FOUNDER");
@@ -190,7 +192,6 @@ export default function EmployeeDirectoryPage() {
                 </div>
             </div>
 
-            {view && <EmployeeSheet employeeId={view} onClose={() => setView(null)} onSaved={load} />}
         </div>
     );
 }

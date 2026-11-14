@@ -31,7 +31,7 @@ const TABS: { key: "ALL" | Group; label: string }[] = [
 ];
 const ROLE_NAME: Record<string, string> = {
     FOUNDER: "Founder", HR: "HR", AD: "AD", TL: "Tech Lead", HOI: "HOI", OM: "Operation Manager", FACULTY: "Professor", PROFESSOR: "Professor",
-    MARKETING_TEAM: "Marketing", TECH_TEAM: "Tech Team", TECH_INTERN: "Tech Intern", CURRICULUM_HEAD: "Curriculum Head", CURRICULUM_LEAD: "Curriculum Lead", HR_EXECUTIVE: "HR Executive",
+    MARKETING_TEAM: "Marketing", TECH_TEAM: "Tech Team", PLACEMENT_INTERN_HEAD: "Placement & Intern Head", TECH_INTERN: "Tech Intern", CURRICULUM_HEAD: "Curriculum Head", CURRICULUM_LEAD: "Curriculum Lead", HR_EXECUTIVE: "HR Executive",
 };
 const AVATAR = ["bg-sky-500/80", "bg-violet-500/80", "bg-teal-500/80", "bg-pink-500/75", "bg-amber-500/80", "bg-emerald-500/80", "bg-orange-500/80", "bg-indigo-500/80", "bg-rose-500/75"];
 const tone = (k: string) => AVATAR[[...String(k)].reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR.length];
@@ -637,6 +637,7 @@ export default function OnboardingHRPage() {
                                         <option value="CURRICULUM_HEAD">Curriculum Head (CH)</option>
                                         <option value="MARKETING_TEAM">Marketing Team</option>
                                         <option value="TECH_TEAM">Tech Team</option>
+                                        <option value="PLACEMENT_INTERN_HEAD">Placement & Intern Head</option>
                                         <option value="TECH_INTERN">Tech Intern</option>
                                         <option value="TL">Tech Lead (TL)</option>
                                         <option value="HOI">HOI</option>

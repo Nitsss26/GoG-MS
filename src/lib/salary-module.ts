@@ -8,6 +8,7 @@ import { holidayForEmployee, holidayExcludes } from '@/lib/holiday-scope';
 import { FlagRemoval, SalaryCounter, PayableCorrection, HrMonetaryPenalty } from '@/models/SalaryModule';
 import { LateJustification } from '@/models/LateJustification';
 import { isNewPolicy, dressLadder } from '@/lib/attendance-policy';
+import { fullAttireRejections } from '@/lib/full-attire-penalties';
 import { locationPenaltiesFor } from '@/lib/location-justification';
 import { calculatePayableDays, daysInMonth, CATEGORY_OF, TYPE_LABEL, LEVEL_LABEL, VIOLATION_CLOSED, ladder } from '@/lib/payable-days';
 import { sendMailInternal, MAIN_ADMIN_EMAIL } from '@/lib/mail-server';
@@ -82,6 +83,8 @@ export async function payableForMany(emps: any[], month: string) {
     const hrPen: any[] = await HrMonetaryPenalty.find({ employeeId: { $in: ids }, month, status: 'ACTIVE' }).lean();
     // Late Clock-In justifications still under HR review → on hold (no pay cut until decided)
     const ljPending: any[] = await LateJustification.find({ employeeId: { $in: ids }, date: { $gte: start, $lte: end }, justificationStatus: 'pending' }).select('employeeId date').lean();
+    // Full Attire rejections → Dress-Code-style warnings / fines (src/lib/full-attire-penalties.ts)
+    const faRej = await fullAttireRejections(ids, start, end);
     const by = (rows: any[]) => { const m = new Map<string, any[]>(); for (const r of rows) { if (!m.has(r.employeeId)) m.set(r.employeeId, []); m.get(r.employeeId)!.push(r); } return m; };
     const A = by(att as any[]), L = by(leaves as any[]), V = by(viol as any[]), R = by(removed as any[]), C = by(corr as any[]);
     const lwd = new Map((exits as any[]).filter(x => x.lastWorkingDay).map(x => [x.employeeId, x.lastWorkingDay]));
@@ -101,6 +104,7 @@ export async function payableForMany(emps: any[], month: string) {
             attendance: A.get(emp.id) || [], leaves: L.get(emp.id) || [], holidays, violations: [...(V.get(emp.id) || []), ...(locPen.violations.get(emp.id) || [])],
             removed: new Map((R.get(emp.id) || []).map(r => [r.flagId, { removedAt: r.removedAt, removedByName: r.removedByName, removalReason: r.removalReason }])),
             latePendingDates: ljPending.filter(j => j.employeeId === emp.id).map(j => j.date),
+            fullAttire: faRej.filter(r => r.employeeId === emp.id).map(r => ({ flagId: r.flagId, date: r.date, reasons: r.reasons })),
             corrections: new Map((C.get(emp.id) || []).map(c => [c.date, { id: c.id, direction: correctionDirection(c), value: c.payableType === 'HALF' ? 0.5 : undefined, correctionCategory: c.correctionCategory, correctionReason: c.correctionReason, correctedByName: c.correctedByName, correctedByRole: c.correctedByRole, correctedAt: c.correctedAt, relatedTicketId: c.relatedTicketId }])),
         })));
     }
@@ -130,6 +134,8 @@ export type FlagRow = {
     employeeId: string; employeeName: string; dept: string; designation: string; location: string; locationName: string; role: string;
     category: string; type: string; typeLabel: string; date: string; level: string; levelLabel: string; deduction: string; hrStatus: string;
     detail: string; status: 'Active' | 'Removed'; removal?: any;
+    /** this month's instance number of the flag (1st, 2nd …) when known */
+    instance?: number | null;
 };
 
 /** Resolve one flag from its id (the original record, read only) */
@@ -198,6 +204,7 @@ async function toRows(dress: any[], viol: any[]): Promise<FlagRow[]> {
             level: v.level || '', levelLabel: LEVEL_LABEL[v.level] || v.level || '', deduction: v.proposedDeduction || 'None', hrStatus: v.hrStatus || '',
             detail: [v.scheduledTime ? `Scheduled ${v.scheduledTime}` : '', v.actualTime ? `Actual ${v.actualTime}` : '', v.instance ? `Instance ${v.instance}` : ''].filter(Boolean).join(' · '),
             status: rem ? 'Removed' : 'Active', ...(rem ? { removal: publicRemoval(rem) } : {}),
+            instance: v.instance ?? null,
         });
     }
     for (const a of dress) {
@@ -209,6 +216,7 @@ async function toRows(dress: any[], viol: any[]): Promise<FlagRow[]> {
             deduction: lv?.deduction || rem?.originalSnapshot?.deduction || 'None', hrStatus: 'Rejected',
             detail: Array.isArray(a.dressCodeRejectionReasons) && a.dressCodeRejectionReasons.length ? `Reasons: ${a.dressCodeRejectionReasons.join(', ')}` : '',
             status: rem ? 'Removed' : 'Active', ...(rem ? { removal: publicRemoval(rem) } : {}),
+            instance: lv?.instance ?? null,
         });
     }
     return rows;

@@ -224,7 +224,7 @@ export async function POST(req: Request) {
                     hoiUnmatched = await unmatchedPlace(lat, lng);
                 }
                 else return await blockUnassigned();
-            } else if (employee.role === "HOI" || employee.role === "MARKETING_TEAM" || employee.role === "TECH_TEAM" || employee.role === "TECH_INTERN") {
+            } else if (employee.role === "HOI" || employee.role === "MARKETING_TEAM" || employee.role === "TECH_TEAM" || employee.role === "PLACEMENT_INTERN_HEAD" || employee.role === "TECH_INTERN") {
                 // (OM without allotted Clock-In Locations: only the scheduled / assigned location — the branch below)
                 const dbCampuses = await Location.find({});
                 const map = new Map();

@@ -110,10 +110,10 @@ export default function EmployeesPage() {
     const viewableEmployees = user.role === "HR" ? employees : getReportees(user.id);
 
     const locations = ["All", ...new Set(viewableEmployees.map(e => e.location).filter(Boolean))];
-    const roleLevels = ["All", "Founder", "HR", "HR Executive", "AD", "HOI", "OM", "TL", "CH", "CL", "Marketing", "Tech", "Faculty"];
+    const roleLevels = ["All", "Founder", "HR", "HR Executive", "AD", "HOI", "OM", "TL", "CH", "CL", "Marketing", "Tech", "Placement & Intern Head", "Faculty"];
 
     // Role shown in the table: the account's real role (older records may carry a managerLevel)
-    const ROLE_LEVEL: Record<string, string> = { FOUNDER: "Founder", HR: "HR", AD: "AD", HOI: "HOI", OM: "OM", TL: "TL", CURRICULUM_HEAD: "CH", CURRICULUM_LEAD: "CL", MARKETING_TEAM: "Marketing", TECH_TEAM: "Tech", TECH_INTERN: "Tech Intern", HR_EXECUTIVE: "HR Executive" };
+    const ROLE_LEVEL: Record<string, string> = { FOUNDER: "Founder", HR: "HR", AD: "AD", HOI: "HOI", OM: "OM", TL: "TL", CURRICULUM_HEAD: "CH", CURRICULUM_LEAD: "CL", MARKETING_TEAM: "Marketing", TECH_TEAM: "Tech", PLACEMENT_INTERN_HEAD: "Placement & Intern Head", TECH_INTERN: "Tech Intern", HR_EXECUTIVE: "HR Executive" };
     const getRoleLevel = (emp: any): string => {
         if (ROLE_LEVEL[emp.role]) return ROLE_LEVEL[emp.role];
         if (emp.managerLevel) return emp.managerLevel;
@@ -207,7 +207,6 @@ export default function EmployeesPage() {
                                 <th className="px-3 py-4">Employee</th>
                                 <th className="px-3 py-4">Department</th>
                                 <th className="px-3 py-4">Role</th>
-                                <th className="px-3 py-4">Location</th>
                                 <th className="px-3 py-4">Status</th>
                                 {canSeePresence && <th className="px-3 py-4 whitespace-nowrap" data-testid="wf-th-oms">OMS Status</th>}
                                 {canSeePresence && <th className="px-3 py-4 whitespace-nowrap" data-testid="wf-th-seen">Last Seen</th>}
@@ -216,7 +215,7 @@ export default function EmployeesPage() {
                         </thead>
                         <tbody className="divide-y divide-border">
                             {filteredEmployees.length === 0 ? (
-                                <tr><td colSpan={canSeePresence ? 8 : 6} className="px-5 py-12 text-center text-muted">No workforce records matching synchronization parameters.</td></tr>
+                                <tr><td colSpan={canSeePresence ? 7 : 5} className="px-5 py-12 text-center text-muted">No workforce records matching synchronization parameters.</td></tr>
                             ) : (
                                 filteredEmployees.map(emp => (
                                     <tr key={emp.id} className="hover:bg-surface-light transition-colors group">
@@ -240,14 +239,9 @@ export default function EmployeesPage() {
                                         <td className="px-3 py-3.5">
                                             {(() => {
                                                 const rl = getRoleLevel(emp);
-                                                const colors: Record<string, string> = { Founder: "text-yellow-300 bg-yellow-500/10 border-yellow-500/20", CH: "text-teal-300 bg-teal-500/10 border-teal-500/20", CL: "text-teal-300 bg-teal-500/10 border-teal-500/20", Marketing: "text-pink-300 bg-pink-500/10 border-pink-500/20", Tech: "text-sky-300 bg-sky-500/10 border-sky-500/20", HR: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", AD: "text-purple-400 bg-purple-500/10 border-purple-500/20", HOI: "text-blue-400 bg-blue-500/10 border-blue-500/20", OM: "text-amber-400 bg-amber-500/10 border-amber-500/20", TL: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20", Faculty: "text-zinc-400 bg-zinc-800 border-zinc-700" };
+                                                const colors: Record<string, string> = { Founder: "text-yellow-300 bg-yellow-500/10 border-yellow-500/20", CH: "text-teal-300 bg-teal-500/10 border-teal-500/20", CL: "text-teal-300 bg-teal-500/10 border-teal-500/20", Marketing: "text-pink-300 bg-pink-500/10 border-pink-500/20", Tech: "text-sky-300 bg-sky-500/10 border-sky-500/20", "Placement & Intern Head": "text-emerald-300 bg-emerald-500/10 border-emerald-500/20", HR: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", AD: "text-purple-400 bg-purple-500/10 border-purple-500/20", HOI: "text-blue-400 bg-blue-500/10 border-blue-500/20", OM: "text-amber-400 bg-amber-500/10 border-amber-500/20", TL: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20", Faculty: "text-zinc-400 bg-zinc-800 border-zinc-700" };
                                                 return <span className={cn("text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border tracking-wider whitespace-nowrap", colors[rl] || colors.Faculty)}>{rl}</span>;
                                             })()}
-                                        </td>
-                                        <td className="px-3 py-3.5">
-                                            <div className="flex items-center gap-1.5 text-muted whitespace-nowrap">
-                                                <MapPin size={11} className="text-primary shrink-0" /> {locName(emp.location)}
-                                            </div>
                                         </td>
                                         <td className="px-3 py-3.5">
                                             <span className={cn("badge",

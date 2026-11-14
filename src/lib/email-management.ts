@@ -18,7 +18,8 @@
  */
 import { clockInCutoff } from '@/lib/time-utils';
 import { holidayForEmployee, holidayExcludes } from '@/lib/holiday-scope';
-import { isNewPolicy, lateLadder, dressLadder } from '@/lib/attendance-policy';
+import { isNewPolicy, lateLadder, dressLadder, ordinalWord as policyOrdinal } from '@/lib/attendance-policy';
+import { fullAttireInstanceNumbers } from '@/lib/full-attire-penalties';
 import { Attendance, AttendanceViolation, Employee, Holiday, LeaveRequest, Location, WorkSchedule } from '@/models/Schemas';
 import { LateJustification } from '@/models/LateJustification';
 import { ManualEmail, ManualEmailLock } from '@/models/ManualEmail';
@@ -123,28 +124,32 @@ function dressMail(row: any): { subject: string; html: string; text: string; sto
     };
 }
 function noClockInMail(row: any) {
-    const subject = `No Clock-In Recorded — ${longDate(row.date)} | ${ORG}`;
+    const w = row.details?.warningLabel;
+    const subject = `${w ? `${w} – ` : ''}No Clock-In Recorded — ${longDate(row.date)} | ${ORG}`;
     const { html, text } = renderMail(row.employeeName, [
         `Our attendance records indicate that no clock-in has been recorded for you on ${longDate(row.date)}.`,
         'You are requested to review your attendance status in the GOG OMS portal.',
         'If you have already reported to work or are experiencing a technical issue, please inform the HR Team and submit the necessary attendance clarification.',
-    ]);
+    ], warnRow(row.details));
     return { subject, html, text };
 }
 function noClockOutMail(row: any) {
-    const subject = `Missing Clock-Out Notification — ${longDate(row.date)} | ${ORG}`;
+    const w = row.details?.warningLabel;
+    const subject = `${w ? `${w} – ` : ''}Missing Clock-Out Notification — ${longDate(row.date)} | ${ORG}`;
     const { html, text } = renderMail(row.employeeName, [
         `Our attendance records indicate that your clock-out for ${longDate(row.date)} has not been recorded in the GOG OMS portal.`,
         'You are requested to review your attendance and complete the necessary correction or clarification through the prescribed process.',
         'If this is due to a technical issue, please inform the HR Team.',
-    ]);
+    ], warnRow(row.details));
     return { subject, html, text };
 }
 
 function fullAttireMail(row: any) {
     const d = row.details;
     const accepted = d.decision === 'accepted';
-    const subject = `GOG OMS | Full Attire Review — ${row.employeeName}`;
+    // rejected: Dress-Code-style warning number + fine (src/lib/full-attire-penalties.ts)
+    const pol = !accepted && d.warningLabel && d.instance ? d : null;
+    const subject = pol ? `GOG OMS | ${pol.warningLabel} – Full Attire Non-Compliance — ${row.employeeName}` : `GOG OMS | Full Attire Review — ${row.employeeName}`;
     const { html, text } = renderMail(row.employeeName,
         ['Your Full Attire verification has been reviewed through the GOG OMS.'],
         [
@@ -153,8 +158,10 @@ function fullAttireMail(row: any) {
             ['Review Status', accepted ? 'Accepted' : 'Rejected'], ['Reviewed By', `${d.reviewedBy || '—'}${d.reviewedByRole ? ` (${d.reviewedByRole})` : ''}`],
             ...(accepted ? [] : [['Reason for Rejection', d.reasonText || '—'] as [string, string]]),
             ...(d.explanation ? [['Additional Remarks', d.explanation] as [string, string]] : []),
+            ...(pol ? [['Warning', `${pol.warningLabel} (instance ${pol.instance} this month)`], ['Disciplinary Action', pol.finePercent ? `${pol.finePercent}% fine deducted from one day's gross salary` : 'Entry recorded in HR records']] as [string, string][] : []),
         ],
-        ['Please review the details available in your GOG OMS portal.']);
+        [...(pol ? ["As per the Dress Code Disciplinary Process (also for Full Attire): 1st and 2nd instance — warning; 3rd — 10%, 4th — 20%, 5th and subsequent — 30% fine of one day's gross salary; further disciplinary action may be initiated at the Management's discretion."] : []),
+            'Please review the details available in your GOG OMS portal.']);
     // no group photo in the email (privacy); only the reviewer's own evidence image of a rejection —
     // shown inside the email (and attached), like the dress code rejection photo; a non-image file stays a link
     if (!accepted && d.evidenceUrl) {
@@ -177,7 +184,12 @@ function fullAttireMail(row: any) {
 }
 
 // ─────────────────────────── shared lookups ───────────────────────────
-type Filters = { from: string; to: string; q?: string; dept?: string; location?: string; status?: string; employeeId?: string; relatedRecordId?: string };
+type Filters = { from: string; to: string; q?: string; dept?: string; location?: string; status?: string; employeeId?: string; employeeIds?: string[]; relatedRecordId?: string };
+
+/** Warning number of No Clock-In / Missing Clock-Out / Full Attire mails: counted per employee and calendar month (resets every month) */
+const warnLabel = (n: number) => `${policyOrdinal(n)} Warning`;
+const ordShort = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`;
+const warnRow = (d: any): [string, string][] => (d?.warningLabel && d?.instance ? [['Warning', `${d.warningLabel} (${ordShort(d.instance)} this month)`]] : []);
 
 export function normalizeRange(fromIn?: string | null, toIn?: string | null, maxDays = MAX_RANGE_DAYS) {
     const today = istNow().ymd;
@@ -353,7 +365,7 @@ async function lateRows(f: Filters, locs: Map<string, string>) {
 const DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const dayName = (ymd: string) => DAY[new Date(`${ymd}T12:00:00Z`).getUTCDay()];
 
-async function noClockInRows(f: Filters, locs: Map<string, string>) {
+async function noClockInRows(f: Filters, locs: Map<string, string>, numbered = true): Promise<any[]> {
     const now = istNow();
     const nowHm = `${String(Math.floor(now.minutes / 60)).padStart(2, '0')}:${String(now.minutes % 60).padStart(2, '0')}`;
     const range = normalizeRange(f.from, f.to, MAX_NO_CLOCK_IN_DAYS);
@@ -365,7 +377,7 @@ async function noClockInRows(f: Filters, locs: Map<string, string>) {
         dates.push(d);
     }
     if (!dates.length) return [];
-    const emps = await employeeMap(f.employeeId ? [f.employeeId] : undefined);
+    const emps = await employeeMap(f.employeeId ? [f.employeeId] : f.employeeIds);
     const list = Array.from(emps.values()).filter(e => e.role !== 'FOUNDER' && !/^(resigned|inactive|terminated|exited|relieved)$/i.test(String(e.status || '')));
     if (!list.length) return [];
     const ids = list.map(e => e.id);
@@ -401,15 +413,42 @@ async function noClockInRows(f: Filters, locs: Map<string, string>) {
         }
     }
     const docs = await manualDocs(keys);
-    return candidates.map(c => withEmail(baseRow('no_clock_in', c.relatedRecordId, c.emp, c.d, locs), emailState(docs.get(`no_clock_in:${c.relatedRecordId}`)), docs.get(`no_clock_in:${c.relatedRecordId}`), {
+    const rows = candidates.map(c => withEmail(baseRow('no_clock_in', c.relatedRecordId, c.emp, c.d, locs), emailState(docs.get(`no_clock_in:${c.relatedRecordId}`)), docs.get(`no_clock_in:${c.relatedRecordId}`), {
         details: { scheduled: c.scheduled, scheduledLocation: locs.get(c.location) || c.location || '', attendanceStatus: c.markedAbsent ? 'Absent (marked by HR)' : 'No Clock-In', wfh: c.location === 'WFH' },
     }));
+    return numbered ? withMonthNumbers(rows, rows => monthNumbers(rows, (m, ids, last) => noClockInRows({ from: `${m}-01`, to: last, employeeIds: ids }, locs, false))) : rows;
+}
+
+/**
+ * Warning number of each row: its place among the employee's rows of the same calendar month (date order).
+ * Rows that need no email (e.g. clock-out recorded later) do not count. load(month, employees, lastDate) → that month's rows.
+ */
+async function monthNumbers(rows: any[], load: (month: string, ids: string[], last: string) => Promise<any[]>) {
+    const out = new Map<string, number>();
+    for (const m of Array.from(new Set(rows.map(r => String(r.date).slice(0, 7))))) {
+        const inM = rows.filter(r => String(r.date).startsWith(m));
+        const last = inM.map(r => r.date).sort().pop()!;
+        const all = (await load(m, Array.from(new Set(inM.map(r => r.employeeId))), last)).filter(r => r.status !== 'not_required').sort((a, b) => a.date.localeCompare(b.date));
+        const n = new Map<string, number>();
+        for (const r of all) { const c = (n.get(r.employeeId) || 0) + 1; n.set(r.employeeId, c); out.set(r.relatedRecordId, c); }
+    }
+    return out;
+}
+async function withMonthNumbers(rows: any[], numbers: (rows: any[]) => Promise<Map<string, number>>) {
+    const counted = rows.filter(r => r.status !== 'not_required');
+    if (!counted.length) return rows;
+    const nums = await numbers(counted);
+    return rows.map(r => {
+        const n = r.status === 'not_required' ? 0 : nums.get(r.relatedRecordId) || 0;
+        return n ? { ...r, warningLabel: warnLabel(n), details: { ...r.details, instance: n, warningLabel: warnLabel(n) } } : r;
+    });
 }
 
 // ─────────────────────────── No clock-out ───────────────────────────
-async function noClockOutRows(f: Filters, locs: Map<string, string>) {
+async function noClockOutRows(f: Filters, locs: Map<string, string>, numbered = true): Promise<any[]> {
     const q: any = { type: 'MISSING_OUT', date: { $gte: f.from, $lte: f.to } };
     if (f.employeeId) q.employeeId = f.employeeId;
+    else if (f.employeeIds) q.employeeId = { $in: f.employeeIds };
     const vs: any[] = await AttendanceViolation.find(q).lean();
     if (!vs.length) return [];
     const empIds = Array.from(new Set(vs.map(v => v.employeeId)));
@@ -439,7 +478,7 @@ async function noClockOutRows(f: Filters, locs: Map<string, string>) {
         if (v.emailStatus === 'Sent') { out.push(withEmail(row, 'sent', null, { details, sentAt: v.emailSentAt || '', sentBy: 'System (automatic)', sentByRole: 'Automatic', canSend: false, statusLabel: 'Sent (automatic)' })); continue; }
         out.push(withEmail(row, emailState(doc), doc, { details }));
     }
-    return out;
+    return numbered ? withMonthNumbers(out, rows => monthNumbers(rows, (m, ids, last) => noClockOutRows({ from: `${m}-01`, to: last, employeeIds: ids }, locs, false))) : out;
 }
 
 // ─────────────────────────── list / overview / history ───────────────────────────
@@ -465,19 +504,26 @@ async function fullAttireRows(f: Filters, locs: Map<string, string>) {
     const sm = new Map(subs.map(s => [s.id, s]));
     const emps = await employeeMap(Array.from(new Set(revs.map(r => r.professorId))));
     const docs = await manualDocs(revs.map(r => `full_attire:${r.id}`));
+    // rejected: Dress-Code-style warning number + fine, counted over the professor's month
+    const rejected = revs.filter(r => r.status === 'rejected' && sm.get(r.submissionId)).map(r => ({ reviewId: String(r.id), employeeId: String(r.professorId), date: istNow(new Date(sm.get(r.submissionId).submittedAt)).ymd }))
+        .filter(x => x.date >= f.from && x.date <= f.to);
+    const faNumbers = rejected.length ? await fullAttireInstanceNumbers(rejected) : new Map<string, number>();
     const out: any[] = [];
     for (const r of revs) {
         const emp = emps.get(r.professorId); const sub = sm.get(r.submissionId);
         if (!emp || !sub) continue;
         const date = istNow(new Date(sub.submittedAt)).ymd;
         if (date < f.from || date > f.to) continue;
+        const n = r.status === 'rejected' ? faNumbers.get(String(r.id)) : undefined;
+        const pol = n ? dressLadder(n) : null;
         const doc = docs.get(`full_attire:${r.id}`);
         const details = {
             decision: r.status, reasonText: dressReasonText(r.reasons, r.other), explanation: r.explanation || '', evidenceUrl: r.evidenceUrl || '',
             submissionId: r.submissionId, submissionType: sub.type, position: r.position, submittedBy: sub.omName || '', collegeName: r.collegeName || sub.collegeName || '',
             reviewedBy: r.reviewedByName || '', reviewedByRole: r.reviewedByRole || '', reviewedAt: r.reviewedAt || '',
+            ...(pol ? { instance: n, warningLabel: pol.warning, finePercent: pol.finePercent } : {}),
         };
-        out.push(withEmail(baseRow('full_attire', r.id, emp, date, locs), emailState(doc), doc, { details }));
+        out.push(withEmail(baseRow('full_attire', r.id, emp, date, locs), emailState(doc), doc, { details, ...(pol ? { warningLabel: pol.finePercent ? `${pol.warning} · ${pol.finePercent}% fine` : pol.warning } : {}) }));
     }
     return out;
 }

@@ -735,7 +735,7 @@ export default function SprintPlanPage() {
         removeEntry(idx);
     };
 
-    if (!user || !["FACULTY", "PROFESSOR", "MARKETING_TEAM", "TECH_TEAM"].includes(user.role)) {
+    if (!user || !["FACULTY", "PROFESSOR"].includes(user.role)) {
         return <div className="flex items-center justify-center h-[80vh] text-zinc-400">Access restricted to Faculty/Professors & Specific Teams</div>;
     }
 

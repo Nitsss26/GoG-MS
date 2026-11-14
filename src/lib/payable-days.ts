@@ -30,6 +30,8 @@ export type PdInput = {
     paidLeavePerMonth?: number; weeklyOff?: number[];
     /** dates whose Late Clock-In justification is still under HR review (on hold: not counted, no pay cut yet) */
     latePendingDates?: string[];
+    /** rejected Full Attire photos (src/lib/full-attire-penalties.ts) — counted like dress code: warnings, then a fine */
+    fullAttire?: { flagId: string; date: string; reasons?: string }[];
     /** HR payable-day corrections (ACTIVE), by date */
     corrections?: Map<string, { id: string; direction?: string; value?: number; correctionCategory?: string; correctionReason?: string; correctedByName?: string; correctedByRole?: string; correctedAt?: string; relatedTicketId?: string }>;
 };
@@ -39,8 +41,8 @@ export const LEVEL_LABEL: Record<string, string> = {
     HALF_DAY: 'Half-Day Deduction', FULL_DAY: 'Full-Day Deduction', MISSING_ALERT: 'Missing Clock-Out Alert',
     TWO_DAY: 'Two-Day Deduction', THIRD_WARNING: 'Third Warning', FOURTH_WARNING: 'Fourth Warning', FIFTH_WARNING: 'Fifth Warning',
 };
-export const TYPE_LABEL: Record<string, string> = { LATE_IN: 'Late Clock-In', EARLY_OUT: 'Early Clock-Out', MISSING_OUT: 'Missing Clock-Out', DRESS_CODE: 'Dress Code', LOCATION_MISMATCH: 'Location Mismatch' };
-export const CATEGORY_OF: Record<string, string> = { LATE_IN: 'CLOCK_IN', EARLY_OUT: 'CLOCK_OUT', MISSING_OUT: 'CLOCK_OUT', DRESS_CODE: 'DRESS_CODE', LOCATION_MISMATCH: 'LOCATION' };
+export const TYPE_LABEL: Record<string, string> = { LATE_IN: 'Late Clock-In', EARLY_OUT: 'Early Clock-Out', MISSING_OUT: 'Missing Clock-Out', DRESS_CODE: 'Dress Code', LOCATION_MISMATCH: 'Location Mismatch', FULL_ATTIRE: 'Full Attire' };
+export const CATEGORY_OF: Record<string, string> = { LATE_IN: 'CLOCK_IN', EARLY_OUT: 'CLOCK_OUT', MISSING_OUT: 'CLOCK_OUT', DRESS_CODE: 'DRESS_CODE', LOCATION_MISMATCH: 'LOCATION', FULL_ATTIRE: 'DRESS_CODE' };
 /** HR statuses that close a violation (existing rule: not counted) */
 export const VIOLATION_CLOSED = ['Waived', 'Approved'];
 
@@ -186,6 +188,23 @@ export function calculatePayableDays(input: PdInput) {
             detail: reasons || undefined,
         });
     }
+    // Full Attire: the month's rejected photos, numbered in date order (own count, same ladder as dress code); removed ones do not count
+    let faN = 0;
+    for (const a of (input.fullAttire || []).filter(x => x?.date?.startsWith(input.month) && isNewPolicy(x.date)).sort((x, y) => x.date.localeCompare(y.date))) {
+        const rem = input.removed.get(a.flagId);
+        if (rem) {
+            penalties.push({ flagId: a.flagId, date: a.date, type: 'FULL_ATTIRE', typeLabel: 'Full Attire', category: 'DRESS_CODE', instance: null, level: '', levelLabel: '—', deduction: 'None', status: 'Removed', deductedDays: 0, active: false, detail: a.reasons || undefined, removal: rem });
+            continue;
+        }
+        faN++;
+        const d = dressLadder(faN);
+        penalties.push({
+            flagId: a.flagId, date: a.date, type: 'FULL_ATTIRE', typeLabel: 'Full Attire', category: 'DRESS_CODE', instance: faN,
+            level: d.level, levelLabel: d.warning, deduction: d.deduction,
+            status: d.finePercent ? 'Fine' : 'Warning', deductedDays: 0, active: true, finePercent: d.finePercent,
+            detail: a.reasons || undefined,
+        });
+    }
     penalties.sort((a, b) => a.date.localeCompare(b.date) || a.typeLabel.localeCompare(b.typeLabel));
     const penaltyByDate = new Map<string, { u: number; labels: string[] }>();
     for (const p of penalties) {
@@ -300,6 +319,7 @@ export function calculatePayableDays(input: PdInput) {
     penaltyDays = r2(penaltyDays + extraPenaltyDays);
     const lopDays = r2(Math.min(employedDays, days.reduce((s, d) => s + d.lop, 0) + extraPenaltyDays));
     const dressFines = penalties.filter(p => p.type === 'DRESS_CODE' && (p.finePercent || 0) > 0).map(p => ({ date: p.date, instance: p.instance, percent: p.finePercent!, flagId: p.flagId }));
+    const fullAttireFines = penalties.filter(p => p.type === 'FULL_ATTIRE' && (p.finePercent || 0) > 0).map(p => ({ date: p.date, instance: p.instance, percent: p.finePercent!, flagId: p.flagId }));
     return {
         month: input.month, provisional: !!input.asOf, asOf: input.asOf || null,
         totalDays: N, workingDays, employedDays,
@@ -316,6 +336,9 @@ export function calculatePayableDays(input: PdInput) {
         dressCodeDeductionDays: r2(penalties.filter(p => p.type === 'DRESS_CODE').reduce((s, p) => s + p.deductedDays, 0)),
         /** dress code fines (new policy): % of one day's gross salary each — the rupee amount is calculated by finance */
         dressCodeFines: dressFines, dressCodeFinePercentTotal: dressFines.reduce((s, f) => s + f.percent, 0),
+        /** Full Attire (same ladder as dress code): % of one day's gross salary each */
+        fullAttireViolations: penalties.filter(p => p.type === 'FULL_ATTIRE' && p.status !== 'Removed').length,
+        fullAttireFines, fullAttireFinePercentTotal: fullAttireFines.reduce((s, f) => s + f.percent, 0),
         extraPenaltyDays,
         pendingPenalties: penalties.filter(p => p.status === 'Pending HR Verification' || p.status === 'Awaiting Explanation').length,
         removedFlags: penalties.filter(p => p.status === 'Removed').length,

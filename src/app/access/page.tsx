@@ -17,7 +17,7 @@ type Cat = { category: string; count: number; hubLabel: string | null; items: { 
 type Mode = "SELECTED" | "ALL" | "ALL_DYNAMIC";
 const CAT_LABEL: Record<string, string> = {
     FOUNDER: "Founder", HR: "HR", AD: "AD", HOI: "HOI", PROFESSOR: "Professor / Faculty", OM: "OM", CURRICULUM_LEAD: "CL", CURRICULUM_HEAD: "CH",
-    TL: "Tech Lead", TECH_TEAM: "Tech Team", MARKETING_TEAM: "Marketing Team",
+    TL: "Tech Lead", TECH_TEAM: "Tech Team", PLACEMENT_INTERN_HEAD: "Placement & Intern Head", MARKETING_TEAM: "Marketing Team",
 };
 const label = (c: string) => CAT_LABEL[c] || c.replace(/_/g, " ");
 const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");

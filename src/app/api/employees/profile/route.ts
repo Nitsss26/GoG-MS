@@ -37,7 +37,7 @@ export async function PATCH(req: Request) {
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         const b = await req.json().catch(() => ({}));
         const id = String(b.id || actor.id);
-        const { changed, employee } = await applyProfileEdit(actor, id, { fields: b.fields, documents: b.documents });
+        const { changed, employee } = await applyProfileEdit(actor, id, { fields: b.fields, documents: b.documents, ...(b.photoUrl !== undefined ? { photoUrl: b.photoUrl } : {}) });
         return NextResponse.json({ success: true, changed, profile: await profilePayload(employee, actor) });
     } catch (e: any) {
         if (e instanceof ProfileError) return NextResponse.json({ error: e.message }, { status: e.status });

@@ -24,7 +24,7 @@ export async function GET(req: Request) {
         if (!allowed) return NextResponse.json({ error: 'Not allowed.' }, { status: 403 });
         const rows = await listFlagsFor(employeeId, `${month}-01`, `${month}-31`);
         return NextResponse.json({
-            flags: rows.map(r => ({ flagId: r.flagId, date: r.date, type: r.type, typeLabel: r.typeLabel, levelLabel: r.levelLabel, deduction: r.deduction, hrStatus: r.hrStatus, detail: r.detail })),
+            flags: rows.map(r => ({ flagId: r.flagId, date: r.date, type: r.type, typeLabel: r.typeLabel, levelLabel: r.levelLabel, deduction: r.deduction, hrStatus: r.hrStatus, detail: r.detail, instance: r.instance ?? null })),
         }, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch (e: any) {
         console.error('attendance flags GET', e?.message);

@@ -265,7 +265,7 @@ export default function Home() {
     useEffect(() => { setMounted(true); setTodayStr(new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })); }, []);
 
     // Manager/Reportee logic needed for stats filtering
-    const isManagerRole = user?.role ? ["FOUNDER", "AD", "HOI", "OM", "MARKETING_TEAM", "TECH_TEAM", "TECH_INTERN"].includes(user.role) : false;
+    const isManagerRole = user?.role ? ["FOUNDER", "AD", "HOI", "OM", "MARKETING_TEAM", "TECH_TEAM", "PLACEMENT_INTERN_HEAD", "TECH_INTERN"].includes(user.role) : false;
     const reportees = (user && (isManagerRole || user?.role === "HR")) ? getReportees(user.id) : [];
     const reporteeIds = reportees.map(r => r.id);
 
@@ -487,7 +487,7 @@ export default function Home() {
                                 {stats
                                     .filter(s => {
                                         const r = s.emp?.role?.toUpperCase();
-                                        return r === "OM" || r === "MARKETING_TEAM" || r === "TECH_TEAM";
+                                        return r === "OM" || r === "MARKETING_TEAM" || r === "TECH_TEAM" || r === "PLACEMENT_INTERN_HEAD";
                                     })
                                     .slice(0, 3)
                                     .map((s, i) => {

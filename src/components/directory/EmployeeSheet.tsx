@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { X, Pencil, Save, Loader2, FileSpreadsheet, FileDown, Lock, AlertCircle, CheckCircle2 } from "lucide-react";
+import { X, Pencil, Save, Loader2, FileSpreadsheet, FileDown, Lock, AlertCircle, CheckCircle2, ArrowLeft, Camera } from "lucide-react";
+import { uploadToCloudinary } from "@/lib/cloudinary";
 import { cn } from "@/lib/utils";
 import { PROFILE_FIELDS, PROFILE_DOCS, fieldByKey, validateField, cleanValue, toIsoDate } from "@/lib/profile-fields";
 import { FieldInput, DocSlot } from "@/components/profile/ProfileWidgets";
@@ -11,6 +12,7 @@ type Profile = {
     college: string; colleges: { id: string; name: string }[]; values: Record<string, string>; masked: boolean;
     documents: { key: string; label: string; group: string; uploaded: boolean; restricted: boolean }[];
     missing: string[]; profileStatus: string; editable: string[]; editableDocs: string[];
+    canChangePhoto?: boolean;
 };
 type MonthRow = { month: string; presentDays: number; absentDays: number; lateDays: number; paidLeaves: number; unpaidLeaves: number; holidayDays: number; weeklyOffDays: number; workingDays: number; payableDays: number; lopDays: number; activeFlags: number; provisional: boolean };
 type Att = { month: string; selected: MonthRow | null; days: { date: string; weekday: string; attendance: string; clockIn: string; clockOut: string; late: boolean; leave: string; payableStatus: string; reason: string }[]; monthly: MonthRow[] };
@@ -34,7 +36,7 @@ function Section({ id, letter, title, children, note }: { id: string; letter: st
  * Employee Directory → View: the employee's complete profile as a scrollable field / value sheet (A–H),
  * documents with secure preview, attendance from the Attendance module, HR edit, and the individual exports.
  */
-export default function EmployeeSheet({ employeeId, onClose, onSaved }: { employeeId: string; onClose: () => void; onSaved?: () => void }) {
+export default function EmployeeSheet({ employeeId, onClose, onSaved, asPage = false }: { employeeId: string; onClose: () => void; onSaved?: () => void; /** full page (Employee Directory → View) instead of a side panel */ asPage?: boolean }) {
     const [p, setP] = useState<Profile | null>(null);
     const [att, setAtt] = useState<Att | null>(null);
     const [month, setMonth] = useState(thisMonth());
@@ -48,6 +50,7 @@ export default function EmployeeSheet({ employeeId, onClose, onSaved }: { employ
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
     const [exporting, setExporting] = useState<"" | "pdf" | "xlsx">("");
+    const [photoBusy, setPhotoBusy] = useState(0);   // upload progress (0 = idle)
 
     const load = useCallback(async (m: string, full: boolean) => {
         full ? setLoading(true) : setAttLoading(true);
@@ -59,7 +62,27 @@ export default function EmployeeSheet({ employeeId, onClose, onSaved }: { employ
         } catch (e: any) { setErr(e.message); } finally { setLoading(false); setAttLoading(false); }
     }, [employeeId]);
     useEffect(() => { load(month, true); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [employeeId]);
-    useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === "Escape" && !editing) onClose(); }; window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose, editing]);
+    useEffect(() => {
+        if (asPage) return;   // a page is left with Back, not Escape
+        const k = (e: KeyboardEvent) => { if (e.key === "Escape" && !editing) onClose(); }; window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
+    }, [onClose, editing, asPage]);
+
+    /** HR / HR Executive / Founder: replace the employee's profile photo (seen everywhere in the OMS) */
+    const changePhoto = async (file?: File | null) => {
+        if (!p || !file) return;
+        if (!/^image\//.test(file.type)) { setMsg({ ok: false, text: "Please choose an image file (JPG / PNG)." }); return; }
+        if (file.size > 5 * 1024 * 1024) { setMsg({ ok: false, text: "The photo must be smaller than 5 MB." }); return; }
+        setPhotoBusy(1); setMsg(null);
+        try {
+            const up = await uploadToCloudinary(file, n => setPhotoBusy(Math.max(1, n)));
+            const r = await fetch("/api/employees/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: p.id, photoUrl: up.secure_url }) });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.error || "Could not save the photo.");
+            setP(x => (x ? { ...x, photoUrl: up.secure_url } : x));
+            setMsg({ ok: true, text: "Profile photo updated — everyone now sees the new photo." });
+            onSaved?.();
+        } catch (e: any) { setMsg({ ok: false, text: e.message || "Upload failed." }); } finally { setPhotoBusy(0); }
+    };
 
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     const val = (k: string) => p?.values[k] || "";
@@ -138,12 +161,23 @@ export default function EmployeeSheet({ employeeId, onClose, onSaved }: { employ
     const vaultDocs = PROFILE_DOCS.filter(d => d.group === "vault").map(d => d.key);
 
     return (
-        <div className="fixed inset-0 z-[120] bg-black/75 flex justify-end" role="dialog" aria-modal="true" aria-label="Employee details" data-testid="emp-sheet">
-            <div className="w-full max-w-[1100px] h-full bg-[#0b0c0e] border-l border-zinc-800 flex flex-col min-w-0">
+        <div className={asPage ? "w-full" : "fixed inset-0 z-[120] bg-black/75 flex justify-end"} {...(asPage ? {} : { role: "dialog", "aria-modal": true })} aria-label="Employee details" data-testid={asPage ? "emp-page" : "emp-sheet"}>
+            <div className={asPage ? "w-full max-w-[1200px] mx-auto bg-[#0b0c0e] border border-zinc-800 rounded-2xl flex flex-col min-w-0 overflow-hidden" : "w-full max-w-[1100px] h-full bg-[#0b0c0e] border-l border-zinc-800 flex flex-col min-w-0"}>
                 {/* Header */}
                 <div className="shrink-0 px-3 sm:px-5 py-3 border-b border-zinc-800 bg-zinc-950 flex flex-wrap items-center gap-3">
-                    {p?.photoUrl ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={p.photoUrl} alt="" className="w-11 h-11 rounded-xl object-cover border border-zinc-700 shrink-0" />
-                        : <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-lg font-black text-emerald-400 shrink-0">{p?.name?.[0] || "?"}</div>}
+                    {asPage && <button onClick={onClose} data-testid="sheet-back" className={`${btn} border-zinc-700 bg-zinc-900 text-zinc-200`}><ArrowLeft size={14} /> Back</button>}
+                    <div className="relative shrink-0">
+                        {p?.photoUrl ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={p.photoUrl} alt="" data-testid="sheet-photo" className={cn("rounded-xl object-cover border border-zinc-700", asPage ? "w-16 h-16" : "w-11 h-11")} />
+                            : <div data-testid="sheet-photo-empty" className={cn("rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center font-black text-emerald-400", asPage ? "w-16 h-16 text-2xl" : "w-11 h-11 text-lg")}>{p?.name?.[0] || "?"}</div>}
+                        {p?.canChangePhoto && (
+                            <label title={p.photoUrl ? "Change photo" : "Upload photo"} data-testid="sheet-photo-change"
+                                className={cn("absolute -bottom-1.5 -right-1.5 w-7 h-7 rounded-full border border-emerald-500/60 bg-zinc-950 text-emerald-300 flex items-center justify-center cursor-pointer hover:bg-emerald-500/20", photoBusy && "pointer-events-none opacity-70")}>
+                                {photoBusy ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />}
+                                <input type="file" accept="image/*" className="hidden" data-testid="sheet-photo-input" disabled={!!photoBusy}
+                                    onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; changePhoto(f); }} />
+                            </label>
+                        )}
+                    </div>
                     <div className="min-w-0 flex-1">
                         <p className="text-base font-black text-white truncate" data-testid="sheet-name">{p?.name || (loading ? "Loading…" : "—")}</p>
                         <p className="text-[11px] text-zinc-400 truncate">{p ? `${p.id} · ${p.roles.join(", ")}${p.college ? ` · ${p.college}` : ""}` : ""}</p>
@@ -158,12 +192,12 @@ export default function EmployeeSheet({ employeeId, onClose, onSaved }: { employ
                             <button onClick={() => exportAs("xlsx")} disabled={!!exporting} data-testid="sheet-xlsx" className={`${btn} border-zinc-700 bg-zinc-900 text-zinc-200`}>{exporting === "xlsx" ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />} Download Employee Excel</button>
                             <button onClick={() => exportAs("pdf")} disabled={!!exporting} data-testid="sheet-pdf" className={`${btn} border-zinc-700 bg-zinc-900 text-zinc-200`}>{exporting === "pdf" ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />} Download Employee PDF</button>
                         </>}
-                        <button onClick={onClose} aria-label="Close" data-testid="sheet-close" className={`${btn} border-zinc-700 bg-zinc-900 text-zinc-300 px-2.5`}><X size={15} /></button>
+                        {!asPage && <button onClick={onClose} aria-label="Close" data-testid="sheet-close" className={`${btn} border-zinc-700 bg-zinc-900 text-zinc-300 px-2.5`}><X size={15} /></button>}
                     </div>
                     {msg && <p className={cn("w-full text-[11px] font-bold flex items-center gap-1.5", msg.ok ? "text-emerald-400" : "text-red-400")} data-testid="sheet-msg">{msg.ok ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />} {msg.text}</p>}
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-5 space-y-4" data-testid="sheet-body">
+                <div className={asPage ? "p-3 sm:p-5 space-y-4" : "flex-1 min-h-0 overflow-y-auto p-3 sm:p-5 space-y-4"} data-testid="sheet-body">
                     {loading && <div className="flex justify-center py-20"><Loader2 className="animate-spin text-zinc-500" /></div>}
                     {err && !loading && <p className="text-sm text-red-300" data-testid="sheet-error">{err}</p>}
                     {p && !loading && <>

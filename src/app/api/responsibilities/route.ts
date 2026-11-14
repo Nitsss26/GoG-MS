@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 const SUBMITTER_ROLES = ["HOI", "AD", "FOUNDER"];
 const APPROVER_ROLES = ["AD", "FOUNDER"];
 // Roles an HOI manages (same list the HOI portal uses for its reportees)
-const HOI_TEAM_ROLES = ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM"];
+const HOI_TEAM_ROLES = ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM", "PLACEMENT_INTERN_HEAD"];
 
 export async function GET(req: Request) {
     try {

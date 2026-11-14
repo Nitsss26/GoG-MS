@@ -7,7 +7,7 @@ import { verifySessionToken, COOKIE_NAME } from '@/lib/session';
 export const dynamic = 'force-dynamic';
 
 // Roles that show up in an HOI's employee/faculty list (same list the HOI portal uses)
-const HOI_ASSIGNABLE_ROLES = ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM"];
+const HOI_ASSIGNABLE_ROLES = ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM", "PLACEMENT_INTERN_HEAD"];
 
 /**
  * HR: assign / change an employee's location and/or HOI.

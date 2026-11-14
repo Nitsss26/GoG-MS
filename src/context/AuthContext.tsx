@@ -31,7 +31,7 @@ import { CUSTOM_SCHEDULE_RULES, FALLBACK_TIMINGS, isThirdSaturday } from '@/lib/
 import { usePresenceHeartbeat } from '@/lib/use-presence-heartbeat';
 
 // ─── TYPES ───
-export type Role = "FOUNDER" | "HR" | "AD" | "TL" | "HOI" | "OM" | "FACULTY" | "PROFESSOR" | "MARKETING_TEAM" | "TECH_TEAM" | "TECH_INTERN" | "CURRICULUM_HEAD" | "CURRICULUM_LEAD" | "HR_EXECUTIVE";
+export type Role = "FOUNDER" | "HR" | "AD" | "TL" | "HOI" | "OM" | "FACULTY" | "PROFESSOR" | "MARKETING_TEAM" | "TECH_TEAM" | "PLACEMENT_INTERN_HEAD" | "TECH_INTERN" | "CURRICULUM_HEAD" | "CURRICULUM_LEAD" | "HR_EXECUTIVE";
 
 /**
  * HR Executive (stored role HR_EXECUTIVE) uses the HR portal: in the portal the user acts as "HR" with
@@ -863,7 +863,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 else if (emp.role === "CURRICULUM_LEAD") level = "CurriculumLead";
                 else if (emp.role === "AD" || emp.role === "HR" || emp.role === "TL") level = "Management";
                 else if (emp.role === "HOI") level = "Leadership";
-                else if (emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM" || emp.role === "TECH_INTERN") level = "OM";
+                else if (emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM" || emp.role === "PLACEMENT_INTERN_HEAD" || emp.role === "TECH_INTERN") level = "OM";
                 else if (emp.role === "FACULTY" || emp.role === "PROFESSOR") level = "Faculty";
 
                 // Enforce "Tech Lead" designation for TL role (Failsafe)
@@ -873,7 +873,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 let parentId = Array.isArray(emp.reportsTo) ? emp.reportsTo[0] : emp.reportsTo;
 
                 // Fallback for academic/ops staff to ensure they have a parent if reportsTo is missing
-                if (!parentId && (emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM" || emp.role === "TECH_INTERN" || emp.role === "PROFESSOR" || emp.role === "FACULTY")) {
+                if (!parentId && (emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM" || emp.role === "PLACEMENT_INTERN_HEAD" || emp.role === "TECH_INTERN" || emp.role === "PROFESSOR" || emp.role === "FACULTY")) {
                     // Logic for default reporting to be dynamic if possible, 
                     // otherwise default to Founder (or stay unassigned)
                     parentId = "FND001";
@@ -1278,7 +1278,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 return ["AD", "HOI", "FACULTY", "PROFESSOR", "OM", "CURRICULUM_HEAD", "CURRICULUM_LEAD"].includes(e.role);
             }
             if (manager.role === "AD") {
-                return ["HOI", "FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM", "CURRICULUM_HEAD", "CURRICULUM_LEAD"].includes(e.role) && isReportee;
+                return ["HOI", "FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM", "PLACEMENT_INTERN_HEAD", "CURRICULUM_HEAD", "CURRICULUM_LEAD"].includes(e.role) && isReportee;
             }
             if (manager.role === "HOI") {
                 const isLocationMatch = manager.location && e.location === manager.location;
@@ -1286,9 +1286,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // The location-based match stays as the fallback for employees with no HOI assigned.
                 const assignedIds = Array.isArray(e.reportsTo) ? e.reportsTo : (e.reportsTo ? [e.reportsTo] : []);
                 const hasAssignedHOI = employees.some(m => m.role === "HOI" && assignedIds.includes(m.id));
-                return ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(e.role) && (isReportee || (!hasAssignedHOI && isLocationMatch));
+                return ["FACULTY", "PROFESSOR", "OM", "MARKETING_TEAM", "TECH_TEAM", "PLACEMENT_INTERN_HEAD"].includes(e.role) && (isReportee || (!hasAssignedHOI && isLocationMatch));
             }
-            if (["OM", "MARKETING_TEAM", "TECH_TEAM", "TECH_INTERN"].includes(manager.role)) {
+            if (["OM", "MARKETING_TEAM", "TECH_TEAM", "PLACEMENT_INTERN_HEAD", "TECH_INTERN"].includes(manager.role)) {
                 return ["FACULTY", "PROFESSOR"].includes(e.role) && isReportee;
             }
 
@@ -1339,8 +1339,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     return updated;
                 });
 
-                // Opened from a leave e-mail link before logging in → back to that page
-                let next = "/";
+                // Opened from a leave e-mail link before logging in → back to that page; Placement & Intern Head → own portal
+                let next = sessionUser?.role === "PLACEMENT_INTERN_HEAD" ? "/placement-intern-head/dashboard" : "/";
                 try { const s = sessionStorage.getItem("gog_after_login") || ""; if (s.startsWith("/leave-action?")) next = s; } catch { /* ignore */ }
                 router.push(next);
                 return { success: true };
@@ -1923,7 +1923,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const now = new Date();
         const appliedAt = now.toISOString();
 
-        const isHierarchical = user.role === "OM" || user.role === "MARKETING_TEAM" || user.role === "TECH_TEAM" || user.role === "TECH_INTERN" || user.role === "PROFESSOR" || user.role === "FACULTY";
+        const isHierarchical = user.role === "OM" || user.role === "MARKETING_TEAM" || user.role === "TECH_TEAM" || user.role === "PLACEMENT_INTERN_HEAD" || user.role === "TECH_INTERN" || user.role === "PROFESSOR" || user.role === "FACULTY";
         const initialStatus = isHierarchical ? "Pending HOI Approval" : "Pending";
 
         const newLeave: LeaveRequest = {

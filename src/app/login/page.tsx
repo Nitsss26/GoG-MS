@@ -15,6 +15,7 @@ const ROLE_OPTIONS = [
     { key: "OM", label: "Operations Manager / Growth Manager" },
     { key: "MARKETING_TEAM", label: "Marketing Team" },
     { key: "TECH_TEAM", label: "Tech Team" },
+    { key: "PLACEMENT_INTERN_HEAD", label: "Placement & Intern Head" },
     { key: "TECH_INTERN", label: "Tech Intern" },
     { key: "CURRICULUM_HEAD", label: "Curriculum Head" },
     { key: "CURRICULUM_LEAD", label: "Curriculum Lead" },

@@ -18,6 +18,7 @@ function dashboardLabel(user: any) {
     if (role === "HR") return user?.hrExecutive ? "HR Executive" : "HR Administration";
     if (role === "FOUNDER") return "Founder";
     if (["AD", "HOI", "TL"].includes(role)) return `${role} · ${user?.designation || ""}`;
+    if (role === "PLACEMENT_INTERN_HEAD") return "Placement & Intern Head";
     return "Employee";
 }
 
@@ -97,8 +98,8 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
             return;
         }
         if (user && isAuthPage) {
-            // (same target as login(): a leave e-mail link opened before logging in)
-            let next = "/";
+            // (same target as login(): a leave e-mail link opened before logging in; Placement & Intern Head → own portal)
+            let next = user.role === "PLACEMENT_INTERN_HEAD" ? "/placement-intern-head/dashboard" : "/";
             try { const s = sessionStorage.getItem("gog_after_login") || ""; sessionStorage.removeItem("gog_after_login"); if (s.startsWith("/leave-action?")) next = s; } catch { /* ignore */ }
             router.push(next);
             return;
