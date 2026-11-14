@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth, Role } from "@/context/AuthContext";
 import type { Employee } from "@/context/AuthContext";
 import RemoveEmployeeDialog from "@/components/RemoveEmployeeDialog";
@@ -13,6 +13,7 @@ import { Search, Mail, Phone, MapPin, Download, Plus, ShieldAlert, FileText, Fil
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
+import { lastSeenLabel, type PresenceRow } from "@/lib/presence-format";
 
 const AVATAR_TONES = ["bg-violet-500/80 text-white", "bg-teal-500/80 text-white", "bg-sky-500/80 text-white", "bg-pink-400/80 text-white", "bg-amber-400/85 text-zinc-900", "bg-emerald-500/80 text-white", "bg-orange-400/85 text-white", "bg-indigo-400/85 text-white"];
 const avatarTone = (key: string) => AVATAR_TONES[[...String(key)].reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR_TONES.length];
@@ -39,6 +40,32 @@ export default function EmployeesPage() {
         }).catch(() => { });
     }, []);
     const locName = (v?: string) => (v ? locationNames[v] || v : "—");
+    // OMS Status / Last Seen — HR and HR Executive only (the server checks it too); refreshed every 30 s while visible
+    const canSeePresence = user?.role === "HR";
+    const [presence, setPresence] = useState<Record<string, PresenceRow>>({});
+    const [presenceNow, setPresenceNow] = useState<string>("");
+    const [presenceReady, setPresenceReady] = useState(false);
+    const [omsFilter, setOmsFilter] = useState("All");
+    const [sortBy, setSortBy] = useState<"default" | "seen-desc" | "seen-asc">("default");
+    const loadPresence = useCallback(async () => {
+        try {
+            const r = await fetch("/api/hr/presence", { cache: "no-store" });
+            if (!r.ok) return;
+            const d = await r.json();
+            const map: Record<string, PresenceRow> = {};
+            (d.rows || []).forEach((x: PresenceRow) => { map[x.employeeId] = x; });
+            setPresence(map); setPresenceNow(d.now || ""); setPresenceReady(true);
+        } catch { /* keep the last values */ }
+    }, []);
+    useEffect(() => {
+        if (!canSeePresence) return;
+        loadPresence();
+        const t = window.setInterval(() => { if (document.visibilityState === "visible") loadPresence(); }, 30000);
+        const onVis = () => { if (document.visibilityState === "visible") loadPresence(); };
+        document.addEventListener("visibilitychange", onVis);
+        return () => { window.clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+    }, [canSeePresence, loadPresence]);
+    const presenceOf = (id: string): PresenceRow => presence[id] || { employeeId: id, status: "Never Logged In", lastSeenAt: "", lastLoginAt: "" };
     const [formData, setFormData] = useState({
         name: "",
         email: "",
@@ -94,12 +121,23 @@ export default function EmployeesPage() {
     };
 
     const filteredEmployees = viewableEmployees.filter(emp => {
-        // Filters: name search, location and role only (a record without a name never breaks the search)
-        const matchesSearch = !searchTerm.trim() || String(emp.name || "").toLowerCase().includes(searchTerm.trim().toLowerCase());
+        // Filters: name / ID search, location, role (+ OMS Status for HR) (a record without a name never breaks the search)
+        const q = searchTerm.trim().toLowerCase();
+        const matchesSearch = !q || String(emp.name || "").toLowerCase().includes(q) || String(emp.id || "").toLowerCase().includes(q);
         const matchesLocation = locationFilter === "All" || emp.location === locationFilter;
         const matchesRole = roleFilter === "All" || getRoleLevel(emp) === roleFilter;
-        return matchesSearch && matchesLocation && matchesRole;
+        const matchesOms = !canSeePresence || omsFilter === "All" || presenceOf(emp.id).status === omsFilter;
+        return matchesSearch && matchesLocation && matchesRole && matchesOms;
     });
+    if (canSeePresence && sortBy !== "default") {
+        // Last Seen: Active first when newest-first; never-logged-in employees always last
+        const t = (id: string) => { const p = presenceOf(id); return p.lastSeenAt ? new Date(p.lastSeenAt).getTime() : NaN; };
+        filteredEmployees.sort((a, b) => {
+            const x = t(a.id), y = t(b.id);
+            if (isNaN(x) || isNaN(y)) return isNaN(x) === isNaN(y) ? 0 : isNaN(x) ? 1 : -1;
+            return sortBy === "seen-desc" ? y - x : x - y;
+        });
+    }
 
     // Export: the server re-checks who may export what; "filtered" sends the ids matching the current filters
     const workforceReport = (filtered: boolean) => fetchReport("/api/hr/reports/workforce", {
@@ -137,7 +175,7 @@ export default function EmployeesPage() {
             <div className="flex flex-col md:flex-row gap-4 items-center">
                 <div className="relative w-full md:w-80">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={14} />
-                    <input type="text" placeholder="Search by name..." data-testid="wf-search" className="w-full bg-surface border border-border rounded-lg py-2.5 pl-9 pr-3 text-xs text-white focus:outline-none focus:border-primary/30" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                    <input type="text" placeholder="Search by name or ID..." data-testid="wf-search" className="w-full bg-surface border border-border rounded-lg py-2.5 pl-9 pr-3 text-xs text-white focus:outline-none focus:border-primary/30" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
                     <Filter size={12} className="text-muted mr-1" />
@@ -148,6 +186,14 @@ export default function EmployeesPage() {
                         <select data-testid="wf-role" className="bg-surface-light border border-border rounded-lg px-3 py-1.5 text-[10px] text-white outline-none font-bold" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
                             {roleLevels.map(r => <option key={r} value={r}>Role: {r}</option>)}
                         </select>
+                        {canSeePresence && <>
+                            <select data-testid="wf-oms" aria-label="OMS Status" className="bg-surface-light border border-border rounded-lg px-3 py-1.5 text-[10px] text-white outline-none font-bold" value={omsFilter} onChange={e => setOmsFilter(e.target.value)}>
+                                {["All", "Active", "Offline", "Never Logged In"].map(o => <option key={o} value={o}>OMS: {o}</option>)}
+                            </select>
+                            <select data-testid="wf-sort" aria-label="Sort" className="bg-surface-light border border-border rounded-lg px-3 py-1.5 text-[10px] text-white outline-none font-bold" value={sortBy} onChange={e => setSortBy(e.target.value as any)}>
+                                <option value="default">Sort: Default</option><option value="seen-desc">Sort: Last Seen (newest)</option><option value="seen-asc">Sort: Last Seen (oldest)</option>
+                            </select>
+                        </>}
                     </div>
                 </div>
             </div>
@@ -163,12 +209,14 @@ export default function EmployeesPage() {
                                 <th className="px-3 py-4">Role</th>
                                 <th className="px-3 py-4">Location</th>
                                 <th className="px-3 py-4">Status</th>
+                                {canSeePresence && <th className="px-3 py-4 whitespace-nowrap" data-testid="wf-th-oms">OMS Status</th>}
+                                {canSeePresence && <th className="px-3 py-4 whitespace-nowrap" data-testid="wf-th-seen">Last Seen</th>}
                                 <th className="px-3 py-4 text-right sticky right-0 bg-surface">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
                             {filteredEmployees.length === 0 ? (
-                                <tr><td colSpan={6} className="px-5 py-12 text-center text-muted">No workforce records matching synchronization parameters.</td></tr>
+                                <tr><td colSpan={canSeePresence ? 8 : 6} className="px-5 py-12 text-center text-muted">No workforce records matching synchronization parameters.</td></tr>
                             ) : (
                                 filteredEmployees.map(emp => (
                                     <tr key={emp.id} className="hover:bg-surface-light transition-colors group">
@@ -207,6 +255,20 @@ export default function EmployeesPage() {
                                                     emp.status === "On Leave" ? "badge-amber" : "badge-zinc"
                                             )}>{emp.status}</span>
                                         </td>
+                                        {canSeePresence && (() => {
+                                            const p = presenceOf(emp.id);
+                                            return <>
+                                                <td className="px-3 py-3.5 whitespace-nowrap" data-testid="wf-oms-cell" data-status={presenceReady ? p.status : ""}>
+                                                    {!presenceReady ? <span className="text-muted">…</span> : (
+                                                        <span className={cn("inline-flex items-center gap-1.5 text-[11px] font-semibold", p.status === "Active" ? "text-emerald-300" : "text-zinc-400")}>
+                                                            <span className={cn("w-2 h-2 rounded-full shrink-0", p.status === "Active" ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" : p.status === "Offline" ? "bg-zinc-500" : "bg-zinc-700 border border-zinc-500")} aria-hidden="true" />
+                                                            {p.status}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-3 py-3.5 whitespace-nowrap text-[11px] text-zinc-300" data-testid="wf-seen-cell">{presenceReady ? lastSeenLabel(p, presenceNow) : ""}</td>
+                                            </>;
+                                        })()}
                                         <td className="px-3 py-3.5 text-right sticky right-0 bg-surface group-hover:bg-surface-light transition-colors">
                                             <div className="flex items-center justify-end gap-1.5">
                                                 <button onClick={() => setMailFor(emp)} title="Show email" data-testid="emp-mail" className="h-8 w-7 flex items-center justify-center bg-surface-light border border-border rounded-lg hover:text-primary transition-colors"><Mail size={12} /></button>
@@ -290,7 +352,7 @@ export default function EmployeesPage() {
             {/* HR: Reset Password (hash saved on the server, temporary password shown once) */}
             {employeeToReset && <ResetPasswordDialog employee={employeeToReset} onClose={() => setEmployeeToReset(null)} />}
             {mailFor && <EmployeeMailDialog emp={mailFor} onClose={() => setMailFor(null)} />}
-            {profileFor && <EmployeeProfileDialog emp={profileFor} employees={employees} locName={locName} viewerRole={user.role} onClose={() => setProfileFor(null)} />}
+            {profileFor && <EmployeeProfileDialog emp={profileFor} employees={employees} locName={locName} viewerRole={user.role} presence={canSeePresence ? { row: presenceOf(profileFor.id), now: presenceNow, ready: presenceReady } : undefined} onClose={() => setProfileFor(null)} />}
         </div>
     );
 }

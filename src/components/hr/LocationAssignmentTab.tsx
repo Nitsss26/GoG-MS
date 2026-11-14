@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Search, Trash2, Save, Loader2, CheckCircle2, AlertTriangle, Building2, Navigation } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { displayManager } from "@/lib/display-manager";
+import { useAssignedManagers } from "@/lib/use-assigned-managers";
 
 /**
  * HR → Work Location → "Location Assignment".
@@ -19,6 +21,7 @@ type Emp = { id: string; name: string; designation?: string; role: string; locat
 
 export default function LocationAssignmentTab({ mode = "hr" }: { mode?: "hr" | "hoi" }) {
     const { employees, hrAssignEmployee } = useAuth();
+    const assignedMgr = useAssignedManagers();
     const isHoi = mode === "hoi";
     // HOI mode: own reportees + locations + HOI names, all from the server (scope checked there)
     const [hoiData, setHoiData] = useState<{ employees: Emp[]; hois: { id: string; name: string }[] } | null>(null);
@@ -61,10 +64,9 @@ export default function LocationAssignmentTab({ mode = "hr" }: { mode?: "hr" | "
     const locOf = (v?: string) => (v ? locations.find(l => [l.id, l.name, l.shortName].includes(v)) : undefined);
     const all: Emp[] = isHoi ? (hoiData?.employees || []) : ((employees || []) as any);
     const hoiList: { id: string; name: string }[] = isHoi ? (hoiData?.hois || []) : all.filter(x => x.role === "HOI");
-    const hoiName = (e: Emp) => {
-        const ids = Array.isArray(e.reportsTo) ? e.reportsTo : e.reportsTo ? [e.reportsTo] : [];
-        return hoiList.filter(x => ids.includes(x.id)).map(x => x.name).join(", ");
-    };
+    // Professor / Faculty / OM → HOI; everyone else → the manager HR assigned (lib/display-manager)
+    const findPerson = (id: string) => all.find(x => x.id === id) as any || (hoiList.find(x => x.id === id) ? { ...hoiList.find(x => x.id === id), role: "HOI" } : undefined);
+    const mgrOf = (e: Emp) => displayManager(e, findPerson, assignedMgr[e.id]);
     // Save the Original Location: HR → existing /api/hr/assign; HOI → /api/hoi/location-assignment (own reportees only)
     const assignLocation = async (employeeId: string, location: string): Promise<{ success: boolean; msg?: string }> => {
         if (!isHoi) return hrAssignEmployee(employeeId, { location });
@@ -186,7 +188,7 @@ export default function LocationAssignmentTab({ mode = "hr" }: { mode?: "hr" | "
                             </div>
                             <div className="space-y-2">
                                 <div className={rowBox}><span className={rowLabel}>Employee</span><span className="col-span-3 text-[11px] text-white">{editing.name} <span className="text-zinc-500">· {editing.id} · {editing.designation || editing.role}</span></span></div>
-                                <div className={rowBox}><span className={rowLabel}>Assigned HOI</span><span className="col-span-3 text-[11px] text-white">{hoiName(editing) || "Not Assigned"}</span></div>
+                                <div className={rowBox}><span className={rowLabel}>{`Assigned ${mgrOf(editing).label}`}</span><span className="col-span-3 text-[11px] text-white" data-testid="loc-panel-manager">{mgrOf(editing).names || "Not Assigned"}</span></div>
                                 <div className={rowBox}><span className={rowLabel}>Current Location</span><span className="col-span-3 text-[11px] text-white" data-testid="loc-panel-current">{editing.location ? (locOf(editing.location)?.name || editing.location) : "Not Assigned"}</span></div>
                                 <div className={rowBox}>
                                     <span className={rowLabel}>Original Location</span>

@@ -4,6 +4,7 @@ import dbConnect from '@/lib/mongodb';
 import { Employee } from '@/models/Schemas';
 import { createSessionToken, getSessionCookieOptions } from '@/lib/session';
 import { verifyPassword, isHashedPassword, storedPasswordValue } from '@/lib/password';
+import { recordLogin } from '@/lib/presence';
 
 export async function POST(request: Request) {
     try {
@@ -72,6 +73,9 @@ export async function POST(request: Request) {
             path: cookieOptions.path,
             maxAge: cookieOptions.maxAge,
         });
+
+        // HR → Workforce: Last Login / Last Seen (server time; a failure never blocks the login)
+        try { await recordLogin(String(employeeData.id || '')); } catch (e) { console.error("Login: could not record presence"); }
 
         // Return sanitized employee data — NEVER include password in response
         const sanitizedEmployee = { ...employeeData };

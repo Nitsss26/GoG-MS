@@ -21,22 +21,37 @@ function dashboardLabel(user: any) {
     return "Employee";
 }
 
-/** Desktop top bar greeting ("Happy Birthday, …!" on the employee's own birthday) — on the dashboard a vacation / festival / own-birthday banner fills the header background */
-function TopBarGreeting({ label, name, dashboard }: { label: string; name?: string; dashboard: boolean }) {
+/** Desktop top bar greeting ("Happy Birthday, …!" on the employee's own birthday) — a vacation / festival / own-birthday /
+ * welcome banner fills the header background on every page */
+function TopBarGreeting({ label, name }: { label: string; name?: string }) {
     const text = useWelcomeText(name);
-    const banner = useHeaderBanner();
-    const b = dashboard ? banner : null;
+    const b = useHeaderBanner();
     return (
         <>
             {b && <HeaderBannerBackground banner={b} />}
             <HeaderGreeting banner={b}>
                 <div className={`min-w-0 ${b ? "min-h-[76px] flex flex-col justify-center py-1" : ""}`} data-testid="top-bar-greeting" data-banner={b?.kind || ""}>
                     <p className={`text-[10px] uppercase tracking-widest font-bold ${b ? "text-zinc-300" : "text-zinc-500"}`}>{label} Dashboard</p>
-                    <p className="text-xl font-extrabold text-white tracking-tight truncate" data-testid="top-bar-welcome">{dashboard ? text : `Welcome back, ${name || ""}`}</p>
+                    <p className="text-xl font-extrabold text-white tracking-tight truncate" data-testid="top-bar-welcome">{text}</p>
                     {b && <HeaderBannerLine banner={b} welcome={text} />}
                 </div>
             </HeaderGreeting>
         </>
+    );
+}
+
+/** Phone / tablet: today's header banner as a slim strip under the top header (pages other than the dashboard) */
+function MobileBannerStrip({ name }: { name?: string }) {
+    const text = useWelcomeText(name);
+    const b = useHeaderBanner();
+    if (!b) return null;
+    return (
+        <div className="lg:hidden relative px-4 py-2.5 border-b border-zinc-800 shrink-0 overflow-hidden" data-testid="mobile-banner-strip" data-banner={b.kind}>
+            <HeaderBannerBackground banner={b} />
+            <HeaderGreeting banner={b} compact>
+                <HeaderBannerLine banner={b} welcome={text} compact />
+            </HeaderGreeting>
+        </div>
     );
 }
 
@@ -103,7 +118,7 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
     const showSidebar = user && !isAuthPage;
 
     return (
-        // Celebrations (birthday / festival effects) for every signed-in page; banners only on the dashboard
+        // Celebrations (birthday / festival effects) and the header banner on every signed-in page
         <CelebrationProvider userId={showSidebar ? user?.id : undefined}>
         <div className="flex h-screen w-full overflow-hidden bg-background">
             {showSidebar && (
@@ -137,10 +152,13 @@ export default function SidebarWrapper({ children }: { children: React.ReactNode
                     </header>
                 )}
 
+                {/* Phone / tablet: the same banner as a slim strip on every page (the dashboard shows it in its own header card) */}
+                {showSidebar && !isDesktop && pathname !== "/" && <MobileBannerStrip name={user?.name} />}
+
                 {/* Desktop top bar: dashboard greeting on the left, notification bell at the top right */}
                 {showSidebar && isDesktop && (
                     <div className="items-center justify-between gap-4 px-8 py-3 border-b border-zinc-900 bg-[#0a0a0b]/80 backdrop-blur-md shrink-0 relative z-[60]" style={{ display: "flex" }} data-testid="top-bar">
-                        <TopBarGreeting label={dashboardLabel(user)} name={user?.name} dashboard={pathname === "/"} />
+                        <TopBarGreeting label={dashboardLabel(user)} name={user?.name} />
                         {/* Date + time to the left of the notification bell */}
                         <div className="relative flex items-center gap-3 shrink-0">
                             {srvNow && (

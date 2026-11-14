@@ -1,6 +1,6 @@
 "use client";
 import { useState, type ReactNode } from "react";
-import { Cake, PartyPopper, Palmtree } from "lucide-react";
+import { Cake, PartyPopper, Palmtree, UserPlus } from "lucide-react";
 import type { BannerData } from "@/lib/celebration-themes";
 import { useCelebration } from "./GlobalCelebrationEffects";
 
@@ -9,7 +9,9 @@ import { useCelebration } from "./GlobalCelebrationEffects";
  * "Welcome back" header (the uploaded image fills the header, a dark fade on the text side keeps it readable).
  * A colleague's birthday is NOT shown here — it stays a separate banner on the dashboard.
  */
-export const isHeaderKind = (k?: string) => k === "vacation" || k === "festival" || k === "birthday-self";
+export const isHeaderKind = (k?: string) => k === "vacation" || k === "festival" || k === "birthday-self" || k === "welcome-self";
+/** Banners that carry the person (name / photo / designation): own birthday and the new member's own welcome */
+const personKind = (k?: string) => k === "birthday-self" || k === "welcome-self";
 
 /** Today's header banner (dashboard only) */
 export function useHeaderBanner(): BannerData | null {
@@ -17,8 +19,8 @@ export function useHeaderBanner(): BannerData | null {
     return data?.banner && isHeaderKind(data.banner.kind) ? data.banner : null;
 }
 
-const ICON = { "birthday-self": Cake, festival: PartyPopper, vacation: Palmtree } as Record<string, typeof Cake>;
-const EMOJI: Record<string, string> = { "birthday-self": "🎂" };   // festival / vacation: icon (works for every festival)
+const ICON = { "birthday-self": Cake, festival: PartyPopper, vacation: Palmtree, "welcome-self": UserPlus } as Record<string, typeof Cake>;
+const EMOJI: Record<string, string> = { "birthday-self": "🎂", "welcome-self": "👋" };   // festival / vacation: icon (works for every festival)
 
 /** Background layers — placed inside a `relative` header; never catch clicks */
 export function HeaderBannerBackground({ banner, rounded }: { banner: BannerData; rounded?: boolean }) {
@@ -50,7 +52,7 @@ export function HeaderBannerLine({ banner, welcome, compact }: { banner: BannerD
     const bday = banner.kind === "birthday-self";
     // own birthday: the welcome already says "Happy Birthday, …!" → show the template greeting only if it says more
     const heading = bday && welcome && banner.heading.trim().toLowerCase() === welcome.trim().toLowerCase() ? "" : banner.heading;
-    const person = bday && banner.person ? [banner.person.designation, banner.person.college].filter(Boolean).join(" · ") : "";
+    const person = personKind(banner.kind) && banner.person ? [banner.person.designation, banner.person.college].filter(Boolean).join(" · ") : "";
     const justify = banner.align === "center" ? "center" : banner.align === "right" ? "flex-end" : "flex-start";
     return (
         <div className="min-w-0" data-testid="header-banner-line">
@@ -69,7 +71,7 @@ export function HeaderBannerLine({ banner, welcome, compact }: { banner: BannerD
 export function HeaderGreeting({ banner, children, compact }: { banner: BannerData | null; children: ReactNode; compact?: boolean }) {
     if (!banner) return <>{children}</>;
     const textAlign = banner.align === "center" ? "center" : banner.align === "right" ? "right" : "left";
-    const pos = banner.kind === "birthday-self" ? (banner.photoPosition || "right") : "none";
+    const pos = personKind(banner.kind) ? (banner.photoPosition || "right") : "none";
     const photo = pos !== "none" && <Photo url={banner.person?.photoUrl} name={banner.person?.name} size={compact ? 48 : 56} />;
     return (
         <div className="relative flex items-center gap-3 min-w-0 flex-1" style={{ justifyContent: banner.align === "center" ? "center" : banner.align === "right" ? "flex-end" : "flex-start" }}>
@@ -82,7 +84,7 @@ export function HeaderGreeting({ banner, children, compact }: { banner: BannerDa
 
 /** The header exactly as on the dashboard — used for the samples in Celebration Management / holiday form */
 export function HeaderBannerSample({ banner, label = "Dashboard", testId }: { banner: BannerData; label?: string; testId?: string }) {
-    const welcome = banner.kind === "birthday-self" ? `Happy Birthday, ${String(banner.person?.name || "Rahul").split(/\s+/)[0]}!` : "Welcome back, Rahul Sharma";
+    const welcome = banner.kind === "birthday-self" ? `Happy Birthday, ${String(banner.person?.name || "Rahul").split(/\s+/)[0]}!` : banner.kind === "welcome-self" ? `Welcome, ${String(banner.person?.name || "Rahul").split(/\s+/)[0]}!` : "Welcome back, Rahul Sharma";
     return (
         <div className="relative rounded-2xl border border-white/10 px-4 sm:px-6 py-4 sm:py-5 min-h-[96px] flex items-center" data-testid={testId} data-kind={banner.kind}>
             <HeaderBannerBackground banner={banner} rounded />

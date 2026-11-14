@@ -6,6 +6,8 @@ import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
 import { WFH_TYPE_LABEL, WFH_STATUS_STYLE } from "@/lib/wfh-policy";
 import { uploadToCloudinary } from "@/lib/cloudinary";
+import { displayManager } from "@/lib/display-manager";
+import { useAssignedManagers } from "@/lib/use-assigned-managers";
 
 /**
  * Employee side of Work From Home (Attendance page): the application form and the employee's own history.
@@ -18,8 +20,10 @@ const fmtTs = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { t
 export default function WorkFromHomeSection({ open, onClose, canApply = true, onChanged }: { open: boolean; onClose: () => void; canApply?: boolean; onChanged?: () => void }) {
     const { user, employees, refreshApprovedWfh, attendanceRecords } = useAuth();
     const me: any = employees.find(e => e.id === user?.id) || user;
-    const managers = ((Array.isArray(me?.reportsTo) ? me.reportsTo : me?.reportsTo ? [me.reportsTo] : []) as string[])
-        .map(id => employees.find(e => e.id === id)?.name).filter(Boolean).join(", ");
+    // Professor / Faculty / OM → HOI; everyone else → the manager HR assigned (lib/display-manager)
+    const assignedMgr = useAssignedManagers(!!user?.id);
+    const mgr = displayManager(me, id => employees.find(e => e.id === id) as any, me?.id ? assignedMgr[me.id] : undefined);
+    const managers = mgr.names;
     const blank = () => ({ wfhType: "FULL_DAY", startDate: todayIST(), endDate: todayIST(), reason: "", workLocation: "", documentUrl: "", remarks: "" });
     const [uploading, setUploading] = useState(false);
     const [form, setForm] = useState(blank());
@@ -135,7 +139,7 @@ export default function WorkFromHomeSection({ open, onClose, canApply = true, on
                             <div><p className="text-zinc-500">Employee ID</p><p className="text-white font-mono">{user.id}</p></div>
                             <div><p className="text-zinc-500">Designation</p><p className="text-white">{me?.designation || "—"}</p></div>
                             <div><p className="text-zinc-500">Department</p><p className="text-white">{me?.dept || "—"}</p></div>
-                            <div><p className="text-zinc-500">Reporting Manager</p><p className="text-white" data-testid="wfh-manager">{managers || "—"}</p></div>
+                            <div><p className="text-zinc-500">{mgr.label === "HOI" ? "HOI" : "Reporting Manager"}</p><p className="text-white" data-testid="wfh-manager">{managers || "—"}</p></div>
                             <div><p className="text-zinc-500">Application Date</p><p className="text-white">{fmt(todayIST())}</p></div>
                         </div>
                         <div className="space-y-1.5">

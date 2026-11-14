@@ -27,6 +27,14 @@ export const fileNames = {
     workforce: (ext: "pdf" | "xlsx") => `GOG_Workforce_Report_${todayYmd()}.${ext}`,
     onboardingList: (ext: "pdf" | "xlsx") => `GOG_Onboarding_List_${todayYmd()}.${ext}`,
     onboarding: (id: string, ext: "pdf" | "xlsx") => `GOG_Onboarding_${id}.${ext}`,
+    directory: (ext: "pdf" | "xlsx") => `GOG_Employee_Directory_${todayYmd()}.${ext}`,
+    employeeProfile: (id: string, ext: "pdf" | "xlsx") => `GOG_Employee_${id}_${todayYmd()}.${ext}`,
+};
+
+/** Employee Directory → one employee's report (sections of field / value rows and tables) */
+export type SheetReport = {
+    employee: { id: string; name: string }; generatedBy: string; generatedAt: string;
+    sections: { title: string; kv?: KV[]; table?: { cols: { key: string; label: string }[]; rows: Record<string, any>[] } }[];
 };
 
 function saveBlob(blob: Blob, name: string) {
@@ -244,6 +252,51 @@ export async function employeeExcel(r: EmployeeReport, meta: { generatedBy: stri
         row.getCell(2).value = [a.by, a.action, a.note].filter(Boolean).join(" — ");
         row.getCell(2).alignment = { wrapText: true, vertical: "top" };
     });
+    addInfoSheet(wb, m);
+    await saveWorkbook(wb, fileName);
+}
+
+// ───────────────────────── Employee Directory: one employee ─────────────────────────
+export async function sheetReportPdf(r: SheetReport, fileName: string) {
+    const { doc, autoTable } = await newPdf(false);
+    let y = pdfHeader(doc, "Employee Profile Report", [`${r.employee.name} · ${r.employee.id}`, `Exported ${stamp(r.generatedAt)} by ${r.generatedBy}`]);
+    r.sections.forEach((sec, i) => {
+        if (y > doc.internal.pageSize.getHeight() - 90) { doc.addPage(); y = 44; }
+        doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.setTextColor(...GREEN);
+        doc.text(`${i + 1}. ${sec.title}`, 36, y + 6); y += 12;
+        if (sec.kv) {
+            autoTable(doc, {
+                ...tableStyle, startY: y, showHead: "never", body: sec.kv.map(([k, v]) => [k, dash(v)]),
+                columnStyles: { 0: { cellWidth: 170, fontStyle: "bold", textColor: [63, 63, 70], fillColor: [244, 250, 247] }, 1: { cellWidth: "auto" } },
+                styles: { ...tableStyle.styles, fontSize: 8.5 }, alternateRowStyles: {},
+            });
+            y = (doc as any).lastAutoTable.finalY + 16;
+        }
+        if (sec.table) {
+            if (!sec.table.rows.length) { doc.setFont("helvetica", "italic"); doc.setFontSize(8.5); doc.setTextColor(...MUTED); doc.text("No records.", 36, y + 8); y += 22; }
+            else {
+                autoTable(doc, { ...tableStyle, startY: y, head: [sec.table.cols.map(c => c.label)], body: sec.table.rows.map(row => sec.table!.cols.map(c => dash(row[c.key]))), styles: { ...tableStyle.styles, fontSize: 7.5 } });
+                y = (doc as any).lastAutoTable.finalY + 16;
+            }
+        }
+    });
+    doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(...MUTED);
+    if (y > doc.internal.pageSize.getHeight() - 50) { doc.addPage(); y = 44; }
+    doc.text("Bank and identity numbers are masked. Document files are not included; open them in the portal (authorised access only).", 36, y);
+    pdfFooters(doc, `Employee profile · ${r.employee.name} (${r.employee.id}) · Confidential`);
+    doc.save(fileName);
+}
+
+export async function sheetReportExcel(r: SheetReport, fileName: string) {
+    const m = { title: `Employee Profile Report — ${r.employee.name} (${r.employee.id})`, generatedBy: r.generatedBy, generatedAt: r.generatedAt };
+    const wb = await newWorkbook(m);
+    const used = new Set<string>();
+    const sheetName = (t: string) => { let n = t.replace(/[\\/?*[\]:]/g, " ").slice(0, 31).trim(); let k = 2; while (used.has(n)) n = `${n.slice(0, 28)} ${k++}`; used.add(n); return n; };
+    // field / value sections together on the first sheet
+    const kvRows: KV[] = [];
+    r.sections.filter(s => s.kv).forEach(s => { kvRows.push([s.title.toUpperCase(), ""]); kvRows.push(...s.kv!); });
+    addKvSheet(wb, sheetName("Employee Details"), kvRows);
+    r.sections.filter(s => s.table).forEach(s => addTableSheet(wb, sheetName(s.title.replace(/—/g, "-")), s.table!.cols.map(c => ({ key: c.key, label: c.label, width: 14 })), s.table!.rows));
     addInfoSheet(wb, m);
     await saveWorkbook(wb, fileName);
 }

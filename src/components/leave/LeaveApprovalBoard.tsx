@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { displayManager } from "@/lib/display-manager";
+import { useAssignedManagers } from "@/lib/use-assigned-managers";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/context/AuthContext";
 import type { LeaveRequest } from "@/context/AuthContext";
@@ -13,6 +15,8 @@ import { cn } from "@/lib/utils";
  *  - HR / Founder: every employee, final decision (/api/hr/leaves).
  *  - HOI / AD / TL / OM: the leave requests the server returns for their reporting hierarchy,
  *    HOI-step decision on "Pending HOI Approval" (/api/leaves — checked again on the server).
+ *  - AD: final decision (like HR) on the leave of employees who report directly to the AD (/api/hr/leaves,
+ *    checked again on the server); the HOI step for everyone else in the hierarchy.
  */
 
 type StatusTab = "Pending" | "Approved" | "Rejected" | "All";
@@ -34,6 +38,8 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
     };
     useEffect(() => { if (delegated) loadHubLeaves(); }, [delegated, (user as any)?.delegation?.source]);
     const leaves = delegated ? hubLeaves : ownSessionLeaves;
+    // Manager assigned by HR (Work Location → Assign Manager): employeeId → managerId
+    const assignedManager = useAssignedManagers(!!user?.id);
     const [tab, setTab] = useState<StatusTab>("Pending");
     const [searchTerm, setSearchTerm] = useState("");
     const [modal, setModal] = useState<ModalState>(null);
@@ -58,26 +64,33 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
 
     const isAdmin = !!user && (user.role === "HR" || user.role === "FOUNDER");
     const MANAGER_ROLES = ["HOI", "AD", "TL", "OM"];
-    if (!user || (mode === "HR" ? !isAdmin : !(isAdmin || MANAGER_ROLES.includes(user.role)))) {
-        return <div className="p-8 text-center text-zinc-500">{mode === "HR" ? "Access Denied. HR Personnel Only." : "Access Denied. Leave approvals are for HOI, AD, TL, OM, HR and Founder."}</div>;
+    // anyone HR assigned as a reporting manager (Assign Manager) also decides their reportees' leave (manager step)
+    const hasReportees = !!user && employees.some(e => e.id !== user.id && (Array.isArray(e.reportsTo) ? e.reportsTo : e.reportsTo ? [e.reportsTo] : []).includes(user.id));
+    if (!user || (mode === "HR" ? !isAdmin : !(isAdmin || MANAGER_ROLES.includes(user.role) || hasReportees || delegated))) {
+        return <div className="p-8 text-center text-zinc-500">{mode === "HR" ? "Access Denied. HR Personnel Only." : "Access Denied. Leave approvals are for reporting managers, HR and Founder."}</div>;
     }
     // HR / Founder decide finally; managers take the HOI step (only while the request waits for it)
     const decidesFinally = isAdmin;
-    const canDecide = (l: LeaveRequest) => decidesFinally ? isPending(l) : l.status === "Pending HOI Approval";
+    // AD: final decision for direct reportees (reporting manager = this AD), e.g. the HOIs under the AD
+    const directReportOfAD = (l: LeaveRequest) => {
+        if (user.role !== "AD" || delegated) return false;
+        const e = employees.find(x => x.id === l.employeeId);
+        const ids = Array.isArray(e?.reportsTo) ? e!.reportsTo : e?.reportsTo ? [e.reportsTo] : [];
+        return (ids as string[]).includes(user.id);
+    };
+    const finalFor = (l: LeaveRequest) => decidesFinally || directReportOfAD(l);
+    const canDecide = (l: LeaveRequest) => finalFor(l) ? isPending(l) : l.status === "Pending HOI Approval";
 
-    const hois = employees.filter(e => e.role === "HOI");
     const getEmployee = (id: string) => employees.find(e => e.id === id);
     const getLocationLabel = (loc?: string) => {
         if (!loc) return "";
         const c = (colleges || []).find(l => l.id === loc || l.name === loc || l.shortName === loc);
         return c ? c.name : loc;
     };
-    const getHOIName = (employeeId: string) => {
-        const emp = getEmployee(employeeId);
-        if (!emp) return "";
-        const ids = Array.isArray(emp.reportsTo) ? emp.reportsTo : (emp.reportsTo ? [emp.reportsTo] : []);
-        return hois.find(h => ids.includes(h.id))?.name || "";
-    };
+    // Professor / Faculty / OM → their HOI; everyone else → the manager HR assigned (lib/display-manager)
+    const mgrOf = (employeeId: string) => { const emp = getEmployee(employeeId); return emp ? displayManager(emp, getEmployee, assignedManager[employeeId]) : null; };
+    const managerLabel = (employeeId: string) => mgrOf(employeeId)?.label || "Manager";
+    const getManagerName = (employeeId: string) => mgrOf(employeeId)?.names || "";
     const getLeaveLocation = (l: LeaveRequest) => getLocationLabel(getEmployee(l.employeeId)?.location || l.location);
     const getName = (id?: string) => (id ? (getEmployee(id)?.name || id) : "");
     const getDept = (l: LeaveRequest) => (getEmployee(l.employeeId) as any)?.dept || "";
@@ -112,7 +125,7 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
         .filter(l =>
             (l.employeeName || "").toLowerCase().includes(term) ||
             (l.employeeId || "").toLowerCase().includes(term) ||
-            getHOIName(l.employeeId).toLowerCase().includes(term) ||
+            getManagerName(l.employeeId).toLowerCase().includes(term) ||
             getLeaveLocation(l).toLowerCase().includes(term)
         )
         .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
@@ -130,7 +143,11 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
         setIsSaving(true);
         setError("");
         const note = remarks.trim() || undefined;
-        const result = delegated ? await (async () => {
+        const finalStep = finalFor(modal.leave);
+        const result = !decidesFinally && finalStep && !delegated
+            // AD final decision (server checks the direct-reportee rule again)
+            ? await hrProcessLeave(modal.leave.id, modal.type, note, modal.type === "reject" && applyLOP)
+            : delegated ? await (async () => {
             const r = decidesFinally
                 ? await fetch("/api/hr/leaves", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: modal.leave.id, action: modal.type, remarks: note }) })
                 : await fetch("/api/leaves", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: modal.leave.id, status: modal.type === "approve" ? "Pending" : "Rejected", reasonForAction: note, lossOfPayDays: modal.type === "reject" && (applyLOP || modal.leave.leaveType === "Emergency") ? 2 : undefined }) });
@@ -164,7 +181,7 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
     const downloadReport = () => {
         const rows = displayed.map(l => ({
             "Employee": l.employeeName, "Employee ID": l.employeeId, "Department": getDept(l), "Campus": getLeaveLocation(l),
-            "HOI": getHOIName(l.employeeId), "Leave": l.type, "Kind": l.leaveType, "From": l.startDate, "To": l.endDate, "Days": l.days,
+            "HOI / Manager": getManagerName(l.employeeId), "Leave": l.type, "Kind": l.leaveType, "From": l.startDate, "To": l.endDate, "Days": l.days,
             "Status": l.status, "Reason": l.reason || "", "Applied At": formatDate(l.appliedAt), "Remarks": l.reasonForAction || "",
         }));
         if (!rows.length) return;
@@ -185,7 +202,9 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
                     <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3"><CalendarCheck size={26} className="text-primary" /> {mode === "HR" ? "Leave Management" : "Leave Approvals"}</h1>
                     <p className="text-zinc-500 mt-1">{decidesFinally
                         ? "Directly approve or reject employee / faculty leave requests. HOI approval is not required first."
-                        : "Approve or reject leave requests from employees in your reporting hierarchy. Approved requests go on to HR."}</p>
+                        : user.role === "AD"
+                            ? "Leave of employees who report directly to you (e.g. HOIs): your decision is final. Others in your hierarchy: approved requests go on to HR."
+                            : "Approve or reject leave requests from employees in your reporting hierarchy. Approved requests go on to HR."}</p>
                 </div>
             </div>
 
@@ -266,7 +285,7 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
                                         </div>
                                         <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[11px]">
                                             <span className="flex items-center gap-1.5 text-zinc-300"><Calendar size={12} className="text-zinc-500 shrink-0" /> {l.startDate} → {l.endDate} <span className="text-zinc-500">({l.days} day{l.days === 1 ? "" : "s"})</span></span>
-                                            <span className="flex items-center gap-1.5 text-zinc-500 min-w-0"><User size={12} className="shrink-0" /> HOI: <span className="text-zinc-300 truncate">{getHOIName(l.employeeId) || "Not Assigned"}</span></span>
+                                            <span className="flex items-center gap-1.5 text-zinc-500 min-w-0"><User size={12} className="shrink-0" /> {managerLabel(l.employeeId)}: <span className="text-zinc-300 truncate" data-testid="leave-manager">{getManagerName(l.employeeId) || "Not Assigned"}</span></span>
                                             <span className="flex items-center gap-1.5 text-zinc-500 min-w-0"><MapPin size={12} className="shrink-0" /> <span className="text-zinc-300 truncate">{getLeaveLocation(l) || "Not Assigned"}</span></span>
                                         </div>
                                     </div>
@@ -277,6 +296,7 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
                                     {isPending(l) && !canDecide(l) && <span className="text-[10px] text-zinc-500 italic">Awaiting HR</span>}
                                     {canDecide(l) && (
                                         <>
+                                            {!decidesFinally && finalFor(l) && <span className="text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-md border border-emerald-500/30 text-emerald-300 bg-emerald-500/10" data-testid="leave-final-badge">Final</span>}
                                             <button onClick={() => openModal("approve", l)} className="px-4 py-1.5 text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 rounded-lg hover:bg-green-500/20 transition-colors">Approve</button>
                                             <button onClick={() => openModal("reject", l)} className="px-4 py-1.5 text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/20 transition-colors">Reject</button>
                                         </>
@@ -314,9 +334,12 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
                                 <p className="text-xs text-zinc-500">{modalLeave.employeeId} • {modalLeave.type} • {modalLeave.days} day(s)</p>
                                 <p className="text-xs text-zinc-400 mt-2">{modalLeave.startDate} → {modalLeave.endDate}</p>
                                 {decidesFinally && modalLeave.status === "Pending HOI Approval" && (
-                                    <p className="text-[10px] text-amber-500 mt-2">HOI has not acted on this request yet. Your decision will be final.</p>
+                                    <p className="text-[10px] text-amber-500 mt-2">{managerLabel(modalLeave.employeeId)} has not acted on this request yet. Your decision will be final.</p>
                                 )}
-                                {!decidesFinally && modal.type === "approve" && (
+                                {!decidesFinally && finalFor(modalLeave) && (
+                                    <p className="text-[10px] text-emerald-400 mt-2" data-testid="leave-final-note">This employee reports directly to you — your decision is final (HR approval is not needed).</p>
+                                )}
+                                {!finalFor(modalLeave) && modal.type === "approve" && (
                                     <p className="text-[10px] text-zinc-400 mt-2">After your approval the request goes to HR for the final decision.</p>
                                 )}
                             </div>
@@ -363,7 +386,7 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
                             {([
                                 ["Employee Name", modalLeave.employeeName],
                                 ["Employee ID", modalLeave.employeeId],
-                                ["Assigned HOI", getHOIName(modalLeave.employeeId) || "Not Assigned"],
+                                [`Assigned ${managerLabel(modalLeave.employeeId)}`, getManagerName(modalLeave.employeeId) || "Not Assigned"],
                                 ["Location", getLeaveLocation(modalLeave) || "Not Assigned"],
                                 ["Leave Type", `${modalLeave.type} (${modalLeave.leaveType}, ${modalLeave.classification})`],
                                 ["From Date", modalLeave.startDate],

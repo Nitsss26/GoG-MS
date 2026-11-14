@@ -6,8 +6,8 @@ import {
     Briefcase, Award, Network, Megaphone, Ticket, Receipt,
     FileText, CalendarCheck, AlertTriangle, UserCog, Star, MapPin, ClipboardList,
     Crown, Bell, Activity, Flag, ShieldAlert, Trophy, TrendingUp, Shirt,
-    BookOpen, Timer, Mic, GraduationCap, Video, Download, CalendarDays, BadgeCheck, CalendarRange, KeySquare, Layers,
-    Wallet, Mail, Home,
+    BookOpen, Mic, GraduationCap, Video, Download, CalendarDays, BadgeCheck, CalendarRange, KeySquare, Layers,
+    Wallet, Mail, Home, BookUser, ChevronDown,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -61,6 +61,7 @@ const managerMenu = [
 const hrMenu = [
     { label: "HR Hub", icon: UserCog, path: "/hr" },
     { label: "Workforce", icon: Users, path: "/employees" },
+    { label: "Employee Directory", icon: BookUser, path: "/hr/employee-directory" },
     { label: "Leave Management", icon: CalendarCheck, path: "/hr/leave-management" },
     { label: "WFH Management", icon: Home, path: "/hr/wfh-management" },
     { label: "Leave Summary", icon: CalendarRange, path: "/leave-summary" },
@@ -81,6 +82,12 @@ const hrMenu = [
     { label: "Flag Removal", icon: Flag, path: "/hr/flag-removal" },
     { label: "Employee Salary Management", icon: Wallet, path: "/hr/salary-management" },
 ];
+
+// HR / HR Executive: approvals grouped under their own heading (Tickets moves here from Core; Flag Calendar goes to HR Administration)
+const HR_APPROVAL_PATHS = ["/tickets", "/hr/reimbursements", "/hr/leave-management", "/hr/wfh-management", "/hr/dress-code", "/hr/full-attire", "/hr/schedule-approval"];
+// HR / HR Executive sidebar only (Founder keeps it): Attendance Override is not listed
+const HR_LAYOUT_HIDDEN = ["/hr/attendance-override"];
+const hrApprovalsMenu = HR_APPROVAL_PATHS.map(p => p === "/tickets" ? { label: "Tickets", icon: Ticket, path: "/tickets" } : hrMenu.find(i => i.path === p)!);
 
 // Email Management (HR, HR Executive, Founder): dress code / late / no clock-in / no clock-out emails sent by hand
 const emailMenu = [
@@ -103,7 +110,6 @@ const facultyMenu = [
     { label: "Faculty Dashboard", icon: GraduationCap, path: "/faculty" },
     { label: "Sprint Plan", icon: CalendarCheck, path: "/faculty/sprint-plan" },
     { label: "Weekly Calendar", icon: CalendarDays, path: "/academic/weekly-calendar" },
-    { label: "My Lectures", icon: Timer, path: "/faculty/lectures" },
     { label: "Lecture Report", icon: Mic, path: "/faculty/lecture-report" },
 ];
 
@@ -142,13 +148,27 @@ function CountBadge({ n }: { n?: number }) {
     );
 }
 
-function NavSection({ title, items, pathname, onNavigate, inHub, counts = {} }: { title: string; items: NavItem[]; pathname: string; onNavigate?: () => void; inHub?: boolean; counts?: Record<string, number> }) {
+const isActivePath = (pathname: string, path: string) => pathname === path || (path !== "/" && pathname.startsWith(path));
+
+function NavSection({ title, items, pathname, onNavigate, inHub, counts = {}, collapsible, open = true, onToggle }: {
+    title: string; items: NavItem[]; pathname: string; onNavigate?: () => void; inHub?: boolean; counts?: Record<string, number>;
+    /** HR / HR Executive: the heading opens / closes the section; a red dot shows that something inside is waiting */
+    collapsible?: boolean; open?: boolean; onToggle?: () => void;
+}) {
+    const waiting = items.some(i => (i.badge ?? counts[i.path] ?? 0) > 0);
     return (
-        <div>
-            {title && title !== "Personal" && <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-3 px-3">{title}</p>}
-            <div className="space-y-0.5">
+        <div data-testid={collapsible ? `nav-sec-${title.replace(/\W+/g, "-").toLowerCase()}` : undefined} data-open={collapsible ? (open ? "1" : "0") : undefined}>
+            {collapsible ? (
+                <button type="button" onClick={onToggle} aria-expanded={open} data-testid="nav-sec-toggle"
+                    className="w-full flex items-center gap-2 px-3 mb-2 py-1 rounded-md text-[9px] font-bold text-zinc-500 hover:text-zinc-300 uppercase tracking-widest">
+                    <span className="truncate">{title}</span>
+                    {waiting && <span data-testid="nav-sec-dot" aria-label="Pending items" className="w-2 h-2 rounded-full bg-red-500 shrink-0 shadow-[0_0_6px_rgba(239,68,68,0.8)]" />}
+                    <ChevronDown size={12} className={cn("ml-auto shrink-0 transition-transform", open ? "rotate-180" : "")} />
+                </button>
+            ) : title && title !== "Personal" && <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-3 px-3">{title}</p>}
+            {open && <div className="space-y-0.5">
                 {items.map((item) => {
-                    const isActive = !inHub && (pathname === item.path || (item.path !== "/" && pathname.startsWith(item.path)));
+                    const isActive = !inHub && isActivePath(pathname, item.path);
                     const n = item.badge ?? counts[item.path] ?? 0;
                     return (
                         <Link key={item.path + item.label} href={item.path} onClick={onNavigate}
@@ -163,7 +183,7 @@ function NavSection({ title, items, pathname, onNavigate, inHub, counts = {} }: 
                         </Link>
                     );
                 })}
-            </div>
+            </div>}
         </div>
     );
 }
@@ -189,7 +209,7 @@ const ROLE_COLORS: Record<Role, { bg: string; text: string; label: string }> = {
 const NO_REIMBURSEMENT = (items: NavItem[], u: any) => (u?.hrExecutive || u?.role === "TECH_INTERN" ? items.filter(i => i.path !== "/reimbursement" && i.path !== "/hr/reimbursements") : items);
 
 export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
-    const { user: contextUser, realUser, logout, getMyNotifications, workSchedules, hubs = [], activeHub, enterHub, exitHub, canManageAccess } = useAuth();
+    const { user: contextUser, realUser, logout, getMyNotifications, workSchedules, hubs = [], activeHub, enterHub, exitHub, canManageAccess, employees: allEmployees = [] } = useAuth();
     // The sidebar always belongs to the logged-in designation; delegated hubs are added below it
     const user = realUser ?? contextUser;
     const inHub = !!(contextUser as any)?.delegation;
@@ -215,6 +235,23 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
 
     // Notification badges (pending / unread counts from the server, for the logged-in designation)
     const counts = useSidebarCounts(user?.id, pathname);
+
+    // HR / HR Executive: collapsible sections (Core, Personal, HR Approvals, HR Administration, Email Management);
+    // the section of the open page opens by itself, the rest stay as the user left them
+    const hrLayout = role === "HR";
+    const hrSections: { key: string; title: string; items: NavItem[] }[] = hrLayout ? [
+        { key: "core", title: "Core", items: NO_REIMBURSEMENT([...coreMenu.filter(i => i.path !== "/tickets"), personalMenu.find(i => i.path === "/announcements")!], user) },
+        { key: "personal", title: "Personal", items: personalMenu.filter(i => i.path !== "/flag-calendar" && i.path !== "/announcements") },
+        { key: "approvals", title: "HR Approvals", items: NO_REIMBURSEMENT(hrApprovalsMenu.map(i => i.path === "/hr/schedule-approval" ? { ...i, badge: unreadScheduleChanges } : i), user) },
+        { key: "admin", title: (user as any)?.hrExecutive ? "HR Executive Portal" : "HR Administration", items: NO_REIMBURSEMENT([...hrMenu.filter(i => !HR_APPROVAL_PATHS.includes(i.path) && !HR_LAYOUT_HIDDEN.includes(i.path)), { label: "Flag Calendar", icon: Flag, path: "/flag-calendar" }], user) },
+        { key: "email", title: "Email Management", items: emailMenu },
+    ] : [];
+    const [openSec, setOpenSec] = useState<Record<string, boolean>>({});
+    useEffect(() => {
+        if (!hrLayout || inHub) return;
+        const sec = hrSections.find(s => s.items.some(i => isActivePath(pathname, i.path)));
+        if (sec) setOpenSec(o => (o[sec.key] ? o : { ...o, [sec.key]: true }));
+    }, [pathname, hrLayout, inHub]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const roleStyle = (user as any)?.hrExecutive ? ROLE_COLORS.HR_EXECUTIVE : role ? ROLE_COLORS[role] : { bg: "bg-zinc-800", text: "text-zinc-400", label: "Guest" };
     const RoleIcon = role === "FOUNDER" ? Crown : role === "HR" ? ShieldCheck : role === "AD" || role === "HOI" ? Briefcase : User;
@@ -247,22 +284,27 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
                 </div>
             </div>
 
-            <nav className="flex-1 overflow-y-auto space-y-6 custom-scrollbar">
+            <nav className={cn("flex-1 overflow-y-auto custom-scrollbar", hrLayout ? "space-y-3" : "space-y-6")}>
+                {hrLayout ? hrSections.map(sec => (
+                    <NavSection key={sec.key} title={sec.title} items={sec.items} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts}
+                        collapsible open={!!openSec[sec.key]} onToggle={() => setOpenSec(o => ({ ...o, [sec.key]: !o[sec.key] }))} />
+                )) : (<>
                 <NavSection title="Core" items={NO_REIMBURSEMENT(coreMenu, user)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
                 <NavSection title="Personal" items={personalMenu.map(i => i.path === "/notifications" ? { ...i, badge: unreadNotifications } : i)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
+                </>)}
 
                 {/* Manager Suite: Visible to FOUNDER, AD, HOI */}
                 {role && MANAGER_ROLES.includes(role) && (
                     <NavSection title="Manager Suite" items={managerMenu.filter((i: any) => (!i.roles || i.roles.includes(role)) && !(i.hideFor || []).includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
                 )}
 
-                {/* HR Administration: Visible to FOUNDER, HR */}
-                {role && HR_ROLES.includes(role) && (
+                {/* HR Administration: Visible to FOUNDER (HR / HR Executive: in the collapsible sections above) */}
+                {role && HR_ROLES.includes(role) && !hrLayout && (
                     <NavSection title={(user as any)?.hrExecutive ? "HR Executive Portal" : "HR Administration"} items={NO_REIMBURSEMENT(hrMenu.map(i => i.path === "/hr/schedule-approval" ? { ...i, badge: unreadScheduleChanges } : i), user)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
                 )}
 
-                {/* Email Management: HR, HR Executive, Founder */}
-                {role && HR_ROLES.includes(role) && (
+                {/* Email Management: Founder (HR / HR Executive: above) */}
+                {role && HR_ROLES.includes(role) && !hrLayout && (
                     <NavSection title="Email Management" items={emailMenu} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
                 )}
 
@@ -280,6 +322,19 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
                 {role === "FOUNDER" && (
                     <NavSection title="Founder Console" items={founderMenu} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
                 )}
+
+                {/* My Team: anyone HR assigned as a reporting manager (Assign Manager) — approvals not already in their menus */}
+                {role && !HR_ROLES.includes(role) && (() => {
+                    const hasReportees = (allEmployees as any[]).some(e => e.id !== user?.id && e.isRemoved !== true && (Array.isArray(e.reportsTo) ? e.reportsTo : e.reportsTo ? [e.reportsTo] : []).includes(user?.id));
+                    if (!hasReportees) return null;
+                    const items = [
+                        // Leave Approval is already in Manager Suite (HOI / AD / Founder) and Tech Support (TL)
+                        ...(["HOI", "AD", "FOUNDER", "TL"].includes(role) ? [] : [{ label: "Leave Approval", icon: CalendarCheck, path: "/manager/leave-approval" }]),
+                        // WFH approvals of HOI / AD / TL / OM are in Attendance → team view
+                        ...(["HOI", "AD", "TL", "OM", "FOUNDER"].includes(role) ? [] : [{ label: "WFH Approvals", icon: Home, path: "/manager/wfh-approvals" }]),
+                    ];
+                    return items.length ? <NavSection title="My Team" items={items} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} /> : null;
+                })()}
 
                 {/* Tech Support: Visible to TL, FOUNDER */}
                 {role && TECH_LEAD_ROLES.includes(role) && (

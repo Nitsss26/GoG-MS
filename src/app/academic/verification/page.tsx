@@ -154,10 +154,9 @@ export default function ClassVerificationPage() {
                 <button onClick={() => setTab("ALL")} className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider ${tab === "ALL" ? "bg-emerald-500 text-zinc-950" : "bg-zinc-900 text-zinc-400 border border-zinc-800"}`}>
                     All Classes
                 </button>
-            </div>
+                {/* All / Pending Verification / Verified — next to the tabs */}
 
-            {(
-                <div className="flex flex-wrap gap-1 p-1 w-fit rounded-xl border border-zinc-800 bg-zinc-900/60" role="tablist" data-testid="quick-filter">
+                <div className="flex flex-wrap gap-1 p-1 w-fit max-w-full rounded-xl border border-zinc-800 bg-zinc-900/60" role="tablist" data-testid="quick-filter">
                     {([["ALL", "All", "text-zinc-200", "bg-zinc-700/70"], ["PENDING", "Pending Verification", "text-amber-300", "bg-amber-500/15 shadow-[inset_0_0_0_1px_rgba(245,158,11,0.35)]"], ["VERIFIED", "Verified", "text-emerald-300", "bg-emerald-500/15 shadow-[inset_0_0_0_1px_rgba(16,185,129,0.35)]"]] as const).map(([k, label, txt, on]) => (
                         <button key={k} role="tab" aria-selected={tab === "ALL" && quick === k} onClick={() => { setQuick(k); setTab("ALL"); }} data-testid={`quick-${k}`}
                             className={`h-9 px-3.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors ${tab === "ALL" && quick === k ? `${on} ${txt}` : "text-zinc-400 hover:text-white"}`}>
@@ -166,42 +165,42 @@ export default function ClassVerificationPage() {
                         </button>
                     ))}
                 </div>
-            )}
-
-            <div className="flex flex-wrap items-end gap-3 bg-zinc-900/40 border border-zinc-800 rounded-2xl p-4">
-                <Filter size={14} className="text-zinc-500 mb-2" />
-                {tab === "ALL" && (
-                    <>
-                        <div><p className="text-[9px] text-zinc-500 font-bold uppercase">From</p><input type="date" value={from} onChange={e => setFrom(e.target.value)} className="px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-white" /></div>
-                        <div><p className="text-[9px] text-zinc-500 font-bold uppercase">To</p><input type="date" value={to} onChange={e => setTo(e.target.value)} className="px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-white" /></div>
-                    </>
-                )}
-                {colleges.length > 1 && (
-                    <div><p className="text-[9px] text-zinc-500 font-bold uppercase">College</p>
-                        <select value={college} onChange={e => { setCollege(e.target.value); setFacultyId("All"); }} className="px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-white">
-                            <option value="All">All</option>
-                            {colleges.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select></div>
-                )}
-                <div><p className="text-[9px] text-zinc-500 font-bold uppercase">Professor</p>
-                    <select value={facultyId} onChange={e => setFacultyId(e.target.value)} data-testid="filter-professor" className="px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-white">
-                        <option value="All">All</option>
-                        {professors.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select></div>
-                {tab === "ALL" && (
-                    <div><p className="text-[9px] text-zinc-500 font-bold uppercase">Status</p>
-                        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-white">
-                            <option value="All">All</option>
-                            <option value="DELAYED">Notes / record delayed</option>
-                            {["PENDING_PROFESSOR", "PENDING_OM", "OM_REVERTED", "PENDING_CL_CH", "CL_CH_REVERTED", "PENDING_HOI", "COMPLETED"].map(s => <option key={s} value={s}>{CLASS_STATUS_LABEL[s]}</option>)}
-                        </select></div>
-                )}
             </div>
 
             {message && <div className="flex items-center gap-2 rounded-xl px-4 py-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold" data-testid="page-message"><CheckCircle2 size={14} /> {message}</div>}
             {error && <div className="flex items-center gap-2 rounded-xl px-4 py-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-semibold"><AlertTriangle size={14} /> {error}</div>}
 
-            <LectureTable
+            <LectureTable viewKey="verification"
+                /* Date / College / Professor / Status — left of the search */
+                toolbarStart={<>
+                <Filter size={14} className="text-zinc-500 mb-2 shrink-0" />
+                {tab === "ALL" && (
+                    <>
+                        <div className="min-w-0"><p className="text-[9px] text-zinc-500 font-bold uppercase mb-0.5">From</p><input type="date" value={from} onChange={e => setFrom(e.target.value)} className="h-8 px-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-white max-w-[140px] [color-scheme:dark]" /></div>
+                        <div className="min-w-0"><p className="text-[9px] text-zinc-500 font-bold uppercase mb-0.5">To</p><input type="date" value={to} onChange={e => setTo(e.target.value)} className="h-8 px-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-white max-w-[140px] [color-scheme:dark]" /></div>
+                    </>
+                )}
+                {colleges.length > 1 && (
+                    <div className="min-w-0"><p className="text-[9px] text-zinc-500 font-bold uppercase mb-0.5">College</p>
+                        <select value={college} onChange={e => { setCollege(e.target.value); setFacultyId("All"); }} className="h-8 px-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-white max-w-[140px] [color-scheme:dark]">
+                            <option value="All">All</option>
+                            {colleges.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select></div>
+                )}
+                <div className="min-w-0"><p className="text-[9px] text-zinc-500 font-bold uppercase mb-0.5">Professor</p>
+                    <select value={facultyId} onChange={e => setFacultyId(e.target.value)} data-testid="filter-professor" className="h-8 px-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-white max-w-[140px] [color-scheme:dark]">
+                        <option value="All">All</option>
+                        {professors.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select></div>
+                {tab === "ALL" && (
+                    <div className="min-w-0"><p className="text-[9px] text-zinc-500 font-bold uppercase mb-0.5">Status</p>
+                        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="h-8 px-2 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-white max-w-[140px] [color-scheme:dark]">
+                            <option value="All">All</option>
+                            <option value="DELAYED">Notes / record delayed</option>
+                            {["PENDING_PROFESSOR", "PENDING_OM", "OM_REVERTED", "PENDING_CL_CH", "CL_CH_REVERTED", "PENDING_HOI", "COMPLETED"].map(s => <option key={s} value={s}>{CLASS_STATUS_LABEL[s]}</option>)}
+                        </select></div>
+                )}
+                </>}
                 rows={rows}
                 loading={loading}
                 showProfessor

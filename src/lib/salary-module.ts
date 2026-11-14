@@ -5,7 +5,7 @@
  */
 import { Employee, Attendance, LeaveRequest, Holiday, AttendanceViolation, ExitRecord, Location, Notification } from '@/models/Schemas';
 import { holidayForEmployee, holidayExcludes } from '@/lib/holiday-scope';
-import { FlagRemoval, SalaryCounter, PayableCorrection } from '@/models/SalaryModule';
+import { FlagRemoval, SalaryCounter, PayableCorrection, HrMonetaryPenalty } from '@/models/SalaryModule';
 import { LateJustification } from '@/models/LateJustification';
 import { isNewPolicy, dressLadder } from '@/lib/attendance-policy';
 import { locationPenaltiesFor } from '@/lib/location-justification';
@@ -78,6 +78,8 @@ export async function payableForMany(emps: any[], month: string) {
     ]);
     // Location Mismatch rejections: Half-Day / Full-Day → payable days; ₹ penalty → separate Monetary Penalties list
     const locPen = await locationPenaltiesFor(ids, start, end);
+    // HR monetary penalties (Salary Management → Mark as Payable → Monetary Penalty): listed with the other ₹ penalties
+    const hrPen: any[] = await HrMonetaryPenalty.find({ employeeId: { $in: ids }, month, status: 'ACTIVE' }).lean();
     // Late Clock-In justifications still under HR review → on hold (no pay cut until decided)
     const ljPending: any[] = await LateJustification.find({ employeeId: { $in: ids }, date: { $gte: start, $lte: end }, justificationStatus: 'pending' }).select('employeeId date').lean();
     const by = (rows: any[]) => { const m = new Map<string, any[]>(); for (const r of rows) { if (!m.has(r.employeeId)) m.set(r.employeeId, []); m.get(r.employeeId)!.push(r); } return m; };
@@ -89,7 +91,9 @@ export async function payableForMany(emps: any[], month: string) {
     for (const emp of emps) {
         // a holiday HR assigned to particular employees counts only for them (holiday-scope)
         const holidays = (hol as any[]).filter(h => h.employeeIds?.length ? holidayForEmployee(h, emp.id) : !holidayExcludes(h, emp.id) && (h.forAll || !h.collegeIds?.length || (emp.location && h.collegeIds.includes(emp.location)))).map(h => h.date);
-        const monetaryPenalties = (locPen.money.get(emp.id) || []).sort((a, b) => a.date.localeCompare(b.date));
+        const monetaryPenalties = [...(locPen.money.get(emp.id) || []),
+            ...hrPen.filter(p => p.employeeId === emp.id).map(p => ({ id: p.id, date: p.date, amount: Number(p.amount) || 0, reason: `${p.reasonCategory} — ${p.explanation}`, source: 'HR Monetary Penalty', reviewedByName: p.updatedByName || p.createdByName || '', reviewedByRole: p.updatedByRole || p.createdByRole || '', reviewedAt: p.updatedAt || p.createdAt || '' })),
+        ].sort((a, b) => a.date.localeCompare(b.date));
         out.set(emp.id, withMoney(monetaryPenalties, calculatePayableDays({
             month, asOf,
             joiningDate: emp.joiningDate || undefined,
@@ -97,7 +101,7 @@ export async function payableForMany(emps: any[], month: string) {
             attendance: A.get(emp.id) || [], leaves: L.get(emp.id) || [], holidays, violations: [...(V.get(emp.id) || []), ...(locPen.violations.get(emp.id) || [])],
             removed: new Map((R.get(emp.id) || []).map(r => [r.flagId, { removedAt: r.removedAt, removedByName: r.removedByName, removalReason: r.removalReason }])),
             latePendingDates: ljPending.filter(j => j.employeeId === emp.id).map(j => j.date),
-            corrections: new Map((C.get(emp.id) || []).map(c => [c.date, { id: c.id, direction: correctionDirection(c), correctionCategory: c.correctionCategory, correctionReason: c.correctionReason, correctedByName: c.correctedByName, correctedByRole: c.correctedByRole, correctedAt: c.correctedAt, relatedTicketId: c.relatedTicketId }])),
+            corrections: new Map((C.get(emp.id) || []).map(c => [c.date, { id: c.id, direction: correctionDirection(c), value: c.payableType === 'HALF' ? 0.5 : undefined, correctionCategory: c.correctionCategory, correctionReason: c.correctionReason, correctedByName: c.correctedByName, correctedByRole: c.correctedByRole, correctedAt: c.correctedAt, relatedTicketId: c.relatedTicketId }])),
         })));
     }
     return out;
@@ -225,6 +229,16 @@ export async function listFlags(f: { from?: string; to?: string }) {
         Attendance.find({ ...dq, dressCodeStatus: 'Rejected' }).select('_id employeeId date dressCodeStatus dressCodeRejectionReasons').lean(),
     ]);
     return toRows(dress as any[], viol as any[]);
+}
+
+/** Active (not removed, not waived / approved) flags of ONE employee in a date range — Flag Calendar */
+export async function listFlagsFor(employeeId: string, from: string, to: string) {
+    const date = { $gte: from, $lte: to };
+    const [viol, dress] = await Promise.all([
+        AttendanceViolation.find({ employeeId, date, hrStatus: { $nin: VIOLATION_CLOSED } }).select('id employeeId date type level instance proposedDeduction hrStatus scheduledTime actualTime').lean(),
+        Attendance.find({ employeeId, date, dressCodeStatus: 'Rejected' }).select('_id employeeId date dressCodeStatus dressCodeRejectionReasons').lean(),
+    ]);
+    return (await toRows(dress as any[], viol as any[])).filter(r => r.status === 'Active');
 }
 
 // ─────────────────────────── recipients + email ───────────────────────────
@@ -380,3 +394,31 @@ export function meaningfulReason(r: string) {
 }
 
 export { collegeName };
+
+// ─────────────────────────── Half Day Payable / Monetary Penalty ───────────────────────────
+// (lists shared with the Salary Management page)
+export { HALF_DAY_REASONS, PENALTY_REASONS, MAX_PENALTY_AMOUNT } from '@/lib/salary-adjustment-options';
+
+/** Employee email + in-app notice for a salary adjustment (fixed subject and letter wording as HR asked) */
+export async function notifySalaryAdjustment(emp: any, subject: string, intro: string, rows: { label: string; value: any }[], reflected: string, link: string, actor: any, entityId: string) {
+    let emailStatus = 'SKIPPED';
+    try {
+        if (activeEmails([emp]).length) {
+            const tpl = getAcademicNotificationTemplate({
+                title: subject, greeting: `Dear ${emp.name},`, intro, rows,
+                closing: [reflected, 'For any clarification, please contact the HR department.', 'Regards,\nHR Department\nGeeks of Gurukul'],
+                link: appUrl(link) || undefined,
+            });
+            const res: any = await sendMailInternal({ to: emp.email, subject, html: tpl.html });
+            emailStatus = res?.success ? 'SENT' : 'FAILED';
+        }
+    } catch { emailStatus = 'FAILED'; }
+    try {
+        await Notification.create({
+            id: `NTF-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`.toUpperCase(),
+            recipientId: emp.id, recipientName: emp.name, recipientRole: emp.role, title: subject, message: intro, type: 'SALARY_TICKET', link,
+            entityType: 'SalaryAdjustment', entityId, actorId: actor?.id, actorName: actor?.name, read: false, createdAt: nowIso(), emailStatus,
+        });
+    } catch { /* best effort */ }
+    return emailStatus;
+}

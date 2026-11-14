@@ -1,9 +1,19 @@
 "use client";
 
 import { clockInCutoff } from "@/lib/time-utils";
-import { holidayForEmployee } from '@/lib/holiday-scope';
+import { holidayAppliesTo } from '@/lib/holiday-scope';
 import { useAuth } from "@/context/AuthContext";
-import { FLAG_CONFIG, INDIAN_HOLIDAYS_2026 } from "@/lib/colleges";
+import { FLAG_CONFIG as BASE_FLAGS } from "@/lib/colleges";
+
+// Flags of the attendance flag system (server) shown next to the older per-record flags; Missing Clock-Out added here
+const FLAG_CONFIG: typeof BASE_FLAGS = {
+    ...BASE_FLAGS,
+    missingOut: { label: "Missing Clock-Out", emoji: "🔷", color: "text-cyan-300 bg-cyan-500/10 border-cyan-500/20", dotColor: "bg-cyan-400" },
+};
+const FLAG_KEY: Record<string, string> = { LATE_IN: "late", EARLY_OUT: "earlyOut", MISSING_OUT: "missingOut", DRESS_CODE: "dressCode", LOCATION_MISMATCH: "locationDiff" };
+type ServerFlag = { flagId: string; date: string; type: string; typeLabel: string; levelLabel?: string; deduction?: string; hrStatus?: string; detail?: string };
+/** Today in the organisation's time zone (IST) — not the UTC date, which is still "yesterday" before 5:30 AM */
+const istToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 import { cn } from "@/lib/utils";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -111,7 +121,7 @@ function formatDDMMYYYY(dateStr: string): string {
 }
 
 export default function FlagCalendarPage() {
-    const { user, attendanceRecords, holidays, employees, leaves, getReportees, updateSingleDaySchedule, colleges, getExpectedTiming } = useAuth();
+    const { user, attendanceRecords, holidays, employees, leaves, getReportees, updateSingleDaySchedule, colleges, getExpectedTiming, reloadHolidaysAndNotices } = useAuth();
     const router = useRouter();
     const now = new Date();
     const [month, setMonth] = useState(now.getMonth());
@@ -125,14 +135,28 @@ export default function FlagCalendarPage() {
     const [newTime, setNewTime] = useState("09:30");
     const [newClockOutTime, setNewClockOutTime] = useState("18:30");
     const [isUpdating, setIsUpdating] = useState(false);
+    // Holidays come only from Holiday Management (the database): fetched fresh here, so a holiday HR removed / changed
+    // later is not shown from an old copy
+    useEffect(() => { reloadHolidaysAndNotices(); }, [reloadHolidaysAndNotices]);
+    // Active flags of the selected employee for the month (Late / Early / Missing Clock-Out, Dress Code)
+    const [serverFlags, setServerFlags] = useState<ServerFlag[]>([]);
+    useEffect(() => {
+        const emp = selectedEmployeeId || user?.id; if (!emp) return;
+        let gone = false;
+        const m = `${year}-${String(month + 1).padStart(2, "0")}`;
+        fetch(`/api/attendance/flags?employeeId=${encodeURIComponent(emp)}&month=${m}`, { cache: "no-store" })
+            .then(r => (r.ok ? r.json() : { flags: [] })).then(d => { if (!gone) setServerFlags(Array.isArray(d.flags) ? d.flags : []); })
+            .catch(() => { if (!gone) setServerFlags([]); });
+        return () => { gone = true; };
+    }, [selectedEmployeeId, user?.id, year, month]);
 
     if (!user) return null;
 
     // Hierarchy visibility logic using getReportees — sorted alphabetically
-    // HR Executive sees the same employees as HR (their employee record keeps the HR_EXECUTIVE role,
-    // so the HR rule is applied here by role list instead of by the record's role)
-    const reportees = (user as any).hrExecutive
-        ? employees.filter(e => e.id !== user.id && ["AD", "HOI", "FACULTY", "PROFESSOR", "OM", "CURRICULUM_HEAD", "CURRICULUM_LEAD"].includes(e.role))
+    // HR and HR Executive: every employee on the portal (Founders to Professors), not only the academic roles
+    const isHrViewer = user.role === "HR" || !!(user as any).hrExecutive;
+    const reportees = isHrViewer
+        ? employees.filter(e => e.id !== user.id && (e as any).isRemoved !== true)
         : getReportees(user.id);
     // employees HR removed from attendance are not listed
     const viewableEmployees = [user, ...reportees.filter(e => !(e as any).hideFromAttendance)].sort((a, b) => {
@@ -171,21 +195,24 @@ export default function FlagCalendarPage() {
 
     const dateStr = (day: number) => `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 
-    const getApprovedHolidays = (d: string) => holidays.filter(h => h.date === d && h.status === "Approved" && holidayForEmployee(h, selectedEmployeeId));
-    const getIndianHoliday = (d: string) => INDIAN_HOLIDAYS_2026.find(h => h.date === d);
+    // Approved holidays of the database that apply to this employee (college / particular employees / removed for them) —
+    // the same rule as payable days. The old fixed list of national holidays is no longer added on top of it.
+    const getApprovedHolidays = (d: string) => holidays.filter(h => h.date === d && h.status === "Approved" && holidayAppliesTo(h, selectedEmployee as any, colleges as any));
     const getLeaveStatus = (d: string) => leaves?.find(l => l.employeeId === selectedEmployeeId && l.status === "Approved" && d >= l.startDate && d <= l.endDate);
 
     const getFlags = (d: string) => {
         const rec = records.find(r => r.date === d);
         let activeFlags = rec ? Object.entries(rec.flags || {}).filter(([k, v]) => v && k !== "shortLeave").map(([k]) => k) : []; // Short Leave is no longer used (old records keep the value, it is not shown)
+        // + flags raised by the attendance flag system on this date (no duplicates)
+        serverFlags.filter(f => f.date === d).forEach(f => { const k = FLAG_KEY[f.type]; if (k && !activeFlags.includes(k)) activeFlags.push(k); });
 
         const dateObj = new Date(d);
         const isSunday = dateObj.getDay() === 0;
-        const isHoliday = getApprovedHolidays(d).length > 0 || !!getIndianHoliday(d);
+        const isHoliday = getApprovedHolidays(d).length > 0;
         const isOnLeave = !!getLeaveStatus(d);
         const isWorkingDay = !isSunday && !isHoliday && !isOnLeave;
         const isPastMar17 = d >= "2026-03-17";
-        const isPastToday = d > now.toISOString().split("T")[0];
+        const isPastToday = d > istToday();
 
         if (!rec && isWorkingDay && isPastMar17 && !isPastToday) {
             activeFlags.push("absent");
@@ -208,7 +235,7 @@ export default function FlagCalendarPage() {
             const ds = dateStr(i);
             const dateObj = new Date(year, month, i);
             const isSunday = dateObj.getDay() === 0;
-            const isHoliday = getApprovedHolidays(ds).length > 0 || !!getIndianHoliday(ds);
+            const isHoliday = getApprovedHolidays(ds).length > 0;
             const leaveMatch = getLeaveStatus(ds);
             const rec = records.find(r => r.date === ds);
             const flags = getFlags(ds);
@@ -384,16 +411,15 @@ export default function FlagCalendarPage() {
                                 const ds = dateStr(day);
                                 const flags = getFlags(ds);
                                 const approvedHols = getApprovedHolidays(ds);
-                                const indianHol = getIndianHoliday(ds);
-                                const isToday = ds === now.toISOString().split("T")[0];
+                                const isToday = ds === istToday();
                                 const isSelected = selectedDay === ds;
-                                const isHoliday = approvedHols.length > 0 || !!indianHol;
+                                const isHoliday = approvedHols.length > 0;
                                 const isSunday = di === 0;
                                 const rec = records.find(r => r.date === ds);
                                 const leaveMatch = getLeaveStatus(ds);
-                                const isFuture = ds > now.toISOString().split("T")[0];
+                                const isFuture = ds > istToday();
 
-                                const holidayName = indianHol?.name || approvedHols[0]?.name || "";
+                                const holidayName = approvedHols[0]?.name || "";
 
                                 return (
                                     <div key={di} onClick={() => setSelectedDay(isSelected ? null : ds)}
@@ -638,17 +664,6 @@ export default function FlagCalendarPage() {
 
                     <div className="p-5 space-y-4">
                         {/* Holiday pills */}
-                        {getIndianHoliday(selectedDay) && (
-                            <div className="flex items-center gap-2.5 p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl">
-                                <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center shrink-0">
-                                    <Sun size={14} className="text-purple-400" />
-                                </div>
-                                <div>
-                                    <p className="text-xs font-bold text-purple-400">{getIndianHoliday(selectedDay)?.name}</p>
-                                    <p className="text-[9px] text-purple-300/60">National / Festival Holiday</p>
-                                </div>
-                            </div>
-                        )}
                         {getApprovedHolidays(selectedDay).map(h => (
                             <div key={h.id} className="flex items-center gap-2.5 p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl">
                                 <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center shrink-0">
@@ -700,7 +715,8 @@ export default function FlagCalendarPage() {
                             }
 
                             // Full attendance record
-                            const recFlags = Object.entries(rec!.flags || {}).filter(([k, v]) => v && k !== "shortLeave").map(([k]) => k);
+                            const recFlags = getFlags(selectedDay).filter(k => k !== "absent");
+                            const dayServerFlags = serverFlags.filter(f => f.date === selectedDay);
                             return (
                                 <div className="space-y-4">
                                     {/* Clock Data Cards */}
@@ -739,6 +755,15 @@ export default function FlagCalendarPage() {
                                                     </span>
                                                 ))}
                                             </div>
+                                            {dayServerFlags.length > 0 && (
+                                                <div className="space-y-1" data-testid="fc-flag-details">
+                                                    {dayServerFlags.map(f => (
+                                                        <p key={f.flagId} className="text-[10px] text-zinc-400 [overflow-wrap:anywhere]">
+                                                            <b className="text-zinc-200">{f.typeLabel}</b>{f.levelLabel ? ` · ${f.levelLabel}` : ""}{f.deduction && f.deduction !== "None" ? ` · ${f.deduction}` : ""}{f.hrStatus ? ` · ${f.hrStatus}` : ""}{f.detail ? ` — ${f.detail}` : ""}
+                                                        </p>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     ) : (
                                         <div className="flex items-center gap-2 p-3 bg-green-500/5 border border-green-500/10 rounded-xl">

@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Cake, PartyPopper, Upload, Loader2, Eye, Trash2, Pencil, Check, Search, X, CalendarDays, Settings2, Image as ImageIcon, RefreshCw, Plus, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Cake, PartyPopper, UserPlus, Upload, Loader2, Eye, Trash2, Pencil, Check, Search, X, CalendarDays, Settings2, Image as ImageIcon, RefreshCw, Plus, CheckCircle2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
@@ -9,19 +9,22 @@ import { useMinWidth } from "@/lib/use-min-width";
 import CelebrationBanner from "./CelebrationBanner";
 import { HeaderBannerSample, isHeaderKind } from "./HeaderCelebration";
 import CelebrationPreview from "./CelebrationPreview";
-import { FESTIVALS, THEMES, DEFAULTS, festivalOf, birthdayBanner, festivalBanner, type TodayCelebration, type ThemeKey } from "@/lib/celebration-themes";
+import { FESTIVALS, THEMES, THEME_CATEGORIES, BIRTHDAY_SELF_THEMES, BIRTHDAY_COLLEAGUE_THEMES, themeLabel, DEFAULTS, festivalOf, birthdayBanner, festivalBanner, welcomeBanner, type TodayCelebration, type ThemeKey } from "@/lib/celebration-themes";
 
 /**
  * Announcements → Celebration Management (HR / HR Executive / Founder — the server checks it too).
  *   Birthday Celebration: two banner libraries (Birthday Person / Colleagues), employee birthday directory with
  *   Edit Birthday, per-employee banners and both previews.
  *   Festival Celebration: festival + date + theme + banner library + greeting / colours + animation switches, previews.
+ *   New Member Welcome (its own tab in Announcements, next to Celebration Management — <NewMemberWelcome />):
+ *     HR picks the new member + banner(s) / text → shown on everyone's dashboard ONLY on the publish day.
  * Everything is read from / saved to the server (GET / POST /api/celebrations/manage).
  */
 type Tpl = { id: string; category: string; festivalKey?: string; name: string; imageUrl: string; greeting?: string; subtext?: string; headingColor?: string; textColor?: string; overlayColor?: string; bgColor?: string; align?: string; photoPosition?: string };
 type Emp = { id: string; name: string; role: string; designation: string; dept: string; college: string; photoUrl: string; dob: string; dobMonth: number; dobDay: number; selfTemplateId: string; colleagueTemplateId: string; configured: boolean };
 type Fest = { id: string; festivalKey: string; name: string; date: string; theme: ThemeKey; bannerTemplateId: string; greeting: string; textColor: string; bgColor: string; animation: boolean; subtle: boolean; status: string };
-type Data = { templates: Tpl[]; setting: { selfTemplateId?: string; colleagueTemplateId?: string }; employees: Emp[]; festivals: Fest[] };
+type Welcome = { id: string; employeeId: string; employeeName: string; date: string; imageUrl: string; selfImageUrl: string; greeting: string; subtext: string; selfGreeting: string; selfSubtext: string; headingColor: string; textColor: string; overlayColor: string; bgColor: string; align: string; photoPosition: string; createdByName?: string; createdAt?: string };
+type Data = { templates: Tpl[]; setting: { selfTemplateId?: string; colleagueTemplateId?: string; selfTheme?: string; colleagueTheme?: string }; employees: Emp[]; festivals: Fest[]; welcomes?: Welcome[]; today?: string };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const dobLabel = (e: Emp) => e.dobMonth ? `${String(e.dobDay).padStart(2, "0")} ${MONTHS[e.dobMonth - 1]}${/^\d{4}/.test(e.dob) ? ` ${e.dob.slice(0, 4)}` : ""}` : "—";
@@ -39,8 +42,11 @@ async function api(body: any) {
 }
 async function uploadBanner(file: File) { return (await uploadToCloudinary(await optimizeImage(file))).secure_url; }
 
-export default function CelebrationManagement() {
-    const [tab, setTab] = useState<"birthday" | "festival">("birthday");
+/** Announcements → New Member Welcome (separate tab next to Celebration Management) */
+export function NewMemberWelcome() { return <CelebrationManagement section="welcome" />; }
+
+export default function CelebrationManagement({ section = "celebrations" }: { section?: "celebrations" | "welcome" }) {
+    const [tab, setTab] = useState<"birthday" | "festival" | "welcome">(section === "welcome" ? "welcome" : "birthday");
     const [data, setData] = useState<Data | null>(null);
     const [err, setErr] = useState("");
     const [msg, setMsg] = useState("");
@@ -56,28 +62,29 @@ export default function CelebrationManagement() {
     const act = async (body: any) => { setErr(""); const d = await api(body); setMsg(d.message || "Saved."); await load(); return d; };
 
     return (
-        <div className="space-y-4" data-testid="celebration-management">
-            <div className="flex gap-1 p-1 bg-zinc-900 border border-zinc-800 rounded-2xl w-fit max-w-full overflow-x-auto" role="tablist" data-testid="cm-tabs">
+        <div className="space-y-4" data-testid={section === "welcome" ? "new-member-welcome" : "celebration-management"}>
+            {section !== "welcome" && <div className="flex gap-1 p-1 bg-zinc-900 border border-zinc-800 rounded-2xl w-fit max-w-full overflow-x-auto" role="tablist" data-testid="cm-tabs">
                 {([["birthday", "Birthday Celebration", Cake], ["festival", "Festival Celebration", PartyPopper]] as const).map(([k, l, I]) => (
                     <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} data-testid={`cm-tab-${k}`}
                         className={cn("flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-bold whitespace-nowrap", tab === k ? "bg-zinc-800 text-primary shadow-inner" : "text-zinc-500 hover:text-zinc-300")}><I size={13} /> {l}</button>
                 ))}
-            </div>
+            </div>}
             {msg && <div className="flex items-start gap-2 p-3 rounded-xl border border-emerald-500/25 bg-emerald-500/10 text-emerald-200 text-xs" data-testid="cm-msg"><CheckCircle2 size={15} className="shrink-0" /><span className="flex-1 [overflow-wrap:anywhere]">{msg}</span><button onClick={() => setMsg("")} aria-label="Close"><X size={14} /></button></div>}
             {err && <div className="flex items-start gap-2 p-3 rounded-xl border border-red-500/25 bg-red-500/10 text-red-200 text-xs" data-testid="cm-error"><AlertTriangle size={15} className="shrink-0" /><span className="flex-1 [overflow-wrap:anywhere]">{err}</span><button onClick={() => setErr("")} aria-label="Close"><X size={14} /></button></div>}
             {!data ? <div className="py-16 flex justify-center"><Loader2 className="animate-spin text-zinc-500" /></div>
-                : tab === "birthday" ? <BirthdaySection data={data} act={act} setErr={setErr} /> : <FestivalSection data={data} act={act} setErr={setErr} />}
+                : tab === "birthday" ? <BirthdaySection data={data} act={act} setErr={setErr} /> : tab === "festival" ? <FestivalSection data={data} act={act} setErr={setErr} /> : <WelcomeSection data={data} act={act} />}
         </div>
     );
 }
 
 // ───────────────────────── Birthday ─────────────────────────
 function personOf(e?: Emp | null) { return e ? { name: e.name, designation: e.designation, college: e.college || e.dept, photoUrl: e.photoUrl } : { name: "Employee Name", designation: "Designation" }; }
-function birthdayPreview(view: "self" | "colleague", t: Tpl | undefined, e?: Emp | null): TodayCelebration {
+function birthdayPreview(view: "self" | "colleague", t: Tpl | undefined, e?: Emp | null, anim?: { selfTheme?: string; colleagueTheme?: string }): TodayCelebration {
     const p = personOf(e);
-    if (view === "self") return { date: istToday(), banner: birthdayBanner("birthday-self", t, p), colleagues: [], birthdaySelf: true, effect: { type: "birthday", theme: "CONFETTI", key: "PREVIEW", opening: true, subtle: true } };
-    // colleagues: the clean colleague banner, never the birthday confetti
-    return { date: istToday(), banner: birthdayBanner("birthday-colleague", t, p), colleagues: [], birthdaySelf: false, effect: null };
+    const self = anim?.selfTheme || "CONFETTI", coll = anim?.colleagueTheme || "NONE";
+    if (view === "self") return { date: istToday(), banner: birthdayBanner("birthday-self", t, p), colleagues: [], birthdaySelf: true, effect: self === "NONE" ? null : { type: "birthday", theme: self as ThemeKey, key: "PREVIEW", opening: true, subtle: true } };
+    // colleagues: the clean colleague banner, never the birthday person's animation — only the light effect HR switched on
+    return { date: istToday(), banner: birthdayBanner("birthday-colleague", t, p), colleagues: [], birthdaySelf: false, effect: coll === "NONE" ? null : { type: "colleague-birthday", theme: coll as ThemeKey, key: "PREVIEW", opening: true, subtle: true } };
 }
 
 function BirthdaySection({ data, act, setErr }: { data: Data; act: (b: any) => Promise<any>; setErr: (s: string) => void }) {
@@ -104,16 +111,26 @@ function BirthdaySection({ data, act, setErr }: { data: Data; act: (b: any) => P
     const collOf = (e: Emp) => tplById(e.colleagueTemplateId) || tplById(data.setting.colleagueTemplateId);
     const openPreview = (view: "self" | "colleague", e: Emp | null, t?: Tpl) => setPreview({
         title: view === "self" ? `Birthday Person Dashboard — ${e?.name || "preview"}` : `Colleagues' Dashboard — ${e?.name || "preview"}`,
-        payload: birthdayPreview(view, t ?? (e ? (view === "self" ? selfOf(e) : collOf(e)) : tplById(view === "self" ? data.setting.selfTemplateId : data.setting.colleagueTemplateId)), e),
+        payload: birthdayPreview(view, t ?? (e ? (view === "self" ? selfOf(e) : collOf(e)) : tplById(view === "self" ? data.setting.selfTemplateId : data.setting.colleagueTemplateId)), e, data.setting),
     });
 
     return (
         <div className="space-y-5">
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                <Library title="Birthday Person Banner" hint="Shown on the dashboard of the employee whose birthday it is (with confetti for them only)." category="BIRTHDAY_SELF"
-                    items={self} activeId={data.setting.selfTemplateId} act={act} setErr={setErr} onPreview={t => openPreview("self", me, t)} />
-                <Library title="Colleagues' Birthday Banner" hint="Shown to everyone else on a colleague's birthday — a clean banner, no confetti." category="BIRTHDAY_COLLEAGUE"
-                    items={coll} activeId={data.setting.colleagueTemplateId} act={act} setErr={setErr} onPreview={t => openPreview("colleague", me, t)} />
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+                <div className="space-y-2">
+                    <Library title="Birthday Person Banner" hint="Shown on the dashboard of the employee whose birthday it is (with their animation for them only)." category="BIRTHDAY_SELF"
+                        items={self} activeId={data.setting.selfTemplateId} act={act} setErr={setErr} onPreview={t => openPreview("self", me, t)} />
+                    <AnimationPick kind="self" label="Birthday Person Animation" hint="Plays only for the employee whose birthday it is."
+                        value={data.setting.selfTheme || "CONFETTI"} options={BIRTHDAY_SELF_THEMES} act={act} setErr={setErr}
+                        onPreview={v => setPreview({ title: `Birthday Person Animation — ${themeLabel(v)}`, payload: birthdayPreview("self", tplById(data.setting.selfTemplateId), me, { ...data.setting, selfTheme: v }) })} />
+                </div>
+                <div className="space-y-2">
+                    <Library title="Colleagues' Birthday Banner" hint="Shown to everyone else on a colleague's birthday — a clean banner, no confetti." category="BIRTHDAY_COLLEAGUE"
+                        items={coll} activeId={data.setting.colleagueTemplateId} act={act} setErr={setErr} onPreview={t => openPreview("colleague", me, t)} />
+                    <AnimationPick kind="colleague" label="Colleague Animation" hint="Off by default. Only light effects — never the birthday person's animation or confetti."
+                        value={data.setting.colleagueTheme || "NONE"} options={BIRTHDAY_COLLEAGUE_THEMES} act={act} setErr={setErr}
+                        onPreview={v => setPreview({ title: `Colleague Animation — ${themeLabel(v)}`, payload: birthdayPreview("colleague", tplById(data.setting.colleagueTemplateId), me, { ...data.setting, colleagueTheme: v }) })} />
+                </div>
             </div>
 
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-3" data-testid="cm-directory">
@@ -165,6 +182,28 @@ function BirthdaySection({ data, act, setErr }: { data: Data; act: (b: any) => P
             {dobFor && <DobDialog e={dobFor} onClose={() => setDobFor(null)} act={act} />}
             {cfgFor && <ConfigDialog e={cfgFor} self={self} coll={coll} setting={data.setting} onClose={() => setCfgFor(null)} act={act} />}
             {preview && <CelebrationPreview title={preview.title} payload={preview.payload} onClose={() => setPreview(null)} />}
+        </div>
+    );
+}
+
+/** Birthday animation theme: choose → preview → save */
+function AnimationPick({ kind, label, hint, value, options, act, setErr, onPreview }: {
+    kind: "self" | "colleague"; label: string; hint: string; value: string; options: string[]; act: (b: any) => Promise<any>; setErr: (s: string) => void; onPreview: (v: string) => void;
+}) {
+    const [v, setV] = useState(value); const [busy, setBusy] = useState(false);
+    useEffect(() => setV(value), [value]);
+    const save = async () => { setBusy(true); try { await act({ action: "birthday_animation", [kind === "self" ? "selfTheme" : "colleagueTheme"]: v }); } catch (e: any) { setErr(e.message); } finally { setBusy(false); } };
+    return (
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-3 sm:p-4 space-y-2" data-testid={`cm-anim-${kind}`}>
+            <label className={lbl} htmlFor={`cm-anim-${kind}-sel`}>{label}</label>
+            <div className="flex flex-wrap gap-2">
+                <select id={`cm-anim-${kind}-sel`} value={v} onChange={e => setV(e.target.value)} data-testid={`cm-anim-${kind}-select`} className={cn(field, "flex-1 min-w-[160px]")}>
+                    {options.map(o => <option key={o} value={o}>{themeLabel(o)}</option>)}
+                </select>
+                <button onClick={() => onPreview(v)} disabled={v === "NONE"} data-testid={`cm-anim-${kind}-preview`} className={`${btn} h-10 border-amber-500/40 bg-amber-500/10 text-amber-200`}><Eye size={13} /> {kind === "self" ? "Preview Birthday Person Animation" : "Preview Colleague Animation"}</button>
+                <button onClick={save} disabled={busy || v === value} data-testid={`cm-anim-${kind}-save`} className={`${btn} h-10 border-primary/40 bg-primary text-white`}>{busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save</button>
+            </div>
+            <p className="text-[10px] text-zinc-500">{hint}{v !== "NONE" && THEMES.find(t => t.key === v) ? ` · ${THEMES.find(t => t.key === v)!.description}` : ""}</p>
         </div>
     );
 }
@@ -371,7 +410,7 @@ function FestivalSection({ data, act, setErr }: { data: Data; act: (b: any) => P
                     <div><label className={lbl} htmlFor="cm-fest-date">Celebration Date</label>
                         <input id="cm-fest-date" type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} data-testid="cm-fest-date" className={cn(field, "[color-scheme:dark]")} /></div>
                     <div><label className={lbl} htmlFor="cm-fest-theme">Festival Theme</label>
-                        <select id="cm-fest-theme" value={f.theme} onChange={e => setF({ ...f, theme: e.target.value as ThemeKey })} data-testid="cm-fest-theme" className={field}>{THEMES.filter(t => t.key !== "CONFETTI").map(t => <option key={t.key} value={t.key}>{t.label}</option>)}</select>
+                        <select id="cm-fest-theme" value={f.theme} onChange={e => setF({ ...f, theme: e.target.value as ThemeKey })} data-testid="cm-fest-theme" className={field}>{THEME_CATEGORIES.map(c => <optgroup key={c} label={c}>{THEMES.filter(t => t.category === c).map(t => <option key={t.key} value={t.key}>{t.label}</option>)}</optgroup>)}</select>
                         <p className="text-[10px] text-zinc-500 mt-1">{THEMES.find(t => t.key === f.theme)?.description}</p></div>
                     <div><label className={lbl} htmlFor="cm-fest-name">Display Name</label><input id="cm-fest-name" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} className={field} data-testid="cm-fest-name" /></div>
                     <div className="sm:col-span-2"><label className={lbl} htmlFor="cm-fest-greeting">Festival Greeting</label><input id="cm-fest-greeting" value={f.greeting} onChange={e => setF({ ...f, greeting: e.target.value })} className={field} data-testid="cm-fest-greeting" /></div>
@@ -414,6 +453,119 @@ function FestivalSection({ data, act, setErr }: { data: Data; act: (b: any) => P
                 )}
             </div>
             {preview && <CelebrationPreview title={preview.title} payload={preview.payload} onClose={() => setPreview(null)} onSave={preview.save ? save : undefined} saving={busy} />}
+        </div>
+    );
+}
+
+// ───────────────────────── New Member Welcome ─────────────────────────
+const blankWelcome = (): Welcome => ({ id: "", employeeId: "", employeeName: "", date: "", imageUrl: "", selfImageUrl: "", greeting: DEFAULTS.welcomeColleague.heading, subtext: DEFAULTS.welcomeColleague.subheading, selfGreeting: DEFAULTS.welcomeSelf.heading, selfSubtext: DEFAULTS.welcomeSelf.subheading, headingColor: DEFAULTS.welcomeColleague.headingColor, textColor: DEFAULTS.welcomeColleague.textColor, overlayColor: DEFAULTS.welcomeColleague.overlayColor, bgColor: DEFAULTS.welcomeColleague.bgColor, align: "left", photoPosition: "right" });
+function welcomePreview(view: "self" | "colleague", w: Welcome, e?: Emp | null): TodayCelebration {
+    const b = welcomeBanner(view === "self" ? "welcome-self" : "welcome-colleague", w, personOf(e));
+    return { date: istToday(), banner: b, colleagues: [], birthdaySelf: false, effect: null };
+}
+
+function ImagePick({ label, hint, url, onChange, testId }: { label: string; hint: string; url: string; onChange: (u: string) => void; testId: string }) {
+    const file = useRef<HTMLInputElement>(null); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+    const pick = async (fl: FileList | null) => { if (!fl?.[0]) return; setBusy(true); setErr(""); try { onChange(await uploadBanner(fl[0])); } catch { setErr("Upload failed."); } finally { setBusy(false); if (file.current) file.current.value = ""; } };
+    return (
+        <div className="min-w-0"><p className={lbl}>{label}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+                {url ? <img src={url} alt="" className="h-14 w-24 object-contain rounded-lg bg-zinc-950 border border-zinc-800" data-testid={`${testId}-thumb`} /> : <span className="h-14 w-24 rounded-lg border border-dashed border-zinc-700 text-[10px] text-zinc-500 flex items-center justify-center text-center px-1">Built-in design</span>}
+                <input ref={file} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={e => pick(e.target.files)} data-testid={`${testId}-input`} />
+                <button type="button" onClick={() => file.current?.click()} disabled={busy} data-testid={testId} className={`${btn} h-8 border-primary/40 bg-primary/10 text-primary`}>{busy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} {url ? "Replace" : "Upload Banner"}</button>
+                {url && <button type="button" onClick={() => onChange("")} className={`${btn} h-8 border-zinc-700 bg-zinc-900 text-zinc-300`}><X size={12} /> Remove</button>}
+            </div>
+            <p className="text-[10px] text-zinc-500 mt-1">{hint}</p>
+            {err && <p className="text-[11px] text-red-300">{err}</p>}
+        </div>
+    );
+}
+
+function WelcomeSection({ data, act }: { data: Data; act: (b: any) => Promise<any> }) {
+    const [w, setW] = useState<Welcome>(blankWelcome());
+    const [q, setQ] = useState("");
+    const [busy, setBusy] = useState(false); const [formErr, setFormErr] = useState("");
+    const [preview, setPreview] = useState<{ title: string; payload: TodayCelebration } | null>(null);
+    const today = data.today || istToday();
+    const emp = data.employees.find(e => e.id === w.employeeId) || null;
+    const matches = useMemo(() => {
+        const t = q.trim().toLowerCase();
+        return data.employees.filter(e => !t || `${e.name} ${e.id} ${e.designation} ${e.college}`.toLowerCase().includes(t)).slice(0, 200);
+    }, [data.employees, q]);
+    const list = data.welcomes || [];
+    const todays = list.filter(x => x.date === today), past = list.filter(x => x.date !== today);
+    const save = async () => {
+        if (!w.employeeId) { setFormErr("Choose the new member."); return; }
+        setBusy(true); setFormErr("");
+        try { const d = await act({ action: "welcome_save", ...w }); setW({ ...w, id: d.id || w.id }); }
+        catch (e: any) { setFormErr(e.message); } finally { setBusy(false); }
+    };
+    const del = async (x: Welcome) => { setFormErr(""); try { await act({ action: "welcome_delete", id: x.id }); if (w.id === x.id) setW(blankWelcome()); } catch (e: any) { setFormErr(e.message); } };
+    const set = (k: keyof Welcome) => (v: string) => setW({ ...w, [k]: v });
+    const colleagueSample = welcomeBanner("welcome-colleague", w, personOf(emp));
+    const selfSample = welcomeBanner("welcome-self", w, personOf(emp));
+    return (
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] gap-4 items-start">
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-4" data-testid="cm-wel-form">
+                <div className="flex items-center justify-between gap-2"><p className="text-sm font-bold text-white flex items-center gap-2"><UserPlus size={15} className="text-teal-300" /> {w.id ? `Edit Welcome — ${w.employeeName || emp?.name || ""}` : "New Member Welcome"}</p>
+                    {w.id && <button onClick={() => setW(blankWelcome())} className={`${btn} h-8 border-zinc-700 bg-zinc-900 text-zinc-200`}><Plus size={12} /> New</button>}</div>
+                <p className="text-[11px] text-teal-200 bg-teal-500/5 border border-teal-500/20 rounded-lg px-3 py-2" data-testid="cm-wel-note">Shown on everyone&apos;s dashboard <b>only today ({dmy(today)})</b> — the day it is published. The new member sees their own welcome banner; everyone else sees the colleagues&apos; banner.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div><label className={lbl} htmlFor="cm-wel-search">Find Employee</label>
+                        <div className="relative"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" /><input id="cm-wel-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Name, ID, designation…" className={cn(field, "pl-8")} data-testid="cm-wel-search" /></div></div>
+                    <div><label className={lbl} htmlFor="cm-wel-emp">New Member *</label>
+                        <select id="cm-wel-emp" value={w.employeeId} onChange={e => setW({ ...w, employeeId: e.target.value, employeeName: data.employees.find(x => x.id === e.target.value)?.name || "" })} className={field} data-testid="cm-wel-emp">
+                            <option value="">— Choose —</option>
+                            {emp && !matches.includes(emp) && <option value={emp.id}>{emp.name} ({emp.id})</option>}
+                            {matches.map(e => <option key={e.id} value={e.id}>{e.name} ({e.id}){e.designation ? ` · ${e.designation}` : ""}</option>)}
+                        </select></div>
+                    <ImagePick label="Colleagues' Banner Image" hint="Optional. Shown to everyone else; without an image the built-in design is used." url={w.imageUrl} onChange={set("imageUrl")} testId="cm-wel-img" />
+                    <ImagePick label="New Member's Banner Image" hint="Optional. Without it the colleagues' image (or the built-in design) is used." url={w.selfImageUrl} onChange={set("selfImageUrl")} testId="cm-wel-self-img" />
+                    <div className="sm:col-span-2"><label className={lbl}>Colleagues&apos; Greeting <span className="normal-case tracking-normal text-zinc-500 font-medium">({"{name}"}, {"{firstName}"}, {"{designation}"} are filled in)</span></label><input value={w.greeting} onChange={e => set("greeting")(e.target.value)} className={field} data-testid="cm-wel-greeting" /></div>
+                    <div className="sm:col-span-2"><label className={lbl}>Colleagues&apos; Message</label><input value={w.subtext} onChange={e => set("subtext")(e.target.value)} className={field} data-testid="cm-wel-subtext" /></div>
+                    <div className="sm:col-span-2"><label className={lbl}>New Member&apos;s Greeting</label><input value={w.selfGreeting} onChange={e => set("selfGreeting")(e.target.value)} className={field} data-testid="cm-wel-self-greeting" /></div>
+                    <div className="sm:col-span-2"><label className={lbl}>New Member&apos;s Message</label><input value={w.selfSubtext} onChange={e => set("selfSubtext")(e.target.value)} className={field} /></div>
+                    <ColorField label="Heading Colour" value={w.headingColor} onChange={set("headingColor")} />
+                    <ColorField label="Text Colour" value={w.textColor} onChange={set("textColor")} />
+                    <ColorField label="Background Colour" value={w.bgColor} onChange={set("bgColor")} />
+                    <ColorField label="Overlay Colour" value={w.overlayColor} onChange={set("overlayColor")} />
+                    <div><label className={lbl}>Text Alignment</label><select value={w.align} onChange={e => set("align")(e.target.value)} className={field}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></div>
+                    <div><label className={lbl}>Photo Position</label><select value={w.photoPosition} onChange={e => set("photoPosition")(e.target.value)} className={field} data-testid="cm-wel-photo"><option value="right">Right</option><option value="left">Left</option><option value="center">Center (above text)</option><option value="none">No photo</option></select></div>
+                </div>
+                <div className="space-y-2">
+                    <p className={lbl}>Colleagues&apos; Dashboard</p><CelebrationBanner banner={colleagueSample} testId="cm-wel-sample" />
+                    <p className={lbl}>New Member&apos;s Dashboard</p><HeaderBannerSample banner={selfSample} testId="cm-wel-self-sample" />
+                </div>
+                {formErr && <p className="text-xs text-red-300" data-testid="cm-wel-error">{formErr}</p>}
+                <div className="flex flex-wrap gap-2 justify-end">
+                    <button onClick={() => setPreview({ title: `Colleagues' Dashboard — Welcome ${emp?.name || ""}`, payload: welcomePreview("colleague", w, emp) })} disabled={!emp} data-testid="cm-wel-prev-colleague" className={`${btn} h-10 border-sky-500/30 bg-sky-500/10 text-sky-200`}><Eye size={13} /> Colleagues</button>
+                    <button onClick={() => setPreview({ title: `New Member's Dashboard — ${emp?.name || ""}`, payload: welcomePreview("self", w, emp) })} disabled={!emp} data-testid="cm-wel-prev-self" className={`${btn} h-10 border-teal-500/30 bg-teal-500/10 text-teal-200`}><Eye size={13} /> New Member</button>
+                    <button onClick={save} disabled={busy || !w.employeeId} data-testid="cm-wel-save" className={`${btn} h-10 border-primary/40 bg-primary text-white`}>{busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} {w.id ? "Save Welcome" : "Publish Welcome (today)"}</button>
+                </div>
+            </div>
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-3" data-testid="cm-wel-list">
+                <p className="text-sm font-bold text-white">Welcomes <span className="text-[11px] text-zinc-500 font-medium">{list.length}</span></p>
+                {!list.length ? <p className="py-6 text-center text-xs text-zinc-500">No welcome banners yet.</p> : (
+                    <div className="space-y-2">
+                        {[...todays, ...past].map(x => {
+                            const live = x.date === today;
+                            const e = data.employees.find(m => m.id === x.employeeId) || null;
+                            return (
+                                <div key={x.id} className={cn("rounded-xl border p-3 space-y-2", w.id === x.id ? "border-primary/40 bg-primary/5" : "border-zinc-800 bg-zinc-950/40")} data-testid="cm-wel-row" data-live={live ? "1" : "0"}>
+                                    <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-bold text-white [overflow-wrap:anywhere]">{x.employeeName}</p><p className="text-[11px] text-zinc-400">{dmy(x.date)}{x.createdByName ? ` · by ${x.createdByName}` : ""}</p></div>
+                                        <span className={cn("shrink-0 inline-flex px-2 py-0.5 rounded-md border text-[10px] font-bold", live ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/25" : "text-zinc-400 bg-zinc-800 border-zinc-700")}>{live ? "Showing today" : "Past"}</span></div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {live && <button onClick={() => setW({ ...blankWelcome(), ...x })} data-testid="cm-wel-edit" className={`${btn} h-8 border-zinc-700 bg-zinc-900 text-zinc-200`}><Pencil size={12} /> Edit</button>}
+                                        <button onClick={() => setPreview({ title: `Colleagues' Dashboard — Welcome ${x.employeeName}`, payload: welcomePreview("colleague", x, e) })} data-testid="cm-wel-row-preview" className={`${btn} h-8 border-zinc-700 bg-zinc-900 text-zinc-200`}><Eye size={12} /> Preview</button>
+                                        {live && <button onClick={() => del(x)} data-testid="cm-wel-delete" className={`${btn} h-8 border-red-500/30 bg-red-500/10 text-red-300`}><Trash2 size={12} /> Remove</button>}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+            {preview && <CelebrationPreview title={preview.title} payload={preview.payload} onClose={() => setPreview(null)} />}
         </div>
     );
 }

@@ -13,6 +13,7 @@
  *    /hr/dress-code                  HR, HR Executive, Founder: dress code photos waiting for verification
  *    /hr/full-attire                 HR, HR Executive, Founder: Full Attire submissions with photos still to review
  *    /meetings                       HR, HR Executive, Founder: meeting requests waiting to be scheduled
+ *    /hr/salary-management           HR, HR Executive, Founder: pending payable-day correction tickets (Open / Under Review / Additional Information Required)
  *    /manager/responsibility-approvals AD, Founder: Pending responsibilities submitted by someone else
  *    /academic/verification          OM: OM queue · CL / CH / HOI / AD: final verification queue (last 90 days, like the page)
  *    /attendance/location-justifications HOI, AD: Pending justifications they can review
@@ -30,6 +31,7 @@ import { FullAttireSubmission, FullAttireReview } from '@/models/FullAttire';
 import { managedEmployeeIds, LEAVE_ADMIN_ROLES } from '@/lib/leave-scope';
 import { PENDING_LEAVE_STATUSES } from '@/lib/leave-decision';
 import { WFH_POLICY } from '@/lib/wfh-policy';
+import { CorrectionTicket } from '@/models/SalaryModule';
 import { getAcademicScope, professorsInScope, zonedNow, addDays, hasClassEnded } from '@/lib/academic';
 import { getClassStatus, getPlanStatus, FINAL_PENDING_CLASS_STATUSES, FINAL_VERIFIER_ROLES, PROFESSOR_ROLES, CL_CH_ROLES } from '@/lib/academic-status';
 import { listForReviewer } from '@/lib/location-justification';
@@ -48,6 +50,10 @@ const has = {
 };
 
 // ── pending ──
+
+/** Salary Management → Correction Tickets: same "Pending" as the page's Pending filter */
+export const PENDING_CORRECTION_TICKET = ['Open', 'Under Review', 'Additional Information Required'];
+const correctionTickets = () => CorrectionTicket.countDocuments({ status: { $in: PENDING_CORRECTION_TICKET } });
 
 async function hrLeaves(a: any) {
     return LeaveRequest.countDocuments({ status: { $in: PENDING_LEAVE_STATUSES }, employeeId: { $ne: a.id } });
@@ -200,6 +206,7 @@ export async function sidebarCounts(a: any): Promise<SidebarCounts> {
         jobs['/hr/dress-code'] = dressCode;
         jobs['/hr/full-attire'] = fullAttire;
         jobs['/meetings'] = meetings;
+        jobs['/hr/salary-management'] = correctionTickets;
         if (!a.hrExecutive) jobs['/hr/reimbursements'] = reimbursements;
     }
     if ((has.manager(a) && a.role !== 'OM') || a.role === 'TL') jobs['/manager/leave-approval'] = () => managerLeaves(a);

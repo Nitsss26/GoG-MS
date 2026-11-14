@@ -517,13 +517,13 @@ import { cn } from "@/lib/utils";
 import { HoiCreateAnnouncementButton, HoiAnnouncementHistory, HrAnnouncementModal } from "@/components/announcements/HoiCollegeAnnouncements";
 import ManualHolidayModal from "@/components/holidays/ManualHolidayModal";
 import HolidayManagement from "@/components/holidays/HolidayManagement";
-import CelebrationManagement from "@/components/celebrations/CelebrationManagement";
+import CelebrationManagement, { NewMemberWelcome } from "@/components/celebrations/CelebrationManagement";
 
 export default function AnnouncementsPage() {
     const { user, notices, employees, addAnnouncement, editNotice, markAnnouncementRead, colleges, reloadHolidaysAndNotices } = useAuth();
     const [showModal, setShowModal] = useState(false);
     // Announcements | Holiday Management (HR / HR Executive / Founder, HOI)
-    const [mainTab, setMainTab] = useState<"announcements" | "holidays" | "celebrations">("announcements");
+    const [mainTab, setMainTab] = useState<"announcements" | "holidays" | "celebrations" | "welcome">("announcements");
     const [section, setSection] = useState<"all" | "holiday" | "mine">("all"); // All Announcements | Holiday Announcements | (HOI) My Announcements
     const [histKey, setHistKey] = useState(0);
     const [showHrModal, setShowHrModal] = useState(false); // HR / HR Executive / Founder: General or college-wise (incl. Holiday)
@@ -768,7 +768,7 @@ export default function AnnouncementsPage() {
             {/* HR / HR Executive / Founder and HOI: Announcements | Holiday Management (inside this page, no new menu) */}
             {hasHolidayMgmt && (
                 <div className="flex gap-1 p-1 bg-zinc-900 border border-zinc-800 rounded-2xl w-fit max-w-full overflow-x-auto" role="tablist" data-testid="ann-main-tabs">
-                    {([["announcements", "Announcements", Megaphone], ["holidays", "Holiday Management", CalendarDays], ...(isHROrFounder ? [["celebrations", "Celebration Management", PartyPopper]] : [])] as [typeof mainTab, string, typeof Megaphone][]).map(([k, l, Icon]) => (
+                    {([["announcements", "Announcements", Megaphone], ["holidays", "Holiday Management", CalendarDays], ...(isHROrFounder ? [["celebrations", "Celebration Management", PartyPopper], ["welcome", "New Member Welcome", UserPlus]] : [])] as [typeof mainTab, string, typeof Megaphone][]).map(([k, l, Icon]) => (
                         <button key={k} role="tab" aria-selected={mainTab === k} onClick={() => setMainTab(k)} data-testid={`ann-main-${k}`}
                             className={cn("flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all", mainTab === k ? "bg-primary/15 text-primary border border-primary/25" : "text-zinc-400 hover:text-white border border-transparent")}>
                             <Icon size={14} /> {l}
@@ -779,6 +779,7 @@ export default function AnnouncementsPage() {
 
             {hasHolidayMgmt && mainTab === "holidays" && <HolidayManagement />}
             {isHROrFounder && mainTab === "celebrations" && <CelebrationManagement />}
+            {isHROrFounder && mainTab === "welcome" && <NewMemberWelcome />}
 
             {mainTab === "announcements" && (<>
             {/* All Announcements | Holiday Announcements + search */}

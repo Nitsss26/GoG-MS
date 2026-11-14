@@ -786,7 +786,7 @@ export default function SprintPlanPage() {
         UNLOCK_REQUESTED: "Locked — an older unlock request is open. You can unlock the plan yourself with \"Unlock Sprint Plan\".",
     } as Record<string, string>)[planStatus] || "";
     const tdc = "px-3 border-b border-zinc-800/60 overflow-hidden";
-    const wideCol = "hidden @min-[820px]:table-cell";
+    const wideCol = "hidden @min-[1000px]:table-cell";
     const btnBase = "h-9 inline-flex items-center justify-center gap-2 px-3.5 rounded-lg text-xs font-bold transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap";
 
     return (
@@ -956,7 +956,7 @@ export default function SprintPlanPage() {
                                         <table className="w-full table-fixed text-left border-separate border-spacing-0" data-testid="slot-table">
                                             <thead>
                                                 <tr className="text-[10.5px] font-semibold text-zinc-400">
-                                                    {([["#", "w-9 text-center"], ["Time Slot", "w-[150px] @min-[820px]:w-[172px]"], ["Subject", ""], ["Course / Stream", "w-[19%]"], ["Year – Sem", "w-[104px]"], ["Section", `${wideCol} w-[70px]`], ["Duration", `${wideCol} w-[76px]`], ["Status", "w-[96px]"], ["Actions", "w-[84px] text-center"]] as const).map(([h, w]) => (
+                                                    {([["#", "w-9 text-center"], ["Time Slot", "w-[142px] @min-[1000px]:w-[172px]"], ["Subject", ""], ["Course / Stream", `${wideCol} w-[19%]`], ["Year – Sem", "w-[96px] @min-[1000px]:w-[104px]"], ["Section", `${wideCol} w-[70px]`], ["Duration", `${wideCol} w-[76px]`], ["Status", "w-[96px]"], ["Actions", "w-[84px] text-center"]] as const).map(([h, w]) => (
                                                         <th key={h} className={`h-10 px-3 bg-zinc-900/90 border-b border-zinc-800 whitespace-nowrap overflow-hidden text-ellipsis ${w}`}>{h}</th>
                                                     ))}
                                                 </tr>
@@ -970,17 +970,18 @@ export default function SprintPlanPage() {
                                                             <td className={`${tdc} py-3 text-center text-zinc-400 tabular-nums`}>{n + 1}</td>
                                                             <td className={`${tdc} py-3 tabular-nums`} data-col="time">
                                                                 <span className={`block font-semibold whitespace-nowrap leading-4 ${bad ? "text-red-300" : "text-zinc-100"}`}>{to12(e.timeStart)} – {to12(e.timeStop)}</span>
-                                                                <span className="block @min-[820px]:hidden text-[10.5px] leading-[14px] text-zinc-500 mt-0.5">{dur(e) ? hm(dur(e)) : "—"}</span>
+                                                                <span className="block @min-[1000px]:hidden text-[10.5px] leading-[14px] text-zinc-500 mt-0.5">{dur(e) ? hm(dur(e)) : "—"}</span>
                                                             </td>
                                                             <td className={`${tdc} py-3`} data-col="subject">
-                                                                <span className="block font-bold text-white leading-4 [overflow-wrap:anywhere]" title={[e.subjectName, e.topics].filter(Boolean).join(" · ")}>{e.subjectName || <span className="text-red-300 font-semibold">Subject needed</span>}</span>
+                                                                <span className="font-bold text-white leading-4 break-words line-clamp-2" title={[e.subjectName, e.topics].filter(Boolean).join(" · ")}>{e.subjectName || <span className="text-red-300 font-semibold">Subject needed</span>}</span>
+                                                                {e.stream ? <span className="block @min-[1000px]:hidden text-[10.5px] leading-[14px] text-zinc-300 mt-0.5 truncate" title={e.stream} data-testid="subj-stream">{e.stream}</span> : null}
                                                                 {e.topics ? <span className="block text-[10.5px] leading-[14px] text-zinc-500 mt-0.5 truncate" title={e.topics}>{e.topics}</span> : null}
                                                             </td>
-                                                            <td className={`${tdc} py-3`} data-col="stream"><span className="block text-zinc-200 leading-4 [overflow-wrap:anywhere]" title={e.stream}>{e.stream || "—"}</span></td>
+                                                            <td className={`${tdc} ${wideCol} py-3`} data-col="stream"><span className="text-zinc-200 leading-4 break-words line-clamp-2" title={e.stream}>{e.stream || "—"}</span></td>
                                                             <td className={`${tdc} py-3`} data-col="year-sem">
                                                                 {/* full Year, then Semester (+ Section when that column is hidden) */}
-                                                                <span className="block text-zinc-200 leading-4 [overflow-wrap:anywhere]">{e.year || "—"}</span>
-                                                                <span className="block text-[10.5px] leading-[14px] text-zinc-400 mt-0.5 [overflow-wrap:anywhere]">{e.semester || "—"}{e.section ? <span className="@min-[820px]:hidden"> · Sec {e.section}</span> : null}</span>
+                                                                <span className="block text-zinc-200 leading-4 truncate" title={e.year}>{e.year || "—"}</span>
+                                                                <span className="text-[10.5px] leading-[14px] text-zinc-400 mt-0.5 break-words line-clamp-2" title={[e.semester, e.section ? `Sec ${e.section}` : ""].filter(Boolean).join(" · ")}>{e.semester || "—"}{e.section ? <span className="@min-[1000px]:hidden"> · Sec {e.section}</span> : null}</span>
                                                             </td>
                                                             <td className={`${tdc} ${wideCol} py-3 text-zinc-200`}>{e.section || "—"}</td>
                                                             <td className={`${tdc} ${wideCol} py-3 whitespace-nowrap text-zinc-200 tabular-nums`}>{dur(e) ? hm(dur(e)) : "—"}</td>

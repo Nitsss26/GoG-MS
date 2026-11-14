@@ -15,6 +15,10 @@ import { uploadToCloudinary } from "@/lib/cloudinary";
 import { exportEmployeeMonth, exportEmployeeList } from "@/lib/salary-export";
 import { Download, FileSpreadsheet } from "lucide-react";
 import { useMinWidth } from "@/lib/use-min-width";
+import { usePathname } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { useSidebarCounts, badgeText } from "@/lib/use-sidebar-counts";
+import { HALF_DAY_REASONS, PENALTY_REASONS, MAX_PENALTY_AMOUNT } from "@/lib/salary-adjustment-options";
 
 /** PDF + Excel buttons */
 function DownloadButtons({ onPdf, onXlsx, disabled }: { onPdf: () => Promise<void>; onXlsx: () => Promise<void>; disabled?: boolean }) {
@@ -45,6 +49,8 @@ const PAY: Record<string, string> = {
 const dmy = (ymd?: string) => (ymd ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }) : "");
 const dt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }) : "");
 const monthText = (m?: string) => { if (!m) return "—"; const [y, mm] = m.split("-").map(Number); return new Date(Date.UTC(y, mm - 1, 1)).toLocaleString("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }); };
+type AdjType = "FULL" | "HALF" | "PENALTY";
+const inr = (v: number) => `₹${Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const n = (v: number | undefined | null) => { const x = Number(v); return !Number.isFinite(x) ? "0" : Number.isInteger(x) ? String(x) : x.toFixed(1); };
 const months = () => { const out: string[] = []; const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })); for (let i = 0; i < 18; i++) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); out.push(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`); } return out; };
 const Badge = ({ s, map = T_STYLE }: { s: string; map?: Record<string, string> }) => <span className={`inline-block text-[10px] font-black px-2 py-0.5 rounded-md border whitespace-nowrap ${map[s] || "bg-zinc-800 text-zinc-300 border-zinc-700"}`}>{s}</span>;
@@ -63,6 +69,10 @@ export default function SalaryAdmin() {
     const [openTicket, setOpenTicket] = useState("");
     const [ticketStatus, setTicketStatus] = useState("All");
     const [msg, setMsg] = useState<{ type: string; text: string } | null>(null);
+    // pending correction tickets (same count as the red sidebar badge; refreshes after every change)
+    const { user } = useAuth();
+    const counts = useSidebarCounts(user?.id, usePathname() || "");
+    const pendingTickets = counts["/hr/salary-management"] || 0;
     useEffect(() => {
         try {
             const q = new URLSearchParams(window.location.search);
@@ -84,7 +94,12 @@ export default function SalaryAdmin() {
                 <div className="flex gap-1.5 p-1 rounded-xl bg-zinc-900/60 border border-zinc-800 w-fit" role="tablist">
                     {[["employees", "Employees", Users], ["tickets", "Correction Tickets", MessageSquare]].map(([k, l, I]: any) => (
                         <button key={k} role="tab" aria-selected={tab === k} data-testid={`sm-tab-${k}`} onClick={() => { setTab(k); if (k === "employees") setEmployee(""); }}
-                            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider ${tab === k ? "bg-primary text-white" : "text-zinc-400 hover:text-white"}`}><I size={13} /> {l}</button>
+                            aria-label={k === "tickets" && pendingTickets > 0 ? `${l} (${pendingTickets} pending)` : undefined}
+                            className={`relative flex items-center gap-1.5 px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider ${tab === k ? "bg-primary text-white" : "text-zinc-400 hover:text-white"}`}><I size={13} /> {l}
+                            {k === "tickets" && pendingTickets > 0 && (
+                                <span data-testid="sm-tickets-badge" aria-hidden="true" className="absolute -top-2 -right-2 min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center shadow-lg ring-2 ring-[#0a0a0b] normal-case tracking-normal">{badgeText(pendingTickets)}</span>
+                            )}
+                        </button>
                     ))}
                 </div>
             </div>
@@ -267,6 +282,7 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
     const wide = useMinWidth(1280); // table on laptop / desktop, cards on phone / tablet
     const [data, setData] = useState<any>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
     const [onlyIssues, setOnlyIssues] = useState(false); const [dialog, setDialog] = useState<any>(null); const [reverse, setReverse] = useState<any>(null); const [view, setView] = useState<any>(null);
+    const [penEdit, setPenEdit] = useState<any>(null); const [penView, setPenView] = useState<any>(null);
     const load = useCallback(async () => {
         setLoading(true); setError("");
         try {
@@ -299,7 +315,7 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
     const monthCorr = (data?.corrections || []).filter((x: any) => x.month === month);
     const openTickets = (data?.tickets || []).filter((t: any) => !["Resolved", "Rejected"].includes(t.status));
     const dayReason = (d: any) => (<>
-                                            {d.correction ? <span className={d.correction.direction === "TO_NON_PAYABLE" ? "text-red-200" : "text-violet-200"}>HR correction ({d.correction.direction === "TO_NON_PAYABLE" ? "non-payable" : "payable"}): {d.correction.correctionCategory} — {d.correction.correctedByName} ({d.correction.correctedByRole}), {dt(d.correction.correctedAt)}<span className="block text-zinc-500">Records: {d.baseReason}</span></span> : d.reason}
+                                            {d.correction ? <span className={d.correction.direction === "TO_NON_PAYABLE" ? "text-red-200" : "text-violet-200"}>HR correction ({d.correction.value === 0.5 ? "half day payable 0.5" : d.correction.direction === "TO_NON_PAYABLE" ? "non-payable" : "payable"}): {d.correction.correctionCategory} — {d.correction.correctedByName} ({d.correction.correctedByRole}), {dt(d.correction.correctedAt)}<span className="block text-zinc-500">Records: {d.baseReason}</span></span> : d.reason}
                                             {d.penalties.length > 0 && <span className="block text-[10px] text-amber-300/90 mt-0.5">Flags: {d.penalties.join(" · ")}</span>}
     </>);
     const dayActions = (d: any) => (<>
@@ -323,7 +339,7 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
             {loading && !data ? <div className="py-16 flex justify-center"><Loader2 className="animate-spin text-primary" /></div> : c && (<>
                 <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-5 grid sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-2 text-xs">
                     <div className="sm:col-span-2 lg:col-span-4"><p className="text-xl font-black text-white">{e.name}</p><p className="text-zinc-500">{e.id} · {data.monthLabel}{c.provisional ? " · provisional (month running)" : ""}</p></div>
-                    {[["Designation", e.designation], ["Department", e.dept], ["College / Location", e.locationName], ["Reporting Manager", e.reportingManager]].map(([l, v]) => <p key={l}><span className="text-zinc-500">{l}:</span> <span className="text-zinc-200">{v || "—"}</span></p>)}
+                    {[["Designation", e.designation], ["Department", e.dept], ["College / Location", e.locationName], [e.reportingManagerLabel || "Reporting Manager", e.reportingManager]].map(([l, v]) => <p key={l}><span className="text-zinc-500">{l}:</span> <span className="text-zinc-200">{v || "—"}</span></p>)}
                 </div>
                 {ticketId && <p className="text-xs text-indigo-200 bg-indigo-500/5 border border-indigo-500/20 rounded-xl px-3 py-2">Reviewing ticket <b>{ticketId}</b> — a day marked payable here is linked to it; the ticket is resolved once every requested date is payable.</p>}
                 {openTickets.length > 0 && !ticketId && <p className="text-xs text-amber-200 bg-amber-500/5 border border-amber-500/20 rounded-xl px-3 py-2">Open tickets: {openTickets.map((t: any) => <button key={t.id} onClick={() => onOpenTicket(t.id)} className="underline mr-2">{t.id}</button>)}</p>}
@@ -384,31 +400,36 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
                         </table>
                     </div>
                 </div>
-                <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4" data-testid="sm-history">
-                    <p className="text-sm font-bold text-white flex items-center gap-2 mb-3"><History size={15} className="text-primary" /> Correction History ({(data.corrections || []).length})</p>
-                    {(data.corrections || []).length === 0 ? <p className="text-xs text-zinc-500">No payable-day corrections for this employee.</p> : (
-                        <div className="space-y-2">
-                            {data.corrections.map((x: any) => (
-                                <div key={x.id} className="text-xs rounded-lg border border-zinc-800 px-3 py-2">
-                                    <div className="flex flex-wrap items-center gap-2"><span className="font-bold text-white">{dmy(x.date)}</span><Badge s={x.status === "ACTIVE" ? "Active" : "Reversed"} map={{ Active: T_STYLE.Approved, Reversed: T_STYLE.Rejected }} /><span className="text-zinc-400">{x.previousPayableStatus} → {x.updatedPayableStatus || "Payable"} ({x.adjustment > 0 ? "+" : ""}{n(x.adjustment)}) · month {n(x.previousMonthPayable)} → {n(x.updatedMonthPayable)}</span>{x.relatedTicketId && <span className="text-indigo-300">Ticket {x.relatedTicketId}</span>}</div>
-                                    <p className="text-zinc-400 mt-1">{x.correctionCategory} — {x.correctedByName} ({x.correctedByRole}) · {dt(x.correctedAt)}</p>
-                                    <p className="text-zinc-300 [overflow-wrap:anywhere]">{x.correctionReason}</p>
-                                    {x.status === "REVERSED" && <p className="text-red-300 mt-1 [overflow-wrap:anywhere]">Reversed by {x.reversedByName} ({x.reversedByRole}) · {dt(x.reversedAt)} — {x.reversalReason}</p>}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                <AdjustmentHistory corrections={data.corrections || []} penalties={data.penalties || []} canEdit={data.canEdit} wide={wide}
+                    onViewCorrection={setView} onReverseCorrection={(x: any) => setReverse({ correction: x, date: x.date, reason: "", busy: false, error: "" })}
+                    onViewPenalty={setPenView} onEditPenalty={(p: any) => setPenEdit({ mode: "edit", p })} onReversePenalty={(p: any) => setPenEdit({ mode: "reverse", p })} />
             </>)}
-            {dialog && <MarkPayableDialog employee={e} day={dialog.day} direction={dialog.direction} ticketId={ticketId} openTickets={openTickets} categories={dialog.direction === "TO_NON_PAYABLE" ? data.nonPayableCategories : data.categories} onClose={() => setDialog(null)} onDone={(m) => { setDialog(null); onMsg({ type: "success", text: m }); load(); }} />}
+            {dialog && <MarkPayableDialog employee={e} day={dialog.day} direction={dialog.direction} ticketId={ticketId} openTickets={openTickets} categories={dialog.direction === "TO_NON_PAYABLE" ? data.nonPayableCategories : data.categories} halfDayReasons={data.halfDayReasons || HALF_DAY_REASONS} penaltyReasons={data.penaltyReasons || PENALTY_REASONS} maxPenalty={data.maxPenalty || MAX_PENALTY_AMOUNT} serverReady={Array.isArray(data.halfDayReasons)} monthPayable={c?.payableDays} penaltyTotal={c?.monetaryPenaltyTotal} onClose={() => setDialog(null)} onDone={(m) => { setDialog(null); onMsg({ type: "success", text: m }); load(); }} />}
             {reverse && <ReverseDialog st={reverse} setSt={setReverse} onDone={(m) => { setReverse(null); onMsg({ type: "success", text: m }); load(); }} />}
             {view && <CorrectionView c={view} onClose={() => setView(null)} />}
+            {penView && <PenaltyView p={penView} onClose={() => setPenView(null)} />}
+            {penEdit && <PenaltyChangeDialog mode={penEdit.mode} p={penEdit.p} reasons={data?.penaltyReasons || []} maxPenalty={data?.maxPenalty || 100000} onClose={() => setPenEdit(null)} onDone={(m) => { setPenEdit(null); onMsg({ type: "success", text: m }); load(); }} />}
         </div>
     );
 }
 
-function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, openTickets, categories, onClose, onDone }: { employee: any; day: any; direction?: "TO_PAYABLE" | "TO_NON_PAYABLE"; ticketId?: string; openTickets: any[]; categories: string[]; onClose: () => void; onDone: (m: string) => void }) {
+const ADJ_TONE = {
+    green: { on: "border-emerald-400 bg-emerald-500/20 ring-1 ring-emerald-400/40", off: "border-emerald-500/25 bg-emerald-500/[0.05] hover:bg-emerald-500/10", text: "text-emerald-200", offText: "text-emerald-300/80", dot: "bg-emerald-400", ring: "border-emerald-400/60" },
+    red: { on: "border-red-400 bg-red-500/20 ring-1 ring-red-400/40", off: "border-red-500/25 bg-red-500/[0.05] hover:bg-red-500/10", text: "text-red-200", offText: "text-red-300/80", dot: "bg-red-400", ring: "border-red-400/60" },
+    amber: { on: "border-amber-400 bg-amber-500/20 ring-1 ring-amber-400/40", off: "border-amber-500/25 bg-amber-500/[0.05] hover:bg-amber-500/10", text: "text-amber-200", offText: "text-amber-300/80", dot: "bg-amber-400", ring: "border-amber-400/60" },
+    rose: { on: "border-rose-400 bg-rose-500/20 ring-1 ring-rose-400/40", off: "border-rose-500/25 bg-rose-500/[0.05] hover:bg-rose-500/10", text: "text-rose-200", offText: "text-rose-300/80", dot: "bg-rose-400", ring: "border-rose-400/60" },
+};
+
+function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, openTickets, categories, halfDayReasons = [], penaltyReasons = [], maxPenalty = 100000, monthPayable, penaltyTotal = 0, serverReady = true, onClose, onDone }: { employee: any; day: any; direction?: "TO_PAYABLE" | "TO_NON_PAYABLE"; ticketId?: string; openTickets: any[]; categories: string[]; halfDayReasons?: string[]; penaltyReasons?: string[]; maxPenalty?: number; monthPayable?: number; penaltyTotal?: number; serverReady?: boolean; onClose: () => void; onDone: (m: string) => void }) {
     const toPay = direction === "TO_PAYABLE";
+    // Payment Adjustment Type — Full Day keeps the existing correction; Half Day = 0.5 (only from a 0 or a 1 day); Monetary Penalty only from Mark Payable
+    const types: [AdjType, string][] = toPay
+        ? [["FULL", "Full Day Payable"], ...(day.payable === 0 && halfDayReasons.length ? [["HALF", "Half Day Payable"] as [AdjType, string]] : []), ...(penaltyReasons.length ? [["PENALTY", "Monetary Penalty"] as [AdjType, string]] : [])]
+        : [["FULL", "Non-Payable"], ...(day.payable === 1 && halfDayReasons.length ? [["HALF", "Half Day Payable"] as [AdjType, string]] : [])];
+    const [type, setType] = useState<AdjType>("FULL");
+    const [halfReason, setHalfReason] = useState("");
+    const [explanation, setExplanation] = useState("");
+    const [amount, setAmount] = useState("");
     const [category, setCategory] = useState(toPay ? (categories[1] || categories[0]) : categories[0]);
     const [reason, setReason] = useState("");
     const [categoryOther, setCategoryOther] = useState("");   // written by hand when "Other" is chosen
@@ -417,7 +438,13 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
     const [busy, setBusy] = useState(false); const [uploading, setUploading] = useState(false); const [error, setError] = useState("");
     const [confirm, setConfirm] = useState(false);
     // reason is optional; "Other" needs the category written by hand
-    const okReason = category !== "Other" || categoryOther.trim().length >= 2;
+    const amt = Number(amount);
+    const amountErr = type !== "PENALTY" || amount.trim() === "" ? "" : !/^\d+(\.\d{1,2})?$/.test(amount.trim()) || !(amt > 0) ? "Enter an amount greater than ₹0 (up to 2 decimals)." : amt > maxPenalty ? `The amount cannot be more than ${inr(maxPenalty)}.` : "";
+    // Half Day / Penalty need the updated server files (employee / corrections / penalties routes)
+    const blocked = type !== "FULL" && !serverReady;
+    const okReason = blocked ? false : type === "FULL" ? (category !== "Other" || categoryOther.trim().length >= 2)
+        : type === "HALF" ? !!halfReason && explanation.trim().length >= 10
+        : !!halfReason && explanation.trim().length >= 10 && amount.trim() !== "" && !amountErr;
     const categoryText = category === "Other" ? `Other — ${categoryOther.trim()}` : category;
     const upload = async (fl: FileList | null) => {
         if (!fl?.length) return; setUploading(true); setError("");
@@ -427,7 +454,11 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
     const submit = async () => {
         setBusy(true); setError("");
         try {
-            const res = await fetch("/api/hr/salary-management/corrections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeId: employee.id, date: day.date, direction, category, categoryOther: category === "Other" ? categoryOther.trim() : undefined, reason, evidenceUrls: files, ticketId: ticket || undefined }) });
+            const res = type === "PENALTY"
+                ? await fetch("/api/hr/salary-management/penalties", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeId: employee.id, date: day.date, amount: amount.trim(), reasonCategory: halfReason, explanation }) })
+                : await fetch("/api/hr/salary-management/corrections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(type === "HALF"
+                    ? { employeeId: employee.id, date: day.date, direction, payableType: "HALF", halfDayReason: halfReason, explanation, evidenceUrls: files, ticketId: ticket || undefined }
+                    : { employeeId: employee.id, date: day.date, direction, category, categoryOther: category === "Other" ? categoryOther.trim() : undefined, reason, evidenceUrls: files, ticketId: ticket || undefined }) });
             const d = await res.json().catch(() => ({})); if (!res.ok) throw new Error(d.error || "Could not save"); onDone(d.message);
         } catch (e: any) { setError(e.message); setConfirm(false); } finally { setBusy(false); }
     };
@@ -441,11 +472,63 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
                         {line("Employee", `${employee.name} (${employee.id})`)}{line("Date", `${dmy(day.date)} (${day.weekday})`)}{line("Attendance", `${day.attendance}${day.clockIn ? ` · in ${day.clockIn}` : ""}${day.clockOut ? ` · out ${day.clockOut}` : ""}`)}
                         {line("Current Payable", `${day.payableStatus} (${n(day.payable)})`)}{line("Leave", day.leave)}{line("Penalties", day.penalties.join(", "))}{line("Why", day.reason)}
                     </div>
+                    {types.length > 1 && (
+                        <div role="radiogroup" aria-label="Payment Adjustment Type" data-testid="sm-adj-type">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5">Payment Adjustment Type *</p>
+                            <div className={`grid gap-2 ${types.length === 3 ? "grid-cols-1 min-[420px]:grid-cols-3" : "grid-cols-2"}`}>
+                                {types.map(([v, l]) => {
+                                    // colour per type: full day = green (red when it makes the day non-payable), half day = amber, penalty = rose
+                                    const tone = v === "HALF" ? ADJ_TONE.amber : v === "PENALTY" ? ADJ_TONE.rose : toPay ? ADJ_TONE.green : ADJ_TONE.red;
+                                    const on = type === v;
+                                    const sub = v === "HALF" ? "0.5 day" : v === "PENALTY" ? "₹ deduction" : toPay ? "1 day" : "0 day";
+                                    return (
+                                        <button key={v} type="button" role="radio" aria-checked={on} data-testid={`sm-adj-${v}`} data-on={on ? "1" : "0"}
+                                            onClick={() => { if (type !== v) { setType(v); setHalfReason(""); setError(""); } }}
+                                            className={`text-left rounded-xl border px-3 py-2.5 transition-colors ${on ? tone.on : tone.off}`}>
+                                            <span className="flex items-center gap-2"><span className={`w-2.5 h-2.5 rounded-full shrink-0 ${on ? tone.dot : `border ${tone.ring}`}`} /><span className={`text-xs font-black ${on ? tone.text : tone.offText}`}>{l}</span></span>
+                                            <span className={`block mt-0.5 pl-[18px] text-[10px] ${on ? tone.text : tone.offText} opacity-80`}>{sub}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                    {blocked && <p className="text-[11px] text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2" data-testid="sm-server-old">The server files for Half Day / Monetary Penalty are not updated yet (src\app\api\hr\salary-management\employee\route.ts, corrections\route.ts, penalties\route.ts and src\lib\salary-module.ts). Update them and restart the server — until then only Full Day can be saved.</p>}
+                    {type === "PENALTY" ? (<>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Penalty Amount (₹) *
+                            <input value={amount} onChange={ev => setAmount(ev.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="e.g. 500" data-testid="sm-pen-amount"
+                                className={`mt-1 w-full bg-zinc-950 border rounded-lg px-3 py-2 text-sm text-white normal-case tracking-normal font-normal ${amountErr ? "border-red-500/60" : "border-zinc-700"}`} />
+                            {amountErr && <span className="block mt-1 text-red-300 normal-case tracking-normal font-normal" data-testid="sm-pen-amount-error">{amountErr}</span>}
+                        </label>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Penalty Reason *
+                            <select value={halfReason} onChange={ev => setHalfReason(ev.target.value)} className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white" data-testid="sm-pen-reason">
+                                <option value="">— Select —</option>{penaltyReasons.map(x => <option key={x}>{x}</option>)}
+                            </select>
+                        </label>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Explain Why This Penalty Is Being Applied *
+                            <textarea value={explanation} onChange={ev => setExplanation(ev.target.value)} rows={4} maxLength={3000} data-testid="sm-explanation" placeholder="e.g. Assigned work was not submitted within the communicated deadline."
+                                className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white normal-case tracking-normal font-normal" />
+                            <span className="block mt-1 text-zinc-600 normal-case tracking-normal font-normal">{halfReason === "Other" ? "Other: write the reason here. " : ""}At least 10 characters.</span>
+                        </label>
+                    </>) : (<>
                     <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Related Correction Ticket
                         <select value={ticket} onChange={ev => setTicket(ev.target.value)} className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white" data-testid="sm-ticket">
                             <option value="">None</option>{openTickets.map((t: any) => <option key={t.id} value={t.id}>{t.id} — {t.category}</option>)}
                         </select>
                     </label>
+                    {type === "HALF" ? (<>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Reason for Half-Day Payable *
+                            <select value={halfReason} onChange={ev => setHalfReason(ev.target.value)} className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white" data-testid="sm-half-reason">
+                                <option value="">— Select —</option>{halfDayReasons.map(x => <option key={x}>{x}</option>)}
+                            </select>
+                        </label>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Reason / Explanation *
+                            <textarea value={explanation} onChange={ev => setExplanation(ev.target.value)} rows={4} maxLength={3000} data-testid="sm-explanation" placeholder="e.g. Assigned tasks were not completed within the scheduled working hours."
+                                className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white normal-case tracking-normal font-normal" />
+                            <span className="block mt-1 text-zinc-600 normal-case tracking-normal font-normal">{halfReason === "Other" ? "Other: write the reason here. " : ""}At least 10 characters.</span>
+                        </label>
+                        <p className="text-zinc-400">Payable Days for this date: <b className="text-white">0.5</b></p>
+                    </>) : (<>
                     <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Correction Category *
                         <select value={category} onChange={ev => setCategory(ev.target.value)} className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white" data-testid="sm-category">{categories.map(x => <option key={x}>{x}</option>)}</select>
                     </label>
@@ -460,6 +543,7 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
                             className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white normal-case tracking-normal font-normal" />
 
                     </label>
+                    </>)}
                     <div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">Supporting Evidence (optional)</p>
                         <label className="flex items-center justify-center gap-2 border border-dashed border-zinc-700 rounded-lg py-3 text-zinc-400 cursor-pointer hover:border-primary">
@@ -468,10 +552,34 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
                         </label>
                         {files.length > 0 && <p className="text-zinc-400 mt-1">{files.length} file(s) attached</p>}
                     </div>
+                    </>)}
                     {error && <p className="text-red-400 flex items-center gap-1" data-testid="sm-error"><AlertTriangle size={12} /> {error}</p>}
                     <div className="flex justify-end gap-2">
                         <button onClick={onClose} className="px-4 py-2 rounded-lg font-bold text-zinc-400 hover:text-white">Cancel</button>
-                        <button disabled={!okReason || uploading} onClick={() => setConfirm(true)} data-testid="sm-next" className="px-5 py-2 rounded-lg bg-primary text-white font-black uppercase tracking-wider disabled:opacity-50">Review</button>
+                        <button disabled={!okReason || uploading} onClick={() => setConfirm(true)} data-testid="sm-next" className="px-5 py-2 rounded-lg bg-primary text-white font-black uppercase tracking-wider disabled:opacity-50">{type === "HALF" ? "Confirm Half Day Payable" : type === "PENALTY" ? "Apply Monetary Penalty" : "Review"}</button>
+                    </div>
+                </>) : type !== "FULL" ? (<>
+                    <p className="text-sm text-zinc-200 leading-relaxed" data-testid="sm-confirm-text">{type === "HALF"
+                        ? <>You are marking <b>{employee.name}</b> as Half Day Payable for <b>{dmy(day.date)}</b>. This may affect the employee&apos;s salary. Do you want to continue?</>
+                        : <>You are applying a monetary deduction of <b>{inr(amt)}</b> to <b>{employee.name}</b> for <b>{dmy(day.date)}</b>. Do you want to continue?</>}</p>
+                    <div className="rounded-xl p-3 space-y-1.5 bg-amber-500/5 border border-amber-500/20" data-testid="sm-impact">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-300">Expected Salary Impact</p>
+                        {line("Employee", `${employee.name} (${employee.id})`)}{line("Date", dmy(day.date))}
+                        {type === "HALF" ? (<>
+                            {line("Payable Value (date)", `${n(day.payable)} → 0.5`)}
+                            {monthPayable !== undefined && line("Monthly Payable Days", `${n(monthPayable)} → ${n(Math.round((monthPayable + (toPay ? 0.5 : -0.5)) * 100) / 100)}`)}
+                        </>) : (<>
+                            {line("Deduction Amount", inr(amt))}
+                            {line("Monthly Monetary Penalties", `${inr(penaltyTotal)} → ${inr(Math.round((penaltyTotal + amt) * 100) / 100)}`)}
+                            {line("Payable Days", "Unchanged (the penalty is a separate ₹ deduction)")}
+                        </>)}
+                        {line("Reason", halfReason)}{line("Explanation", explanation.trim())}{type === "HALF" && ticket ? line("Ticket", ticket) : null}
+                    </div>
+                    <p className="text-zinc-500">The attendance and leave records stay as they are. The employee is notified by email and in-app.</p>
+                    {error && <p className="text-red-400">{error}</p>}
+                    <div className="flex justify-end gap-2">
+                        <button onClick={() => setConfirm(false)} disabled={busy} className="px-4 py-2 rounded-lg font-bold text-zinc-400 hover:text-white">Cancel</button>
+                        <button onClick={submit} disabled={busy} data-testid="sm-confirm" className="px-5 py-2 rounded-lg text-white font-black uppercase tracking-wider disabled:opacity-50 bg-amber-600 hover:bg-amber-500">{busy ? "Saving…" : type === "HALF" ? "Confirm Adjustment" : "Confirm Penalty"}</button>
                     </div>
                 </>) : (<>
                     <div className={`rounded-xl p-3 space-y-1.5 ${toPay ? "bg-emerald-500/5 border border-emerald-500/20" : "bg-red-500/5 border border-red-500/20"}`}>
@@ -521,11 +629,166 @@ function CorrectionView({ c, onClose }: { c: any; onClose: () => void }) {
             <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900 p-5 text-xs" onClick={ev => ev.stopPropagation()}>
                 <div className="flex items-center justify-between mb-2"><h2 className="text-lg font-black text-white">Correction {c.id}</h2><button onClick={onClose} className="text-zinc-500"><X size={18} /></button></div>
                 {row("Date", dmy(c.date))}{row("Original Attendance", c.originalAttendance)}{row("Original Leave", c.originalLeave)}{row("Records Said", c.originalReason)}
-                {row("Previous Status", c.previousPayableStatus)}{row("Updated Status", c.updatedPayableStatus || "Payable")}{row("Adjustment", c.adjustment !== undefined ? `${c.adjustment > 0 ? "+" : ""}${c.adjustment}` : undefined)}
+                {row("Adjustment Type", adjLabel(c))}{row("Previous Status", c.previousPayableStatus)}{row("Updated Status", c.updatedPayableStatus || "Payable")}{row("Adjustment", c.adjustment !== undefined ? `${c.adjustment > 0 ? "+" : ""}${c.adjustment}` : undefined)}
                 {row("Monthly Payable", c.previousMonthPayable !== undefined ? `${c.previousMonthPayable} → ${c.updatedMonthPayable}` : undefined)}
                 {row("Category", c.correctionCategory)}{row("Reason", c.correctionReason)}{row("Ticket", c.relatedTicketId)}
                 {row("Corrected By", `${c.correctedByName} (${c.correctedByRole})`)}{row("Corrected At", dt(c.correctedAt))}{row("Status", c.status)}
+                {c.status === "REVERSED" && <>{row("Reversed By", `${c.reversedByName} (${c.reversedByRole})`)}{row("Reversed At", dt(c.reversedAt))}{row("Reversal Reason", c.reversalReason)}</>}
                 {(c.supportingEvidence || []).map((u: string, i: number) => <a key={i} href={u} target="_blank" rel="noreferrer" className="block text-primary underline py-1">Evidence {i + 1}</a>)}
+            </div>
+        </div>
+    );
+}
+
+
+// ─────────────────────────── Adjustment history (payable-day corrections + HR monetary penalties) ───────────────────────────
+const isNonPay = (c: any) => c.direction === "TO_NON_PAYABLE" || c.updatedPayableStatus === "Non-Payable" || (c.adjustment ?? 0) < 0;
+const adjLabel = (c: any) => c.payableType === "HALF" || c.updatedPayableValue === 0.5 && c.updatedPayableStatus === "Partly Payable" ? "Half Day" : isNonPay(c) ? "Non-Payable" : "Full Day";
+
+function AdjustmentHistory({ corrections, penalties, canEdit, wide, onViewCorrection, onReverseCorrection, onViewPenalty, onEditPenalty, onReversePenalty }: {
+    corrections: any[]; penalties: any[]; canEdit: boolean; wide: boolean;
+    onViewCorrection: (c: any) => void; onReverseCorrection: (c: any) => void; onViewPenalty: (p: any) => void; onEditPenalty: (p: any) => void; onReversePenalty: (p: any) => void;
+}) {
+    const rows = [
+        ...corrections.map(c => {
+            const label = adjLabel(c);
+            const value = c.updatedPayableValue ?? (isNonPay(c) ? 0 : 1);
+            return {
+                key: `c-${c.id}`, kind: "c" as const, rec: c, date: c.date, at: c.correctedAt || "", adjustment: label, active: c.status === "ACTIVE",
+                amount: `${n(value)} Day`, sub: c.adjustment !== undefined ? `${c.adjustment > 0 ? "+" : ""}${n(c.adjustment)} · was ${n(c.previousPayableValue)}` : "",
+                reason: c.correctionCategory || "—", by: `${c.correctedByName || "—"}${c.correctedByRole ? ` (${c.correctedByRole})` : ""}`,
+            };
+        }),
+        ...penalties.map(p => ({
+            key: `p-${p.id}`, kind: "p" as const, rec: p, date: p.date, at: p.createdAt || "", adjustment: "Monetary Penalty", active: p.status === "ACTIVE",
+            amount: inr(p.amount), sub: p.updatedAt ? "corrected" : "", reason: p.reasonCategory || "—",
+            by: `${p.updatedByName || p.createdByName || "—"}${(p.updatedByRole || p.createdByRole) ? ` (${p.updatedByRole || p.createdByRole})` : ""}`,
+        })),
+    ].sort((a, b) => b.date.localeCompare(a.date) || b.at.localeCompare(a.at));
+    const btn = "px-2 py-1 rounded-md text-[10px] font-black uppercase";
+    const actions = (r: typeof rows[number]) => (
+        <div className="flex flex-wrap gap-1 justify-end">
+            <button onClick={() => r.kind === "c" ? onViewCorrection(r.rec) : onViewPenalty(r.rec)} data-testid="sm-adj-view" className={`${btn} bg-zinc-800 text-zinc-200`}>View</button>
+            {canEdit && r.active && r.kind === "p" && <button onClick={() => onEditPenalty(r.rec)} data-testid="sm-adj-edit" className={`${btn} bg-sky-500/15 text-sky-200 border border-sky-500/30`}>Correct</button>}
+            {canEdit && r.active && <button onClick={() => r.kind === "c" ? onReverseCorrection(r.rec) : onReversePenalty(r.rec)} data-testid="sm-adj-reverse" className={`${btn} bg-red-500/15 text-red-300 border border-red-500/30`}>Reverse</button>}
+        </div>
+    );
+    const status = (r: typeof rows[number]) => !r.active && <Badge s="Reversed" map={{ Reversed: T_STYLE.Rejected }} />;
+    const tone = (a: string) => a === "Monetary Penalty" ? "text-red-300" : a === "Half Day" ? "text-amber-300" : a === "Non-Payable" ? "text-red-200" : "text-emerald-300";
+    return (
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40" data-testid="sm-history">
+            <p className="text-sm font-bold text-white flex items-center gap-2 px-4 py-3 border-b border-zinc-800"><History size={15} className="text-primary" /> Adjustment History ({rows.length})</p>
+            {rows.length === 0 ? <p className="text-xs text-zinc-500 p-4">No salary adjustments for this employee.</p> : wide ? (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-xs min-w-[860px]" data-testid="sm-adj-table">
+                        <thead><tr className="text-[10px] uppercase tracking-widest text-zinc-500 text-left">
+                            <th className="py-2 px-3">Date</th><th className="py-2 px-3">Adjustment</th><th className="py-2 px-3">Amount / Days</th><th className="py-2 px-3">Reason</th><th className="py-2 px-3">Updated By</th><th className="py-2 px-3 text-right">Action</th>
+                        </tr></thead>
+                        <tbody className="divide-y divide-zinc-800/70">
+                            {rows.map(r => (
+                                <tr key={r.key} className={`align-top ${r.active ? "" : "opacity-60"}`} data-testid="sm-adj-row" data-kind={r.adjustment}>
+                                    <td className="py-2 px-3 whitespace-nowrap font-semibold text-white">{dmy(r.date)}</td>
+                                    <td className="py-2 px-3"><span className={`font-bold ${tone(r.adjustment)}`}>{r.adjustment}</span> {status(r)}</td>
+                                    <td className="py-2 px-3 tabular-nums text-zinc-200 whitespace-nowrap">{r.amount}{r.sub && <span className="block text-[10px] text-zinc-500">{r.sub}</span>}</td>
+                                    <td className="py-2 px-3 text-zinc-300 max-w-[260px] [overflow-wrap:anywhere]">{r.reason}</td>
+                                    <td className="py-2 px-3 text-zinc-300">{r.by}<span className="block text-[10px] text-zinc-500">{dt(r.kind === "p" ? (r.rec.updatedAt || r.rec.createdAt) : r.rec.correctedAt)}</span></td>
+                                    <td className="py-2 px-3 text-right whitespace-nowrap">{actions(r)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : (
+                <div className="divide-y divide-zinc-800/70" data-testid="sm-adj-cards">
+                    {rows.map(r => (
+                        <div key={r.key} className={`p-3 text-xs space-y-1 ${r.active ? "" : "opacity-60"}`} data-testid="sm-adj-row" data-kind={r.adjustment}>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p><span className="font-semibold text-white">{dmy(r.date)}</span> · <span className={`font-bold ${tone(r.adjustment)}`}>{r.adjustment}</span> {status(r)}</p>
+                                <p className="font-black tabular-nums text-zinc-100">{r.amount}</p>
+                            </div>
+                            <p className="text-zinc-300 [overflow-wrap:anywhere]"><span className="text-zinc-500">Reason:</span> {r.reason}</p>
+                            <p className="text-zinc-400"><span className="text-zinc-500">Updated By:</span> {r.by}</p>
+                            {actions(r)}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function PenaltyView({ p, onClose }: { p: any; onClose: () => void }) {
+    const row = (l: string, v: any) => v === undefined || v === "" || v === null ? null : <div className="flex gap-3 py-1.5 border-b border-zinc-800/60"><span className="w-40 shrink-0 text-zinc-500">{l}</span><span className="text-zinc-200 [overflow-wrap:anywhere] whitespace-pre-wrap">{String(v)}</span></div>;
+    const fmt = (x: any) => x ? `${inr(x.amount)} · ${x.reasonCategory} — ${x.explanation}` : "—";
+    return (
+        <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3" onClick={onClose}>
+            <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900 p-5 text-xs" onClick={ev => ev.stopPropagation()} data-testid="sm-pen-view">
+                <div className="flex items-center justify-between mb-2"><h2 className="text-lg font-black text-white">Monetary Penalty {p.id}</h2><button onClick={onClose} className="text-zinc-500"><X size={18} /></button></div>
+                {row("Employee", `${p.employeeName || ""} (${p.employeeId})`)}{row("Penalty Date", dmy(p.date))}{row("Amount", inr(p.amount))}{row("Penalty Reason", p.reasonCategory)}{row("Explanation", p.explanation)}
+                {row("Applied By", `${p.createdByName} (${p.createdByRole})`)}{row("Applied At", dt(p.createdAt))}
+                {p.updatedAt && <>{row("Last Corrected By", `${p.updatedByName} (${p.updatedByRole})`)}{row("Last Corrected At", dt(p.updatedAt))}</>}
+                {row("Status", p.status)}
+                {p.status === "REVERSED" && <>{row("Reversed By", `${p.reversedByName} (${p.reversedByRole})`)}{row("Reversed At", dt(p.reversedAt))}{row("Reversal Reason", p.reversalReason)}</>}
+                {row("Employee Email", p.emailStatus)}
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mt-4 mb-1">Audit Trail</p>
+                <ol className="space-y-2" data-testid="sm-pen-audit">
+                    {(p.history || []).map((h: any, i: number) => (
+                        <li key={i} className="rounded-lg border border-zinc-800 px-3 py-2">
+                            <p className="text-zinc-200"><b>{h.action}</b> — {h.byName} ({h.role}) · {dt(h.at)}</p>
+                            {h.action === "Corrected" && <p className="text-zinc-400 [overflow-wrap:anywhere]">Before: {fmt(h.before)}<br />After: {fmt(h.after)}</p>}
+                            {h.note && <p className="text-zinc-400 [overflow-wrap:anywhere]">Note: {h.note}</p>}
+                        </li>
+                    ))}
+                </ol>
+            </div>
+        </div>
+    );
+}
+
+/** Correct (amount / reason / explanation, with a note) or reverse an HR monetary penalty */
+function PenaltyChangeDialog({ mode, p, reasons, maxPenalty, onClose, onDone }: { mode: "edit" | "reverse"; p: any; reasons: string[]; maxPenalty: number; onClose: () => void; onDone: (m: string) => void }) {
+    const [amount, setAmount] = useState(String(p.amount)); const [reasonCategory, setReasonCategory] = useState(p.reasonCategory);
+    const [explanation, setExplanation] = useState(p.explanation || ""); const [note, setNote] = useState("");
+    const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+    const amt = Number(amount);
+    const amountErr = !/^\d+(\.\d{1,2})?$/.test(amount.trim()) || !(amt > 0) ? "Enter an amount greater than ₹0 (up to 2 decimals)." : amt > maxPenalty ? `The amount cannot be more than ${inr(maxPenalty)}.` : "";
+    const changed = amt !== p.amount || reasonCategory !== p.reasonCategory || explanation.trim() !== (p.explanation || "");
+    const ok = mode === "reverse" ? note.trim().length >= 20 : !amountErr && !!reasonCategory && explanation.trim().length >= 10 && note.trim().length >= 10 && changed;
+    const go = async () => {
+        setBusy(true); setError("");
+        try {
+            const res = await fetch("/api/hr/salary-management/penalties", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(mode === "reverse" ? { id: p.id, action: "reverse", reason: note } : { id: p.id, action: "edit", amount: amount.trim(), reasonCategory, explanation, note }) });
+            const d = await res.json().catch(() => ({})); if (!res.ok) throw new Error(d.error || "Could not save"); onDone(d.message);
+        } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+    };
+    const field = "mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white normal-case tracking-normal font-normal";
+    const lbl = "block text-[10px] font-black uppercase tracking-widest text-zinc-500";
+    return (
+        <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3" onClick={() => !busy && onClose()}>
+            <div className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3 text-xs" onClick={ev => ev.stopPropagation()} data-testid="sm-pen-dialog">
+                <div className="flex items-center justify-between"><h2 className="text-lg font-black text-white">{mode === "reverse" ? "Reverse Monetary Penalty" : "Correct Monetary Penalty"}</h2><button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={18} /></button></div>
+                <p className="text-zinc-400">{p.employeeName} · {dmy(p.date)} · {inr(p.amount)} — {p.reasonCategory}</p>
+                {mode === "edit" && (<>
+                    <label className={lbl}>Penalty Amount (₹) *
+                        <input value={amount} onChange={ev => setAmount(ev.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" data-testid="sm-pen-edit-amount" className={field} />
+                        {amountErr && <span className="block mt-1 text-red-300 normal-case tracking-normal font-normal">{amountErr}</span>}
+                    </label>
+                    <label className={lbl}>Penalty Reason *
+                        <select value={reasonCategory} onChange={ev => setReasonCategory(ev.target.value)} className={field} data-testid="sm-pen-edit-reason">{reasons.map(x => <option key={x}>{x}</option>)}</select>
+                    </label>
+                    <label className={lbl}>Explanation *
+                        <textarea value={explanation} onChange={ev => setExplanation(ev.target.value)} rows={3} maxLength={3000} className={field} data-testid="sm-pen-edit-expl" />
+                    </label>
+                </>)}
+                <label className={lbl}>{mode === "reverse" ? "Reason for Reversal * (at least 20 characters)" : "Why is it being corrected? * (at least 10 characters)"}
+                    <textarea value={note} onChange={ev => setNote(ev.target.value)} rows={3} maxLength={3000} className={field} data-testid="sm-pen-note" />
+                </label>
+                <p className="text-zinc-500">The previous values stay in the audit trail. The employee is notified by email and in-app.</p>
+                {error && <p className="text-red-400" data-testid="sm-pen-error">{error}</p>}
+                <div className="flex justify-end gap-2">
+                    <button onClick={onClose} disabled={busy} className="px-4 py-2 rounded-lg font-bold text-zinc-400">Cancel</button>
+                    <button onClick={go} disabled={busy || !ok} data-testid="sm-pen-save" className={`px-4 py-2 rounded-lg text-white font-black uppercase disabled:opacity-50 ${mode === "reverse" ? "bg-red-600" : "bg-sky-600"}`}>{busy ? "Saving…" : mode === "reverse" ? "Reverse Penalty" : "Save Correction"}</button>
+                </div>
             </div>
         </div>
     );

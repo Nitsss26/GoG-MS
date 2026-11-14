@@ -15,7 +15,7 @@ import { Employee, LeaveRequest } from '@/models/Schemas';
 import { LeaveEmailAction } from '@/models/LeaveEmailAction';
 import { getLeaveTemplate, getAuthorityEmails } from '@/lib/mail-templates';
 import { sendMailInternal } from '@/lib/mail-server';
-import { hrDecideLeave, managerDecideLeave, managerCanDecide, LEAVE_FINAL_ROLES, PENDING_LEAVE_STATUSES } from '@/lib/leave-decision';
+import { hrDecideLeave, managerDecideLeave, managerCanDecide, adCanDecideFinally, adFinalDecideLeave, LEAVE_FINAL_ROLES, PENDING_LEAVE_STATUSES } from '@/lib/leave-decision';
 import { LEAVE_MANAGER_ROLES } from '@/lib/leave-scope';
 
 export const LINK_VALID_HOURS = 48;
@@ -54,6 +54,8 @@ export async function stepFor(person: { id: string; role: string; employee?: any
     if (!leave || !PENDING_LEAVE_STATUSES.includes(leave.status) || leave.employeeId === person.id) return null;
     // HR Executive decides leave like HR (same final step as in the OMS)
     if (LEAVE_FINAL_ROLES.includes(person.role) || person.role === HR_EXECUTIVE_ROLE) return 'final';
+    // AD: final decision for a direct reportee (e.g. an HOI reporting to the AD)
+    if (await adCanDecideFinally(person, leave)) return 'final';
     if (LEAVE_MANAGER_ROLES.includes(person.role) && leave.status === 'Pending HOI Approval' && (await managerCanDecide(person, leave))) return 'hoi';
     return null;
 }
@@ -170,7 +172,9 @@ export async function decideFromEmail(payload: LinkPayload, input: { action: str
 
     const reason = String(input.reason || '').trim().slice(0, 1000) || undefined;
     const result = step === 'final'
-        ? await hrDecideLeave(actor, { id: leave.id, action: input.action, remarks: reason })
+        ? (actor.role === 'AD'
+            ? await adFinalDecideLeave(actor, { id: leave.id, action: input.action, remarks: reason, applyLOP: !!input.applyLOP })
+            : await hrDecideLeave(actor, { id: leave.id, action: input.action, remarks: reason }))
         : await managerDecideLeave(actor, leave, {
             status: input.action === 'reject' ? 'Rejected' : 'Pending',
             reasonForAction: reason,

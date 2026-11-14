@@ -3,11 +3,12 @@
  *
  *  - hrDecideLeave      → HR / FOUNDER final decision (was inline in PUT /api/hr/leaves)
  *  - managerDecideLeave → HOI step by HOI / AD / TL / OM (was inline in PUT /api/leaves)
+ *  - adFinalDecideLeave → AD final decision on the leave of an employee who reports DIRECTLY to that AD
  *
  * The rules are unchanged; both updates only apply while the leave is still waiting for that step,
  * so two approvers (or an old e-mail link) can never overwrite a decision already recorded.
  */
-import { LeaveRequest } from '@/models/Schemas';
+import { LeaveRequest, Employee } from '@/models/Schemas';
 import { LEAVE_MANAGER_ROLES, managedEmployeeIds } from '@/lib/leave-scope';
 import { LeaveEmailAction } from '@/models/LeaveEmailAction';
 
@@ -62,6 +63,49 @@ export async function hrDecideLeave(actor: { id: string; name: string; role: str
     }
     if (!(await claimStep(id, 'final', leave.status, actor.id))) return fail(409, 'This leave request has already been processed.');
     // Atomic: only while it is still pending (two approvers, or an old e-mail link, at the same time)
+    const updated = await LeaveRequest.findOneAndUpdate({ id, status: { $in: PENDING_LEAVE_STATUSES } }, { $set: updates }, { new: true });
+    if (!updated) { await releaseStep(id, 'final'); return fail(409, 'This leave request has already been processed.'); }
+    return { ok: true, leave: updated, previousStatus: leave.status };
+}
+
+/** Does this employee report directly to this person (Employee.reportsTo)? */
+async function reportsDirectlyTo(employeeId: string, managerId: string) {
+    const e: any = await Employee.findOne({ id: employeeId }).select('reportsTo').lean();
+    const ids = Array.isArray(e?.reportsTo) ? e.reportsTo : e?.reportsTo ? [e.reportsTo] : [];
+    return ids.map(String).includes(String(managerId));
+}
+
+/**
+ * AD final decision: an AD can finally approve / reject the pending leave of an employee whose reporting manager
+ * is that AD (direct reportees only — e.g. the HOIs under the AD), at either pending stage, like HR.
+ * Not for the AD's own leave, and not when working through Give Access (only the AD's own reportees).
+ */
+export async function adCanDecideFinally(actor: any, leave: any) {
+    return !!actor && actor.role === 'AD' && !actor.delegation && !!leave && leave.employeeId !== actor.id
+        && PENDING_LEAVE_STATUSES.includes(leave.status) && (await reportsDirectlyTo(leave.employeeId, actor.id));
+}
+
+export async function adFinalDecideLeave(actor: { id: string; name: string; role: string }, input: { id: string; action: string; remarks?: string; applyLOP?: boolean }): Promise<DecisionResult> {
+    const { id, action, remarks } = input;
+    if (!id || (action !== 'approve' && action !== 'reject')) return fail(400, 'Leave id and a valid action (approve / reject) are required');
+    const leave: any = await LeaveRequest.findOne({ id }).lean();
+    if (!leave) return fail(404, 'Leave request not found');
+    if (!PENDING_LEAVE_STATUSES.includes(leave.status)) return fail(409, `This leave is already ${leave.status}`);
+    if (!(await adCanDecideFinally(actor, leave))) return fail(403, 'You can only finally approve or reject the leave of employees who report directly to you.');
+    const now = new Date().toISOString();
+    // the final step (same fields HR's final decision sets); approvedByRole / rejectedByRole = AD shows who decided
+    const updates: any = { hrApproverId: actor.id, hrApprovedAt: now };
+    if (remarks) updates.reasonForAction = remarks;
+    // still waiting for the manager step → the AD (the reporting manager) takes that step too
+    if (leave.status === 'Pending HOI Approval') Object.assign(updates, { hoiApproval: action === 'approve' ? 'Approved' : 'Rejected', hoiApproverId: actor.id, hoiApprovedAt: now });
+    if (action === 'approve') {
+        Object.assign(updates, { status: 'Approved', hrApproval: 'Approved', approvedBy: actor.id, approvedByName: actor.name, approvedByRole: actor.role, approvedAt: now });
+    } else {
+        Object.assign(updates, { status: 'Rejected', hrApproval: 'Rejected', rejectedBy: actor.id, rejectedByName: actor.name, rejectedByRole: actor.role, rejectedAt: now });
+        // same rule as the manager reject: invalid proof or an emergency leave → 2-day loss of pay
+        if (input.applyLOP || leave.leaveType === 'Emergency') updates.lossOfPayDays = 2;
+    }
+    if (!(await claimStep(id, 'final', leave.status, actor.id))) return fail(409, 'This leave request has already been processed.');
     const updated = await LeaveRequest.findOneAndUpdate({ id, status: { $in: PENDING_LEAVE_STATUSES } }, { $set: updates }, { new: true });
     if (!updated) { await releaseStep(id, 'final'); return fail(409, 'This leave request has already been processed.'); }
     return { ok: true, leave: updated, previousStatus: leave.status };

@@ -28,6 +28,7 @@ import {
     getTicketForwardTemplate
 } from "@/lib/mail";
 import { CUSTOM_SCHEDULE_RULES, FALLBACK_TIMINGS, isThirdSaturday } from '@/lib/attendance-config';
+import { usePresenceHeartbeat } from '@/lib/use-presence-heartbeat';
 
 // ─── TYPES ───
 export type Role = "FOUNDER" | "HR" | "AD" | "TL" | "HOI" | "OM" | "FACULTY" | "PROFESSOR" | "MARKETING_TEAM" | "TECH_TEAM" | "TECH_INTERN" | "CURRICULUM_HEAD" | "CURRICULUM_LEAD" | "HR_EXECUTIVE";
@@ -713,7 +714,7 @@ interface AuthContextType {
     addLeaveRequest: (req: Omit<LeaveRequest, "id" | "status" | "employeeId" | "employeeName" | "hoiApproval" | "hrApproval">) => Promise<void>;
     approveLeave: (id: string, reason?: string, forceHOI?: boolean) => Promise<{ success: boolean; msg?: string }>;
     rejectLeave: (id: string, applyLOP?: boolean, reason?: string) => Promise<{ success: boolean; msg?: string }>;
-    hrProcessLeave: (id: string, action: "approve" | "reject", remarks?: string) => Promise<{ success: boolean; msg?: string }>;
+    hrProcessLeave: (id: string, action: "approve" | "reject", remarks?: string, applyLOP?: boolean) => Promise<{ success: boolean; msg?: string }>;
     hrAssignEmployee: (employeeId: string, assignment: { location?: string; hoiId?: string; attendanceLocations?: string[] }) => Promise<{ success: boolean; msg?: string }>;
     addReimbursement: (claim: Omit<ReimbursementClaim, "id" | "status" | "date" | "employeeId" | "employeeName">) => Promise<void>;
     updateReimbursementStatus: (id: string, status: ReimbursementClaim["status"], reason?: string, remarks?: string, approvedAmount?: number) => Promise<void>;
@@ -811,6 +812,8 @@ const clearStorageKeepDrafts = () => {
             const k = localStorage.key(i) || "";
             // the employee's "celebration animations off" choice (a plain on/off flag) is kept too
             if (k.startsWith("gog_celebration_motion_off:")) { if (localStorage.getItem(k) === "1") keep.push([k, "1"]); continue; }
+            // Lecture Reports view settings (Sheet / Board, rows per page) — plain display preferences
+            if (/^oms\.lectureTable\.(view\.[a-z-]+|pageSize)$/.test(k)) { const v = localStorage.getItem(k) || ""; if (/^(sheet|board|10|25|50)$/.test(v)) keep.push([k, v]); continue; }
             if (!k.startsWith("gog.sprintDraft.v1:")) continue;
             const v = localStorage.getItem(k) || "";
             try {
@@ -931,6 +934,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
         restoreSession();
     }, []);
+
+    // ─── OMS presence heartbeat (HR → Workforce → OMS Status / Last Seen) ───
+    usePresenceHeartbeat(user?.id);
 
     // ─── FETCH MEETINGS ───
     useEffect(() => {
@@ -3080,13 +3086,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // ─── HR: DIRECT LEAVE APPROVAL / REJECTION ───
     // Additional HR capability. The existing approveLeave / rejectLeave flow is untouched.
-    const hrProcessLeave = async (id: string, action: "approve" | "reject", remarks?: string) => {
-        if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return { success: false, msg: "Only HR can do this." };
+    const hrProcessLeave = async (id: string, action: "approve" | "reject", remarks?: string, applyLOP?: boolean) => {
+        // HR / Founder: any leave. AD: leave of direct reportees only (checked on the server)
+        if (!user || (user.role !== "HR" && user.role !== "FOUNDER" && user.role !== "AD")) return { success: false, msg: "Only HR can do this." };
         try {
             const res = await fetch("/api/hr/leaves", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, action, remarks })
+                body: JSON.stringify({ id, action, remarks, ...(applyLOP ? { applyLOP: true } : {}) })
             });
             const updated = await res.json();
             if (!res.ok || !updated.id) return { success: false, msg: updated.error || "Failed to update leave." };

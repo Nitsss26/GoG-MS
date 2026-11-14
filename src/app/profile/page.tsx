@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth, Employee } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { cn } from "@/lib/utils";
@@ -8,10 +8,14 @@ import {
     User, Camera, Mail, Phone, MapPin, Building, Briefcase,
     Calendar as CalendarIcon, Shield, Loader2, CheckCircle2,
     AlertCircle, CreditCard, FileText, ExternalLink, Link, GraduationCap,
-    Landmark, Fingerprint, Wallet
+    Landmark, Fingerprint, Wallet, Pencil, Save, X, Lock
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import PostOnboardingChecklist from "@/components/onboarding/PostOnboardingChecklist";
+import { PROFILE_FIELDS, PROFILE_DOCS, readField, fieldByKey, validateField, cleanValue, toIsoDate } from "@/lib/profile-fields";
+import { FieldInput, DocSlot } from "@/components/profile/ProfileWidgets";
+
+type ProfileData = { values: Record<string, string>; documents: { key: string; label: string; uploaded: boolean; restricted: boolean }[]; editable: string[]; editableDocs: string[]; missing: string[]; profileStatus: string };
 
 export default function ProfilePage() {
     const { user, updateProfile, attendanceRecords } = useAuth();
@@ -20,6 +24,20 @@ export default function ProfilePage() {
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
     const [selectedMonth, setSelectedMonth] = useState(new Date().toLocaleString('en-US', { month: 'long' }));
     const fileInputRef = useRef<HTMLInputElement>(null);
+    // Edit Profile: the saved profile from the server, the draft while editing, and per-field errors
+    const [profile, setProfile] = useState<ProfileData | null>(null);
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState<Record<string, string>>({});
+    const [docDraft, setDocDraft] = useState<Record<string, string>>({});
+    const [errors, setErrors] = useState<Record<string, string>>({});
+    const [saving, setSaving] = useState(false);
+    const loadProfile = useCallback(async () => {
+        try {
+            const r = await fetch("/api/employees/profile", { cache: "no-store" });
+            if (r.ok) setProfile(await r.json());
+        } catch { /* the page still shows the session data */ }
+    }, []);
+    useEffect(() => { if (user?.id) loadProfile(); }, [user?.id, loadProfile]);
 
     if (!user) return null;
     const emp = user as Employee;
@@ -29,6 +47,54 @@ export default function ProfilePage() {
         const val = portal || db;
         if (!val || val === "?" || val === "NA" || val === "N/A") return "—";
         return val;
+    };
+    // Saved value of a profile field (server copy first, so an edit shows at once and after refresh)
+    const saved = (key: string) => {
+        const f = fieldByKey(key)!;
+        const v = profile ? profile.values[key] : readField(emp, f);
+        return v || "";
+    };
+    const show = (key: string) => saved(key) || "—";
+    const canEdit = (key: string) => !!profile?.editable.includes(key);
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    /** A profile row: input while editing (when the employee may change it), value otherwise; locked fields show a lock */
+    const field = (key: string, display?: React.ReactNode) => {
+        const f = fieldByKey(key)!;
+        if (editing && canEdit(key)) return <FieldInput field={f} value={draft[key] ?? ""} error={errors[key]} onChange={v => { setDraft(d => ({ ...d, [key]: v })); setErrors(e => ({ ...e, [key]: "" })); }} />;
+        const v = display ?? show(key);
+        return editing ? <span className="inline-flex items-center gap-1.5" data-testid={`locked-${key}`}>{v} <Lock size={10} className="text-zinc-600" aria-label="Managed by HR" /></span> : v;
+    };
+    const startEdit = () => {
+        const d: Record<string, string> = {};
+        PROFILE_FIELDS.forEach(f => { d[f.key] = f.type === "date" ? toIsoDate(saved(f.key)) : saved(f.key); });
+        setDraft(d); setDocDraft({}); setErrors({}); setStatus(null); setEditing(true);
+    };
+    const cancelEdit = () => { setEditing(false); setDraft({}); setDocDraft({}); setErrors({}); };
+    const saveEdit = async () => {
+        if (!profile) return;
+        const fields: Record<string, string> = {};
+        const errs: Record<string, string> = {};
+        profile.editable.forEach(key => {
+            const f = fieldByKey(key)!;
+            const v = cleanValue(f, draft[key]);
+            const before = f.type === "date" ? toIsoDate(saved(key)) : saved(key);
+            if (v === before) return;                       // unchanged fields are not sent
+            const e = validateField(f, v, today);
+            if (e) errs[key] = e; else fields[key] = v;
+        });
+        setErrors(errs);
+        if (Object.keys(errs).length) { setStatus({ type: "error", msg: "Please correct the highlighted fields." }); return; }
+        if (!Object.keys(fields).length && !Object.keys(docDraft).length) { setEditing(false); setStatus({ type: "success", msg: "No changes to save." }); return; }
+        setSaving(true); setStatus(null);
+        try {
+            const r = await fetch("/api/employees/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: emp.id, fields, documents: docDraft }) });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.error || "Could not save your profile.");
+            setProfile(j.profile); setEditing(false); setDocDraft({});
+            setStatus({ type: "success", msg: "Profile updated successfully!" });
+        } catch (e: any) {
+            setStatus({ type: "error", msg: e.message || "Could not save your profile." });
+        } finally { setSaving(false); }
     };
 
     const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -56,13 +122,24 @@ export default function ProfilePage() {
                     <h1 className="text-2xl lg:text-3xl font-black text-white tracking-tight">Institutional Profile</h1>
                     <p className="text-xs lg:text-sm text-zinc-400 font-medium">Verified professional records and identity portal.</p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                    {!editing ? (
+                        <button onClick={startEdit} disabled={!profile} data-testid="profile-edit" className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-[#10b981] text-black text-xs font-black hover:bg-[#12d393] disabled:opacity-50"><Pencil size={14} /> Edit Profile</button>
+                    ) : (<>
+                        <button onClick={saveEdit} disabled={saving} data-testid="profile-save" className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-[#10b981] text-black text-xs font-black hover:bg-[#12d393] disabled:opacity-50">{saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Changes</button>
+                        <button onClick={cancelEdit} disabled={saving} data-testid="profile-cancel" className="inline-flex items-center gap-2 h-10 px-4 rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-200 text-xs font-black hover:bg-zinc-800"><X size={14} /> Cancel</button>
+                    </>)}
                     <div className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                         <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">System Verified</span>
                     </div>
                 </div>
             </header>
+
+            {editing && (
+                <p className="text-[11px] text-zinc-400 -mt-2" data-testid="profile-edit-hint">Editing your profile. Fields with a <Lock size={10} className="inline text-zinc-500" /> (Employee ID, role, college, designation, department, joining date) and the Performance Matrix are managed by HR.</p>
+            )}
+            {status && editing && <p className={cn("text-xs font-bold", status.type === "error" ? "text-red-400" : "text-emerald-400")} data-testid="profile-edit-status">{status.msg}</p>}
 
             {/* Post-onboarding checklist: full width under the heading, summary only — activities open from a dropdown */}
             <div className="empty:hidden" data-testid="profile-post-onboarding">
@@ -199,37 +276,45 @@ export default function ProfilePage() {
 
                     {/* Section: Professional */}
                     <Section title="Professional Credentials" icon={<Briefcase size={16} />}>
-                        <InfoRow icon={<Mail size={14} />} label="Institution Email" value={user.email} />
-                        <InfoRow icon={<Phone size={14} />} label="Professional Contact" value={getVal(emp.phone, emp.phone_no_)} />
-                        <InfoRow icon={<Building size={14} />} label="Department" value={emp.dept} />
-                        <InfoRow icon={<GraduationCap size={14} />} label="Corporate Node" value={getVal(emp.location, emp.you_are_from_)} />
-                        <InfoRow icon={<Shield size={14} />} label="Designation" value={getVal(emp.designation, emp.current_designation_at_gog)} />
-                        <InfoRow icon={<CalendarIcon size={14} />} label="Onboarding Date" value={emp.joiningDate || "—"} />
+                        <InfoRow icon={<Mail size={14} />} label="Institution Email" value={field("email", user.email)} />
+                        <InfoRow icon={<Phone size={14} />} label="Professional Contact" value={field("phone_no_")} />
+                        <InfoRow icon={<Building size={14} />} label="Department" value={field("dept", emp.dept || "—")} />
+                        <InfoRow icon={<GraduationCap size={14} />} label="Corporate Node" value={field("location", getVal(emp.location, emp.you_are_from_))} />
+                        <InfoRow icon={<Shield size={14} />} label="Designation" value={field("designation", getVal(emp.designation, emp.current_designation_at_gog))} />
+                        <InfoRow icon={<CalendarIcon size={14} />} label="Onboarding Date" value={field("joiningDate", emp.joiningDate || "—")} />
                         <InfoRow icon={<Briefcase size={14} />} label="Tenure Start" value={emp.designationDate || "—"} />
                     </Section>
 
                     {/* Section: Bank Details */}
                     <Section title="Remuneration & Banking" icon={<Landmark size={16} />}>
-                        <InfoRow icon={<CreditCard size={14} />} label="Account Name" value={getVal(emp.bankAccountName, emp.account_holder_name)} />
-                        <InfoRow icon={<Fingerprint size={14} />} label="Account Number" value={getVal(emp.bankAccountNumber, emp.bank_account_number)} />
-                        <InfoRow icon={<Building size={14} />} label="Bank IFSC Code" value={getVal(emp.ifscCode, emp.ifsc_code)} />
-                        <InfoRow icon={<Wallet size={14} />} label="Institutional UPI" value={getVal(emp.upiId, emp.upi_id)} />
+                        <InfoRow icon={<CreditCard size={14} />} label="Account Name" value={field("account_holder_name")} />
+                        <InfoRow icon={<Fingerprint size={14} />} label="Account Number" value={field("bank_account_number")} />
+                        <InfoRow icon={<Building size={14} />} label="Bank IFSC Code" value={field("ifsc_code")} />
+                        <InfoRow icon={<Wallet size={14} />} label="Institutional UPI" value={field("upi_id")} />
+                        {(editing || saved("bankName")) && <InfoRow icon={<Landmark size={14} />} label="Bank Name" value={field("bankName")} />}
+                        {(editing || saved("panNumber")) && <InfoRow icon={<FileText size={14} />} label="PAN Number" value={field("panNumber")} />}
+                        {(editing || saved("aadhaarNumber")) && <InfoRow icon={<FileText size={14} />} label="Aadhaar Number" value={field("aadhaarNumber")} />}
                     </Section>
 
                     {/* Section: Academic */}
                     <Section title="Academic Qualifications" icon={<GraduationCap size={16} />}>
-                        <InfoRow icon={<FileText size={14} />} label="Bachelor Degree" value={getVal(emp.bachelorQual, emp.bachelor_s_qualification____ex___b_tech__cse____iit_guwahati_)} />
-                        <InfoRow icon={<FileText size={14} />} label="Master Degree" value={getVal(emp.masterQual, emp.master_s_qualification____ex___m_tech__cse____iit_guwahati_)} />
-                        <InfoRow icon={<FileText size={14} />} label="Institution" value={getVal(emp.collegeName, emp.which_college_are_you_from_)} />
-                        <InfoRow icon={<ExternalLink size={14} />} label="LinkedIn Identity" value={emp.linkedinId ? <a href={emp.linkedinId} target="_blank" className="text-emerald-500 hover:underline">View Profile</a> : "—"} />
+                        <InfoRow icon={<FileText size={14} />} label="Bachelor Degree" value={field("bachelor_s_qualification")} />
+                        <InfoRow icon={<FileText size={14} />} label="Master Degree" value={field("master_s_qualification")} />
+                        <InfoRow icon={<FileText size={14} />} label="Institution" value={field("which_college_are_you_from_")} />
+                        {(editing || saved("you_are_from_")) && <InfoRow icon={<GraduationCap size={14} />} label="University Tier" value={field("you_are_from_")} />}
+                        <InfoRow icon={<ExternalLink size={14} />} label="LinkedIn Identity" value={editing ? field("linkedin_id") : saved("linkedin_id") ? <a href={saved("linkedin_id")} target="_blank" rel="noopener noreferrer" className="text-emerald-500 hover:underline">View Profile</a> : "—"} />
                     </Section>
 
                     {/* Section: Persona/Family */}
                     <Section title="Personal & Family" icon={<User size={16} />}>
-                        <InfoRow icon={<User size={14} />} label="Father/Mother Name" value={getVal(emp.fatherMotherName, emp.father_name_or_mother_name)} />
-                        <InfoRow icon={<Phone size={14} />} label="Parents Contact" value={getVal(emp.parentsPhone, emp.parents_phone_no_)} />
-                        <InfoRow icon={<Shield size={14} />} label="Blood Group" value={getVal(emp.bloodGroup, emp.blood_group)} />
-                        <InfoRow icon={<User size={14} />} label="Date of Birth" value={getVal(emp.dateOfBirth, emp.date_of_birth)} />
+                        {(editing || saved("full_name")) && <InfoRow icon={<User size={14} />} label="Full Name" value={field("full_name")} />}
+                        <InfoRow icon={<User size={14} />} label="Father/Mother Name" value={field("father_name_or_mother_name")} />
+                        <InfoRow icon={<Phone size={14} />} label="Parents Contact" value={field("parents_phone_no_")} />
+                        <InfoRow icon={<Shield size={14} />} label="Blood Group" value={field("blood_group")} />
+                        <InfoRow icon={<User size={14} />} label="Date of Birth" value={field("date_of_birth")} />
+                        {(editing || saved("gender")) && <InfoRow icon={<User size={14} />} label="Gender" value={field("gender")} />}
+                        {(editing || saved("permanent_address")) && <InfoRow icon={<MapPin size={14} />} label="Permanent Address" value={field("permanent_address")} />}
+                        {(editing || saved("t_shirt_size")) && <InfoRow icon={<User size={14} />} label="T-Shirt Size" value={field("t_shirt_size")} />}
                     </Section>
 
                     {/* Full Width Section: Institutional Document Vault */}
@@ -238,19 +323,14 @@ export default function ProfilePage() {
                             <div className="p-2 bg-pink-500/10 rounded-lg text-pink-500"><FileText size={18} /></div>
                             <h3 className="text-base font-bold text-white uppercase tracking-wider">Institutional Document Vault</h3>
                         </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 text-center">
-                            <DocLink label="Resume/CV" url={emp.resumeUrl || emp.upload_your_resume} />
-                            <DocLink label="10th Marksheet" url={emp.marksheet10Url || emp["10th_marksheet"]} />
-                            <DocLink label="12th Marksheet" url={emp.marksheet12Url || emp["12th_marksheet"]} />
-                            <DocLink label="Bachelor Degree" url={emp.bachelorCertUrl || emp.upload_your_bachelor_s_passing_certificate} />
-                            <DocLink label="Bachelor Marksheet" url={emp.bachelorMarksheetUrl || emp.upload_your_bachelor_s_marksheet__all_marksheet_together_} />
-                            <DocLink label="Master Degree" url={emp.masterCertUrl || emp.upload_your_master_s_passing_certificate} />
-                            <DocLink label="Master Marksheet" url={emp.masterMarksheetUrl || emp.upload_your_masters_marksheet__all_marksheet_together_} />
-                            <DocLink label="Aadhar Card" url={emp.aadharCardUrl || emp.aadhar_card} />
-                            <DocLink label="PAN Card" url={emp.panCardUrl || emp.pan_card} />
-                            <DocLink label="Passport Photo" url={emp.passportPhotoUrl || emp.passport_size_photo} />
-                            <DocLink label="Bank/Cancelled Cheque" url={emp.bankPassbookUrl || emp.bank_passbook___cancelled_cheque} />
-                            <DocLink label="Experience Letter" url={emp.expLetterUrl || emp.experience_letter__if_any_} />
+                        {editing && <p className="text-[11px] text-zinc-400 mb-4">Upload missing documents or replace existing ones (PDF, JPG, PNG — max 10 MB). Changes are saved with <b>Save Changes</b>.</p>}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 text-center" data-testid="profile-vault">
+                            {PROFILE_DOCS.map(d => {
+                                const st = profile?.documents.find(x => x.key === d.key);
+                                return <DocSlot key={d.key} employeeId={emp.id} docKey={d.key} label={d.label} uploaded={st ? st.uploaded : !!readField(emp, d)}
+                                    editable={editing && !!profile?.editableDocs.includes(d.key)} pending={docDraft[d.key]}
+                                    onUploaded={url => setDocDraft(x => ({ ...x, [d.key]: url }))} />;
+                            })}
                         </div>
                     </div>
 
@@ -296,25 +376,6 @@ function MetricRow({ label, value, color }: { label: string, value: string | num
         <div className="flex justify-between items-center p-3 bg-white/[0.02] rounded-xl border border-white/[0.03]">
             <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">{label}</span>
             <span className={cn("text-[12px] font-black", colors[color])}>{value}</span>
-        </div>
-    );
-}
-
-function DocLink({ label, url }: { label: string, url?: string }) {
-    return (
-        <div className={cn(
-            "group relative flex flex-col items-center justify-center p-4 rounded-2xl border transition-all",
-            url ? "border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 cursor-pointer" : "border-white/[0.03] bg-white/[0.01] opacity-40 cursor-not-allowed"
-        )}>
-            <div className={cn("mb-2 transition-transform group-hover:scale-110", url ? "text-emerald-500" : "text-zinc-600")}>
-                <Link size={20} />
-            </div>
-            <p className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest">{label}</p>
-            {url && (
-                <a href={url} target="_blank" className="absolute inset-0 opacity-0 bg-black/50 flex items-center justify-center rounded-2xl group-hover:opacity-100 transition-opacity">
-                    <span className="text-[9px] font-black text-white uppercase tracking-widest">Open Link</span>
-                </a>
-            )}
         </div>
     );
 }

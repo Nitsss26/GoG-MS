@@ -158,7 +158,11 @@ export async function PUT(request: Request) {
             const PROTECTED = ["role", "location", "reportsTo", "status", "isRemoved", "removedAt", "removedBy", "removedByName", "removalSnapshot", "email", "salary", "employeeId", "_id",
                 // HR verification and ratings are never set by the employee themselves
                 "isOnboarded", "onboardingChecklist", "onboardingChecklistMeta", "onboardingActivity", "onboardingRemarks", "onboardingApprovedAt",
-                "onboardingApprovedBy", "onboardingApprovedByName", "monthlyScores", "slackInviteLink"];
+                "onboardingApprovedBy", "onboardingApprovedByName", "monthlyScores", "slackInviteLink",
+                // Employment details, performance / attendance figures and system fields are HR-managed (My Profile → Edit Profile
+                // changes the employee's own details through /api/employees/profile)
+                "name", "designation", "dept", "joiningDate", "designationDate", "managerLevel", "chancesRemaining", "markPresentUsed", "fines",
+                "hideFromAttendance", "noticePeriod", "attendanceLocationLog", "id"];
             if (isSelf) {
                 PROTECTED.forEach(k => delete updates[k]);
                 // The employee can only submit the form (→ Verification Pending), never approve themselves

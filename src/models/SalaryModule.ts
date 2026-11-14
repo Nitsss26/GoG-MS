@@ -91,6 +91,7 @@ const PayableCorrectionSchema = new Schema({
     adjustment: { type: Number },                                 // +1 / +0.5 / −1
     previousMonthPayable: { type: Number },
     updatedMonthPayable: { type: Number },
+    payableType: { type: String },                                // FULL (default, older records) | HALF (Half Day Payable = 0.5)
     correctionCategory: { type: String },
     correctionReason: { type: String, default: '' },              // optional
     supportingEvidence: [String],
@@ -102,6 +103,27 @@ const PayableCorrectionSchema = new Schema({
     notifyStatus: { type: String },
 });
 
+// HR monetary penalty (₹) for an employee and date — listed with the other Monetary Penalties (never changes payable
+// days or the attendance record). Edits and the reversal are kept in `history`; a reversed record stays (status REVERSED).
+const HrMonetaryPenaltySchema = new Schema({
+    id: { type: String, required: true, unique: true },
+    activeKey: { type: String, required: true, unique: true },   // employee:date:amount:reason while ACTIVE → no accidental duplicate
+    employeeId: { type: String, required: true, index: true },
+    employeeName: { type: String },
+    month: { type: String, index: true },                         // YYYY-MM
+    date: { type: String, required: true },                       // YYYY-MM-DD
+    amount: { type: Number, required: true },
+    reasonCategory: { type: String, required: true },
+    explanation: { type: String, required: true },
+    createdBy: { type: String }, createdByName: { type: String }, createdByRole: { type: String }, createdAt: { type: String },
+    updatedBy: { type: String }, updatedByName: { type: String }, updatedByRole: { type: String }, updatedAt: { type: String },
+    status: { type: String, default: 'ACTIVE' },                  // ACTIVE | REVERSED
+    reversedBy: { type: String }, reversedByName: { type: String }, reversedByRole: { type: String }, reversedAt: { type: String },
+    reversalReason: { type: String },
+    history: [{ at: String, by: String, byName: String, role: String, action: String, before: Schema.Types.Mixed, after: Schema.Types.Mixed, note: String }],
+    emailStatus: { type: String },
+});
+
 // Sequence numbers (ticket ids)
 const SalaryCounterSchema = new Schema({
     key: { type: String, required: true, unique: true },
@@ -111,4 +133,5 @@ const SalaryCounterSchema = new Schema({
 export const FlagRemoval = mongoose.models.FlagRemoval || mongoose.model('FlagRemoval', FlagRemovalSchema);
 export const CorrectionTicket = mongoose.models.CorrectionTicket || mongoose.model('CorrectionTicket', CorrectionTicketSchema);
 export const PayableCorrection = mongoose.models.PayableCorrection || mongoose.model('PayableCorrection', PayableCorrectionSchema);
+export const HrMonetaryPenalty = mongoose.models.HrMonetaryPenalty || mongoose.model('HrMonetaryPenalty', HrMonetaryPenaltySchema);
 export const SalaryCounter = mongoose.models.SalaryCounter || mongoose.model('SalaryCounter', SalaryCounterSchema);

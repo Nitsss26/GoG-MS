@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { displayManager } from "@/lib/display-manager";
+import { useAssignedManagers } from "@/lib/use-assigned-managers";
 import PostOnboardingChecklist from "@/components/onboarding/PostOnboardingChecklist";
 import {
-    X, Mail, Phone, MapPin, Briefcase, Building2, Calendar, User as UserIcon, Users, ShieldCheck,
+    X, Mail, Phone, MapPin, Briefcase, Building2, Calendar, User as UserIcon, Users, ShieldCheck, Activity, LogIn, Clock,
     Copy, Check, ExternalLink, FileText, Landmark, GraduationCap, Link2, Award, AlertTriangle,
 } from "lucide-react";
 import type { Employee } from "@/context/AuthContext";
+import { lastSeenLabel, whenLabel, type PresenceRow } from "@/lib/presence-format";
 
 /** Shows a value only partly: "XXXX XXXX 1234" */
 const mask = (v?: string) => {
@@ -76,13 +79,17 @@ export function EmployeeMailDialog({ emp, onClose }: { emp: Employee; onClose: (
 }
 
 /** Full profile of one employee (page icon in Workforce). Sensitive details only for HR / Founder, masked. */
-export default function EmployeeProfileDialog({ emp, employees, locName, viewerRole, onClose }: {
+export default function EmployeeProfileDialog({ emp, employees, locName, viewerRole, presence, onClose }: {
     emp: Employee; employees: Employee[]; locName: (v?: string) => string; viewerRole: string; onClose: () => void;
+    /** OMS presence — passed only for HR / HR Executive (Workforce) */
+    presence?: { row: PresenceRow; now: string; ready: boolean };
 }) {
     const e: any = emp;
     const isHR = ["HR", "FOUNDER"].includes(viewerRole);
-    const managers = (Array.isArray(e.reportsTo) ? e.reportsTo : e.reportsTo ? [e.reportsTo] : [])
-        .map((id: string) => employees.find(x => x.id === id)).filter(Boolean) as Employee[];
+    // Professor / Faculty / OM → HOI; everyone else → the manager HR assigned (lib/display-manager)
+    const assigned = useAssignedManagers();
+    const mgr = displayManager(e, id => employees.find(x => x.id === id) as any, assigned[e.id]);
+    const managers = mgr.people;
     const reportees = employees.filter(x => {
         const r: any = (x as any).reportsTo;
         return Array.isArray(r) ? r.includes(emp.id) : r === emp.id;
@@ -141,6 +148,21 @@ export default function EmployeeProfileDialog({ emp, employees, locName, viewerR
                 </div>
 
                 <div className="p-5 sm:p-6 space-y-6 max-h-[68vh] overflow-y-auto">
+                    {presence && (
+                        <section className="space-y-3" data-testid="profile-presence">
+                            <h3 className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.15em]">OMS Presence</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-5 gap-y-3">
+                                <Item icon={Activity} label="Current OMS Status" value={!presence.ready ? "…" : (
+                                    <span className={`inline-flex items-center gap-1.5 font-semibold ${presence.row.status === "Active" ? "text-emerald-300" : "text-zinc-300"}`} data-testid="profile-oms-status">
+                                        <span className={`w-2 h-2 rounded-full ${presence.row.status === "Active" ? "bg-emerald-400" : "bg-zinc-500"}`} />{presence.row.status}
+                                    </span>)} />
+                                <Item icon={LogIn} label="Last Login" value={!presence.ready ? "…" : presence.row.status === "Never Logged In" ? "Never Logged In" : whenLabel(presence.row.lastLoginAt, presence.now) || "Not recorded"} />
+                                <Item icon={Clock} label="Last Seen" value={!presence.ready ? "…" : lastSeenLabel(presence.row, presence.now)} />
+                            </div>
+                            <p className="text-[10px] text-zinc-500">Active means connected to OMS in the last 2 minutes — not proof of work or physical presence.</p>
+                        </section>
+                    )}
+
                     <Section title="Contact">
                         <Item icon={Mail} label="Email" value={emp.email} />
                         <Item icon={Phone} label="Phone" value={e.phone || e.phone_no_} />
@@ -153,7 +175,7 @@ export default function EmployeeProfileDialog({ emp, employees, locName, viewerR
                         <Item icon={Briefcase} label="Department" value={emp.dept} />
                         <Item icon={Award} label="Designation" value={emp.designation} />
                         <Item icon={Calendar} label="Joining Date" value={fmtDate(emp.joiningDate)} />
-                        <Item icon={Users} label="Reports To" value={managers.length ? managers.map(m => `${m.name} (${m.role})`).join(", ") : ""} />
+                        <Item icon={Users} label={mgr.label === "HOI" ? "Reports To (HOI)" : "Reports To (Manager)"} value={managers.length ? managers.map(m => m.role ? `${m.name} (${m.role})` : `${m.name}`).join(", ") : ""} />
                         <Item icon={Users} label="Direct Reportees" value={reportees.length ? `${reportees.length} — ${reportees.slice(0, 4).map(r => r.name).join(", ")}${reportees.length > 4 ? "…" : ""}` : ""} />
                         <Item icon={ShieldCheck} label="Chances Remaining" value={emp.chancesRemaining} />
                         {e.fines?.total ? <Item icon={AlertTriangle} label="Fines" value={`₹${e.fines.total} (${e.fines.records?.length || 0} record${(e.fines.records?.length || 0) === 1 ? "" : "s"})`} /> : null}

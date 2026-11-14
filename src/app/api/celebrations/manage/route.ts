@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * Announcements → Celebration Management (HR / HR Executive / Founder only — checked here, not only in the page).
  *   GET  → banner libraries, active banners, employee birthday directory, festival celebrations
  *   POST { action, … } → template_create | template_update | template_delete | set_active |
- *                         employee_config | edit_dob | festival_save | festival_delete
+ *                         employee_config | edit_dob | festival_save | festival_delete | welcome_save | welcome_delete | birthday_animation
  */
 export async function GET() {
     try {

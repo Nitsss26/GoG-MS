@@ -31,7 +31,7 @@ export type PdInput = {
     /** dates whose Late Clock-In justification is still under HR review (on hold: not counted, no pay cut yet) */
     latePendingDates?: string[];
     /** HR payable-day corrections (ACTIVE), by date */
-    corrections?: Map<string, { id: string; direction?: string; correctionCategory?: string; correctionReason?: string; correctedByName?: string; correctedByRole?: string; correctedAt?: string; relatedTicketId?: string }>;
+    corrections?: Map<string, { id: string; direction?: string; value?: number; correctionCategory?: string; correctionReason?: string; correctedByName?: string; correctedByRole?: string; correctedAt?: string; relatedTicketId?: string }>;
 };
 
 export const LEVEL_LABEL: Record<string, string> = {
@@ -75,7 +75,7 @@ export type DayRow = {
     correctable?: boolean;              // non-payable / partly payable working day that HR may mark payable
     /** payable day that HR may mark non-payable */
     deductible?: boolean;
-    correction?: { id: string; direction?: string; correctionCategory?: string; correctionReason?: string; correctedByName?: string; correctedByRole?: string; correctedAt?: string; relatedTicketId?: string };
+    correction?: { id: string; direction?: string; value?: number; correctionCategory?: string; correctionReason?: string; correctedByName?: string; correctedByRole?: string; correctedAt?: string; relatedTicketId?: string };
 };
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -207,6 +207,16 @@ export function calculatePayableDays(input: PdInput) {
         const corr = input.corrections?.get(row.date);
         if (!corr) return;
         const who = `${corr.correctedByName || 'HR'}${corr.correctedByRole ? ` (${corr.correctedByRole})` : ''}`;
+        // Half Day Payable: the day counts 0.5 (from 0 → 0.5, or from 1 → 0.5)
+        if (corr.value === 0.5) {
+            const down = corr.direction === 'TO_NON_PAYABLE';
+            if (down ? row.payable <= 0.5 : row.payable >= 0.5) return;
+            if (down) hrDeductedDays = r2(hrDeductedDays + row.payable - 0.5); else correctedDays = r2(correctedDays + 0.5 - row.payable);
+            row.correction = corr; row.correctable = false; row.deductible = false;
+            row.lop = 0.5; row.payable = 0.5; row.payableStatus = 'Partly Payable';
+            row.reason = `Half Day Payable by ${who} — ${corr.correctionCategory || 'Correction'} · Records: ${row.baseReason}`;
+            return;
+        }
         if (corr.direction === 'TO_NON_PAYABLE') {
             if (row.payable <= 0) return;
             hrDeductedDays = r2(hrDeductedDays + row.payable);

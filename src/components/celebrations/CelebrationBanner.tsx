@@ -1,14 +1,15 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Cake, PartyPopper, Palmtree, Sparkles } from "lucide-react";
+import { Cake, PartyPopper, Palmtree, Sparkles, UserPlus } from "lucide-react";
 import type { BannerData, ColleagueBirthday } from "@/lib/celebration-themes";
 
 /**
  * The dashboard header banner (birthday / festival / vacation) — the same component on the live dashboard and in
  * every preview. An uploaded image is a background: name, designation and photo are separate HTML layers on top
- * (never edited into the image). The whole image is shown (no cropping); on narrow screens the text sits under it.
+ * (never edited into the image). Kept compact (about half the earlier height): the image fills a slim strip (centre kept,
+ * edges trimmed if needed); on narrow screens the text sits under it.
  */
-const ICON = { "birthday-self": Cake, "birthday-colleague": Cake, festival: PartyPopper, vacation: Palmtree } as const;
+const ICON = { "birthday-self": Cake, "birthday-colleague": Cake, festival: PartyPopper, vacation: Palmtree, "welcome-self": UserPlus, "welcome-colleague": UserPlus } as const;
 
 function Photo({ url, name, size }: { url?: string; name?: string; size: number }) {
     const [bad, setBad] = useState(false);
@@ -28,22 +29,24 @@ export default function CelebrationBanner({ banner, testId = "celebration-banner
     const narrow = w < 560;
     const Icon = ICON[banner.kind] || Sparkles;
     const align = banner.align || "left";
-    const isBday = banner.kind === "birthday-self" || banner.kind === "birthday-colleague";
+    const isBday = banner.kind === "birthday-self" || banner.kind === "birthday-colleague" || banner.kind === "welcome-self" || banner.kind === "welcome-colleague";   // banners with the person
     const photoPos = isBday ? (banner.photoPosition || "right") : "none";
-    const photoSize = narrow ? 56 : w < 900 ? 72 : 88;
+    const photoSize = narrow ? 44 : w < 900 ? 56 : 64;
+    // slim strip: about half of the earlier banner height
+    const stripH = narrow ? 88 : w < 900 ? 140 : 168;
     const textAlign = align === "center" ? "center" : align === "right" ? "right" : "left";
     const justify = align === "center" ? "center" : align === "right" ? "flex-end" : "flex-start";
 
     const text = (
         <div className="min-w-0" style={{ textAlign }}>
             <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.2em] opacity-80" style={{ color: banner.textColor, justifyContent: justify }}>
-                <Icon size={12} /> {banner.kind === "vacation" ? "Holiday" : banner.kind === "festival" ? "Celebration" : banner.kind === "birthday-self" ? "Your Birthday" : "Birthday"}
+                <Icon size={12} /> {banner.kind === "vacation" ? "Holiday" : banner.kind === "festival" ? "Celebration" : banner.kind === "birthday-self" ? "Your Birthday" : banner.kind === "welcome-colleague" ? "New Team Member" : banner.kind === "welcome-self" ? "Welcome" : "Birthday"}
             </p>
-            <h2 className="font-extrabold tracking-tight leading-tight mt-1 [overflow-wrap:anywhere]" style={{ color: banner.headingColor || banner.textColor, fontSize: narrow ? 20 : w < 900 ? 24 : 30 }} data-testid="cel-heading">{banner.heading}</h2>
+            <h2 className="font-extrabold tracking-tight leading-tight mt-1 [overflow-wrap:anywhere]" style={{ color: banner.headingColor || banner.textColor, fontSize: narrow ? 18 : w < 900 ? 21 : 24 }} data-testid="cel-heading">{banner.heading}</h2>
             {isBday && banner.person && (banner.person.designation || banner.person.college) && (
                 <p className="text-xs font-semibold mt-1 opacity-90 [overflow-wrap:anywhere]" style={{ color: banner.textColor }} data-testid="cel-person">{[banner.person.designation, banner.person.college].filter(Boolean).join(" · ")}</p>
             )}
-            {banner.subheading && <p className="text-sm mt-1.5 opacity-90 [overflow-wrap:anywhere]" style={{ color: banner.textColor }} data-testid="cel-subheading">{banner.subheading}</p>}
+            {banner.subheading && <p className="text-xs sm:text-sm mt-1 opacity-90 [overflow-wrap:anywhere]" style={{ color: banner.textColor }} data-testid="cel-subheading">{banner.subheading}</p>}
         </div>
     );
     const content = (
@@ -58,17 +61,16 @@ export default function CelebrationBanner({ banner, testId = "celebration-banner
             {banner.imageUrl ? (
                 <>
                     <div className="relative">
-                        {/* the whole uploaded image (no crop) */}
-                        <img src={banner.imageUrl} alt="" className="block w-full h-auto max-h-[340px] object-contain mx-auto" data-testid="cel-image" />
+                        <img src={banner.imageUrl} alt="" className="block w-full object-cover object-center" style={{ height: stripH }} data-testid="cel-image" />
                         {!narrow && <>
                             <div className="absolute inset-0" style={{ background: banner.overlayColor || "rgba(0,0,0,0.25)" }} />
-                            <div className="absolute inset-0 flex items-center px-8 py-5">{content}</div>
+                            <div className="absolute inset-0 flex items-center px-6 py-3">{content}</div>
                         </>}
                     </div>
                     {narrow && <div className="px-4 py-4">{content}</div>}
                 </>
             ) : (
-                <div className="relative px-4 sm:px-8 py-5 sm:py-7" style={{ backgroundImage: `radial-gradient(circle at 85% 20%, rgba(255,255,255,0.12), transparent 45%), linear-gradient(135deg, rgba(255,255,255,0.06), transparent)` }}>
+                <div className="relative px-4 sm:px-6 py-3.5 sm:py-4" style={{ backgroundImage: `radial-gradient(circle at 85% 20%, rgba(255,255,255,0.12), transparent 45%), linear-gradient(135deg, rgba(255,255,255,0.06), transparent)` }}>
                     {content}
                 </div>
             )}

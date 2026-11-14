@@ -781,6 +781,9 @@ export const getAcademicNotificationTemplate = (opts: {
     rows?: { label: string; value: any }[];
     listItems?: string[];
     note?: string;
+    /** optional "Dear …," line above the intro and closing paragraphs (each line kept) after the note */
+    greeting?: string;
+    closing?: string[];
     link?: string;
     linkLabel?: string;
     color?: string;
@@ -790,10 +793,12 @@ export const getAcademicNotificationTemplate = (opts: {
     const list = opts.listItems?.length
         ? `<ul style="margin: 12px 0; padding-left: 20px;">${opts.listItems.map(i => `<li style="margin: 4px 0;">${escapeHtml(i)}</li>`).join("")}</ul>`
         : "";
-    const content = `<p style="margin: 0 0 12px 0;">${escapeHtml(opts.intro)}</p>`
+    const content = (opts.greeting ? `<p style="margin: 0 0 12px 0;">${escapeHtml(opts.greeting)}</p>` : "")
+        + `<p style="margin: 0 0 12px 0;">${escapeHtml(opts.intro)}</p>`
         + list
         + (rows.length ? DataTable(rows) : "")
         + (opts.note ? `<p style="margin: 12px 0 0 0;">${escapeHtml(opts.note)}</p>` : "")
+        + (opts.closing || []).map(p => `<p style="margin: 12px 0 0 0;">${escapeHtml(p).replace(/\n/g, "<br/>")}</p>`).join("")
         + (opts.link ? `<p style="margin: 20px 0 0 0;"><a href="${escapeHtml(opts.link)}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 13px;">${escapeHtml(opts.linkLabel || "Open in GoG OMS")}</a></p>` : "")
         + `<p style="margin: 20px 0 0 0; font-size: 12px; color: #9ca3af;">This is an automatic message from GoG OMS.</p>`;
     return { subject: opts.title, html: ProfessionalWrapper(escapeHtml(opts.title), content, opts.color || "#6366f1") };

@@ -132,13 +132,13 @@ export default function FacultyDashboard() {
                     </div>
                 </button>
 
-                <button onClick={() => router.push("/faculty/lectures")}
+                <button onClick={() => router.push("/faculty/lecture-report")}
                     className="group relative overflow-hidden rounded-[2rem] bg-zinc-900/40 border border-zinc-800/80 p-7 text-left hover:border-emerald-500/50 transition-all shadow-xl">
                     <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
                         <Timer size={80} className="text-emerald-400" />
                     </div>
                     <Timer size={28} className="text-emerald-400 mb-4" />
-                    <h3 className="text-white text-lg font-black tracking-tight mb-1">My Lectures</h3>
+                    <h3 className="text-white text-lg font-black tracking-tight mb-1">Lecture Reports</h3>
                     <p className="text-xs text-zinc-500 font-medium leading-relaxed">Monitor sessions and update attendance records.</p>
                     <div className="mt-4 flex items-center gap-2 text-[10px] font-black text-emerald-400 uppercase tracking-widest">
                         Execute <ArrowRight size={12} className="group-hover:translate-x-1 transition-transform" />

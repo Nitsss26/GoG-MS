@@ -686,7 +686,7 @@ export default function WeeklyCalendarPage() {
                                     {!selected.classEnded ? (
                                         <p className="text-xs text-zinc-500">You can complete the class record after the class ends ({selected.timeStop}).</p>
                                     ) : PROFESSOR_EDITABLE_CLASS_STATUSES.includes(selected.recordStatus) && (
-                                        <Link href={`/faculty/lectures?date=${selected.date}&lecture=${selected.lectureNumber}`} data-testid="complete-class"
+                                        <Link href={`/faculty/lecture-report?date=${selected.date}&lecture=${selected.lectureNumber}`} data-testid="complete-class"
                                             className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider rounded-xl">
                                             Complete Class / Upload Notes <ExternalLink size={12} />
                                         </Link>

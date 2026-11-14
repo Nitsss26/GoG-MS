@@ -459,7 +459,7 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
                 recipients: await professorOf(r),
                 title: 'Class Record Reverted by OM',
                 message: `${actor.name} (OM) reverted your class record. Please correct it and re-submit.`,
-                type: 'CLASS_OM_REVERTED', link: `/faculty/lectures?date=${r.date}`,
+                type: 'CLASS_OM_REVERTED', link: `/faculty/lecture-report?date=${r.date}`,
                 entityType: 'LectureReport', entityId: String(r._id), college: r.college, actor,
                 rows: [...(await classLabel(r)), { label: 'OM Comment', value: comment }],
             });
@@ -576,7 +576,7 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
                 recipients: await professorOf(r),
                 title: 'Class Record Verified — Completed',
                 message: `Final verification done by ${who} (${actor.name}). Your class record is completed.`,
-                type: 'CLASS_COMPLETED', link: `/faculty/lectures?date=${r.date}`,
+                type: 'CLASS_COMPLETED', link: `/faculty/lecture-report?date=${r.date}`,
                 entityType: 'LectureReport', entityId: String(r._id), college: r.college, actor,
                 rows: [...(await classLabel(r)), { label: 'Final Verification', value: `${who} — ${actor.name}` }, { label: 'Comment', value: comment }],
             });
@@ -626,7 +626,7 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
                 message: toOM
                     ? `${actor.name} (${who}) sent this class record back to OM for correction.`
                     : `${actor.name} (${who}) reverted your class record. Please correct it and re-submit.`,
-                type: 'CLASS_CLCH_REVERTED', link: toOM ? `/academic/verification?record=${r._id}` : `/faculty/lectures?date=${r.date}`,
+                type: 'CLASS_CLCH_REVERTED', link: toOM ? `/academic/verification?record=${r._id}` : `/faculty/lecture-report?date=${r.date}`,
                 entityType: 'LectureReport', entityId: String(r._id), college: r.college, actor,
                 rows: [...(await classLabel(r)), { label: 'Comment', value: comment }],
             });
@@ -634,7 +634,7 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
                 recipients: toOM ? prof : oms, email: false,
                 title: `Class record reverted by ${who} to ${toOM ? 'OM' : 'Professor'}`,
                 message: `${shortClass(r)} — ${comment}`,
-                type: 'CLASS_CLCH_REVERTED_INFO', link: toOM ? `/faculty/lectures?date=${r.date}` : `/academic/verification?record=${r._id}`,
+                type: 'CLASS_CLCH_REVERTED_INFO', link: toOM ? `/faculty/lecture-report?date=${r.date}` : `/academic/verification?record=${r._id}`,
                 entityType: 'LectureReport', entityId: String(r._id), college: r.college, actor,
             });
             return { ok: true, record: r, message: `Reverted to ${toOM ? 'OM' : 'the professor'}.` };
@@ -652,7 +652,7 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
                 recipients,
                 title: `Notes Pending — ${r.courseName} (${r.date})`,
                 message: `${actor.name} (${roleShort(actor.role)}) commented: notes / class record for this class are still pending.`,
-                type: 'CLASS_NOTES_DELAY', link: `/faculty/lectures?date=${r.date}`,
+                type: 'CLASS_NOTES_DELAY', link: `/faculty/lecture-report?date=${r.date}`,
                 entityType: 'LectureReport', entityId: String(r._id), college: r.college, actor,
                 rows: [...(await classLabel(r)), { label: 'Comment', value: comment }, { label: 'Current Status', value: CLASS_STATUS_LABEL[status] }],
             });
@@ -727,7 +727,7 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
                 recipients: await professorOf(r), email: revert,
                 title: revert ? 'Assignment Needs Revision' : 'Assignment Verified',
                 message: revert ? `${actor.name} (HOI) sent your assignment back. Please correct it and add it again.` : `${actor.name} (HOI) verified your assignment.`,
-                type: revert ? 'CLASS_ASSIGNMENT_REVERTED' : 'CLASS_ASSIGNMENT_VERIFIED', link: `/faculty/lectures?date=${r.date}`,
+                type: revert ? 'CLASS_ASSIGNMENT_REVERTED' : 'CLASS_ASSIGNMENT_VERIFIED', link: `/faculty/lecture-report?date=${r.date}`,
                 entityType: 'LectureReport', entityId: String(r._id), college: r.college, actor,
                 rows: [...(await classLabel(r)), { label: 'Assignment', value: r.assignment?.title || '' }, ...(comment ? [{ label: 'HOI Comment', value: comment }] : [])],
             });

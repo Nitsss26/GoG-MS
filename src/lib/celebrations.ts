@@ -9,15 +9,17 @@
  *    Vacation banner    = a holiday announcement with "Dashboard Vacation Banner" on, only on its approved holiday
  *                         days that apply to this employee (Holiday records + exclusions — the source of truth).
  *  The opening animation is recorded per employee + celebration + date (CelebrationSeen), so it runs once.
- *  Management (HR / HR Executive / Founder): templates, active banners, per-employee overrides, DOB edit, festivals.
+ *    New Member Welcome (HR): shown only on the day HR publishes it — the new member gets their own welcome banner,
+ *                       everyone else the colleagues' welcome banner. Order: own birthday > Festival > Vacation > Welcome > Colleague Birthday.
+ *  Management (HR / HR Executive / Founder): templates, active banners, per-employee overrides, DOB edit, festivals, welcomes.
  */
 import { randomBytes } from 'crypto';
 import { Employee, Holiday, Notice, Location } from '@/models/Schemas';
-import { CelebrationTemplate, CelebrationSetting, EmployeeCelebrationConfig, FestivalCelebration, CelebrationSeen, CelebrationAudit } from '@/models/Celebration';
+import { CelebrationTemplate, CelebrationSetting, EmployeeCelebrationConfig, FestivalCelebration, CelebrationSeen, CelebrationAudit, WelcomeCelebration } from '@/models/Celebration';
 import { zonedNow, isValidYmd } from '@/lib/academic';
 import { holidayCoversEmployee } from '@/lib/holiday-flag-removal';
 import {
-    DEFAULTS, FESTIVALS, FESTIVAL_THEME_KEYS, festivalOf, isCssColor, birthdayBanner, festivalBanner, vacationBanner,
+    DEFAULTS, FESTIVALS, FESTIVAL_THEME_KEYS, BIRTHDAY_SELF_THEMES, BIRTHDAY_COLLEAGUE_THEMES, festivalOf, isCssColor, birthdayBanner, festivalBanner, vacationBanner, welcomeBanner,
     type BannerData, type ColleagueBirthday, type EffectData, type TodayCelebration,
 } from '@/lib/celebration-themes';
 
@@ -120,29 +122,47 @@ export async function resolveToday(actor: any, at?: string): Promise<TodayCelebr
     }
     const fest = festival ? festivalBanner(festival, tpl.get(festival.bannerTemplateId)) : null;
 
+    // New Member Welcome published today (only today)
+    const wl: any[] = await WelcomeCelebration.find({ date: today, status: 'Active' }).sort({ createdAt: 1 }).lean();
+    const wEmps: any[] = wl.length ? await Employee.find({ id: { $in: wl.map(w => w.employeeId) } }).select('id name designation current_designation_at_gog location photoUrl passport_size_photo status').lean() : [];
+    const wEmp = new Map(wEmps.filter(e => !INACTIVE.test(String(e.status || ''))).map(e => [e.id, e]));
+    const myWelcome = wl.find(w => w.employeeId === actor.id && wEmp.has(w.employeeId));
+    const welcomeSelf = myWelcome ? welcomeBanner('welcome-self', myWelcome, personOf(wEmp.get(actor.id), loc.name(wEmp.get(actor.id).location))) : null;
+    const welcomeOthers = wl.filter(w => w.employeeId !== actor.id && wEmp.has(w.employeeId)).map(w => { const e = wEmp.get(w.employeeId); return welcomeBanner('welcome-colleague', w, personOf(e, loc.name(e.location))); });
+
     let banner: BannerData | null = null;
     if (birthdaySelf) {
         const p = personOf(me, loc.name(me.location));
         banner = birthdayBanner('birthday-self', tpl.get(ov.get(actor.id)?.selfTemplateId) || tpl.get(setting?.selfTemplateId), p);
-    } else banner = fest || vacation || (colleagues.length === 1 ? colleagues[0].banner : null);
+    } else banner = fest || vacation || welcomeSelf || welcomeOthers[0] || (colleagues.length === 1 ? colleagues[0].banner : null);
+    const welcomes = welcomeOthers.filter(w => w !== banner);
 
     // one effect at a time: own birthday confetti wins; then the festival theme
     let effect: EffectData | null = null;
     const seen = async (key: string) => !!(await CelebrationSeen.exists({ key: `${actor.id}|${key}|${today}` }));
+    // Birthday Person Animation chosen by HR (empty = Confetti as before; NONE = no animation)
+    const selfTheme = BIRTHDAY_SELF_THEMES.includes(setting?.selfTheme) ? setting.selfTheme : 'CONFETTI';
+    const collTheme = BIRTHDAY_COLLEAGUE_THEMES.includes(setting?.colleagueTheme) ? setting.colleagueTheme : 'NONE';
     if (birthdaySelf) {
-        const key = `BIRTHDAY:${today.slice(0, 4)}`;
-        effect = { type: 'birthday', theme: 'CONFETTI', key, opening: !(await seen(key)), subtle: true };
+        if (selfTheme !== 'NONE') {
+            const key = `BIRTHDAY:${today.slice(0, 4)}`;
+            effect = { type: 'birthday', theme: selfTheme, key, opening: !(await seen(key)), subtle: true };
+        }
     } else if (festival && festival.animation !== false) {
         const key = `FESTIVAL:${festival.id}`;
         effect = { type: 'festival', theme: festival.theme, key, opening: !(await seen(key)), subtle: festival.subtle !== false };
+    } else if (colleagues.length && collTheme !== 'NONE') {
+        // a colleague's birthday: only the light effect HR switched on (never the birthday person's animation)
+        const key = `COLLEAGUE:${today}`;
+        effect = { type: 'colleague-birthday', theme: collTheme, key, opening: !(await seen(key)), subtle: true };
     }
     // Birthday confetti ONLY for the employee whose birthday it is (matched by the signed-in employee's id above) —
     // never because of a colleague's birthday; colleagues get the clean colleague banner only.
-    return { date: today, banner, colleagues: banner?.kind === 'birthday-colleague' ? [] : colleagues, effect, birthdaySelf };
+    return { date: today, banner, colleagues: banner?.kind === 'birthday-colleague' ? [] : colleagues, effect, birthdaySelf, welcomes };
 }
 
 export async function markOpeningSeen(actor: any, key: string) {
-    if (!/^(BIRTHDAY|FESTIVAL):[A-Z0-9-]+$/i.test(key)) return false;
+    if (!/^(BIRTHDAY|FESTIVAL|COLLEAGUE):[A-Z0-9-]+$/i.test(key)) return false;
     const today = zonedNow().ymd;
     await CelebrationSeen.create({ key: `${actor.id}|${key}|${today}`, employeeId: actor.id, celebrationKey: key, date: today, at: nowIso() }).catch((e: any) => { if (e?.code !== 11000) throw e; });
     return true;
@@ -153,13 +173,14 @@ const audit = (actor: any, action: string, x: { entityId?: string; employeeId?: 
     CelebrationAudit.create({ id: newId('CA'), action, ...x, by: actor.id, byName: actor.name, byRole: roleLabel(actor), at: nowIso() }).catch((e: any) => console.error('[celebration-audit]', e?.message));
 
 export async function managementData() {
-    const [templates, setting, overrides, festivals, emps, loc]: any[] = await Promise.all([
+    const [templates, setting, overrides, festivals, emps, loc, welcomes]: any[] = await Promise.all([
         CelebrationTemplate.find({}).sort({ createdAt: -1 }).lean(),
         CelebrationSetting.findOne({ key: 'birthday' }).lean(),
         EmployeeCelebrationConfig.find({}).lean(),
         FestivalCelebration.find({}).sort({ date: -1 }).lean(),
         Employee.find({}).select('id name role designation current_designation_at_gog dept location photoUrl passport_size_photo dateOfBirth date_of_birth status').lean(),
         locationNames(),
+        WelcomeCelebration.find({ status: 'Active' }).sort({ date: -1, createdAt: -1 }).limit(100).lean(),
     ]);
     const ov = new Map((overrides as any[]).map(o => [o.employeeId, o]));
     const employees = (emps as any[]).filter(e => !INACTIVE.test(String(e.status || ''))).map(e => {
@@ -170,7 +191,7 @@ export async function managementData() {
             dobMonth: p?.m || 0, dobDay: p?.d || 0, selfTemplateId: o?.selfTemplateId || '', colleagueTemplateId: o?.colleagueTemplateId || '', configured: !!(o?.selfTemplateId || o?.colleagueTemplateId),
         };
     }).sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    return { templates, setting: setting || { key: 'birthday', selfTemplateId: '', colleagueTemplateId: '' }, employees, festivals, festivalsList: FESTIVALS };
+    return { templates, setting: setting || { key: 'birthday', selfTemplateId: '', colleagueTemplateId: '' }, employees, festivals, festivalsList: FESTIVALS, welcomes, today: zonedNow().ymd };
 }
 
 const tplFields = (b: any) => {
@@ -238,6 +259,16 @@ export async function manage(actor: any, b: any) {
             await audit(actor, 'SET_ACTIVE', { entityId: field, before: before?.[field] || '', after: id });
             return { ok: true as const, message: id ? 'Active banner selected.' : 'Default banner selected.' };
         }
+        case 'birthday_animation': {
+            // Birthday Person Animation / Colleagues' Birthday Animation (theme only)
+            const set: any = { ...by };
+            if (b.selfTheme !== undefined) { if (!BIRTHDAY_SELF_THEMES.includes(b.selfTheme)) return fail(400, 'Choose a birthday animation.'); set.selfTheme = b.selfTheme; }
+            if (b.colleagueTheme !== undefined) { if (!BIRTHDAY_COLLEAGUE_THEMES.includes(b.colleagueTheme)) return fail(400, 'Choose a colleague animation.'); set.colleagueTheme = b.colleagueTheme; }
+            const before: any = await CelebrationSetting.findOne({ key: 'birthday' }).lean();
+            await CelebrationSetting.findOneAndUpdate({ key: 'birthday' }, { $set: set }, { upsert: true, new: true });
+            await audit(actor, 'BIRTHDAY_ANIMATION', { entityId: 'birthday', before: { selfTheme: before?.selfTheme || '', colleagueTheme: before?.colleagueTheme || '' }, after: { selfTheme: set.selfTheme ?? before?.selfTheme ?? '', colleagueTheme: set.colleagueTheme ?? before?.colleagueTheme ?? '' } });
+            return { ok: true as const, message: 'Birthday animation saved.' };
+        }
         case 'employee_config': {
             const emp: any = await Employee.findOne({ id: String(b.employeeId || '') }).select('id name').lean();
             if (!emp) return fail(404, 'Employee not found.');
@@ -298,6 +329,46 @@ export async function manage(actor: any, b: any) {
             await FestivalCelebration.deleteOne({ id: f.id });
             await audit(actor, 'FESTIVAL_DELETE', { entityId: f.id, before: f });
             return { ok: true as const, message: `${f.name} celebration removed. Holidays are not changed.` };
+        }
+        case 'welcome_save': {
+            // New Member Welcome: published for TODAY only (IST); editing is possible only on that same day
+            const today = zonedNow().ymd;
+            const emp: any = await Employee.findOne({ id: String(b.employeeId || '') }).select('id name status').lean();
+            if (!emp) return fail(404, 'Choose the new member.');
+            if (INACTIVE.test(String(emp.status || ''))) return fail(400, 'This employee is not active.');
+            for (const k of ['imageUrl', 'selfImageUrl']) if (b[k] && !HTTPS(b[k])) return fail(400, 'Upload a valid banner image.');
+            const col = (v: any) => (isCssColor(v) ? v : undefined);
+            const doc: any = {
+                employeeId: emp.id, employeeName: emp.name, imageUrl: b.imageUrl || '', selfImageUrl: b.selfImageUrl || '',
+                greeting: String(b.greeting || '').trim().slice(0, 140) || DEFAULTS.welcomeColleague.heading,
+                subtext: b.subtext === undefined ? DEFAULTS.welcomeColleague.subheading : String(b.subtext || '').trim().slice(0, 240),
+                selfGreeting: String(b.selfGreeting || '').trim().slice(0, 140) || DEFAULTS.welcomeSelf.heading,
+                selfSubtext: b.selfSubtext === undefined ? DEFAULTS.welcomeSelf.subheading : String(b.selfSubtext || '').trim().slice(0, 240),
+                headingColor: col(b.headingColor) || DEFAULTS.welcomeColleague.headingColor, textColor: col(b.textColor) || DEFAULTS.welcomeColleague.textColor,
+                overlayColor: col(b.overlayColor) || DEFAULTS.welcomeColleague.overlayColor, bgColor: col(b.bgColor) || DEFAULTS.welcomeColleague.bgColor,
+                align: ALIGNS.includes(b.align) ? b.align : 'left', photoPosition: PHOTO.includes(b.photoPosition) ? b.photoPosition : 'right', ...by,
+            };
+            if (b.id) {
+                const before: any = await WelcomeCelebration.findOne({ id: String(b.id), status: 'Active' }).lean();
+                if (!before) return fail(404, 'Welcome not found.');
+                if (before.date !== today) return fail(409, 'A welcome can be edited only on the day it was published.');
+                if (before.employeeId !== emp.id && await WelcomeCelebration.exists({ employeeId: emp.id, date: today, status: 'Active' })) return fail(409, `${emp.name} already has a welcome today.`);
+                await WelcomeCelebration.updateOne({ id: before.id }, { $set: doc });
+                await audit(actor, 'WELCOME_UPDATE', { entityId: before.id, employeeId: emp.id, before, after: doc });
+                return { ok: true as const, id: before.id, message: `Welcome for ${emp.name} saved — shown today only.` };
+            }
+            if (await WelcomeCelebration.exists({ employeeId: emp.id, date: today, status: 'Active' })) return fail(409, `${emp.name} already has a welcome today. Edit it instead.`);
+            const id = newId('WC');
+            await WelcomeCelebration.create({ id, ...doc, date: today, status: 'Active', createdBy: actor.id, createdByName: actor.name, createdAt: now });
+            await audit(actor, 'WELCOME_CREATE', { entityId: id, employeeId: emp.id, after: { ...doc, date: today } });
+            return { ok: true as const, id, message: `Welcome banner for ${emp.name} published — everyone sees it on the dashboard today only.` };
+        }
+        case 'welcome_delete': {
+            const w: any = await WelcomeCelebration.findOne({ id: String(b.id || ''), status: 'Active' }).lean();
+            if (!w) return fail(404, 'Welcome not found.');
+            await WelcomeCelebration.updateOne({ id: w.id }, { $set: { status: 'Removed', ...by } });
+            await audit(actor, 'WELCOME_DELETE', { entityId: w.id, employeeId: w.employeeId, before: w });
+            return { ok: true as const, message: `Welcome for ${w.employeeName} removed.` };
         }
         default: return fail(400, 'Unknown action.');
     }

@@ -12,6 +12,7 @@ import * as XLSX from "xlsx";
 import { ClassRecordDetails, ClassRecordActions } from "@/components/academic/ClassRecordDetails";
 import LectureTable, { LectureDrawer, RowButton, toLectureRow } from "@/components/academic/LectureTable";
 import AddAssignmentDialog from "@/components/academic/AddAssignmentDialog";
+import LectureReportForm from "@/components/academic/LectureReportForm";
 
 /**
  * My Class Records (Lecture Report) — history of the professor's classes with attendance, notes,
@@ -85,11 +86,37 @@ export default function LectureReportPage() {
     const [range, setRange] = useState({ from: shiftDays(todayYmd(), -30), to: todayYmd() });
 
     const [asgFor, setAsgFor] = useState<Row | null>(null);
+    // Submit / re-submit: the report form opens here as a side panel (same form as My Lectures)
+    const [reportFor, setReportFor] = useState<Row | null>(null);
     const [menuFor, setMenuFor] = useState<string | null>(null);
     const [menuPos, setMenuPos] = useState<{ top: number; right: number; up: boolean }>({ top: 0, right: 0, up: false });
     const [message, setMessage] = useState("");
     const [exporting, setExporting] = useState(false);
     const [nowTick, setNowTick] = useState(Date.now());
+
+    // Links from notifications / Weekly Calendar (?date=YYYY-MM-DD&lecture=N): show that day and open its report form
+    const deepLink = useRef<{ date: string; lecture: string } | null>(null);
+    useEffect(() => {
+        try {
+            const sp = new URLSearchParams(window.location.search);
+            const d = sp.get("date");
+            if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+            deepLink.current = { date: d, lecture: sp.get("lecture") || "" };
+            if (d < range.from || d > range.to) {
+                const f = d < range.from ? d : range.from, t = d > range.to ? d : range.to;
+                setFromInput(f); setToInput(t); setRange({ from: f, to: t });
+            }
+        } catch { /* ignore */ }
+    }, []);
+    useEffect(() => {
+        const dl = deepLink.current;
+        if (!dl || loading) return;
+        const r = reports.find(x => x.date === dl.date && (!dl.lecture || String(x.lectureNumber) === dl.lecture));
+        if (!r) return;
+        deepLink.current = null;
+        const st = r.pipelineStatus || "PENDING_PROFESSOR";
+        if (r.sprintEntryId && (st === "PENDING_PROFESSOR" || st === "OM_REVERTED" || st === "CL_CH_REVERTED")) setReportFor(r);
+    }, [reports, loading]);
 
     useEffect(() => { if (user?.id) fetchReports(); }, [user, range, pollingCount]);
     useEffect(() => { const t = setInterval(() => setNowTick(Date.now()), 60000); return () => clearInterval(t); }, []);
@@ -202,7 +229,8 @@ export default function LectureReportPage() {
     const rangeText = range.from === range.to ? fmtShort(range.from) : `${fmtShort(range.from)} – ${fmtShort(range.to)}`;
     const warnRows = reports.filter(r => (rep(r).warnings || []).length > 0);
     // Reports are submitted on My Lectures (same form as before) — these links open it on the right class
-    const submitHref = (r: Row) => `/faculty/lectures?date=${r.date}&lecture=${r.lectureNumber}`;
+    const submitHref = (r: Row) => `/faculty/lecture-report?date=${r.date}&lecture=${r.lectureNumber}`;
+    const openForm = (r: Row) => { setMenuFor(null); setDrawerKey(null); setReportFor(r); };
     const isReverted = (r: Row) => ["OM_REVERTED", "CL_CH_REVERTED"].includes(r.pipelineStatus || "") && !!r.sprintEntryId;
     const canSubmit = (r: Row) => (r.pipelineStatus || "PENDING_PROFESSOR") === "PENDING_PROFESSOR" && !!r.sprintEntryId && (r.classEnded ?? true) && !isRecorded(r);
     // "+ Add Report": the oldest class still waiting for its report, otherwise My Lectures
@@ -274,7 +302,8 @@ export default function LectureReportPage() {
                         className="h-11 px-3.5 flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-800 text-zinc-200 text-xs font-bold disabled:opacity-50">
                         {exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} <span className="hidden sm:inline">Download</span>
                     </button>
-                    <Link href={firstPending ? submitHref(firstPending) : "/faculty/lectures"} data-testid="add-report"
+                    <Link href={firstPending ? submitHref(firstPending) : "/faculty/lecture-report"} data-testid="add-report"
+                        onClick={e => { if (firstPending) { e.preventDefault(); openForm(firstPending); } }}
                         title={firstPending ? `Next report due: ${firstPending.courseName} · ${fmtShort(firstPending.date)}` : "Open My Lectures"}
                         className="h-11 px-4 flex items-center gap-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-sm font-black shadow-[0_0_24px_-8px_rgba(16,185,129,0.8)] active:scale-95 transition-all">
                         <Plus size={16} strokeWidth={3} /> Add Report
@@ -303,7 +332,7 @@ export default function LectureReportPage() {
             )}
 
             {/* ── Reports table ── */}
-            <LectureTable
+            <LectureTable viewKey="lecture-report"
                 rows={rows}
                 loading={loading}
                 itemLabel="Report"
@@ -318,8 +347,8 @@ export default function LectureReportPage() {
                     const r = row.raw as Row;
                     return (
                         <>
-                            {isReverted(r) ? <Link href={submitHref(r)} data-testid="resubmit-report" title="Reverted to you — correct and re-submit" className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500 hover:bg-amber-400 text-zinc-950 text-[11px] font-bold whitespace-nowrap"><RotateCcw size={13} /> Re-submit</Link>
-                                : canSubmit(r) ? <Link href={submitHref(r)} data-testid="submit-report" className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold whitespace-nowrap"><Upload size={13} /> Submit Report</Link>
+                            {isReverted(r) ? <button type="button" onClick={() => openForm(r)} data-testid="resubmit-report" title="Reverted to you — correct and re-submit" className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500 hover:bg-amber-400 text-zinc-950 text-[11px] font-bold whitespace-nowrap"><RotateCcw size={13} /> Fix &amp; Re-submit</button>
+                                : canSubmit(r) ? <button type="button" onClick={() => openForm(r)} data-testid="submit-report" className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold whitespace-nowrap"><Upload size={13} /> Upload Report</button>
                                     : row.recorded ? <RowButton icon={Eye} onClick={() => setDrawerKey(row.key)} testId="view-record">View Report</RowButton>
                                         : <RowButton icon={Info} onClick={() => setDrawerKey(row.key)} testId="view-plan">View Plan</RowButton>}
                             <RowButton tone="ghost" icon={MoreVertical} title="More actions" testId="row-menu" onClick={(e) => openMenu(e, row.key)} />
@@ -353,8 +382,8 @@ export default function LectureReportPage() {
                         );
                         return (<>
                             {item(Info, isRecorded(open) ? "View class record" : "Lecture details", () => setDrawerKey(keyOf(open)))}
-                            {canSubmit(open) && item(Upload, "Submit report", () => { window.location.href = submitHref(open); })}
-                            {isReverted(open) && item(RotateCcw, "Correct & re-submit report", () => { window.location.href = submitHref(open); })}
+                            {canSubmit(open) && item(Upload, "Upload report", () => openForm(open))}
+                            {isReverted(open) && item(RotateCcw, "Fix & re-submit report", () => openForm(open))}
                             {open.date <= today && item(ClipboardList, x.assignment?.hasAssignment ? "Update assignment" : "Add assignment", () => setAsgFor(open))}
                             {x.recordingUrl && item(Sparkles, x.aiAnalysisAt ? "AI insights" : "AI insights (processing…)", () => setAiInsightReport({ ...x, lectureNumber: open.lectureNumber, courseName: open.courseName }), !x.aiAnalysisAt)}
                             {x.lectureNotes?.notesUrl && item(ExternalLink, "Open notes", () => window.open(x.lectureNotes.notesUrl, "_blank", "noopener"))}
@@ -372,8 +401,8 @@ export default function LectureReportPage() {
                     const r = drawerRow.raw as Row;
                     const x = rep(r);
                     return (<>
-                        {isReverted(r) && <Link href={submitHref(r)} className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500 hover:bg-amber-400 text-zinc-950 text-[11px] font-bold" data-testid="drawer-resubmit"><RotateCcw size={13} /> Correct & Re-submit</Link>}
-                        {canSubmit(r) && <Link href={submitHref(r)} className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold" data-testid="drawer-submit"><Upload size={13} /> Submit Report</Link>}
+                        {isReverted(r) && <button type="button" onClick={() => openForm(r)} className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500 hover:bg-amber-400 text-zinc-950 text-[11px] font-bold" data-testid="drawer-resubmit"><RotateCcw size={13} /> Fix &amp; Re-submit</button>}
+                        {canSubmit(r) && <button type="button" onClick={() => openForm(r)} className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold" data-testid="drawer-submit"><Upload size={13} /> Upload Report</button>}
                         {r.date <= today && <RowButton icon={ClipboardList} onClick={() => setAsgFor(r)} testId="drawer-assignment">{x.assignment?.hasAssignment ? "Update Assignment" : "Upload Assignment"}</RowButton>}
                         {x.recordingUrl && <RowButton icon={Sparkles} disabled={!x.aiAnalysisAt} onClick={() => setAiInsightReport({ ...x, lectureNumber: r.lectureNumber, courseName: r.courseName })}>{x.aiAnalysisAt ? "AI Insights" : "AI processing…"}</RowButton>}
                         <RowButton icon={CalendarDays} onClick={() => { window.location.href = `/academic/weekly-calendar?week=${r.date}`; }}>Weekly Calendar</RowButton>
@@ -402,6 +431,12 @@ export default function LectureReportPage() {
                     );
                 })()}
             </LectureDrawer>
+
+            {reportFor && (
+                <LectureReportForm lecture={reportFor as any} facultyId={user.id} fallbackDate={reportFor.date}
+                    onClose={() => setReportFor(null)}
+                    onSubmitted={(m) => { setReportFor(null); setMessage(m); fetchReports(); }} />
+            )}
 
             {asgFor && (
                 <AddAssignmentDialog lecture={asgFor} facultyId={user.id} onClose={() => setAsgFor(null)}
