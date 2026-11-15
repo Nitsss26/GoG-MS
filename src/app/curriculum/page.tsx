@@ -52,7 +52,7 @@ export default function CurriculumDashboard() {
             const verifiedLectures = lectures.filter((l: any) => l.clVerificationStatus === "VERIFIED").length;
             const pendingLectures = lectures.filter((l: any) => l.clVerificationStatus === "PENDING" || !l.clVerificationStatus).length;
             const pendingAssignments = lectures.filter((l: any) => l.assignment?.hasAssignment && l.assignment?.verificationStatus === "PENDING").length;
-            const activeTasks = tasks.filter((t: any) => t.status !== "VERIFIED").length;
+            const activeTasks = tasks.filter((t: any) => t.status !== "Verified").length;
 
             setStats({
                 totalPlans: plans.length,

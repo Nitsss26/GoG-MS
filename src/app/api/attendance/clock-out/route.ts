@@ -7,6 +7,12 @@ import { getSessionUser } from '@/lib/session-user';
 import { recordViolation } from '@/lib/attendance-violations';
 import { AttendanceViolation } from '@/models/Schemas';
 import { assignedLocationsOf, matchAssignedLocation, makeVisit } from '@/lib/multi-location-attendance';
+import { hoiDailyLocations } from '@/lib/hoi-daily-locations';
+import { COLLEGES } from '@/lib/colleges';
+
+/** Roles that may clock in inside ANY college geofence (when no attendance locations are allotted) — same as clock-in */
+const ANY_COLLEGE_ROLES = ['HOI', 'MARKETING_TEAM', 'TECH_TEAM', 'PLACEMENT_INTERN_HEAD', 'TECH_INTERN'];
+const OUT_OF_RANGE = (where: string) => `Out of range: you are outside ${where}. Clock-out is allowed only inside your clock-in location — move inside it and try again.`;
 
 export async function POST(req: Request) {
     try {
@@ -72,25 +78,52 @@ export async function POST(req: Request) {
         const isEarly = outTotalMins < schedTotalMins;
         const points = isEarly ? -5 : 2;
 
-        // HOI / OM with assigned attendance locations: the clock-out must be inside any one of them (it may differ from
-        // the clock-in college); the actual clock-out location is stored separately. Other roles: unchanged.
+        // Clock-out location = the same places the clock-in allows (one or several assigned locations, the college
+        // geofence, or the clock-in location); outside → "Out of range" and the clock-out is not recorded.
+        // No check on a Work From Home day, an HR-marked day, or an HOI field-visit / Automatic Location Fetch day.
         let clockOutLocation: string | null = null;
         let clockOutLoc: any = null;
-        // HOI: clock-out from anywhere (no location check); OM with assigned locations: inside any one of them
-        const hoiAllowed: string[] = employee.role === 'HOI' ? [] : assignedLocationsOf(employee);
-        if (hoiAllowed.length && !overrideDate) {
-            const dayRec: any = await Attendance.findOne({ employeeId, date: today }).select('location workMode').lean();
-            const remote = String(dayRec?.location || '').toLowerCase() === 'wfh';
-            if (!remote) {
-                if (typeof lat !== 'number' || typeof lng !== 'number') {
-                    return NextResponse.json({ error: "Location coordinates missing from request." }, { status: 400 });
+        if (!overrideDate) {
+            const dayRec: any = await Attendance.findOne({ employeeId, date: today }).select('location workMode attendanceSource fieldVisit').lean();
+            const remote = dayRec?.workMode === 'WFH' || String(dayRec?.location || '').toLowerCase() === 'wfh';
+            const hrMarked = dayRec?.attendanceSource === 'HR_MANUAL';
+            const daily = employee.role === 'HOI' ? hoiDailyLocations(schedule, today) : { ids: [] as string[], autoFetch: false, set: false };
+            const fieldDay = employee.role === 'HOI' && (!!dayRec?.fieldVisit || (daily.set && daily.autoFetch));
+            if (!remote && !hrMarked && !fieldDay) {
+                if (typeof lat !== 'number' || typeof lng !== 'number' || !isFinite(lat) || !isFinite(lng)) {
+                    return NextResponse.json({ error: "Location is needed to clock out. Allow location access and try again.", locationRequired: true }, { status: 400 });
                 }
-                const match = await matchAssignedLocation(lat, lng, hoiAllowed);
-                if (!match) {
-                    return NextResponse.json({ error: "Clock-Out Not Allowed: You are currently outside your assigned work locations. Please contact HR if you require access to this location.", unassignedLocation: true }, { status: 403 });
+                const assigned: string[] = assignedLocationsOf(employee);
+                if (assigned.length) {
+                    // one or several assigned locations (HR → Work Location): inside any one of them
+                    const match = await matchAssignedLocation(lat, lng, assigned);
+                    if (!match) return NextResponse.json({ error: OUT_OF_RANGE('your assigned work locations'), outOfRange: true, unassignedLocation: true }, { status: 403 });
+                    clockOutLoc = match.location;
+                    clockOutLocation = match.location.id;
+                } else {
+                    const dbCampuses: any[] = await Location.find({}).lean();
+                    const map = new Map<string, any>();
+                    for (const c of COLLEGES as any[]) map.set(c.id, c);
+                    for (const c of dbCampuses) map.set(c.id, c);
+                    const inside = (c: any) => c && typeof c.lat === 'number' && typeof c.lng === 'number' && getDistance(lat, lng, c.lat, c.lng) <= (c.radiusKm || 2);
+                    if (ANY_COLLEGE_ROLES.includes(employee.role)) {
+                        // like the clock-in: inside any college geofence
+                        const c = Array.from(map.values()).find(inside);
+                        if (!c) return NextResponse.json({ error: OUT_OF_RANGE('every college location'), outOfRange: true }, { status: 403 });
+                        clockOutLocation = c.id;
+                    } else {
+                        // the location the clock-in was made at (else today's scheduled / own location)
+                        const ids = [dayRec?.location, schedule?.location, employee.location].map(x => String(x || '')).filter(Boolean);
+                        const campus = ids.map(id => map.get(id) || Array.from(map.values()).find((c: any) => c.name === id)).find(Boolean);
+                        if (campus) {
+                            if (!inside(campus)) {
+                                const d = getDistance(lat, lng, campus.lat, campus.lng);
+                                return NextResponse.json({ error: `${OUT_OF_RANGE(campus.name || 'your clock-in location')} Distance: ${d.toFixed(2)} km`, outOfRange: true }, { status: 403 });
+                            }
+                            clockOutLocation = campus.id;
+                        }
+                    }
                 }
-                clockOutLoc = match.location;
-                clockOutLocation = match.location.id;
             }
         }
 

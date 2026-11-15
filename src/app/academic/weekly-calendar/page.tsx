@@ -26,6 +26,9 @@ const CAMPUS_ACCENTS = [
     { text: "text-pink-300", border: "border-pink-500/40", headBg: "bg-pink-500/[0.07]", iconBg: "bg-pink-500/15", pill: "border-pink-500/30 bg-pink-500/10 text-pink-200", btn: "border-pink-500/40 text-pink-200 bg-pink-500/10", chipActive: "bg-pink-500/20 border-pink-400/60 text-pink-100", chipIdle: "bg-zinc-900 border-zinc-800 text-pink-300 hover:border-pink-500/50" },
     { text: "text-teal-300", border: "border-teal-500/40", headBg: "bg-teal-500/[0.07]", iconBg: "bg-teal-500/15", pill: "border-teal-500/30 bg-teal-500/10 text-teal-200", btn: "border-teal-500/40 text-teal-200 bg-teal-500/10", chipActive: "bg-teal-500/20 border-teal-400/60 text-teal-100", chipIdle: "bg-zinc-900 border-zinc-800 text-teal-300 hover:border-teal-500/50" },
 ];
+/** Branch filter can hold several branches: "All" or the names joined with this separator */
+const BR_SEP = "\u0001";
+const branchList = (v?: string) => (!v || v === "All" ? [] : v.split(BR_SEP).filter(Boolean));
 const EMPTY_FILTERS: Record<string, string> = { day: "All", subject: "All", className: "All", section: "All", branch: "All", year: "All", semester: "All" };
 /** Monday (YYYY-MM-DD) of the week that contains ymd */
 const mondayStr = (ymd: string) => { const d = new Date(ymd + "T00:00:00Z"); const dow = d.getUTCDay(); d.setUTCDate(d.getUTCDate() + (dow === 0 ? -6 : 1 - dow)); return d.toISOString().slice(0, 10); };
@@ -45,18 +48,23 @@ const yearOf = (c: any) => String(c.year || "").trim();
 const semOf = (c: any) => String(c.semester || "").trim();
 const semText = (v: string) => (/^\d+$/.test(v) ? `Semester ${v}` : v);
 /** Groups of classes by the year / semester stored on the sprint plan entries (no guessing; missing → "… not set") */
-const groupClasses = (list: any[], mode: ViewMode): { key: string; label: string; list: any[] }[] => {
-    if (mode === "full") return [{ key: "all", label: "", list }];
-    const map = new Map<string, { key: string; label: string; y: string; s: string; list: any[] }>();
+const branchOf = (c: any) => String(c.branch || "").trim();
+/** byBranch (Branch-Wise button): each year / semester table is split once more by branch (Full College: one table per branch) */
+const groupClasses = (list: any[], mode: ViewMode, byBranch = false): { key: string; label: string; list: any[] }[] => {
+    if (mode === "full" && !byBranch) return [{ key: "all", label: "", list }];
+    const map = new Map<string, { key: string; label: string; y: string; s: string; br: string; list: any[] }>();
     for (const c of list) {
-        const y = yearOf(c), sm = semOf(c);
-        const key = mode === "year" ? y.toLowerCase() : `${y.toLowerCase()}||${sm.toLowerCase()}`;
-        const label = mode === "year" ? (y || "Year not set") : [y, sm ? semText(sm) : "Semester not set"].filter(Boolean).join(" / ");
-        if (!map.has(key)) map.set(key, { key, label, y, s: sm, list: [] });
+        const y = yearOf(c), sm = semOf(c), br = byBranch ? branchOf(c) : "";
+        const base = mode === "full" ? "" : mode === "year" ? y.toLowerCase() : `${y.toLowerCase()}||${sm.toLowerCase()}`;
+        const key = byBranch ? `${base}##${br.toLowerCase()}` : base;
+        const baseLabel = mode === "full" ? "" : mode === "year" ? (y || "Year not set") : [y, sm ? semText(sm) : "Semester not set"].filter(Boolean).join(" / ");
+        const label = byBranch ? [baseLabel, br || "Branch not set"].filter(Boolean).join(" / ") : baseLabel;
+        if (!map.has(key)) map.set(key, { key, label, y, s: sm, br, list: [] });
         map.get(key)!.list.push(c);
     }
     return Array.from(map.values()).sort((a, b) =>
-        ordNum(a.y) - ordNum(b.y) || a.y.localeCompare(b.y) || (mode === "sem" ? ordNum(a.s) - ordNum(b.s) || a.s.localeCompare(b.s) : 0));
+        (mode === "full" ? 0 : ordNum(a.y) - ordNum(b.y) || a.y.localeCompare(b.y)) || (mode === "sem" ? ordNum(a.s) - ordNum(b.s) || a.s.localeCompare(b.s) : 0)
+        || (byBranch ? Number(!a.br) - Number(!b.br) || a.br.localeCompare(b.br) : 0));
 };
 /**
  * Logo on the downloaded timetable (image / PDF). Put your own logo file at  public/calendar-logo.png  (PNG or JPG
@@ -90,8 +98,13 @@ export default function WeeklyCalendarPage() {
     const [selected, setSelected] = useState<any | null>(null);
     const [notice, setNotice] = useState("");
     const [dlOpen, setDlOpen] = useState(false);
+    // Filter panel: one line; the dropdowns open below it with the "Filters" button
+    const [filtersOpen, setFiltersOpen] = useState(false);
+    const [branchOpen, setBranchOpen] = useState(false);
     const [pdfBusy, setPdfBusy] = useState(false);
     const [mode, setMode] = useState<ViewMode>("full");
+    // Branch-Wise: on / off next to the View Mode (works with Full College, Year-Wise and Semester-Wise)
+    const [byBranch, setByBranch] = useState(false);
     const [imgBusy, setImgBusy] = useState("");          // file name of the image being created
     const [exportMsg, setExportMsg] = useState("");      // progress of "Download Complete Calendar"
     const [sheet, setSheet] = useState<{ id: string; college: string; sub: string; list: any[]; logo: string | null } | null>(null);   // image / PDF page being drawn
@@ -135,7 +148,7 @@ export default function WeeklyCalendarPage() {
         (filters.subject === "All" || c.subjectName === filters.subject) &&
         (filters.className === "All" || c.className === filters.className) &&
         (filters.section === "All" || c.section === filters.section) &&
-        (filters.branch === "All" || c.branch === filters.branch) &&
+        (filters.branch === "All" || branchList(filters.branch).includes(c.branch)) &&
         (filters.year === "All" || c.year === filters.year) &&
         (filters.semester === "All" || c.semester === filters.semester)
     ), [classes, filters]);
@@ -242,9 +255,49 @@ export default function WeeklyCalendarPage() {
             {opts.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
     ));
+    // Branch: several can be picked; the list shows the branches of the chosen Year (and Semester)
+    const branchOpts = Array.from(new Set(classes.filter(c => (draft.year === "All" || c.year === draft.year) && (draft.semester === "All" || c.semester === draft.semester)).map(c => c.branch).filter(Boolean))).sort() as string[];
+    const draftBranches = branchList(draft.branch);
+    const setDraftBranches = (list: string[]) => setDraft(f => ({ ...f, branch: list.length ? list.join(BR_SEP) : "All" }));
+    // a Year / Semester change drops the picked branches that are not in that year / semester
+    const pickYearSem = (key: "year" | "semester", v: string) => setDraft(f => {
+        const nf = { ...f, [key]: v };
+        const ok = new Set(classes.filter(c => (nf.year === "All" || c.year === nf.year) && (nf.semester === "All" || c.semester === nf.semester)).map(c => c.branch));
+        const keep = branchList(nf.branch).filter(b => ok.has(b));
+        return { ...nf, branch: keep.length ? keep.join(BR_SEP) : "All" };
+    });
+    const branchText = (list: string[]) => (!list.length ? "All" : list.length <= 2 ? list.join(", ") : `${list.length} branches`);
+    const branchField = field("Branch", GitBranch, (
+        <div className="relative" data-testid="filter-branch">
+            <button type="button" onClick={() => setBranchOpen(o => !o)} data-testid="branch-button" aria-expanded={branchOpen}
+                className={`${fieldCls} text-left flex items-center justify-between gap-1`}>
+                <span className="truncate flex-1 text-left">{branchText(draftBranches)}</span><ChevronDown size={13} className={`shrink-0 text-zinc-400 transition-transform ${branchOpen ? "rotate-180" : ""}`} />
+            </button>
+            {branchOpen && (
+                <>
+                    <div className="fixed inset-0 z-30" onClick={() => setBranchOpen(false)} />
+                    <div className="absolute left-0 mt-1 z-40 w-64 max-w-[80vw] max-h-72 overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl p-1.5" data-testid="branch-menu">
+                        <label className="flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-zinc-800 cursor-pointer text-xs font-bold text-white">
+                            <input type="checkbox" checked={!draftBranches.length} onChange={() => setDraftBranches([])} className="accent-indigo-500" data-testid="branch-all" /> All branches
+                        </label>
+                        {branchOpts.length === 0 && <p className="px-2.5 py-2 text-[11px] text-zinc-500">No branch in this year / semester</p>}
+                        {branchOpts.map(b => (
+                            <label key={b} className="flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-zinc-800 cursor-pointer text-xs text-zinc-200">
+                                <input type="checkbox" checked={draftBranches.includes(b)} data-testid="branch-option" data-branch={b}
+                                    onChange={e => setDraftBranches(e.target.checked ? [...draftBranches, b] : draftBranches.filter(x => x !== b))} className="accent-indigo-500" />
+                                <span className="[overflow-wrap:anywhere]">{b}</span>
+                            </label>
+                        ))}
+                    </div>
+                </>
+            )}
+        </div>
+    ));
     const pendingChanges = JSON.stringify(draft) !== JSON.stringify(filters) || draftFaculty !== facultyId;
-    const applyFilters = () => { setFilters(draft); setFacultyId(draftFaculty); };
+    const applyFilters = () => { setFilters(draft); setFacultyId(draftFaculty); setBranchOpen(false); setFiltersOpen(false); };
     const resetFilters = () => { const d = { ...EMPTY_FILTERS }; setDraft(d); setFilters(d); setDraftFaculty("All"); setFacultyId("All"); };
+    // how many filters are on (shown on the Filters button)
+    const activeFilters = Object.keys(EMPTY_FILTERS).filter(k => filters[k] !== "All").length + (facultyId !== "All" ? 1 : 0);
     const weekPreset = !data ? "this" : data.weekStart === mondayStr(istToday()) ? "this" : data.weekStart === mondayStr(shiftWeek(istToday(), -1)) ? "last" : data.weekStart === mondayStr(shiftWeek(istToday(), 1)) ? "next" : "other";
     const downloadReport = () => {
         const list = shownCampus;
@@ -274,7 +327,7 @@ export default function WeeklyCalendarPage() {
     const classesOf = (cpId: string) => (cpId === MINE ? shown : shown.filter(c => campusOf(c) === cpId));
     const singleSection = view === "mine" || campus !== "ALL";
     const weekText = data?.weekStart && data?.weekEnd ? `${dmy(data.weekStart)} to ${dmy(data.weekEnd)}` : "";
-    const modeTitle = mode === "year" ? "Year-Wise" : mode === "sem" ? "Semester-Wise" : "Full College";
+    const modeTitle = (mode === "year" ? "Year-Wise" : mode === "sem" ? "Semester-Wise" : "Full College") + (byBranch ? " + Branch-Wise" : "");
     /** short college name for file names: the location's short name, else the initials ("Sage University Bhopal" → SUB) */
     const collegeShort = (id: string) => {
         if (id === MINE) return `${safeFile(user.name)}_My_Schedule`;
@@ -381,7 +434,7 @@ export default function WeeklyCalendarPage() {
         for (const cp of campusesInView) {
             const list = classesOf(cp.id);
             if (!list.length) continue;
-            for (const g of groupClasses(list, mode)) specs.push({ college: cp.name, sub: `${modeTitle} • ${g.label || "Weekly Timetable"}`, list: g.list });
+            for (const g of groupClasses(list, mode, byBranch)) specs.push({ college: cp.name, sub: `${modeTitle} • ${g.label || "Weekly Timetable"}`, list: g.list });
         }
         if (!specs.length) { setNotice("No classes to download for this college and week."); setTimeout(() => setNotice(""), 3000); return; }
         setPdfBusy(true); setExportMsg("Creating PDF…");
@@ -761,29 +814,22 @@ export default function WeeklyCalendarPage() {
                 </div>
             </div>
 
-            {/* ── Filters (one row on wide screens: filters · Apply · Reset · Download) ── */}
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4" data-testid="filter-panel">
-                <div className="flex flex-col min-[1400px]:flex-row min-[1400px]:items-end gap-3 min-[1400px]:gap-2">
-                    <div className="flex items-end gap-3 xl:gap-2 flex-1 min-w-0">
-                        <div className="hidden sm:flex xl:hidden 2xl:flex shrink-0 w-9 h-9 rounded-xl bg-zinc-950 border border-zinc-700 items-center justify-center"><Filter size={15} className="text-zinc-300" /></div>
-                        <div className={`flex-1 min-w-0 grid grid-cols-2 md:grid-cols-4 gap-3 xl:gap-2 ${showProfessor ? "xl:grid-cols-[1.25fr_repeat(7,minmax(0,1fr))]" : "xl:grid-cols-4"}`}>
-                            {showProfessor && field("Professor", Users, (
-                                <select value={draftFaculty} onChange={e => setDraftFaculty(e.target.value)} data-testid="filter-professor" className={fieldCls}>
-                                    <option value="All">All Professors</option>
-                                    {(data?.professors || []).filter((p: any) => campus === "ALL" || (campusList.find(x => x.id === campus)?.keys || []).includes(String(p.location || ""))).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                </select>
-                            ))}
-                            {sel("day", "Day", CalendarDays, DAYS.map(d => d.code))}
-                            {sel("subject", "Subject", BookOpen, options.subject)}
-                            {sel("className", "Class", GraduationCap, options.className)}
-                            {sel("section", "Section", LayoutGrid, options.section)}
-                            {showProfessor && sel("branch", "Branch", GitBranch, options.branch)}
-                            {showProfessor && sel("year", "Year", Calendar, options.year)}
-                            {showProfessor && sel("semester", "Semester", Layers, options.semester)}
-                        </div>
-                    </div>
-                    <div className="flex flex-wrap justify-end gap-2 shrink-0">
-                        <button onClick={applyFilters} data-testid="apply-filters" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black active:scale-95"><SlidersHorizontal size={14} /> Apply Filters{pendingChanges ? " •" : ""}</button>
+            {/* ── Filters: one line (Filters · Reset · Download); the dropdowns open below with "Filters" ── */}
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-3 sm:p-4" data-testid="filter-panel">
+                <div className="flex flex-wrap items-center gap-2">
+                    <button type="button" onClick={() => setFiltersOpen(o => !o)} aria-expanded={filtersOpen} data-testid="filters-toggle"
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black active:scale-95 border ${filtersOpen ? "bg-indigo-600 border-indigo-500 text-white" : "bg-zinc-950 hover:bg-zinc-800 border-zinc-700 text-zinc-100"}`}>
+                        <SlidersHorizontal size={14} /> Filters
+                        {activeFilters > 0 && <span className="px-1.5 py-px rounded-full bg-emerald-500 text-[10px] text-zinc-950" data-testid="filters-count">{activeFilters}</span>}
+                        <ChevronDown size={13} className={`transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {activeFilters > 0 && !filtersOpen && (
+                        <span className="min-w-0 flex-1 truncate text-[11px] text-zinc-400" data-testid="filters-summary">
+                            {[facultyId !== "All" ? (data?.professors || []).find((p: any) => p.id === facultyId)?.name || "1 professor" : "",
+                              ...Object.keys(EMPTY_FILTERS).filter(k => filters[k] !== "All").map(k => k === "branch" ? branchText(branchList(filters.branch)) : k === "semester" ? semText(filters[k]) : filters[k])].filter(Boolean).join(" · ")}
+                        </span>
+                    )}
+                    <div className="ml-auto flex flex-wrap justify-end gap-2 shrink-0">
                         <button onClick={resetFilters} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-zinc-200 border border-zinc-700 text-xs font-black active:scale-95"><RotateCcw size={14} /> Reset</button>
                         <div className="relative">
                             <button onClick={() => setDlOpen(o => !o)} disabled={pdfBusy} data-testid="download-report" title="Download PDF / Excel" className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-zinc-200 border border-zinc-700 text-xs font-black active:scale-95 disabled:opacity-60">
@@ -807,6 +853,36 @@ export default function WeeklyCalendarPage() {
                         </div>
                     </div>
                 </div>
+                {filtersOpen && (
+                    <div className="mt-3 pt-3 border-t border-zinc-800 flex flex-col min-[1400px]:flex-row min-[1400px]:items-end gap-3 min-[1400px]:gap-2" data-testid="filter-fields">
+                        <div className={`flex-1 min-w-0 grid grid-cols-2 md:grid-cols-4 gap-3 xl:gap-2 ${showProfessor ? "xl:grid-cols-[1.25fr_repeat(7,minmax(0,1fr))]" : "xl:grid-cols-4"}`}>
+                            {showProfessor && field("Professor", Users, (
+                                <select value={draftFaculty} onChange={e => setDraftFaculty(e.target.value)} data-testid="filter-professor" className={fieldCls}>
+                                    <option value="All">All Professors</option>
+                                    {(data?.professors || []).filter((p: any) => campus === "ALL" || (campusList.find(x => x.id === campus)?.keys || []).includes(String(p.location || ""))).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                            ))}
+                            {sel("day", "Day", CalendarDays, DAYS.map(d => d.code))}
+                            {sel("subject", "Subject", BookOpen, options.subject)}
+                            {sel("className", "Class", GraduationCap, options.className)}
+                            {sel("section", "Section", LayoutGrid, options.section)}
+                            {showProfessor && field("Year", Calendar, (
+                                <select value={draft.year} onChange={e => pickYearSem("year", e.target.value)} data-testid="filter-year" className={fieldCls}>
+                                    <option value="All">All</option>{options.year.map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            ))}
+                            {showProfessor && branchField}
+                            {showProfessor && field("Semester", Layers, (
+                                <select value={draft.semester} onChange={e => pickYearSem("semester", e.target.value)} data-testid="filter-semester" className={fieldCls}>
+                                    <option value="All">All</option>{options.semester.map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            ))}
+                        </div>
+                        <div className="flex justify-end shrink-0">
+                            <button onClick={applyFilters} data-testid="apply-filters" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black active:scale-95"><SlidersHorizontal size={14} /> Apply Filters{pendingChanges ? " •" : ""}</button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* ── Campus chips (+ My / College tabs for professors) ── */}
@@ -855,6 +931,11 @@ export default function WeeklyCalendarPage() {
                                         className={`px-3 py-1.5 rounded-lg text-[11px] font-black ${mode === m.key ? "bg-emerald-600 text-white" : "text-zinc-300 hover:text-white"}`}>{m.label}</button>
                                 ))}
                             </div>
+                            {/* Branch-Wise: a separate on / off button, so it can be used together with Year-Wise / Semester-Wise */}
+                            <button type="button" aria-pressed={byBranch} onClick={() => { setByBranch(v => !v); setLayout("grid"); }} data-testid="mode-branch"
+                                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[11px] font-black ${byBranch ? "bg-indigo-600 border-indigo-500 text-white" : "bg-zinc-950 border-zinc-800 text-zinc-300 hover:text-white"}`}>
+                                <GitBranch size={13} /> Branch-Wise
+                            </button>
                         </div>
                     )}
                 </div>
@@ -896,12 +977,12 @@ export default function WeeklyCalendarPage() {
                         );
                     })}
                 </div>
-            ) : canGroup && mode !== "full" ? (
+            ) : canGroup && (mode !== "full" || byBranch) ? (
                 /* Year-Wise / Semester-Wise: one timetable per year / semester, one below the other (per college) */
                 <div className="space-y-6" data-testid="group-sections" data-mode={mode}>
                     {campusesInView.map((cp, i) => {
                         const list = classesOf(cp.id);
-                        const groups = groupClasses(list, mode);
+                        const groups = groupClasses(list, mode, byBranch);
                         const a = CAMPUS_ACCENTS[i % CAMPUS_ACCENTS.length];
                         const tables = groups.map(g => (
                             <div key={g.key} data-testid="group-table" data-group={g.label}>
@@ -914,7 +995,7 @@ export default function WeeklyCalendarPage() {
                                 <div className={`flex flex-wrap items-center gap-3 px-4 py-3 ${a.headBg}`}>
                                     <span className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${a.iconBg}`}><Building2 size={18} className={a.text} /></span>
                                     <h2 className="text-base sm:text-lg font-black text-white truncate">{cp.name}</h2>
-                                    <span className={`shrink-0 px-2.5 py-0.5 rounded-full border text-[10px] font-black ${a.pill}`}>{groups.length && list.length ? `${groups.length} ${mode === "year" ? "year" : "semester"}${groups.length === 1 ? "" : "s"}` : "No classes"}</span>
+                                    <span className={`shrink-0 px-2.5 py-0.5 rounded-full border text-[10px] font-black ${a.pill}`}>{groups.length && list.length ? `${groups.length} ${byBranch ? (mode === "full" ? "branch" : "timetable") : mode === "year" ? "year" : "semester"}${groups.length === 1 ? "" : byBranch && mode === "full" ? "es" : "s"}` : "No classes"}</span>
                                 </div>
                                 {list.length === 0 ? <p className="px-4 py-6 text-center text-xs text-zinc-500">No classes at this campus this week.</p> : <div className="p-3 sm:p-4 space-y-4">{tables}</div>}
                             </section>

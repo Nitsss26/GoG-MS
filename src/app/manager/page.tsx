@@ -15,10 +15,12 @@ export default function ManagerHub() {
     const recentReports = misbehaviourReports.filter(m => m.reportedBy === user.id);
 
     const quickLinks = [
-        { label: "Leave Approval", desc: `${pendingLeaves.length} pending`, icon: Calendar, path: "/manager/leave-approval", color: "text-amber-400" },
+        // OM: no Leave Approval here (OM does not approve leave)
+        ...(user.role === "OM" ? [] : [{ label: "Leave Approval", desc: `${pendingLeaves.length} pending`, icon: Calendar, path: "/manager/leave-approval", color: "text-amber-400" }]),
         { label: "Report Misbehaviour", desc: `${recentReports.length} reports`, icon: AlertTriangle, path: "/manager/misbehaviour", color: "text-red-400" },
         { label: "Academic Audits", desc: "Team Sprint & Lectures", icon: BookOpen, path: "/manager/reportees/academic-data", color: "text-emerald-400" },
-        { label: "Holidays", desc: "Propose dates", icon: Calendar, path: "/manager/holidays", color: "text-blue-400" },
+        // OM and AD: no Holidays here (also not in their sidebar)
+        ...(user.role === "OM" || user.role === "AD" ? [] : [{ label: "Holidays", desc: "Propose dates", icon: Calendar, path: "/manager/holidays", color: "text-blue-400" }]),
     ];
 
     return (

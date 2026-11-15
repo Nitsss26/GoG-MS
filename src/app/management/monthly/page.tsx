@@ -107,7 +107,10 @@ export default function MonthlyReportPage() {
     const myReportees = useMemo(() => {
         if (!user) return [];
         const reports = getReportees(user.id) || [];
-        return reports.filter(e => e.status === "Active" && !(e as any).isRemoved);
+        // AD: every Faculty / Professor / OM of all colleges (not only direct reportees)
+        const all = user.role === "AD" ? employees.filter(e => ["FACULTY", "PROFESSOR", "OM"].includes(e.role)) : [];
+        const merged = Array.from(new Map([...reports, ...all].map(e => [e.id, e])).values());
+        return merged.filter(e => e.id !== user.id && e.status === "Active" && !(e as any).isRemoved);
     }, [user, employees, getReportees]);
     const audience = AUDIENCES[tab];
     const tabReportees = useMemo(() => myReportees.filter(e => (audience.roles as readonly string[]).includes(e.role)), [myReportees, audience]);

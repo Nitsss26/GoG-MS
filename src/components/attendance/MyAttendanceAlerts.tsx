@@ -80,7 +80,7 @@ export default function MyAttendanceAlerts() {
                                 <td className="px-4 py-2.5 text-zinc-300">{TYPE[v.type]}</td>
                                 <td className="px-4 py-2.5 text-zinc-400">{t12(v.scheduledTime)}</td>
                                 <td className="px-4 py-2.5 text-zinc-400">{v.type === "MISSING_OUT" ? (v.laterClockOut ? `Out ${t12(v.laterClockOut)}` : "Not clocked out") : t12(v.actualTime)}</td>
-                                <td className="px-4 py-2.5 text-zinc-300">{v.instance}</td>
+                                <td className="px-4 py-2.5 text-zinc-300">{v.instance ?? "—"}</td>
                                 <td className="px-4 py-2.5 text-zinc-300 whitespace-nowrap">{LEVEL[v.level] || v.level}</td>
                                 <td className="px-4 py-2.5"><span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap", STATUS_STYLE[v.hrStatus] || STATUS_STYLE["Not Required"])}>{v.hrStatus === "Not Required" ? "Warning" : v.hrStatus}</span>
                                     {v.hrRemarks && <p className="text-[10px] text-zinc-500 mt-1 max-w-[180px] truncate" title={v.hrRemarks}>HR: {v.hrRemarks}</p>}</td>

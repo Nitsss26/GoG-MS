@@ -27,7 +27,7 @@ function readFields(b: any): { amount: number; reasonCategory: string; explanati
     const reasonCategory = String(b.reasonCategory || '');
     if (!PENALTY_REASONS.includes(reasonCategory)) return { error: 'Choose the penalty reason.' };
     const explanation = String(b.explanation || '').trim().replace(/[ \t]+/g, ' ').slice(0, 3000);
-    if (explanation.length < 10) return { error: reasonCategory === 'Other' ? 'Write the reason for "Other" (at least 10 characters).' : 'Explain why this penalty is being applied (at least 10 characters).' };
+    if (!explanation) return { error: reasonCategory === 'Other' ? 'Write the reason for "Other".' : 'Explain why this penalty is being applied.' };
     return { amount: Math.round(raw * 100) / 100, reasonCategory, explanation };
 }
 

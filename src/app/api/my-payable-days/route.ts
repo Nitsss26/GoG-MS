@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { getSessionUser } from '@/lib/session-user';
-import { payableDaysFor, isMonth, istToday, monthLabel, nowIso, employeeCard, collegeName } from '@/lib/salary-module';
+import { payableDaysFor, isMonth, istToday, monthLabel, nowIso, employeeCard, collegeName, joiningYmd } from '@/lib/salary-module';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +16,9 @@ export async function GET(req: Request) {
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         const emp = actor.employee?.toObject ? actor.employee.toObject() : actor.employee;
         const cur = istToday().slice(0, 7);
+        const joiningDate = joiningYmd(emp.joiningDate);
+        // payable days are counted from the joining date HR entered (no joining date yet: calculated as before)
+        const joinMonth = joiningDate.slice(0, 7);
         const month = new URL(req.url).searchParams.get('month') || cur;
         if (!isMonth(month) || month > cur) return NextResponse.json({ error: 'Choose a valid month (not in the future).' }, { status: 400 });
         const calc = await payableDaysFor(emp, month);
@@ -25,12 +28,12 @@ export async function GET(req: Request) {
         for (let i = 0; i < 24; i++) {
             const d = new Date(Date.UTC(y, m - 1 - i, 1));
             const k = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-            if (emp.joiningDate && k < String(emp.joiningDate).slice(0, 7)) break;
+            if (joinMonth && k < joinMonth && months.length) break;     // joining later than this month: this month only (all days Not Joined)
             months.push(k);
         }
         return NextResponse.json({
             employee: employeeCard(emp, await collegeName(emp.location)),
-            month, monthLabel: monthLabel(month), months: months.map(k => ({ value: k, label: monthLabel(k) })),
+            joiningDate, month, monthLabel: monthLabel(month), months: months.map(k => ({ value: k, label: monthLabel(k) })),
             calculatedAt: nowIso(), calc,
         });
     } catch (e: any) {

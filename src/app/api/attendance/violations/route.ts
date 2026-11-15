@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { AttendanceViolation, Employee } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
-import { istNow } from '@/lib/attendance-violations';
+import { istNow, numberMissingOut } from '@/lib/attendance-violations';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,11 +23,12 @@ export async function GET(req: Request) {
             if (actor.role !== 'HR' && actor.role !== 'FOUNDER') return NextResponse.json({ error: 'Only HR can view all attendance violations.' }, { status: 403 });
             // employees HR removed from attendance are left out
             const hidden: any[] = await Employee.find({ hideFromAttendance: true } as any).select('id').lean();
-            const rows: any[] = await AttendanceViolation.find({ period, ...(hidden.length ? { employeeId: { $nin: hidden.map(h => h.id) } } : {}) }).sort({ date: -1, createdAt: -1 }).limit(3000).select('-__v').lean();
+            // Missing Clock-Out: numbered only once HR rejects it (approved / undecided → no number)
+            const rows: any[] = await numberMissingOut(await AttendanceViolation.find({ period, ...(hidden.length ? { employeeId: { $nin: hidden.map(h => h.id) } } : {}) }).sort({ date: -1, createdAt: -1 }).limit(3000).select('-__v').lean() as any[]);
             const summary = new Map<string, any>();
             for (const v of rows) {
                 const s = summary.get(v.employeeId) || { employeeId: v.employeeId, employeeName: v.employeeName, email: v.email, LATE_IN: 0, EARLY_OUT: 0, MISSING_OUT: 0, lateLevel: '', earlyLevel: '', proposed: [] as string[], pendingHr: 0, emailFailed: 0, lastEmailStatus: '' };
-                const counted = !['Waived', 'Approved'].includes(v.hrStatus);
+                const counted = !['Waived', 'Approved'].includes(v.hrStatus) && (v.type !== 'MISSING_OUT' || v.hrStatus === 'Rejected');
                 if (counted) s[v.type] = Math.max(s[v.type], v.instance || 0);
                 if (v.type === 'LATE_IN' && !s.lateLevel) s.lateLevel = v.level;
                 if (v.type === 'EARLY_OUT' && !s.earlyLevel) s.earlyLevel = v.level;
@@ -39,8 +40,8 @@ export async function GET(req: Request) {
             }
             return NextResponse.json({ period, violations: rows, summary: Array.from(summary.values()).sort((a, b) => (b.LATE_IN + b.EARLY_OUT + b.MISSING_OUT) - (a.LATE_IN + a.EARLY_OUT + a.MISSING_OUT)) });
         }
-        const rows = await AttendanceViolation.find({ employeeId: actor.id }).sort({ date: -1 }).limit(200)
-            .select('id type date period scheduledTime actualTime durationMins instance level proposedDeduction hrStatus emailStatus explanation proofUrls explanationAt hrRemarks hrDecisionAt laterClockOut').lean();
+        const rows = await numberMissingOut(await AttendanceViolation.find({ employeeId: actor.id }).sort({ date: -1 }).limit(200)
+            .select('id type date period scheduledTime actualTime durationMins instance level proposedDeduction hrStatus emailStatus explanation proofUrls explanationAt hrRemarks hrDecisionAt laterClockOut employeeId').lean() as any[]);
         return NextResponse.json({ violations: rows });
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });

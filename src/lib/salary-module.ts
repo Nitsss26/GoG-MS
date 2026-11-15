@@ -10,6 +10,7 @@ import { LateJustification } from '@/models/LateJustification';
 import { isNewPolicy, dressLadder } from '@/lib/attendance-policy';
 import { fullAttireRejections } from '@/lib/full-attire-penalties';
 import { locationPenaltiesFor } from '@/lib/location-justification';
+import { applyMissingOutRule } from '@/lib/attendance-violations';
 import { calculatePayableDays, daysInMonth, CATEGORY_OF, TYPE_LABEL, LEVEL_LABEL, VIOLATION_CLOSED, ladder } from '@/lib/payable-days';
 import { sendMailInternal, MAIN_ADMIN_EMAIL } from '@/lib/mail-server';
 import { getAcademicNotificationTemplate } from '@/lib/mail-templates';
@@ -31,6 +32,15 @@ export function istToday(): string {
     return `${p.year}-${p.month}-${p.day}`;
 }
 export const isMonth = (m: any) => typeof m === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
+/** The joining date HR entered, as YYYY-MM-DD ('' when not added). Older DD-MM-YYYY / DD/MM/YYYY values are read too. */
+export function joiningYmd(v: any): string {
+    const s = String(v ?? '').trim();
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return isNaN(Date.parse(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`)) ? '' : `${m[1]}-${m[2]}-${m[3]}`;
+    m = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})$/);
+    if (m) return isNaN(Date.parse(`${m[3]}-${m[2]}-${m[1]}T00:00:00Z`)) ? '' : `${m[3]}-${m[2]}-${m[1]}`;
+    return '';
+}
 export const isYmd = (d: any) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
 export const monthLabel = (month: string) => { const [y, m] = month.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' }); };
 export const fmtDate = (ymd?: string) => (ymd && isYmd(ymd) ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }) : ymd || '');
@@ -86,7 +96,9 @@ export async function payableForMany(emps: any[], month: string) {
     // Full Attire rejections → Dress-Code-style warnings / fines (src/lib/full-attire-penalties.ts)
     const faRej = await fullAttireRejections(ids, start, end);
     const by = (rows: any[]) => { const m = new Map<string, any[]>(); for (const r of rows) { if (!m.has(r.employeeId)) m.set(r.employeeId, []); m.get(r.employeeId)!.push(r); } return m; };
-    const A = by(att as any[]), L = by(leaves as any[]), V = by(viol as any[]), R = by(removed as any[]), C = by(corr as any[]);
+    // Missing Clock-Out: only after HR rejects it (numbered among the rejected ones); approved / undecided → not a flag
+    const violRule = await applyMissingOutRule(viol as any[]);
+    const A = by(att as any[]), L = by(leaves as any[]), V = by(violRule), R = by(removed as any[]), C = by(corr as any[]);
     const lwd = new Map((exits as any[]).filter(x => x.lastWorkingDay).map(x => [x.employeeId, x.lastWorkingDay]));
     const today = istToday();
     const asOf = month === today.slice(0, 7) ? today : undefined;
@@ -99,7 +111,7 @@ export async function payableForMany(emps: any[], month: string) {
         ].sort((a, b) => a.date.localeCompare(b.date));
         out.set(emp.id, withMoney(monetaryPenalties, calculatePayableDays({
             month, asOf,
-            joiningDate: emp.joiningDate || undefined,
+            joiningDate: joiningYmd(emp.joiningDate) || undefined,
             exitDate: emp.noticePeriod?.lastWorkingDay || lwd.get(emp.id) || undefined,
             attendance: A.get(emp.id) || [], leaves: L.get(emp.id) || [], holidays, violations: [...(V.get(emp.id) || []), ...(locPen.violations.get(emp.id) || [])],
             removed: new Map((R.get(emp.id) || []).map(r => [r.flagId, { removedAt: r.removedAt, removedByName: r.removedByName, removalReason: r.removalReason }])),
@@ -121,7 +133,7 @@ export async function salaryEmployees(month: string) {
     const emps: any[] = await Employee.find({}).select('id name email role dept designation current_designation_at_gog location joiningDate status reportsTo noticePeriod mailsStopped').lean();
     return emps.filter(e => {
         if (e.role === 'FOUNDER') return false;
-        if (e.joiningDate && String(e.joiningDate) > end) return false;
+        if (joiningYmd(e.joiningDate) && joiningYmd(e.joiningDate) > end) return false;
         const exit = e.noticePeriod?.lastWorkingDay;
         if (exit && exit < start) return false;
         return !/^(inactive|removed|exited|resigned|terminated)$/i.test(String(e.status || '')) || (exit && exit >= start);
@@ -236,7 +248,7 @@ export async function listFlags(f: { from?: string; to?: string }) {
         AttendanceViolation.find({ ...dq, hrStatus: { $nin: VIOLATION_CLOSED } }).select('id employeeId date type level instance proposedDeduction hrStatus scheduledTime actualTime').lean(),
         Attendance.find({ ...dq, dressCodeStatus: 'Rejected' }).select('_id employeeId date dressCodeStatus dressCodeRejectionReasons').lean(),
     ]);
-    return toRows(dress as any[], viol as any[]);
+    return toRows(dress as any[], await applyMissingOutRule(viol as any[]));
 }
 
 /** Active (not removed, not waived / approved) flags of ONE employee in a date range — Flag Calendar */
@@ -246,7 +258,7 @@ export async function listFlagsFor(employeeId: string, from: string, to: string)
         AttendanceViolation.find({ employeeId, date, hrStatus: { $nin: VIOLATION_CLOSED } }).select('id employeeId date type level instance proposedDeduction hrStatus scheduledTime actualTime').lean(),
         Attendance.find({ employeeId, date, dressCodeStatus: 'Rejected' }).select('_id employeeId date dressCodeStatus dressCodeRejectionReasons').lean(),
     ]);
-    return (await toRows(dress as any[], viol as any[])).filter(r => r.status === 'Active');
+    return (await toRows(dress as any[], await applyMissingOutRule(viol as any[]))).filter(r => r.status === 'Active');
 }
 
 // ─────────────────────────── recipients + email ───────────────────────────

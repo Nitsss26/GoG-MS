@@ -281,7 +281,7 @@ export default function ProfilePage() {
                         <InfoRow icon={<Building size={14} />} label="Department" value={field("dept", emp.dept || "—")} />
                         <InfoRow icon={<GraduationCap size={14} />} label="Corporate Node" value={field("location", getVal(emp.location, emp.you_are_from_))} />
                         <InfoRow icon={<Shield size={14} />} label="Designation" value={field("designation", getVal(emp.designation, emp.current_designation_at_gog))} />
-                        <InfoRow icon={<CalendarIcon size={14} />} label="Onboarding Date" value={field("joiningDate", emp.joiningDate || "—")} />
+                        <InfoRow icon={<CalendarIcon size={14} />} label="Joining Date" value={field("joiningDate", saved("joiningDate") || "Not added yet")} />
                         <InfoRow icon={<Briefcase size={14} />} label="Tenure Start" value={emp.designationDate || "—"} />
                     </Section>
 

@@ -1776,7 +1776,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             // --- EMAIL NOTIFICATION ---
             const authorities = getAuthorityEmails(emp, employees);
-            const template = getRatingTemplate({ ...newScore, employeeName: emp?.name, ratedByName: user?.name ?? "Manager" });
+            // the e-mail says who gave it and as what (e.g. "Arun (AD)", "Priya (HOI)")
+            const ratedByRole = ({ AD: "AD", HOI: "HOI", FOUNDER: "Founder", TL: "Tech Lead" } as Record<string, string>)[user?.role || ""] || user?.role || "";
+            const template = getRatingTemplate({ ...newScore, employeeName: emp?.name, ratedByName: user?.name ?? "Manager", ratedByRole });
 
             // If screenshot exists, attach it to the mail
             const attachments = screenshotUrl ? [{

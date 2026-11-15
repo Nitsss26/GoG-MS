@@ -40,8 +40,8 @@ export default function EmployeesPage() {
         }).catch(() => { });
     }, []);
     const locName = (v?: string) => (v ? locationNames[v] || v : "—");
-    // OMS Status / Last Seen — HR and HR Executive only (the server checks it too); refreshed every 30 s while visible
-    const canSeePresence = user?.role === "HR";
+    // OMS Status / Last Seen — HR, HR Executive and Founder (the server checks it too); refreshed every 30 s while visible
+    const canSeePresence = user?.role === "HR" || user?.role === "FOUNDER";
     const [presence, setPresence] = useState<Record<string, PresenceRow>>({});
     const [presenceNow, setPresenceNow] = useState<string>("");
     const [presenceReady, setPresenceReady] = useState(false);
@@ -75,7 +75,7 @@ export default function EmployeesPage() {
         salary: 0,
         location: "Bhopal Hub",
         status: "Active" as "Active" | "On Leave" | "On Site" | "Resigned",
-        joiningDate: new Date().toISOString().split('T')[0],
+        joiningDate: "",   // only HR enters it (Employee Directory); never today's date by default
         chancesRemaining: 3
     });
 
@@ -85,7 +85,7 @@ export default function EmployeesPage() {
         e.preventDefault();
         addEmployee(formData);
         setShowModal(false);
-        setFormData({ name: "", email: "", dept: "Engineering", designation: "", role: "FACULTY", salary: 0, location: "Bhopal Hub", status: "Active", joiningDate: new Date().toISOString().split('T')[0], chancesRemaining: 3 });
+        setFormData({ name: "", email: "", dept: "Engineering", designation: "", role: "FACULTY", salary: 0, location: "Bhopal Hub", status: "Active", joiningDate: "", chancesRemaining: 3 });
     };
 
     // Strict Role-Based Access Control
@@ -105,9 +105,9 @@ export default function EmployeesPage() {
         );
     }
 
-    // HR manages the whole workforce (needed to remove any ex-employee from the portal); other roles see their reportees
+    // HR and Founder see the whole workforce (needed to remove any ex-employee from the portal); other roles see their reportees
     const canRemoveEmployees = user.role === "HR" || user.role === "FOUNDER";
-    const viewableEmployees = user.role === "HR" ? employees : getReportees(user.id);
+    const viewableEmployees = user.role === "HR" || user.role === "FOUNDER" ? employees : getReportees(user.id);
 
     const locations = ["All", ...new Set(viewableEmployees.map(e => e.location).filter(Boolean))];
     const roleLevels = ["All", "Founder", "HR", "HR Executive", "AD", "HOI", "OM", "TL", "CH", "CL", "Marketing", "Tech", "Placement & Intern Head", "Faculty"];
@@ -164,10 +164,6 @@ export default function EmployeesPage() {
                     {(user.role === "HR" || user.role === "FOUNDER") && (
                         <button onClick={() => setShowDeleted(true)} data-testid="wf-deleted" className="flex items-center gap-1.5 h-9 px-4 text-xs font-semibold rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"><UserX size={13} /> Deleted Employees</button>
                     )}
-                    {(user.role === "HR" || user.role === "FOUNDER") && (
-                        // New employees are added through HR → Onboarding (role, college, HOI and ID set correctly)
-                        <Link href="/hr/onboarding" data-testid="wf-add" className="btn-primary flex items-center gap-1.5 h-9 px-4 text-xs font-semibold"><Plus size={13} /> Add Record</Link>
-                    )}
                 </div>
             </header>
 
@@ -205,7 +201,6 @@ export default function EmployeesPage() {
                         <thead>
                             <tr className="border-b border-border text-[9px] text-muted font-bold uppercase tracking-widest">
                                 <th className="px-3 py-4">Employee</th>
-                                <th className="px-3 py-4">Department</th>
                                 <th className="px-3 py-4">Role</th>
                                 <th className="px-3 py-4">Status</th>
                                 {canSeePresence && <th className="px-3 py-4 whitespace-nowrap" data-testid="wf-th-oms">OMS Status</th>}
@@ -215,7 +210,7 @@ export default function EmployeesPage() {
                         </thead>
                         <tbody className="divide-y divide-border">
                             {filteredEmployees.length === 0 ? (
-                                <tr><td colSpan={canSeePresence ? 7 : 5} className="px-5 py-12 text-center text-muted">No workforce records matching synchronization parameters.</td></tr>
+                                <tr><td colSpan={canSeePresence ? 6 : 4} className="px-5 py-12 text-center text-muted">No workforce records matching synchronization parameters.</td></tr>
                             ) : (
                                 filteredEmployees.map(emp => (
                                     <tr key={emp.id} className="hover:bg-surface-light transition-colors group">
@@ -235,7 +230,6 @@ export default function EmployeesPage() {
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="px-3 py-3.5"><span className="badge badge-zinc whitespace-nowrap">{emp.dept}</span></td>
                                         <td className="px-3 py-3.5">
                                             {(() => {
                                                 const rl = getRoleLevel(emp);

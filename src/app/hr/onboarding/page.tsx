@@ -177,11 +177,14 @@ export default function OnboardingHRPage() {
             location: formData.get("location") as string,
             reportsTo: (formData.getAll("reportsTo") as string[]).filter(Boolean),
             slackInviteLink: String(formData.get("slackInviteLink") || "").trim(),
+            // optional: can also be added later from Employee Directory
+            joiningDate: String(formData.get("joiningDate") || "").trim(),
         };
 
         setCreateError("");
         if (!newEmp.password || newEmp.password.length < 8) { setCreateError("Password must be at least 8 characters."); return; }
         if (newEmp.slackInviteLink && !/^https?:\/\/\S+$/i.test(newEmp.slackInviteLink)) { setCreateError("Enter a valid Slack link (starting with https://)."); return; }
+        if (newEmp.joiningDate && (!/^\d{4}-\d{2}-\d{2}$/.test(newEmp.joiningDate) || newEmp.joiningDate < "1990-01-01")) { setCreateError("Enter a valid joining date."); return; }
         if (!clockIn || !clockOut || clockOut <= clockIn) { setCreateError("Clock-out time must be after clock-in time."); return; }
         if (!workDays.length) { setCreateError("Select at least one working day."); return; }
         setCreating(true);
@@ -659,6 +662,9 @@ export default function OnboardingHRPage() {
                                 </FormField>
                                 <FormField label="Designation" required icon={<Award size={17} className="text-fuchsia-400" />}>
                                     <input name="designation" required placeholder="e.g. Senior Professor" className={fieldInput} />
+                                </FormField>
+                                <FormField label="Joining Date" optional icon={<CalendarDays size={17} className="text-sky-400" />}>
+                                    <input name="joiningDate" type="date" min="1990-01-01" className={`${fieldInput} [color-scheme:dark]`} data-testid="emp-joining-date" />
                                 </FormField>
                                 <FormField label="Work Location" optional icon={<MapPin size={17} className="text-emerald-400" />} select>
                                     <select name="location" value={newLocation} onChange={e => setNewLocation(e.target.value)} className={`${fieldInput} appearance-none pr-10 cursor-pointer`}>

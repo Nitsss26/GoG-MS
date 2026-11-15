@@ -9,6 +9,8 @@ import { getFeedbackUpdatedTemplate } from '@/lib/mail-templates';
 
 export const dynamic = 'force-dynamic';
 
+/** Role shown next to the name in the feedback e-mail ("by Arun (AD)") */
+const raterRoleLabel = (r: string) => ({ AD: 'AD', HOI: 'HOI', FOUNDER: 'Founder', TL: 'Tech Lead' } as Record<string, string>)[r] || r;
 /** Roles that may give / update monthly feedback (same as the Monthly Feedback page) */
 const RATER_ROLES = ['FOUNDER', 'AD', 'HOI', 'TL'];
 
@@ -29,7 +31,10 @@ export async function PUT(req: Request) {
         const employeeId = String(body.employeeId || ''), period = String(body.period || '');
         if (!employeeId || !period) return NextResponse.json({ error: 'Employee and period are required.' }, { status: 400 });
         if (employeeId === actor.id) return NextResponse.json({ error: 'You cannot update your own feedback.' }, { status: 403 });
-        if (actor.role !== 'FOUNDER') {
+        // AD: every Faculty / Professor / OM (all colleges); others: their reporting scope (Founder: everyone)
+        const target: any = await Employee.findOne({ id: employeeId }).select('role isRemoved').lean();
+        const adAll = actor.role === 'AD' && !!target && !target.isRemoved && ['FACULTY', 'PROFESSOR', 'OM'].includes(String(target.role));
+        if (actor.role !== 'FOUNDER' && !adAll) {
             const scope = await managedEmployeeIds(actor);
             if (!scope.has(employeeId)) return NextResponse.json({ error: 'This employee is not in your reporting scope.' }, { status: 403 });
         }
@@ -64,7 +69,7 @@ export async function PUT(req: Request) {
         let emailStatus = 'NO_EMAIL';
         if (emp.email) {
             const hois = (await hoisAbove(employeeId)).filter((h: any) => h.email && h.id !== employeeId);
-            const { subject, html } = getFeedbackUpdatedTemplate({ employeeName: emp.name, employeeId, period, updatedByName: actor.name, updatedAt: now });
+            const { subject, html } = getFeedbackUpdatedTemplate({ employeeName: emp.name, employeeId, period, updatedByName: `${actor.name} (${raterRoleLabel(actor.role)})`, updatedAt: now });
             const r: any = await sendMailInternal({ to: emp.email, cc: hois.map((h: any) => h.email), subject, html });
             emailStatus = r?.success ? 'SENT' : 'FAILED';
             console.log(`[monthly-feedback] update ${employeeId} ${period} → employee + ${hois.length} HOI: ${r?.success ? 'accepted by SMTP' : 'failed'}`);

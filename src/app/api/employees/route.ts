@@ -21,7 +21,8 @@ async function canRate(session: { userId: string; email: string; role: string },
     switch (session.role) {
         case 'CURRICULUM_HEAD': return ['CURRICULUM_LEAD', 'FACULTY', 'PROFESSOR'].includes(role);
         case 'CURRICULUM_LEAD': return ['FACULTY', 'PROFESSOR'].includes(role);
-        case 'AD': return isReportee && ['HOI', 'FACULTY', 'PROFESSOR', 'OM', 'MARKETING_TEAM', 'TECH_TEAM', 'PLACEMENT_INTERN_HEAD', 'CURRICULUM_HEAD', 'CURRICULUM_LEAD'].includes(role);
+        // AD: every Faculty / Professor / OM (all colleges); other roles only as direct reportees
+        case 'AD': return ['FACULTY', 'PROFESSOR', 'OM'].includes(role) || (isReportee && ['HOI', 'MARKETING_TEAM', 'TECH_TEAM', 'PLACEMENT_INTERN_HEAD', 'CURRICULUM_HEAD', 'CURRICULUM_LEAD'].includes(role));
         case 'HOI': {
             if (!['FACULTY', 'PROFESSOR', 'OM', 'MARKETING_TEAM', 'TECH_TEAM', 'PLACEMENT_INTERN_HEAD'].includes(role)) return false;
             if (isReportee) return true;
@@ -256,6 +257,13 @@ export async function POST(request: Request) {
         delete data.isRemoved;
         delete data.postOnboardingChecklist; delete data.attendanceLocations;
         delete data.removedAt; delete data.removedBy; delete data.removedByName; delete data.removalSnapshot;
+        // Joining Date (optional): only a real YYYY-MM-DD date entered by HR; empty → not saved (never a guessed date)
+        if (data.joiningDate !== undefined) {
+            const jd = String(data.joiningDate || '').trim();
+            if (!jd) delete data.joiningDate;
+            else if (!/^\d{4}-\d{2}-\d{2}$/.test(jd) || isNaN(Date.parse(`${jd}T00:00:00Z`)) || jd < '1990-01-01') return NextResponse.json({ error: 'Enter a valid joining date.' }, { status: 400 });
+            else data.joiningDate = jd;
+        }
         // Optional Slack invite link (shown to the joinee before the onboarding form): only http(s) links are stored
         if (data.slackInviteLink !== undefined) {
             const link = String(data.slackInviteLink || '').trim();

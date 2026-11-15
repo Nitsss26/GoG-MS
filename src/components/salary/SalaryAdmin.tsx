@@ -443,8 +443,8 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
     // Half Day / Penalty need the updated server files (employee / corrections / penalties routes)
     const blocked = type !== "FULL" && !serverReady;
     const okReason = blocked ? false : type === "FULL" ? (category !== "Other" || categoryOther.trim().length >= 2)
-        : type === "HALF" ? !!halfReason && explanation.trim().length >= 10
-        : !!halfReason && explanation.trim().length >= 10 && amount.trim() !== "" && !amountErr;
+        : type === "HALF" ? !!halfReason && explanation.trim().length > 0
+        : !!halfReason && explanation.trim().length > 0 && amount.trim() !== "" && !amountErr;
     const categoryText = category === "Other" ? `Other — ${categoryOther.trim()}` : category;
     const upload = async (fl: FileList | null) => {
         if (!fl?.length) return; setUploading(true); setError("");
@@ -508,7 +508,7 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
                         <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Explain Why This Penalty Is Being Applied *
                             <textarea value={explanation} onChange={ev => setExplanation(ev.target.value)} rows={4} maxLength={3000} data-testid="sm-explanation" placeholder="e.g. Assigned work was not submitted within the communicated deadline."
                                 className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white normal-case tracking-normal font-normal" />
-                            <span className="block mt-1 text-zinc-600 normal-case tracking-normal font-normal">{halfReason === "Other" ? "Other: write the reason here. " : ""}At least 10 characters.</span>
+                            {halfReason === "Other" && <span className="block mt-1 text-zinc-600 normal-case tracking-normal font-normal">Other: write the reason here.</span>}
                         </label>
                     </>) : (<>
                     <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Related Correction Ticket
@@ -525,7 +525,7 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
                         <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Reason / Explanation *
                             <textarea value={explanation} onChange={ev => setExplanation(ev.target.value)} rows={4} maxLength={3000} data-testid="sm-explanation" placeholder="e.g. Assigned tasks were not completed within the scheduled working hours."
                                 className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white normal-case tracking-normal font-normal" />
-                            <span className="block mt-1 text-zinc-600 normal-case tracking-normal font-normal">{halfReason === "Other" ? "Other: write the reason here. " : ""}At least 10 characters.</span>
+                            {halfReason === "Other" && <span className="block mt-1 text-zinc-600 normal-case tracking-normal font-normal">Other: write the reason here.</span>}
                         </label>
                         <p className="text-zinc-400">Payable Days for this date: <b className="text-white">0.5</b></p>
                     </>) : (<>

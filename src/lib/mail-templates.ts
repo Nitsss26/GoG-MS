@@ -106,7 +106,7 @@ export const getAuthorityEmails = (employee: any, allEmployees: any[], excludeRo
     // (Employee.reportsTo, set by HR "Appoint HOI"). Earlier every HOI of the organisation was added here for
     // Professors / OMs / Tech / Marketing, so their mails reached all HOIs. If no HOI is found in the reporting
     // line, nothing is broadcast: the missing mapping is recorded for HR to review.
-    if (employee?.id && ["PROFESSOR", "FACULTY", "OM", "MARKETING_TEAM", "TECH_TEAM"].includes(employee?.role)) {
+    if (employee?.id && ["PROFESSOR", "FACULTY", "OM", "MARKETING_TEAM", "TECH_TEAM", "PLACEMENT_INTERN_HEAD"].includes(employee?.role)) {
         const hasOwnHoi = (() => {
             const seen = new Set<string>(); let level: string[] = [employee.id];
             while (level.length) {
@@ -632,8 +632,8 @@ export const getRatingTemplate = (rating: any) => {
                     </tr>
                     <tr>
                         <td style="padding-top: 12px;">
-                            <span style="display: block; font-size: 11px; color: #94a3b8; text-transform: uppercase; font-weight: 700; margin-bottom: 4px;">Evaluator</span>
-                            <span style="font-size: 14px; color: #1e293b; font-weight: 600;">${rating.ratedByName}</span>
+                            <span style="display: block; font-size: 11px; color: #94a3b8; text-transform: uppercase; font-weight: 700; margin-bottom: 4px;">Feedback Given By</span>
+                            <span style="font-size: 14px; color: #1e293b; font-weight: 600;">${rating.ratedByName}${rating.ratedByRole ? ` (${rating.ratedByRole})` : ""}</span>
                         </td>
                     </tr>
                 </table>

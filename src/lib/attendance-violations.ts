@@ -255,13 +255,47 @@ export async function runAttendanceSweep(at: Date = new Date()) {
 }
 
 /** Emails the employee HR's decision (Missing Clock-Out explanation / payroll action) */
+/**
+ * Missing Clock-Out rule: it becomes a flag (Flag Calendar, salary, warning emails) only after HR REJECTS it;
+ * HR approving it removes it. Its number = its place among the month's rejected Missing Clock-Outs of that
+ * employee (date order; flags removed by HR do not count). One source for every screen and email.
+ */
+export async function missingOutNumbers(vs: any[]): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    const keys = Array.from(new Set(vs.filter(v => v?.type === 'MISSING_OUT' && v.hrStatus === 'Rejected').map(v => `${v.employeeId}|${String(v.date).slice(0, 7)}`)));
+    for (const k of keys) {
+        const [employeeId, month] = k.split('|');
+        const date = { $gte: `${month}-01`, $lte: `${month}-31` };
+        const [all, rem]: [any[], any[]] = await Promise.all([
+            AttendanceViolation.find({ employeeId, type: 'MISSING_OUT', hrStatus: 'Rejected', date }).select('id date').lean() as Promise<any[]>,
+            FlagRemoval.find({ employeeId, source: 'VIOLATION', flagType: 'MISSING_OUT', flagDate: date }).select('sourceId').lean() as Promise<any[]>,
+        ]);
+        const removed = new Set(rem.map(r => String(r.sourceId)));
+        all.filter(x => !removed.has(String(x.id))).sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach((x, i) => out.set(String(x.id), i + 1));
+    }
+    return out;
+}
+/** Flags / salary: Missing Clock-Outs that are not rejected are left out; rejected ones get their number */
+export async function applyMissingOutRule<T extends { type?: string; hrStatus?: string; id?: string; instance?: any }>(vs: T[]): Promise<T[]> {
+    if (!vs.some(v => v?.type === 'MISSING_OUT')) return vs;
+    const nums = await missingOutNumbers(vs);
+    return vs.filter(v => v.type !== 'MISSING_OUT' || v.hrStatus === 'Rejected').map(v => (v.type === 'MISSING_OUT' ? { ...v, instance: nums.get(String(v.id)) ?? null } : v));
+}
+/** Lists (HR board, My Attendance Alerts): every alert stays listed; a Missing Clock-Out has a number only once rejected */
+export async function numberMissingOut<T extends { type?: string; hrStatus?: string; id?: string; instance?: any }>(vs: T[]): Promise<T[]> {
+    if (!vs.some(v => v?.type === 'MISSING_OUT')) return vs;
+    const nums = await missingOutNumbers(vs);
+    return vs.map(v => (v.type === 'MISSING_OUT' ? { ...v, instance: nums.get(String(v.id)) ?? null } : v));
+}
+
 export async function sendDecisionEmail(v: any, decision: string, remarks: string) {
     if (!v.email) return false;
     const label = VIOLATION_LABEL[v.type as ViolationType];
     const approved = decision === 'Approved';
     const m: Mail = v.type === 'MISSING_OUT'
         ? { subject: `Missing Clock-Out Explanation – ${approved ? 'Approved' : 'Rejected'}`,
-            rows: [['Attendance Date', fmtDate(v.date)], ['Scheduled Clock-Out Time', fmt12(v.scheduledTime)], ['Missing Clock-Out Instance', String(v.instance)], ['HR Decision', approved ? 'Approved' : 'Rejected'], ['HR Remarks', remarks || '—']],
+            // the instance number exists only for a rejected one (approved → no flag, no number)
+            rows: [['Attendance Date', fmtDate(v.date)], ['Scheduled Clock-Out Time', fmt12(v.scheduledTime)], ...(approved ? [] : [['Missing Clock-Out Instance', String((await missingOutNumbers([v])).get(String(v.id)) ?? '—')]] as [string, string][]), ['HR Decision', approved ? 'Approved' : 'Rejected'], ['HR Remarks', remarks || '—']],
             paragraphs: [`HR has reviewed your explanation for the missing clock-out on ${fmtDate(v.date)}.`,
                 approved ? 'Your explanation has been approved and your attendance for this date has been regularised.' : 'Your explanation has not been accepted. The record is kept for attendance action as per the approved Attendance SOP (Half-Day, subject to HR verification).'],
             action: approved ? 'No further action is needed.' : 'Contact HR if you have further information.' }

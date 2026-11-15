@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Mail, Shirt, Clock, UserX, LogOut, History, Search, Loader2, AlertTriangle, CheckCircle2, XCircle, Eye, ChevronDown, ChevronLeft, ChevronRight, X, FileText, RefreshCw, Inbox, Image as ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -124,6 +124,25 @@ export default function EmailManagementPage() {
         finally { setDeciding(""); }
     };
 
+    // Missing Clock-Out: Approve / Reject right here (same decision as Attendance Log → Attendance Violations)
+    const decideMissing = async (r: any, action: "approve" | "reject", reason = "") => {
+        setDeciding(`${r.key}:${action}`); setNotice(null);
+        try {
+            const res = await fetch(`/api/attendance/violations/${encodeURIComponent(r.relatedRecordId)}`, {
+                method: "PUT", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action, remarks: reason }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(d.error || "Could not save the decision.");
+            setNotice({ ok: true, text: action === "approve"
+                ? `${r.employeeName}: missing clock-out approved — attendance regularised, no deduction.`
+                : `${r.employeeName}: missing clock-out rejected (Half-Day, subject to HR verification) — you can now send the warning email.` });
+            setRejectRow(null); setRejectReason("");
+            setReload(n => n + 1); loadOverview();
+        } catch (e: any) { setNotice({ ok: false, text: e.message || "Could not save the decision." }); }
+        finally { setDeciding(""); }
+    };
+
     useEffect(() => { const t = setTimeout(() => setQ(qLive), 300); return () => clearTimeout(t); }, [qLive]);
     useEffect(() => { setStatus(""); setOpen(""); }, [tab]);
     useEffect(() => { if (!notice?.ok) return; const t = setTimeout(() => setNotice(null), 6000); return () => clearTimeout(t); }, [notice]);
@@ -194,7 +213,8 @@ export default function EmailManagementPage() {
         </td>
     );
     const actionCell = (r: any) => (
-        <td className={cn(td, "text-right")}>
+        // buttons column stays fixed at the right edge (always visible, even when a narrow screen scrolls the table)
+        <td className={cn(td, "px-2 text-right sticky right-0 z-[1] bg-[#101011] group-hover:bg-[#151516] shadow-[-8px_0_12px_-8px_rgba(0,0,0,0.8)]")}>
             <div className="flex items-center justify-end gap-1.5">
                 {r.category === "late_clock_in" && r.status === "pending_review" && r.details?.justificationId && (
                     <>
@@ -203,6 +223,19 @@ export default function EmailManagementPage() {
                             {deciding === `${r.key}:approve` ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Approve
                         </button>
                         <button onClick={() => { setRejectRow(r); setRejectReason(""); }} disabled={!!deciding} data-testid="late-reject"
+                            className="h-7 px-2.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 disabled:opacity-50">
+                            <XCircle size={12} /> Reject
+                        </button>
+                    </>
+                )}
+                {r.category === "no_clock_out" && r.details?.canDecide && (
+                    <>
+                        <button onClick={() => decideMissing(r, "approve")} disabled={!!deciding} data-testid="out-approve"
+                            title={r.details.explanation ? "Approve the explanation" : "Approve (no explanation given)"}
+                            className="h-7 px-2.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">
+                            {deciding === `${r.key}:approve` ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Approve
+                        </button>
+                        <button onClick={() => { setRejectRow(r); setRejectReason(""); }} disabled={!!deciding} data-testid="out-reject"
                             className="h-7 px-2.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 disabled:opacity-50">
                             <XCircle size={12} /> Reject
                         </button>
@@ -223,8 +256,16 @@ export default function EmailManagementPage() {
         <div className="flex gap-2 text-[11px]"><span className="text-zinc-500 w-24 shrink-0">{k}</span><span className="text-zinc-200 min-w-0 break-words">{children}</span></div>
     );
     const link = "text-emerald-400 hover:text-emerald-300 inline-flex items-center gap-1";
+    // click anywhere on a row (or its open details) to open / close the details — buttons, links and fields keep their own action
+    const rowClick = (key: string) => (e: MouseEvent) => {
+        const t = e.target as HTMLElement;
+        if (t.closest("a, button, input, textarea, select, label")) return;
+        if (window.getSelection()?.toString()) return;
+        e.stopPropagation();
+        setOpen(open === key ? "" : key);
+    };
     const detailsRow = (r: any, cols: number) => open === r.key && (
-        <tr className="bg-zinc-950/70"><td colSpan={cols} className="px-4 py-4">
+        <tr className="bg-zinc-950/70 cursor-pointer" onClick={rowClick(r.key)}><td colSpan={cols} className="px-4 py-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5" data-testid="row-details">
                 <div className="space-y-1.5">
                     <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Employee</p>
@@ -271,9 +312,12 @@ export default function EmailManagementPage() {
                         <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Attendance</p>
                         <Field k="Clock-in">{t12(r.details.clockIn)}</Field>
                         <Field k="Expected out">{t12(r.details.expectedOut)}</Field>
-                        <Field k="Status">{r.details.attendanceStatus || "—"}{r.details.clockOut ? ` (${t12(r.details.clockOut)})` : ""}</Field>
+                        <Field k="Clock-out"><span data-testid="out-time">{r.details.clockOut ? t12(r.details.clockOut) : "Not recorded"}</span></Field>
+                        <Field k="Status">{r.details.attendanceStatus || "—"}</Field>
                         {r.details.locationVisits > 0 && <Field k="Visits">{r.details.locationVisits} location visit(s) — only the final clock-out is checked</Field>}
-                        {r.details.explanation && <Field k="Explanation">{r.details.explanation}</Field>}
+                        <Field k="Explanation">{r.details.explanation || "Not given"}</Field>
+                        {(r.details.proofUrls || []).length > 0 && <Field k="Proof">{(r.details.proofUrls as string[]).map((u, i) => <a key={u} href={u} target="_blank" rel="noreferrer" className={link}>{`Proof ${i + 1}`}</a>)}</Field>}
+                        {r.details.violationStatus && <Field k="HR decision">{r.details.violationStatus}{r.details.hrDecisionBy ? ` · ${r.details.hrDecisionBy}` : ""}{r.details.hrDecisionAt ? ` · ${tsDate(r.details.hrDecisionAt)}` : ""}{r.details.hrRemarks ? ` — ${r.details.hrRemarks}` : ""}</Field>}
                     </>}
                 </div>
                 <div className="space-y-1.5">
@@ -293,11 +337,12 @@ export default function EmailManagementPage() {
     // Column layout per tab (widths keep the table inside the page — no sideways scrolling)
     const cols: Record<Tab, { h: string; w?: string; cls?: string }[]> = {
         dress_code: [{ h: "Employee" }, { h: "Date", w: "w-[110px]" }, { h: "Rejection Reason", w: "w-[24%]" }, { h: "Rejected By", w: "w-[140px]", cls: "hidden xl:table-cell" }, { h: "Email Status", w: "w-[120px]" }, { h: "", w: "w-[150px]" }],
-        late_clock_in: [{ h: "Employee" }, { h: "Date", w: "w-[110px]" }, { h: "Clock-In", w: "w-[130px]" }, { h: "Justification", w: "w-[110px]" }, { h: "Warning", w: "w-[150px]", cls: "hidden lg:table-cell" }, { h: "Email Status", w: "w-[170px]" }, { h: "", w: "w-[160px]" }],
+        late_clock_in: [{ h: "Employee" }, { h: "Date", w: "w-[100px]" }, { h: "Clock-In", w: "w-[110px]" }, { h: "Justification", w: "w-[105px]" }, { h: "Warning", w: "w-[145px]", cls: "hidden lg:table-cell" }, { h: "Email Status", w: "w-[150px]" }, { h: "", w: "w-[214px]" }],
         no_clock_in: [{ h: "Employee" }, { h: "Department", w: "w-[150px]", cls: "hidden lg:table-cell" }, { h: "Date", w: "w-[110px]" }, { h: "Scheduled", w: "w-[100px]" }, { h: "Email Status", w: "w-[120px]" }, { h: "", w: "w-[150px]" }],
         full_attire: [{ h: "Employee" }, { h: "Verification Date", w: "w-[120px]" }, { h: "Decision", w: "w-[24%]" }, { h: "Reviewed By", w: "w-[140px]", cls: "hidden xl:table-cell" }, { h: "Email Status", w: "w-[120px]" }, { h: "", w: "w-[150px]" }],
-        no_clock_out: [{ h: "Employee" }, { h: "Date", w: "w-[110px]" }, { h: "Clock-In", w: "w-[95px]" }, { h: "Expected Out", w: "w-[110px]", cls: "hidden lg:table-cell" }, { h: "Status", w: "w-[150px]", cls: "hidden xl:table-cell" }, { h: "Email Status", w: "w-[120px]" }, { h: "", w: "w-[150px]" }],
-        history: [{ h: "Employee" }, { h: "Category", w: "w-[170px]" }, { h: "Subject", w: "w-[26%]", cls: "hidden xl:table-cell" }, { h: "Related Date", w: "w-[110px]", cls: "hidden lg:table-cell" }, { h: "Sent By", w: "w-[150px]" }, { h: "Sent At", w: "w-[120px]" }, { h: "Status", w: "w-[100px]" }, { h: "", w: "w-[120px]" }],
+        no_clock_out: [{ h: "Employee" }, { h: "Date", w: "w-[100px]" }, { h: "Clock-In", w: "w-[88px]" }, { h: "Expected Out", w: "w-[100px]", cls: "hidden lg:table-cell" }, { h: "Status", w: "w-[150px]", cls: "hidden xl:table-cell" }, { h: "Email Status", w: "w-[162px]" }, { h: "", w: "w-[214px]" }],
+        // narrower fixed columns so the Employee name always has room (it was squeezed to 0 at ~1366 px)
+        history: [{ h: "Employee" }, { h: "Category", w: "w-[140px]" }, { h: "Subject", w: "w-[18%]", cls: "hidden xl:table-cell" }, { h: "Related Date", w: "w-[105px]", cls: "hidden lg:table-cell" }, { h: "Sent By", w: "w-[140px]" }, { h: "Sent At", w: "w-[105px]" }, { h: "Status", w: "w-[90px]" }, { h: "", w: "w-[90px]" }],
     };
     const colCls = (i: number) => cols[tab][i]?.cls || "";
     const nCols = cols[tab].length;
@@ -390,7 +435,7 @@ export default function EmailManagementPage() {
                         {rows === null && <div className="py-14 text-center"><Loader2 size={18} className="animate-spin text-zinc-500 inline" /></div>}
                         {rows !== null && !rows.length && <p className="py-14 text-center text-xs text-zinc-500" data-testid="em-empty">Nothing to show for these filters.</p>}
                         {pageRows.map(r => (
-                            <div key={r.key} className="p-4 space-y-2 text-xs" data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
+                            <div key={r.key} className="p-4 space-y-2 text-xs cursor-pointer" onClick={rowClick(r.key)} data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
                                 <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0"><p className="font-semibold text-white [overflow-wrap:anywhere]">{r.employeeName}</p><p className="text-[10px] text-zinc-500 [overflow-wrap:anywhere]">{r.employeeId} · {r.email || "no email"}</p></div>
                                     <StatusBadge status={r.status} label={r.statusLabel} />
@@ -406,10 +451,11 @@ export default function EmailManagementPage() {
                         ))}
                     </div>
                 )}
-                <div className="mt-3" data-testid={`em-table-${tab}`} style={{ display: tab === "full_attire" && !wide ? "none" : undefined }}>
-                    <table className="w-full table-fixed text-xs">
+                {/* min width keeps the Employee name readable on every screen; a narrow screen scrolls the table inside this box (not the page) */}
+                <div className="mt-3 overflow-x-auto [contain:inline-size]" data-testid={`em-table-${tab}`} style={{ display: tab === "full_attire" && !wide ? "none" : undefined }}>
+                    <table className={cn("w-full table-fixed text-xs", tab === "late_clock_in" || tab === "no_clock_out" ? "min-w-[980px]" : "min-w-[1000px]")}>
                         <thead><tr className="bg-zinc-900 border-y border-zinc-800 text-[10px] text-zinc-500 uppercase tracking-wider">
-                            {cols[tab].map((c, i) => <th key={i} className={cn(th, c.w, c.cls, i === nCols - 1 && "text-right")}>{c.h}</th>)}
+                            {cols[tab].map((c, i) => <th key={i} className={cn(th, c.w, c.cls, i === nCols - 1 && "text-right sticky right-0 z-10 bg-zinc-900")}>{c.h}</th>)}
                         </tr></thead>
                         <tbody className="divide-y divide-zinc-800/70">
                             {rows === null && <tr><td colSpan={nCols} className="py-14 text-center"><Loader2 size={18} className="animate-spin text-zinc-500 inline" /></td></tr>}
@@ -417,7 +463,7 @@ export default function EmailManagementPage() {
 
                             {tab === "dress_code" && pageRows.map(r => (
                                 <Fragment key={r.key}>
-                                    <tr className="hover:bg-zinc-800/20" data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
+                                    <tr className="group hover:bg-zinc-800/20 cursor-pointer" onClick={rowClick(r.key)} data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
                                         {empCell(r)}
                                         <td className={cn(td, "text-zinc-300 whitespace-nowrap")}>{shortDate(r.date)}</td>
                                         <td className={cn(td, "text-zinc-200")} data-testid="row-reason"><p className="truncate" title={r.details.reasonText}>{r.details.reasonText || <span className="text-zinc-500">—</span>}</p>{r.warningLabel && <p className={cn("text-[10px] font-semibold", r.details.finePercent ? "text-amber-300" : "text-zinc-400")} data-testid="row-dress-warning">{r.warningLabel}</p>}{r.details.remarks && <p className="text-[10px] text-zinc-500 truncate" title={r.details.remarks}>{r.details.remarks}</p>}</td>
@@ -431,7 +477,7 @@ export default function EmailManagementPage() {
 
                             {tab === "late_clock_in" && pageRows.map(r => (
                                 <Fragment key={r.key}>
-                                    <tr className="hover:bg-zinc-800/20" data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
+                                    <tr className="group hover:bg-zinc-800/20 cursor-pointer" onClick={rowClick(r.key)} data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
                                         {empCell(r)}
                                         <td className={cn(td, "text-zinc-300 whitespace-nowrap")}>{shortDate(r.date)}</td>
                                         <td className={cn(td, "text-zinc-300 whitespace-nowrap")}>{t12(r.details.clockIn)}<p className="text-[10px] text-zinc-500">{r.details.lateText ? `${r.details.lateText} late` : ""}</p></td>
@@ -446,7 +492,7 @@ export default function EmailManagementPage() {
 
                             {tab === "no_clock_in" && pageRows.map(r => (
                                 <Fragment key={r.key}>
-                                    <tr className="hover:bg-zinc-800/20" data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
+                                    <tr className="group hover:bg-zinc-800/20 cursor-pointer" onClick={rowClick(r.key)} data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
                                         {empCell(r)}
                                         <td className={cn(td, "text-zinc-300 truncate", colCls(1))}>{r.dept || r.designation || "—"}</td>
                                         <td className={cn(td, "text-zinc-300 whitespace-nowrap")}>{shortDate(r.date)}</td>
@@ -460,7 +506,7 @@ export default function EmailManagementPage() {
 
                             {tab === "full_attire" && wide && pageRows.map(r => (
                                 <Fragment key={r.key}>
-                                    <tr className="hover:bg-zinc-800/20" data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
+                                    <tr className="group hover:bg-zinc-800/20 cursor-pointer" onClick={rowClick(r.key)} data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
                                         {empCell(r)}
                                         <td className={cn(td, "text-zinc-300 whitespace-nowrap")}>{shortDate(r.date)}</td>
                                         <td className={cn(td, "text-zinc-200")}><p className={cn("font-semibold", r.details.decision === "accepted" ? "text-emerald-300" : "text-red-300")}>{r.details.decision === "accepted" ? "Accepted" : "Rejected"}</p>{r.details.decision === "rejected" && <p className="text-[10px] text-zinc-500 truncate" title={r.details.reasonText}>{r.details.reasonText}</p>}</td>
@@ -474,12 +520,12 @@ export default function EmailManagementPage() {
 
                             {tab === "no_clock_out" && pageRows.map(r => (
                                 <Fragment key={r.key}>
-                                    <tr className="hover:bg-zinc-800/20" data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
+                                    <tr className="group hover:bg-zinc-800/20 cursor-pointer" onClick={rowClick(r.key)} data-testid="em-row" data-key={r.key} data-employee={r.employeeId}>
                                         {empCell(r)}
                                         <td className={cn(td, "text-zinc-300 whitespace-nowrap")}>{shortDate(r.date)}</td>
                                         <td className={cn(td, "text-zinc-300 whitespace-nowrap")}>{t12(r.details.clockIn)}</td>
                                         <td className={cn(td, "text-zinc-300 whitespace-nowrap", colCls(3))}>{t12(r.details.expectedOut)}</td>
-                                        <td className={cn(td, "truncate", r.status === "not_required" ? "text-zinc-500" : "text-teal-300", colCls(4))}>{r.details.attendanceStatus}</td>
+                                        <td className={cn(td, "truncate", r.status === "not_required" ? "text-zinc-500" : "text-teal-300", colCls(4))} data-testid="out-status">{r.details.clockOut ? `Clocked out at ${t12(r.details.clockOut)}` : r.details.attendanceStatus}</td>
                                         <td className={td}><StatusBadge status={r.status} label={r.statusLabel} /></td>
                                         {actionCell(r)}
                                     </tr>
@@ -488,7 +534,7 @@ export default function EmailManagementPage() {
                             ))}
 
                             {tab === "history" && pageRows.map((r, i) => (
-                                <tr key={`${r.key}:${r.at}:${i}`} className="hover:bg-zinc-800/20" data-testid="em-history-row" data-key={r.key}>
+                                <tr key={`${r.key}:${r.at}:${i}`} className="group hover:bg-zinc-800/20" data-testid="em-history-row" data-key={r.key}>
                                     {empCell(r, r.email || "—")}
                                     <td className={cn(td, "text-zinc-200 truncate")} data-testid="history-category">{r.categoryLabel}</td>
                                     <td className={cn(td, "text-zinc-400", colCls(2))}><p className="truncate" title={r.subject}>{r.subject}</p></td>
@@ -496,7 +542,7 @@ export default function EmailManagementPage() {
                                     <td className={cn(td, "max-w-0")}><p className="text-zinc-200 truncate">{r.triggeredBy || "—"}</p><p className="text-[10px] text-zinc-500" data-testid="history-role">{r.senderRole || "—"}</p></td>
                                     <td className={cn(td, "whitespace-nowrap")}><p className="text-zinc-300">{tsDate(r.at)}</p><p className="text-[10px] text-zinc-500">{tsTime(r.at)}</p></td>
                                     <td className={td}><span title={r.error || undefined}><StatusBadge status={r.status} label={r.statusLabel} /></span></td>
-                                    <td className={cn(td, "text-right")}>
+                                    <td className={cn(td, "text-right sticky right-0 z-[1] bg-[#101011] group-hover:bg-[#151516] shadow-[-8px_0_12px_-8px_rgba(0,0,0,0.8)]")}>
                                         <div className="flex items-center justify-end gap-1.5">
                                             {r.hasSentCopy && <button onClick={() => viewCopy(r.key)} className="h-7 text-[10px] font-semibold text-zinc-300 border border-zinc-800 rounded-lg px-2 hover:border-zinc-600 inline-flex items-center gap-1" data-testid="history-view">{copyLoading === r.key ? <Loader2 size={11} className="animate-spin" /> : <Eye size={11} />} View</button>}
                                             {r.canRetry && <SendEmailButton small category={r.category} relatedRecordId={r.relatedRecordId} status="failed" onDone={res => { onSent(r.key)(res); setReload(x => x + 1); }} />}
@@ -528,18 +574,18 @@ export default function EmailManagementPage() {
                     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-5 space-y-3" onClick={e => e.stopPropagation()}>
                         <div className="flex items-start gap-3">
                             <div className="min-w-0">
-                                <p className="text-sm font-bold text-white">Reject late clock-in justification</p>
-                                <p className="text-[11px] text-zinc-400">{rejectRow.employeeName} ({rejectRow.employeeId}) · {shortDate(rejectRow.date)} · clock-in {t12(rejectRow.details.clockIn)}{rejectRow.details.lateText ? ` (${rejectRow.details.lateText} late)` : ""}</p>
+                                <p className="text-sm font-bold text-white">{rejectRow.category === "no_clock_out" ? "Reject missing clock-out" : "Reject late clock-in justification"}</p>
+                                <p className="text-[11px] text-zinc-400">{rejectRow.employeeName} ({rejectRow.employeeId}) · {shortDate(rejectRow.date)} · clock-in {t12(rejectRow.details.clockIn)}{rejectRow.category === "no_clock_out" ? ` · expected out ${t12(rejectRow.details.expectedOut)}` : rejectRow.details.lateText ? ` (${rejectRow.details.lateText} late)` : ""}</p>
                             </div>
                             <button onClick={() => setRejectRow(null)} disabled={!!deciding} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close"><X size={18} /></button>
                         </div>
-                        <div className="rounded-lg bg-zinc-950/70 border border-zinc-800 px-3 py-2 text-[11px] text-zinc-300 whitespace-pre-wrap [overflow-wrap:anywhere]"><span className="text-zinc-500">Employee's reason: </span>{rejectRow.details.justificationReason || "—"}</div>
+                        <div className="rounded-lg bg-zinc-950/70 border border-zinc-800 px-3 py-2 text-[11px] text-zinc-300 whitespace-pre-wrap [overflow-wrap:anywhere]"><span className="text-zinc-500">{rejectRow.category === "no_clock_out" ? "Employee's explanation: " : "Employee's reason: "}</span>{(rejectRow.category === "no_clock_out" ? rejectRow.details.explanation : rejectRow.details.justificationReason) || "Not given"}</div>
                         <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3} maxLength={1000} placeholder="Reason for rejection (required)" data-testid="late-reject-reason"
                             className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-zinc-600" />
-                        <p className="text-[10px] text-zinc-500">After rejecting, the row shows Send Warning so you can email the employee from here.</p>
+                        <p className="text-[10px] text-zinc-500">{rejectRow.category === "no_clock_out" ? "Rejected: Half-Day (subject to HR verification). The employee is emailed the decision; you can also send the warning email from this row." : "After rejecting, the row shows Send Warning so you can email the employee from here."}</p>
                         <div className="flex justify-end gap-2">
                             <button onClick={() => setRejectRow(null)} disabled={!!deciding} className="h-9 px-4 rounded-lg border border-zinc-700 text-xs font-bold text-zinc-300">Cancel</button>
-                            <button onClick={() => decideLate(rejectRow, "reject", rejectReason.trim())} disabled={!!deciding || rejectReason.trim().length < 3} data-testid="late-reject-confirm"
+                            <button onClick={() => (rejectRow.category === "no_clock_out" ? decideMissing : decideLate)(rejectRow, "reject", rejectReason.trim())} disabled={!!deciding || rejectReason.trim().length < 3} data-testid="late-reject-confirm"
                                 className="h-9 px-4 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-50">
                                 {deciding ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />} Reject
                             </button>

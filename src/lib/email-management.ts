@@ -24,7 +24,7 @@ import { Attendance, AttendanceViolation, Employee, Holiday, LeaveRequest, Locat
 import { LateJustification } from '@/models/LateJustification';
 import { ManualEmail, ManualEmailLock } from '@/models/ManualEmail';
 import { sendMailInternal } from '@/lib/mail-server';
-import { composeViolationMail, escalation, fmtDuration, istNow, NOT_COUNTED } from '@/lib/attendance-violations';
+import { composeViolationMail, escalation, fmtDuration, istNow, NOT_COUNTED, missingOutNumbers } from '@/lib/attendance-violations';
 import { FlagRemoval } from '@/models/SalaryModule';
 import { FullAttireReview, FullAttireSubmission } from '@/models/FullAttire';
 import { fullAttireCc, fullAttireRejectCc } from '@/lib/full-attire';
@@ -471,14 +471,26 @@ async function noClockOutRows(f: Filters, locs: Map<string, string>, numbered = 
             clockIn: v.actualTime || rs[0]?.clockIn || '', expectedOut: v.scheduledTime || '', clockOut: rs.find(r => r.clockOut)?.clockOut || v.laterClockOut || '',
             attendanceStatus: clockedOut ? 'Clock-out recorded later' : v.hrStatus === 'Approved' ? 'Explanation approved' : 'No Clock-Out', violationStatus: v.hrStatus || '', locationVisits: visits,
             explanation: v.explanation || '',
+            proofUrls: Array.isArray(v.proofUrls) ? v.proofUrls : [],
+            // HR can Approve / Reject here (same decision as Attendance Log → Attendance Violations), explained or not
+            canDecide: ['Awaiting Explanation', 'Pending HR Verification'].includes(String(v.hrStatus || '')),
+            hrDecisionBy: v.hrDecisionByName || '', hrDecisionAt: v.hrDecisionAt || '', hrRemarks: v.hrRemarks || '',
         };
         const row = baseRow('no_clock_out', v.id, emp, v.date, locs);
         if (doc?.emailStatus === 'sent') { out.push(withEmail(row, 'sent', doc, { details })); continue; }
-        if (clockedOut || v.hrStatus === 'Approved' || !rs.length || rs.every(r => r.status === 'Absent' || r.status === 'On Leave')) { out.push(withEmail(row, 'not_required', doc, { details })); continue; }
+        // Missing Clock-Out rule: HR approves → no flag, no email; HR rejects → flag + warning email (numbered); undecided → wait for HR
+        if (v.hrStatus === 'Approved' || !rs.length || rs.every(r => r.status === 'Absent' || r.status === 'On Leave')) { out.push(withEmail(row, 'not_required', doc, { details })); continue; }
+        if (v.hrStatus !== 'Rejected') { out.push(withEmail(row, 'not_sent', doc, { details, canSend: false, statusLabel: 'Awaiting HR decision', awaitingDecision: true })); continue; }
         if (v.emailStatus === 'Sent') { out.push(withEmail(row, 'sent', null, { details, sentAt: v.emailSentAt || '', sentBy: 'System (automatic)', sentByRole: 'Automatic', canSend: false, statusLabel: 'Sent (automatic)' })); continue; }
         out.push(withEmail(row, emailState(doc), doc, { details }));
     }
-    return numbered ? withMonthNumbers(out, rows => monthNumbers(rows, (m, ids, last) => noClockOutRows({ from: `${m}-01`, to: last, employeeIds: ids }, locs, false))) : out;
+    if (!numbered) return out;
+    // warning number = the flag's number: its place among the month's REJECTED Missing Clock-Outs (same as Flag Calendar)
+    const nums = await missingOutNumbers(vs);
+    return out.map(r => {
+        const n = r.status !== 'not_required' && !r.awaitingDecision ? nums.get(String(r.relatedRecordId)) : undefined;
+        return n ? { ...r, warningLabel: warnLabel(n), details: { ...r.details, instance: n, warningLabel: warnLabel(n) } } : r;
+    });
 }
 
 // ─────────────────────────── list / overview / history ───────────────────────────

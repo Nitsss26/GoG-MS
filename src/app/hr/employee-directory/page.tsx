@@ -145,14 +145,19 @@ export default function EmployeeDirectoryPage() {
                     <thead className="sticky top-0 z-10">
                         <tr>
                             <th className={cn(th, pinName ? "sticky left-0 z-20 min-w-[220px]" : "min-w-[170px]")}>Employee Name</th>
-                            {["Employee ID", "Designation", "Role", "Department", "College", "Email", "Phone", "Joining Date", "Profile Status", "Actions"].map(h => <th key={h} className={th}>{h}</th>)}
+                            {["Employee ID", "Designation", "Role", "Department", "College", "Email", "Phone", "Joining Date", "Profile Status"].map(h => <th key={h} className={th}>{h}</th>)}
+                            {/* Actions stays on the right while the table scrolls sideways */}
+                            <th className={cn(th, "sticky right-0 z-20 shadow-[-8px_0_12px_-8px_rgba(0,0,0,0.8)]")}>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {loading && <tr><td colSpan={11} className="py-16 text-center"><Loader2 className="inline animate-spin text-zinc-500" /></td></tr>}
                         {!loading && !shown.length && <tr><td colSpan={11} className="py-12 text-center text-xs text-zinc-500" data-testid="dir-empty">No employees match the search / filters.</td></tr>}
                         {!loading && shown.map(r => (
-                            <tr key={r.id} className="group hover:bg-zinc-900/60" data-testid="dir-row" data-id={r.id}>
+                            // a click anywhere on the row opens the employee's details (same as View)
+                            <tr key={r.id} className="group hover:bg-zinc-900/60 cursor-pointer" data-testid="dir-row" data-id={r.id}
+                                onClick={e => { if ((e.target as HTMLElement).closest("a,button,input,select,textarea")) return; setView(r.id); }}
+                                onKeyDown={e => { if (e.key === "Enter" && e.target === e.currentTarget) setView(r.id); }} tabIndex={0} title={`Open ${r.name}`}>
                                 <td className={cn(td, "max-w-[260px]", pinName && "sticky left-0 z-[1] bg-[#0b0c0e] group-hover:bg-zinc-900")}>
                                     <div className="flex items-center gap-2.5 min-w-0">
                                         {r.photoUrl ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={r.photoUrl} alt="" className="w-7 h-7 rounded-full object-cover border border-zinc-700 shrink-0" loading="lazy" />
@@ -172,7 +177,7 @@ export default function EmployeeDirectoryPage() {
                                     <span className={cn("px-2 py-0.5 rounded-md border text-[10px] font-bold", r.profileStatus === "Completed" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" : "bg-amber-500/10 border-amber-500/30 text-amber-300")}
                                         title={r.missing ? `${r.missing} item(s) missing` : ""} data-testid="dir-status">{r.profileStatus}</span>
                                 </td>
-                                <td className={td}>
+                                <td className={cn(td, "sticky right-0 z-[1] bg-[#0b0c0e] group-hover:bg-zinc-900 shadow-[-8px_0_12px_-8px_rgba(0,0,0,0.8)]")}>
                                     <button onClick={() => setView(r.id)} data-testid="dir-view" className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 text-[11px] font-bold hover:bg-emerald-500/20"><Eye size={12} /> View</button>
                                 </td>
                             </tr>

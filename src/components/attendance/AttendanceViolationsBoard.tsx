@@ -140,7 +140,7 @@ export default function AttendanceViolationsBoard() {
                                 <td className="px-3 py-2.5 text-zinc-400">{t12(v.scheduledTime)}</td>
                                 <td className="px-3 py-2.5 text-zinc-400 whitespace-nowrap">{v.type === "MISSING_OUT" ? (v.laterClockOut ? `Out ${t12(v.laterClockOut)}` : "No clock-out") : t12(v.actualTime)}</td>
                                 <td className="px-3 py-2.5 text-zinc-400">{v.type === "MISSING_OUT" ? "—" : dur(v.durationMins)}</td>
-                                <td className="px-3 py-2.5 text-white font-bold">{v.instance}</td>
+                                <td className="px-3 py-2.5 text-white font-bold" title={v.type === "MISSING_OUT" && v.instance == null ? "Numbered only after HR rejects it" : undefined}>{v.instance ?? "—"}</td>
                                 <td className="px-3 py-2.5 text-zinc-300 whitespace-nowrap">{LEVEL[v.level] || v.level}</td>
                                 <td className="px-3 py-2.5 text-zinc-300 whitespace-nowrap">{v.proposedDeduction}</td>
                                 <td className={cn("px-3 py-2.5 font-bold", EMAIL_STYLE[v.emailStatus] || "text-zinc-400")} data-testid="viol-email" title={v.emailError || ""}>{v.emailStatus}</td>
@@ -163,7 +163,7 @@ export default function AttendanceViolationsBoard() {
                         {([
                             ["Employee", `${open.employeeName} (${open.employeeId})`], ["Email", open.email || "—"],
                             ["Scheduled", t12(open.scheduledTime)], [open.type === "MISSING_OUT" ? "Clock-In" : "Actual", t12(open.actualTime)],
-                            ["Instance", String(open.instance)], ["Level", LEVEL[open.level] || open.level], ["Proposed deduction", open.proposedDeduction],
+                            ["Instance", open.instance == null ? (open.type === "MISSING_OUT" ? "— (numbered only after HR rejects it)" : "—") : String(open.instance)], ["Level", LEVEL[open.level] || open.level], ["Proposed deduction", open.proposedDeduction],
                             ["Email status", `${open.emailStatus}${open.emailSentAt ? ` · ${new Date(open.emailSentAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}` : ""}${open.emailError ? ` · ${open.emailError}` : ""}`],
                             ["HR status", open.hrStatus + (open.hrDecisionByName ? ` by ${open.hrDecisionByName}` : "")], ["HR remarks", open.hrRemarks || "—"],
                             ...(open.type === "MISSING_OUT" ? [["Explanation", open.explanation || "Not submitted yet"], ["Later clock-out", open.laterClockOut ? t12(open.laterClockOut) : "—"]] : []),

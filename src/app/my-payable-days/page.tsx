@@ -118,6 +118,7 @@ export default function MyPayableDaysPage() {
     }, [openTicket, tickets.length]);
 
     const c = data?.calc;
+    const statusText = (d: any) => d.payableStatus === "Not Employed" && /before joining/i.test(String(d.reason || "")) ? "Not Joined" : d.payableStatus;
     const days = useMemo(() => (c?.days || []).filter((d: any) => !onlyIssues || ["Non-Payable", "Partly Payable"].includes(d.payableStatus) || d.penalties.length || d.correction), [c, onlyIssues]);
     const counted = (c?.penalties || []).filter((p: any) => p.status !== "Removed");
     // Full Attire penalties are dress-code type (same warnings / fines)
@@ -161,6 +162,7 @@ export default function MyPayableDaysPage() {
                         <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">My Salary &amp; Payable Days</h1>
                         <p className="text-xs text-zinc-400 mt-1 [overflow-wrap:anywhere]">
                             {data?.employee ? <>{data.employee.name} · {data.employee.id}{data.employee.designation ? ` · ${data.employee.designation}` : ""}{data.employee.locationName ? ` · ${data.employee.locationName}` : ""}</> : "Your payable days, leaves and penalties"}
+                            {data?.joiningDate && <span className="block mt-0.5 text-emerald-200/90" data-testid="pd-joining-date">Joining Date: <b className="text-white">{dmy(data.joiningDate)}</b></span>}
                         </p>
                     </div>
                 </div>
@@ -227,7 +229,7 @@ export default function MyPayableDaysPage() {
                                 <div key={d.date} className="py-3 space-y-1.5 text-xs" data-testid="pd-day-card">
                                     <div className="flex items-start justify-between gap-2">
                                         <p><span className="font-semibold text-white">{dmy(d.date)}</span> <span className="text-zinc-500">{d.weekday}</span></p>
-                                        <p className={`text-right font-bold ${PAY_STYLE[d.payableStatus]}`}>{d.payableStatus}{d.payableStatus === "Partly Payable" ? ` (${n(d.payable)})` : ""}{d.correction && <span className="block text-[10px] font-semibold text-zinc-500">Was: {d.basePayableStatus}</span>}</p>
+                                        <p className={`text-right font-bold ${PAY_STYLE[d.payableStatus]}`}>{statusText(d)}{d.payableStatus === "Partly Payable" ? ` (${n(d.payable)})` : ""}{d.correction && <span className="block text-[10px] font-semibold text-zinc-500">Was: {d.basePayableStatus}</span>}</p>
                                     </div>
                                     <p className="text-zinc-300"><span className="text-zinc-500">Attendance:</span> {d.attendance}{d.leave ? <> · <span className="text-zinc-500">Leave:</span> {d.leave}</> : null}</p>
                                     <div className="text-zinc-400 [overflow-wrap:anywhere]">{d.correction ? (
@@ -249,7 +251,7 @@ export default function MyPayableDaysPage() {
                                             <td className="py-2 px-2 whitespace-nowrap text-zinc-300"><span className="font-semibold text-white">{dmy(d.date)}</span> <span className="text-zinc-500">{d.weekday}</span></td>
                                             <td className="py-2 px-2 text-zinc-300">{d.attendance}</td>
                                             <td className="py-2 px-2 text-zinc-300">{d.leave || "—"}</td>
-                                            <td className={`py-2 px-2 font-bold whitespace-nowrap ${PAY_STYLE[d.payableStatus]}`}>{d.payableStatus}{d.payableStatus === "Partly Payable" ? ` (${n(d.payable)})` : ""}{d.correction && <span className="block text-[10px] font-semibold text-zinc-500">Was: {d.basePayableStatus}</span>}</td>
+                                            <td className={`py-2 px-2 font-bold whitespace-nowrap ${PAY_STYLE[d.payableStatus]}`}>{statusText(d)}{d.payableStatus === "Partly Payable" ? ` (${n(d.payable)})` : ""}{d.correction && <span className="block text-[10px] font-semibold text-zinc-500">Was: {d.basePayableStatus}</span>}</td>
                                             <td className="py-2 px-2 text-zinc-400 [overflow-wrap:anywhere]">
                                                 {d.correction ? (
                                                     <span className={d.correction.direction === "TO_NON_PAYABLE" ? "text-red-200" : "text-violet-200"} data-testid="pd-correction">{d.correction.direction === "TO_NON_PAYABLE" ? "Marked non-payable" : "Marked payable"} by {d.correction.correctedByRole || "HR"} ({d.correction.correctedByName}) · {dt(d.correction.correctedAt)}<span className="block text-zinc-400">Reason: {d.correction.correctionReason}</span><span className="block text-zinc-500">Original attendance: {d.attendance}{d.leave ? ` · ${d.leave}` : ""} — {d.baseReason}</span></span>

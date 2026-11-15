@@ -31,7 +31,7 @@ export async function POST(req: Request) {
         const explanation = String(b.explanation || '').trim().replace(/[ \t]+/g, ' ').slice(0, 3000);
         if (half) {
             if (!HALF_DAY_REASONS.includes(halfReason)) return NextResponse.json({ error: 'Choose the reason for Half Day Payable.' }, { status: 400 });
-            if (explanation.length < 10) return NextResponse.json({ error: halfReason === 'Other' ? 'Write the reason for "Other" (at least 10 characters).' : 'Write the explanation (at least 10 characters).' }, { status: 400 });
+            if (!explanation) return NextResponse.json({ error: halfReason === 'Other' ? 'Write the reason for "Other".' : 'Write the explanation.' }, { status: 400 });
         }
         const picked = half ? halfReason : String(b.category || '');
         if (!half && !(toPay ? CORRECTION_CATEGORIES : NON_PAYABLE_CATEGORIES).includes(picked)) return NextResponse.json({ error: 'Choose a correction category.' }, { status: 400 });

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { User, LogIn, ChevronDown, Lock, Key, LayoutDashboard, ShieldCheck, Zap } from "lucide-react";
+import { User, LogIn, ChevronDown, Lock, Key, LayoutDashboard, ShieldCheck, Zap, Eye, EyeOff } from "lucide-react";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 
 const ROLE_OPTIONS = [
@@ -27,6 +27,7 @@ export default function LoginPage() {
     const [selectedRole, setSelectedRole] = useState("FOUNDER");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [showPassword, setShowPassword] = useState(false);   // eye button: show / hide what was typed
     const [error, setError] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [mounted, setMounted] = useState(false);
@@ -236,13 +237,18 @@ export default function LoginPage() {
                                         <Key size={16} />
                                     </div>
                                     <input
-                                        type="password"
+                                        type={showPassword ? "text" : "password"}
+                                        data-testid="login-password"
                                         placeholder="Institutional Passcode"
-                                        className="w-full bg-[#1c1f26]/40 border border-white/10 rounded-xl lg:rounded-2xl py-3.5 lg:py-4 pl-11 lg:pl-12 pr-4 text-[13px] lg:text-[14px] text-white font-semibold focus:border-[#10b981]/50 outline-none transition-all"
+                                        className="w-full bg-[#1c1f26]/40 border border-white/10 rounded-xl lg:rounded-2xl py-3.5 lg:py-4 pl-11 lg:pl-12 pr-12 text-[13px] lg:text-[14px] text-white font-semibold focus:border-[#10b981]/50 outline-none transition-all"
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                     />
-                                    <Lock size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                    <button type="button" onClick={() => setShowPassword(v => !v)} data-testid="toggle-password"
+                                        aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} title={showPassword ? "Hide password" : "Show password"}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-zinc-400 hover:text-white focus:text-[#10b981] outline-none">
+                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
                                 </div>
                             </div>
 

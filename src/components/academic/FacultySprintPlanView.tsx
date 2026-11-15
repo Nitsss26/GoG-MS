@@ -5,7 +5,7 @@ import SprintPlanWorkflowPanel from "@/components/academic/SprintPlanWorkflowPan
 import { getPlanStatus } from "@/lib/academic-status";
 import {
     CalendarDays, Lock, Clock, BookOpen, ArrowLeft, ArrowRight,
-    Check, AlertTriangle, ShieldCheck, CheckCircle2, Download
+    Check, AlertTriangle, ShieldCheck, CheckCircle2, Download, List, LayoutGrid
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -32,6 +32,8 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
     const [loadError, setLoadError] = useState("");
     const [planWeeks, setPlanWeeks] = useState<string[]>([]); // weeks of this professor that have a submitted plan
+    // how the week is shown: day-wise slots (as before) or a timetable grid (days across, time slots down)
+    const [view, setView] = useState<"slots" | "timetable">("slots");
 
     const getWeekDates = (offset = 0) => {
         const now = new Date();
@@ -331,7 +333,75 @@ export default function FacultySprintPlanView({ facultyId, facultyName }: Facult
                         {!plan.canManage && <p className="text-[10px] text-zinc-500 mt-2">You can view this plan. Locking / unlocking is done by HOI, CL, CH or AD of the professor&apos;s college.</p>}
                     </div>
 
-                    {weekInfo.dates.map(({ day, date }) => {
+                    {/* Slots / Timetable switch */}
+                    <div className="flex justify-end">
+                        <div className="inline-flex p-1 rounded-xl bg-zinc-900/60 border border-zinc-800" role="tablist" data-testid="sp-view-switch">
+                            {([["slots", "Slots", List], ["timetable", "Timetable", LayoutGrid]] as const).map(([k, label, Icon]) => (
+                                <button key={k} type="button" role="tab" aria-selected={view === k} data-testid={`sp-view-${k}`} onClick={() => setView(k)}
+                                    className={cn("inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                                        view === k ? "bg-indigo-600 text-white shadow" : "text-zinc-400 hover:text-white")}>
+                                    <Icon size={13} /> {label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {view === "timetable" && (() => {
+                        // rows: every distinct time slot of the week (start – end), earliest first; columns: Mon – Sat
+                        const entriesOf = (day: string, date: string) => (plan.entries || []).filter((e: any) => e.date === date || e.day === day);
+                        const slotKey = (e: any) => `${e.timeStart || ""}|${e.timeStop || ""}`;
+                        const slots = Array.from(new Set<string>(weekInfo.dates.flatMap(({ day, date }) => entriesOf(day, date).map(slotKey))))
+                            .sort((a, b) => a.localeCompare(b));
+                        if (!slots.length) return <div className="rounded-xl bg-zinc-900/50 border border-zinc-800 px-4 py-10 text-center text-xs text-zinc-600" data-testid="sp-tt-empty">No lectures scheduled this week</div>;
+                        return (
+                            <div className="rounded-xl bg-zinc-900/50 border border-zinc-800 overflow-x-auto [contain:inline-size]" data-testid="sp-timetable">
+                                <table className="w-full min-w-[640px] table-fixed border-collapse text-left">
+                                    <thead>
+                                        <tr className="bg-zinc-800/40">
+                                            <th className="w-[78px] px-2.5 py-3 text-[9px] font-black text-zinc-400 uppercase tracking-widest border-b border-r border-zinc-800">Time</th>
+                                            {weekInfo.dates.map(({ day, date }) => (
+                                                <th key={date} className="px-2 py-3 text-center border-b border-r last:border-r-0 border-zinc-800">
+                                                    <div className="text-[10px] font-black text-white tracking-[0.2em]">{day}</div>
+                                                    <div className="text-[9px] font-bold text-zinc-500 mt-0.5 tabular-nums">{formatDateDMY(date)}</div>
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {slots.map(sk => {
+                                            const [ts, te] = sk.split("|");
+                                            return (
+                                                <tr key={sk} className="align-top" data-testid="sp-tt-row">
+                                                    <td className="px-2.5 py-3 border-b border-r border-zinc-800 bg-zinc-900/40">
+                                                        <div className="text-[10px] font-black text-white tabular-nums">{ts}</div>
+                                                        {te && <div className="text-[9px] font-bold text-zinc-500 tabular-nums">to {te}</div>}
+                                                    </td>
+                                                    {weekInfo.dates.map(({ day, date }) => {
+                                                        const here = entriesOf(day, date).filter((e: any) => slotKey(e) === sk);
+                                                        return (
+                                                            <td key={date} className="p-1.5 border-b border-r last:border-r-0 border-zinc-800" data-testid="sp-tt-cell" data-day={day}>
+                                                                {here.length === 0 ? <div className="py-3 text-center text-[9px] text-zinc-700">—</div> : here.map((entry: any, i: number) => (
+                                                                    <div key={i} className="mb-1 last:mb-0 rounded-lg border border-indigo-500/25 bg-indigo-500/[0.08] px-2 py-1.5 min-w-0" data-testid="sp-tt-entry">
+                                                                        <div className="text-[10px] font-black text-white leading-tight line-clamp-2 break-words" title={entry.subjectName}>{entry.subjectName}</div>
+                                                                        {entry.subjectCode && <div className="text-[8px] font-black text-zinc-500 uppercase tracking-widest truncate">{entry.subjectCode}</div>}
+                                                                        {(entry.stream || entry.year) && <div className="text-[9px] font-bold text-indigo-200 mt-0.5 line-clamp-2 break-words">{[entry.stream, entry.year].filter(Boolean).join(" · ")}</div>}
+                                                                        {(entry.lectureType || entry.unitNumber || entry.section) && <div className="text-[8.5px] text-zinc-400 truncate">{[entry.lectureType, entry.unitNumber ? `Unit ${entry.unitNumber}` : "", entry.section ? `Sec ${entry.section}` : ""].filter(Boolean).join(" · ")}</div>}
+                                                                        {entry.topics && <div className="text-[8.5px] italic text-zinc-500 truncate" title={entry.topics}>{entry.topics}</div>}
+                                                                    </div>
+                                                                ))}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        );
+                    })()}
+
+                    {view === "slots" && weekInfo.dates.map(({ day, date }) => {
                         const dayEntries = (plan.entries || []).filter((e: any) => e.date === date || e.day === day);
                         return (
                             <div key={date} className="rounded-xl bg-zinc-900/50 border border-zinc-800 overflow-hidden">

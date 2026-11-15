@@ -393,7 +393,7 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                 const candidates = hoiAllowed.length ? colleges.filter(c => hoiAllowed.includes(c.id)) : colleges;
                 // OM without allotted Clock-In Locations is checked against the scheduled location only (like a professor),
                 // never against every location saved in the OMS
-                if ((emp.role === "HOI" || (emp.role === "OM" && hoiAllowed.length > 0) || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM" || emp.role === "TECH_INTERN") && candidates.length > 0) {
+                if ((emp.role === "HOI" || (emp.role === "OM" && hoiAllowed.length > 0) || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM" || emp.role === "PLACEMENT_INTERN_HEAD" || emp.role === "TECH_INTERN") && candidates.length > 0) {
                     let closestCollege = candidates[0];
                     let minDistance = 999999;
 
@@ -655,9 +655,10 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
             // Short Leave is no longer used: an early clock-out is an Early Clock-Out for everyone
             const isShortLeave = false;
 
-            // OM with assigned locations: the clock-out location is checked too (any assigned college). HOI: from anywhere.
-            const hoiAllowed: string[] = emp.role === "OM" ? ((emp as any).attendanceLocations || []) : [];
-            if (hoiAllowed.length && !isWFH && navigator.geolocation) {
+            // Clock-out needs the location too (same places as the clock-in; outside → "Out of range"). WFH day: not needed.
+            setClockInError(null);
+            const remoteToday = isWFH || (todaysRecord as any)?.workMode === "WFH" || String(todaysRecord?.location || "").toLowerCase() === "wfh";
+            if (!remoteToday && navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     pos => clockOut(timeNow, isShortLeave, pos.coords.latitude, pos.coords.longitude),
                     (err) => setClockInError(`Location is needed to clock out. ${geoErrorInfo(err).message}`),
@@ -1196,6 +1197,11 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                                         {visit.unassigned && <a href="/tickets" className="inline-block text-sky-300 underline">Request location access</a>}
                                     </div>
                                 )}
+                            </div>
+                        )}
+                        {clockInError && (
+                            <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-xl flex items-center gap-2" role="alert" data-testid="clock-out-error">
+                                <AlertTriangle size={14} className="text-red-400 shrink-0" /><p className="text-[10px] text-red-400 [overflow-wrap:anywhere]">{clockInError}</p>
                             </div>
                         )}
                         <button onClick={handleCheckOut} className="w-full py-3.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all">

@@ -46,17 +46,17 @@ const managerMenu = [
     { label: "Weekly Calendar", icon: CalendarDays, path: "/academic/weekly-calendar", roles: ["OM", "HOI", "AD", "FOUNDER"] as Role[] },
     { label: "Class Verification", icon: BadgeCheck, path: "/academic/verification", roles: ["OM", "HOI", "AD", "FOUNDER"] as Role[] },
     { label: "Full Attire", icon: Shirt, path: "/full-attire", roles: ["OM"] as Role[] },
-    { label: "Location Justifications", icon: MapPin, path: "/attendance/location-justifications", roles: ["OM", "HOI", "AD"] as Role[] },
+    { label: "Location Justifications", icon: MapPin, path: "/attendance/location-justifications", roles: ["HOI", "AD"] as Role[] },
     { label: "Sprint Plan Approvals", icon: CalendarCheck, path: "/curriculum/sprint-plans", roles: ["HOI"] as Role[] },
     { label: "Leave Approval", icon: CalendarCheck, path: "/manager/leave-approval", hideFor: ["OM"] as Role[] },
     { label: "Leave Summary", icon: CalendarRange, path: "/leave-summary", roles: ["HOI", "AD"] as Role[] },
     { label: "Responsibility Approvals", icon: Award, path: "/manager/responsibility-approvals", roles: ["AD", "FOUNDER"] as Role[] },
     { label: "Report Misbehaviour", icon: AlertTriangle, path: "/manager/misbehaviour" },
-    { label: "Ratings", icon: Star, path: "/manager/ratings" },
-    { label: "Work Location", icon: MapPin, path: "/manager/work-location", hideFor: ["OM"] as Role[] },
+    // "Ratings" removed: Monthly Feedback does the same job and is the one that is saved + counted on the Leaderboard
+    { label: "Work Location", icon: MapPin, path: "/manager/work-location", hideFor: ["OM", "AD"] as Role[] },
     { label: "Monthly Feedback", icon: TrendingUp, path: "/management/monthly", roles: ["FOUNDER", "AD", "HOI"] as Role[] },
-    { label: "Holidays", icon: CalendarCheck, path: "/manager/holidays" },
-    { label: "Attendance Override", icon: ClipboardList, path: "/manager/attendance-override", hideFor: ["OM"] as Role[] },
+    { label: "Holidays", icon: CalendarCheck, path: "/manager/holidays", hideFor: ["OM", "AD"] as Role[] },
+    { label: "Attendance Override", icon: ClipboardList, path: "/manager/attendance-override", hideFor: ["OM", "AD", "HR", "FOUNDER"] as Role[] },
     { label: "Locations Map", icon: MapPin, path: "/locations", hideFor: ["OM"] as Role[] },
 ];
 
@@ -286,8 +286,8 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
     const founderSections: { key: string; title: string; items: NavItem[] }[] = founderLayout ? [
         { key: "core", title: "Core", items: NO_REIMBURSEMENT(coreMenu, user) },
         { key: "personal", title: "Personal", items: personalMenu.map(i => i.path === "/notifications" ? { ...i, badge: unreadNotifications } : i) },
-        { key: "manager", title: "Manager Suite", items: managerMenu.filter((i: any) => (!i.roles || i.roles.includes("FOUNDER")) && !(i.hideFor || []).includes("FOUNDER")) },
-        { key: "hradmin", title: (user as any)?.hrExecutive ? "HR Executive Portal" : "HR Administration", items: NO_REIMBURSEMENT(hrMenu.map(i => i.path === "/hr/schedule-approval" ? { ...i, badge: unreadScheduleChanges } : i), user) },
+        { key: "manager", title: "Academic Suite", items: managerMenu.filter((i: any) => (!i.roles || i.roles.includes("FOUNDER")) && !(i.hideFor || []).includes("FOUNDER")) },
+        { key: "hradmin", title: (user as any)?.hrExecutive ? "HR Executive Portal" : "HR Administration", items: NO_REIMBURSEMENT(hrMenu.filter(i => i.path !== "/hr/attendance-override").map(i => i.path === "/hr/schedule-approval" ? { ...i, badge: unreadScheduleChanges } : i), user) },
         { key: "email", title: "Email Management", items: emailMenu },
         { key: "curriculum", title: "CL / CH & Academics", items: curriculumMenu.filter(i => !i.roles || i.roles.includes("FOUNDER")) },
         { key: "founder", title: "Founder Console", items: founderMenu },
