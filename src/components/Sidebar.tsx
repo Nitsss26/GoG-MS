@@ -47,7 +47,7 @@ const managerMenu = [
     { label: "Class Verification", icon: BadgeCheck, path: "/academic/verification", roles: ["OM", "HOI", "AD", "FOUNDER"] as Role[] },
     { label: "Full Attire", icon: Shirt, path: "/full-attire", roles: ["OM"] as Role[] },
     { label: "Location Justifications", icon: MapPin, path: "/attendance/location-justifications", roles: ["HOI", "AD"] as Role[] },
-    { label: "Sprint Plan Approvals", icon: CalendarCheck, path: "/curriculum/sprint-plans", roles: ["HOI"] as Role[] },
+    { label: "Sprint Plan Audit", icon: CalendarCheck, path: "/curriculum/sprint-plans", roles: ["HOI"] as Role[] },
     { label: "Leave Approval", icon: CalendarCheck, path: "/manager/leave-approval", hideFor: ["OM"] as Role[] },
     { label: "Leave Summary", icon: CalendarRange, path: "/leave-summary", roles: ["HOI", "AD"] as Role[] },
     { label: "Responsibility Approvals", icon: Award, path: "/manager/responsibility-approvals", roles: ["AD", "FOUNDER"] as Role[] },

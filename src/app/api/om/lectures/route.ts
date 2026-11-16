@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import { LectureReport, SprintPlan, Employee } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
 import { getAcademicScope, professorsInScope, selectableColleges } from '@/lib/academic';
+import { planVisibleFor, planCollegeOf } from '@/lib/professor-routine';
 import { recordInScope, ensureRecordForClass, classesOfDay } from '@/lib/class-record-workflow';
 import { getPlanStatus, getClassStatus } from '@/lib/academic-status';
 
@@ -56,15 +57,19 @@ export async function GET(req: Request) {
         const combinedLectures: any[] = [];
 
         faculties.forEach(fac => {
-            const facPlan = plans.find(p => p.facultyId === fac.id && getPlanStatus(p) !== 'DRAFT');
-            const facReports = reports.filter(r => r.facultyId === fac.id);
+            // multi-college professor: one plan per college — only those of colleges in this scope
+            const facPlans = plans.filter(p => p.facultyId === fac.id && getPlanStatus(p) !== 'DRAFT' && planVisibleFor(fac, p));
+            const ps = (fac as any)._planScope;
+            const onlyPlans = ps && !ps.all && !(ps.keys || []).includes(String(fac.location || ''));
+            const shownIds = new Set(facPlans.map(p => String(p._id)));
+            const facReports = reports.filter(r => r.facultyId === fac.id && (!onlyPlans || shownIds.has(String((r as any).sprintPlanId || ''))));
 
-            // Sprint entries for today
-            const todayEntries = facPlan ? classesOfDay(facPlan, targetDate) : [];
+            // Sprint entries for today (lecture number = position in its own plan's day, as before)
+            const todayEntries: any[] = facPlans.flatMap(pl => classesOfDay(pl, targetDate).map((e: any, i: number) => ({ ...e, _lecNum: i + 1, _college: planCollegeOf(pl, fac.location) })));
 
             if (todayEntries.length > 0) {
                 todayEntries.forEach((entry: any, idx: number) => {
-                    const lecNum = idx + 1;
+                    const lecNum = entry._lecNum ?? idx + 1;
                     const existingReport = facReports.find(r => r.sprintEntryId && r.sprintEntryId === String(entry._id)) || facReports.find(r =>
                         !r.sprintEntryId && (r.lectureNumber === lecNum ||
                         (r.courseName === entry.subjectName && r.topicsCovered === entry.topics))
@@ -81,7 +86,7 @@ export async function GET(req: Request) {
                         reportId: existingReport?._id?.toString(),
                         facultyId: fac.id,
                         facultyName: fac.name,
-                        college: fac.location || "Campus",
+                        college: entry._college || fac.location || "Campus",
                         date: targetDate,
                         day: targetDay,
                         lectureNumber: lecNum,

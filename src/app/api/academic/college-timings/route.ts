@@ -6,6 +6,7 @@ import { getSessionUser } from '@/lib/session-user';
 import { getAcademicScope, resolveCollege, nowISO, zonedNow, mondayOf } from '@/lib/academic';
 import { PROFESSOR_ROLES } from '@/lib/academic-status';
 import { HM_RE, toMin, fmt12, fmtDate, collegeOfEmployee, collegeProfessorIds } from '@/lib/sprint-plan-rules';
+import { professorRoutine, routineCollege } from '@/lib/professor-routine';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,12 @@ export const dynamic = 'force-dynamic';
  *         or when someone else changed the timing meanwhile (version mismatch).
  */
 async function targetCollege(actor: any, requested: string | null) {
+    if (PROFESSOR_ROLES.includes(actor.role) && requested) {
+        // multi-college professor (HR work-location routine): may read the timing of any of their colleges
+        const r = await professorRoutine(actor.employee || { id: actor.id }, []);
+        const c = routineCollege(r, requested);
+        if (c) return { id: c.id, name: c.name, keys: c.keys };
+    }
     if (PROFESSOR_ROLES.includes(actor.role) || !requested) return collegeOfEmployee(actor.employee);
     const c = await resolveCollege(requested);
     if (!c) return null;
@@ -70,9 +77,10 @@ export async function PUT(req: Request) {
         // Classes of this college from today onwards that would be outside the new hours
         const today = zonedNow().ymd;
         const ids = await collegeProfessorIds(college.keys);
-        const plans: any[] = ids.length ? await SprintPlan.find({ facultyId: { $in: ids }, weekStartDate: { $gte: mondayOf(today) } }).select('facultyName entries').lean() : [];
+        const plans: any[] = ids.length ? await SprintPlan.find({ facultyId: { $in: ids }, weekStartDate: { $gte: mondayOf(today) } }).select('facultyName entries college collegeFixed').lean() : [];
         const outside: string[] = [];
-        for (const p of plans) for (const e of p.entries || []) {
+        // a multi-college professor's plan of another college follows that college's timing, not this one
+        for (const p of plans.filter(p => !(p.collegeFixed && p.college && !college.keys.includes(String(p.college))))) for (const e of p.entries || []) {
             if (e.date >= today && (toMin(e.timeStart) < toMin(startTime) || toMin(e.timeStop) > toMin(endTime))) {
                 outside.push(`${p.facultyName} — ${e.subjectName || 'Class'}, ${fmtDate(e.date)} ${fmt12(e.timeStart)} – ${fmt12(e.timeStop)}`);
             }

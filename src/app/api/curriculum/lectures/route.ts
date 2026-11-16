@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
-import { LectureReport, Employee } from '@/models/Schemas';
+import { SprintPlan, LectureReport, Employee } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
 import { getAcademicScope, professorsInScope } from '@/lib/academic';
+import { planVisibleFor } from '@/lib/professor-routine';
 import { performClassAction, recordInScope } from '@/lib/class-record-workflow';
 import { getClassStatus, CL_CH_ROLES, VERIFICATION_ROLES } from '@/lib/academic-status';
 
@@ -33,9 +34,21 @@ export async function GET(req: Request) {
             }
         }
 
-        const reports = await LectureReport.find(query)
+        let reports: any[] = await LectureReport.find(query)
             .sort({ date: -1, lectureNumber: 1 })
             .lean();
+        // multi-college professor: only the class records of plans of colleges in this scope
+        const facById = new Map(scopedFaculties.map((f: any) => [f.id, f]));
+        if (scopedFaculties.some((f: any) => f._planScope && !f._planScope.all)) {
+            const pids = Array.from(new Set(reports.map((r: any) => String(r.sprintPlanId || '')).filter(Boolean)));
+            const planById = new Map((await SprintPlan.find({ _id: { $in: pids } }).select('facultyId college collegeFixed').lean()).map((p: any) => [String(p._id), p]));
+            reports = reports.filter((r: any) => {
+                const fac: any = facById.get(r.facultyId), ps = fac?._planScope;
+                if (!ps || ps.all) return true;
+                const pl = planById.get(String(r.sprintPlanId || ''));
+                return pl ? planVisibleFor(fac, pl) : (ps.keys || []).includes(String(fac.location || ''));
+            });
+        }
 
         return NextResponse.json({
             success: true,

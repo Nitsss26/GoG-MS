@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { SprintPlan, LectureReport } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
+import { planVisibleFor, planCollegeOf } from '@/lib/professor-routine';
 import { getAcademicScope, professorsInScope, selectableColleges, mondayOf, addDays, zonedNow, isValidYmd, hasClassEnded } from '@/lib/academic';
 import { effectiveEntries } from '@/lib/class-record-workflow';
 import { getPlanStatus, getClassStatus, CALENDAR_ROLES, PROFESSOR_ROLES } from '@/lib/academic-status';
@@ -49,8 +50,10 @@ export async function GET(req: Request) {
             const status = getPlanStatus(plan);
             // Only submitted / approved plans appear (a professor also sees their own draft in "My Schedule")
             if (status === 'DRAFT' && !(view === 'mine' && plan.facultyId === actor.id)) continue;
-            const entries = effectiveEntries(plan);
             const prof: any = profMap.get(plan.facultyId);
+            // multi-college professor: only the plan of a college in this view's scope (each class shows once, under its college)
+            if (!planVisibleFor(prof, plan)) continue;
+            const entries = effectiveEntries(plan);
             const byDate: Record<string, number> = {};
             entries.forEach((e: any) => {
                 if (!e.date || e.date < weekStart || e.date > weekEnd) return;
@@ -60,7 +63,7 @@ export async function GET(req: Request) {
                 classes.push({
                     id: `${plan._id}-${e._id}`,
                     planId: String(plan._id), planStatus: status, sprintEntryId: String(e._id), lectureNumber: num,
-                    facultyId: plan.facultyId, facultyName: plan.facultyName || prof?.name, college: prof?.location || plan.college,
+                    facultyId: plan.facultyId, facultyName: plan.facultyName || prof?.name, college: planCollegeOf(plan, prof?.location),
                     day: e.day, date: e.date, timeStart: e.timeStart, timeStop: e.timeStop,
                     subjectCode: e.subjectCode, subjectName: e.subjectName, topics: e.topics, content: e.content,
                     lectureType: e.lectureType, unitNumber: e.unitNumber, className: e.className,

@@ -6,7 +6,7 @@
  * short name, so all three are accepted). No separate college mapping is created.
  */
 import { randomBytes } from 'crypto';
-import { Employee, Location, Notification } from '@/models/Schemas';
+import { Employee, Location, Notification, WorkSchedule } from '@/models/Schemas';
 import { sendMailInternal } from '@/lib/mail-server';
 import { getAcademicNotificationTemplate } from '@/lib/mail-templates';
 import { PROFESSOR_ROLES } from '@/lib/academic-status';
@@ -241,14 +241,27 @@ export async function professorsInScope(scope: AcademicScope, collegeFilter?: st
             query.$or = [{ location: { $in: keys } }, ...(ids.length ? [{ id: { $in: ids } }] : [])];
         }
     }
-    return Employee.find(query).select('id name email location role designation').lean();
+    const list: any[] = await Employee.find(query).select('id name email location role designation').lean();
+    // Multi-college professors: HR's work-location routine puts them at this college on some days → in scope too,
+    // but only their plans / classes of this college are shown (_planScope, see planVisibleFor).
+    if (keys && keys.length) {
+        const have = new Set(list.map(p => String(p.id)));
+        const rows: any[] = await WorkSchedule.find({ location: { $in: keys } }).select('employeeId').lean();
+        const extra = Array.from(new Set(rows.map(r => String(r.employeeId)))).filter(id => !have.has(id));
+        if (extra.length) list.push(...(await Employee.find({ id: { $in: extra }, role: { $in: PROFESSOR_ROLES } }).select('id name email location role designation').lean()));
+    }
+    for (const p of list) p._planScope = { all: scope.orgWide || (scope.facultyIds || []).includes(String(p.id)), keys: keys || [] };
+    return list;
 }
 
 /** The professor, if the scope may act on them */
 export async function professorIfInScope(scope: AcademicScope, facultyId: string) {
     const prof: any = await Employee.findOne({ id: facultyId, role: { $in: PROFESSOR_ROLES } }).lean();
     if (!prof) return null;
-    return scopeAllowsProfessor(scope, prof.id, prof.location) ? prof : null;
+    if (scopeAllowsProfessor(scope, prof.id, prof.location)) return prof;
+    // multi-college professor: at one of this scope's colleges on some days (HR work-location routine)
+    if (!scope.orgWide && scope.keys.length && await WorkSchedule.exists({ employeeId: prof.id, location: { $in: scope.keys } })) return prof;
+    return null;
 }
 
 /** Colleges the user can pick in a college filter */

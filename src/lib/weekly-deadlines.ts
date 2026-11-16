@@ -56,10 +56,12 @@ async function activeProfessors() {
 export async function findMissingSprintPlans(weekStart: string) {
     const profs: any[] = await activeProfessors();
     const plans: any[] = await SprintPlan.find({ facultyId: { $in: profs.map(p => p.id) }, weekStartDate: weekStart }).lean();
+    // multi-college professor: one plan per college — missing only while none of them is submitted / locked
+    const mine = (id: string) => plans.filter(x => x.facultyId === id);
     return profs.filter(p => {
-        const plan = plans.find(x => x.facultyId === p.id);
-        return !plan || getPlanStatus(plan) === 'DRAFT';
-    }).map(p => ({ professor: p, plan: plans.find(x => x.facultyId === p.id) || null }));
+        const list = mine(p.id);
+        return !list.length || list.every(x => getPlanStatus(x) === 'DRAFT');
+    }).map(p => ({ professor: p, plan: mine(p.id)[0] || null }));
 }
 
 /** 2. Classes between from..to (inclusive) of submitted plans that have no assignment, per professor */

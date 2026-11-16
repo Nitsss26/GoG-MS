@@ -18,6 +18,27 @@ import SprintPlanWorkflowPanel from "@/components/academic/SprintPlanWorkflowPan
 import { getPlanStatus, LOCKED_PLAN_STATUSES, LECTURE_TYPES, UNIT_NUMBERS } from "@/lib/academic-status";
 import { useMinWidth } from "@/components/academic/LectureTable";
 
+/** The professor's college for each day (HR work-location routine) — from GET /api/faculty/sprint-plan */
+type RoutineInfo = {
+    multi: boolean; original: string;
+    colleges: { id: string; name: string; keys: string[] }[];
+    days: { date: string; day: string; assigned: string; assignedName: string; source: string }[];
+};
+/** Locked for `collegeId`? → the HR-assigned day (null = editable). Same rule as the server (lib/professor-routine). */
+function lockedAssignment(r: RoutineInfo, date: string, collegeId: string) {
+    if (!r.multi) return null;
+    const d = r.days.find(x => x.date === date);
+    if (!d || !d.assigned) return null;
+    if (d.assigned === "WFH") return r.colleges.some(c => c.id === collegeId) ? null : d;
+    return d.assigned === collegeId ? null : d;
+}
+/** Saved plan of this college? (older plans: no college / the Original Location) */
+function planBelongsTo(p: any, c: { id: string; keys: string[] }, r: RoutineInfo) {
+    const pc = String(p?.college || "").trim();
+    if (!pc) return c.id === r.original;
+    return c.id === pc || c.keys.includes(pc);
+}
+
 interface SprintEntry {
     day: string;
     date: string;
@@ -144,6 +165,10 @@ export default function SprintPlanPage() {
     const [activeTimePicker, setActiveTimePicker] = useState<{ idx: number; field: "timeStart" | "timeStop" } | null>(null);
     const [viewMode, setViewMode] = useState<"GRID" | "EDITOR">("GRID");
     const [allCampusEntries, setAllCampusEntries] = useState<any[]>([]);
+    // Multi-college professor (HR work-location routine): college picker + days of other colleges locked
+    const [routine, setRoutine] = useState<RoutineInfo | null>(null);
+    const [selCollege, setSelCollege] = useState("");
+    const [lockInfo, setLockInfo] = useState<string | null>(null);   // date whose "Location Restriction" box is open
 
     // Dynamic Dropdowns
     const [facultySubjects, setFacultySubjects] = useState<Record<string, string>>(SUBJECTS);
@@ -154,6 +179,10 @@ export default function SprintPlanPage() {
     const [newStream, setNewStream] = useState("");
 
     const weekInfo = getWeekDates(weekOffset);
+    const multi = !!routine?.multi;
+    const curCollege = multi ? routine!.colleges.find(c => c.id === selCollege) || null : null;
+    /** Day assigned (by HR) to another college than the selected one → locked (same rule as the server) */
+    const lockedFor = (date: string) => (multi && curCollege ? lockedAssignment(routine!, date, curCollege.id) : null);
     // Lifecycle: a locked plan (or one waiting for an unlock decision) cannot be edited by anyone
     const planStatus = plan ? getPlanStatus(plan) : "DRAFT";
     const isFrozen = LOCKED_PLAN_STATUSES.includes(planStatus);
@@ -180,7 +209,8 @@ export default function SprintPlanPage() {
             fetchPlan();
             fetchPreferences();
         }
-    }, [user, weekOffset]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user, weekOffset, selCollege]);
 
     const fetchPreferences = async () => {
         try {
@@ -218,7 +248,8 @@ export default function SprintPlanPage() {
     // Every change in the editor is stored at once for this professor + week, so nothing is lost when the page is
     // left by mistake, reloaded or closed. Opening the week again brings the unsaved changes back. The server copy
     // changes only with Save Draft / Finalize & Lock (pressed by the professor); a locked plan is never auto-saved.
-    const draftKey = (week: string) => `gog.sprintDraft.v1:${user?.id || ""}:${week}`;
+    const draftCol = useRef("");   // multi-college professor: drafts are kept per college ("" = single college, old key)
+    const draftKey = (week: string) => `gog.sprintDraft.v1:${user?.id || ""}:${week}${draftCol.current ? `@${draftCol.current}` : ""}`;
     const normEntries = (list: SprintEntry[]) => JSON.stringify((list || []).map(e => [e.day, e.date, e.timeStart, e.timeStop, e.stream, e.year, e.semester, e.subjectCode, e.subjectName, e.topics, e.section, e.lectureType || "", e.unitNumber || "", e.content || ""]));
     const serverEntriesRef = useRef<SprintEntry[]>([]);   // entries as saved on the server for the loaded week
     const serverSnap = useRef("");
@@ -276,7 +307,17 @@ export default function SprintPlanPage() {
 
             setWorkSchedules(fetchedSchedules);
 
-            const fetchedPlan = fetchedPlans.length > 0 ? fetchedPlans[0] : null;
+            // multi-college professor: the plan of the selected college (one plan per college and week)
+            const r: RoutineInfo | null = data.routine || null;
+            setRoutine(r);
+            let col = "";
+            if (r?.multi) {
+                col = r.colleges.some(c => c.id === selCollege) ? selCollege : (r.original && r.colleges.some(c => c.id === r.original) ? r.original : r.colleges[0].id);
+                if (col !== selCollege) setSelCollege(col);
+            }
+            draftCol.current = col;
+            const colRef = r?.multi ? r.colleges.find(c => c.id === col) || null : null;
+            const fetchedPlan = colRef ? fetchedPlans.find((p: any) => planBelongsTo(p, colRef, r!)) || null : (fetchedPlans.length > 0 ? fetchedPlans[0] : null);
             setPlan(fetchedPlan);
             const serverList: SprintEntry[] = fetchedPlan?.entries || [];
             setServerEntries(serverList);
@@ -337,16 +378,21 @@ export default function SprintPlanPage() {
 
             const res = await fetch(`/api/faculty/sprint-plan?facultyId=${user?.id}&weekStartDate=${prevStartStr}`);
             const data = await res.json();
-            const prevPlan = (data.plans || [])[0];
+            const prevPlans: any[] = data.plans || [];
+            const prevPlan = multi && curCollege ? prevPlans.find(p => planBelongsTo(p, curCollege, data.routine || routine!)) : prevPlans[0];
             if (!prevPlan) { setMessage({ type: "error", text: "No sprint plan found for the previous week." }); return; }
             if (!prevPlan.entries?.length) { setMessage({ type: "error", text: "Previous week's plan has no classes." }); return; }
 
             const keyOf = (e: any) => [e.day, e.timeStart, e.timeStop, e.subjectCode || e.subjectName, e.stream, e.semester, e.section].join("|");
             const have = new Set(entries.map(keyOf));
             const copied: SprintEntry[] = [];
+            const skipped: string[] = [];
             for (const e of prevPlan.entries as SprintEntry[]) {
                 const date = weekInfo.dates.find(d => d.day === e.day)?.date;
                 if (!date) continue;
+                // a day HR assigned to another college this week is not filled from the previous week
+                const lk = lockedFor(date);
+                if (lk) { skipped.push(`${e.day.charAt(0) + e.day.slice(1).toLowerCase()} (${lk.assignedName})`); continue; }
                 const c: SprintEntry = {
                     day: e.day, date, timeStart: e.timeStart, timeStop: e.timeStop, stream: e.stream, year: e.year, semester: e.semester,
                     subjectCode: e.subjectCode, subjectName: e.subjectName, topics: e.topics, section: e.section,
@@ -356,10 +402,11 @@ export default function SprintPlanPage() {
                 have.add(keyOf(c));
                 copied.push(c);
             }
-            if (!copied.length) { setMessage({ type: "error", text: "All of the previous week's classes are already in this week." }); return; }
+            const skipNote = skipped.length ? ` ${skipped.length} class${skipped.length === 1 ? " was" : "es were"} not copied — ${Array.from(new Set(skipped)).join(", ")} ${skipped.length === 1 ? "is" : "are"} assigned to another college this week.` : "";
+            if (!copied.length) { setMessage({ type: "error", text: skipped.length ? `Nothing copied.${skipNote}` : "All of the previous week's classes are already in this week." }); return; }
             setEntries([...entries, ...copied]);
             setViewMode("EDITOR");   // show the copied classes at once
-            setMessage({ type: "success", text: `Copied ${copied.length} class${copied.length === 1 ? "" : "es"} from the previous week. Edit what is needed, then Save Draft or Finalize & Lock.` });
+            setMessage({ type: "success", text: `Copied ${copied.length} class${copied.length === 1 ? "" : "es"} from the previous week. Edit what is needed, then Save Draft or Finalize & Lock.${skipNote}` });
         } catch (e: any) {
             setMessage({ type: "error", text: "Failed to copy plan: " + e.message });
         } finally {
@@ -429,7 +476,8 @@ export default function SprintPlanPage() {
                     facultyId: user?.id,
                     weekStartDate: weekInfo.start,
                     weekEndDate: weekInfo.end,
-                    entries: entries.map(e => ({ ...e, className: autoClassName(e) }))
+                    entries: entries.map(e => ({ ...e, className: autoClassName(e) })),
+                    ...(multi && selCollege ? { college: selCollege } : {}),
                 })
             });
             const data = await res.json();
@@ -663,10 +711,10 @@ export default function SprintPlanPage() {
     const [collegeInfo, setCollegeInfo] = useState<{ name?: string; start?: string; end?: string; canEdit?: boolean } | null>(null);
     useEffect(() => {
         if (!user?.id) return;
-        fetch("/api/academic/college-timings", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(d => {
+        fetch(`/api/academic/college-timings${multi && selCollege ? `?college=${encodeURIComponent(selCollege)}` : ""}`, { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(d => {
             if (d) setCollegeInfo({ name: d.college?.name, start: d.timing?.startTime, end: d.timing?.endTime, canEdit: !!d.canEdit });
         }).catch(() => { });
-    }, [user?.id, ttRefresh, timingRev]);
+    }, [user?.id, ttRefresh, timingRev, multi, selCollege]);
     // Selected day: today when it is in the week, otherwise Monday
     useEffect(() => {
         const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -684,6 +732,7 @@ export default function SprintPlanPage() {
     }, [invalidIndices]);
 
     const openNewSlot = (day: string, date: string, quiet = false) => {
+        if (lockedFor(date)) { setLockInfo(date); return; }   // day of another college: explain instead
         setSlotError("");
         setSlotForm({
             idx: -1, data: {
@@ -706,6 +755,7 @@ export default function SprintPlanPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [viewMode, loading, isFrozen, selDate, slotForm]);
     const openEditSlot = (idx: number) => {
+        if (entries[idx] && lockedFor(entries[idx].date)) { setLockInfo(entries[idx].date); return; }
         setSlotError("");
         setSlotForm({ idx, data: { ...entries[idx] } });
         setTimeout(() => slotFormRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
@@ -723,6 +773,7 @@ export default function SprintPlanPage() {
         const d = slotForm.data;
         if (!isValidTimeFormat(d.timeStart) || !isValidTimeFormat(d.timeStop)) { setSlotError("Pick a valid start and end time."); return; }
         if (d.timeStart >= d.timeStop) { setSlotError("The end time must be after the start time."); return; }
+        if (lockedFor(d.date)) { setLockInfo(d.date); return; }
         const row = { ...d, className: autoClassName(d) };
         if (slotForm.idx < 0) setEntries([...entries, row]);
         else setEntries(entries.map((e, i) => (i === slotForm.idx ? row : e)));
@@ -843,6 +894,41 @@ export default function SprintPlanPage() {
                 </div>
             </div>
 
+            {/* Multi-college professor: one Sprint Plan per college — only the days HR assigned to that college are editable */}
+            {multi && (
+                <div className="flex flex-wrap items-center gap-2" data-testid="college-picker">
+                    <span className="text-[11px] font-bold text-zinc-400 flex items-center gap-1.5"><Building2 size={13} /> College:</span>
+                    {routine!.colleges.map(c => {
+                        const on = c.id === selCollege;
+                        const days = routine!.days.filter(d => !lockedAssignment(routine!, d.date, c.id)).map(d => d.day.charAt(0) + d.day.slice(1, 3).toLowerCase());
+                        return (
+                            <button key={c.id} onClick={() => { if (!on) { setSlotForm(null); setSelCollege(c.id); } }} aria-pressed={on} data-testid={`college-chip-${c.id}`}
+                                className={`h-8 px-3 inline-flex items-center gap-2 rounded-lg border text-xs font-bold transition-colors ${on ? "border-emerald-500/60 bg-emerald-500/10 text-white" : "border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800"}`}>
+                                <span className="[overflow-wrap:anywhere]">{c.name}</span>
+                                <span className={`text-[10px] font-semibold ${on ? "text-emerald-300" : "text-zinc-500"}`} data-testid="college-days">{days.length ? days.join(" · ") : "no day this week"}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* the week's HR routine for the selected college: editable days (green) and days of another college (locked) */}
+            {multi && curCollege && (
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5" data-testid="routine-strip">
+                    {weekInfo.dates.map(d => {
+                        const lk = lockedFor(d.date);
+                        const a = routine!.days.find(x => x.date === d.date);
+                        return (
+                            <button key={d.date} onClick={() => (lk ? setLockInfo(d.date) : (setSelDate(d.date), setViewMode("EDITOR")))} data-testid={`routine-${d.day}`} data-locked={lk ? "1" : undefined}
+                                className={`min-w-0 rounded-lg border px-2 py-1.5 text-left ${lk ? "border-zinc-800 bg-zinc-950/60 text-zinc-500" : "border-emerald-500/30 bg-emerald-500/[0.07] text-emerald-200"}`}>
+                                <span className="flex items-center gap-1 text-[11px] font-bold">{lk ? <Lock size={10} /> : <Check size={10} />}{d.day.charAt(0) + d.day.slice(1).toLowerCase()} · {new Date(d.date + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span>
+                                <span className="block text-[10px] font-medium truncate" title={a?.assignedName}>{lk ? lk.assignedName : a?.assigned === "WFH" ? "Work From Home" : (a?.assignedName || curCollege.name)}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+
             {message && (
                 <div className={`flex items-center gap-2 rounded-xl px-4 py-3 ${message.type === "success" ? "bg-green-500/10 border border-green-500/20 text-green-400" : "bg-red-500/10 border border-red-500/20 text-red-400"}`}>
                     {message.type === "success" ? <Check size={14} className="shrink-0" /> : <AlertTriangle size={14} className="shrink-0" />}
@@ -879,6 +965,11 @@ export default function SprintPlanPage() {
             ) : viewMode === "GRID" ? (
                 <div className="[contain:inline-size]">
                     <DynamicCollegeTimetable weekStart={weekInfo.start} weekDates={weekInfo.dates} currentUserId={user?.id} refreshKey={ttRefresh} mineOnly
+                        {...(multi && curCollege ? {
+                            college: curCollege.id, collegeKeys: curCollege.keys,
+                            lockedDays: Object.fromEntries(weekInfo.dates.map(d => [d.date, lockedFor(d.date)?.assignedName || ""]).filter(([, v]) => v)),
+                            onLockedDay: (date: string) => setLockInfo(date),
+                        } : {})}
                         statusLabel={st.label} statusTone={st.tone} lastUpdated={(plan as any)?.updatedAt}
                         editSignal={ttEditSignal} onEditOpened={() => setTtEditSignal(0)} onTimingSaved={() => setTimingRev(k => k + 1)} />
                 </div>
@@ -887,7 +978,7 @@ export default function SprintPlanPage() {
                     {/* Info bar */}
                     <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-3 sm:p-3.5 flex flex-col md:flex-row md:items-center gap-3">
                         <div className="grid grid-cols-2 md:flex md:flex-1 md:divide-x md:divide-zinc-800 gap-x-4 gap-y-3 min-w-0">
-                            {([[Building2, "College", collegeInfo?.name || plan?.college || "Not mapped"], [Clock, "College Timing", collegeInfo?.start && collegeInfo?.end ? `${to12(collegeInfo.start)} – ${to12(collegeInfo.end)}` : "Not set"], [CalendarDays, "Week", weekText]] as const).map(([Icon, l, v]) => (
+                            {([[Building2, "College", curCollege?.name || collegeInfo?.name || plan?.college || "Not mapped"], [Clock, "College Timing", collegeInfo?.start && collegeInfo?.end ? `${to12(collegeInfo.start)} – ${to12(collegeInfo.end)}` : "Not set"], [CalendarDays, "Week", weekText]] as const).map(([Icon, l, v]) => (
                                 <div key={l} className={`flex items-start gap-2.5 min-w-0 md:px-4 first:md:pl-1 ${l === "Week" ? "col-span-2 md:col-span-1" : ""}`}>
                                     <Icon size={15} className="text-zinc-500 mt-0.5 shrink-0" />
                                     <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{l}</p><p className="text-xs font-bold text-white [overflow-wrap:anywhere]">{v}</p></div>
@@ -907,10 +998,12 @@ export default function SprintPlanPage() {
                                 const on = d.date === selDay.date;
                                 const n = entries.filter(e => e.date === d.date || e.day === d.day).length;
                                 const bad = invalidIndices.some(i => entries[i] && (entries[i].date === d.date || entries[i].day === d.day));
+                                const lk = lockedFor(d.date);
                                 return (
-                                    <button key={d.date} role="tab" aria-selected={on} onClick={() => setSelDate(d.date)} data-testid={`day-${d.day}`}
-                                        className={`relative min-w-0 w-full xl:w-[68px] h-[54px] rounded-xl border flex flex-col items-center justify-center transition-colors ${on ? "border-emerald-500/60 bg-emerald-500/10 text-white" : "border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:border-zinc-600"}`}>
-                                        <span className="text-[13px] font-bold">{d.day.charAt(0) + d.day.slice(1).toLowerCase()}</span>
+                                    <button key={d.date} role="tab" aria-selected={on} onClick={() => { setSelDate(d.date); if (lk) setLockInfo(d.date); }} data-testid={`day-${d.day}`} data-locked={lk ? "1" : undefined}
+                                        title={lk ? `Assigned to ${lk.assignedName} — locked for ${curCollege?.name}` : undefined}
+                                        className={`${lk ? "opacity-60 " : ""}relative min-w-0 w-full xl:w-[68px] h-[54px] rounded-xl border flex flex-col items-center justify-center transition-colors ${on ? "border-emerald-500/60 bg-emerald-500/10 text-white" : "border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:border-zinc-600"}`}>
+                                        <span className={`text-[13px] font-bold inline-flex items-center gap-1 ${lk ? "text-zinc-500" : ""}`}>{lk && <Lock size={10} className="shrink-0" data-testid="day-lock" />}{d.day.charAt(0) + d.day.slice(1).toLowerCase()}</span>
                                         <span className="text-[10px] sm:text-[10.5px] text-zinc-400 whitespace-nowrap">{new Date(d.date + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span>
                                         {n > 0 && <span className={`absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black flex items-center justify-center ${bad ? "bg-red-500 text-white" : "bg-zinc-700 text-zinc-100"}`}>{n}</span>}
                                     </button>
@@ -925,10 +1018,13 @@ export default function SprintPlanPage() {
                                 </div>
                             ))}
                         </div>
-                        {!isFrozen && (
+                        {!isFrozen && (lockedFor(selDay.date) ? (
+                            <button onClick={() => setLockInfo(selDay.date)} data-testid="add-slot-locked" title="This day is assigned to another college"
+                                className={`${btnBase} h-[54px] xl:h-11 px-5 bg-zinc-900 text-zinc-500 border border-zinc-800 text-sm`}><Lock size={14} /> Locked</button>
+                        ) : (
                             <button onClick={() => openNewSlot(selDay.day, selDay.date)} data-testid="add-slot"
                                 className={`${btnBase} h-[54px] xl:h-11 px-5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm`}><Plus size={16} /> Add Slot</button>
-                        )}
+                        ))}
                     </div>
 
                     {/* Day table + Add / Edit form */}
@@ -937,6 +1033,12 @@ export default function SprintPlanPage() {
                             <div className="px-4 py-3 border-b border-zinc-800 flex items-center gap-2">
                                 <CalendarDays size={15} className="text-zinc-400" />
                                 <h2 className="text-sm font-bold text-white">{dayLongName(selDay.date)}</h2>
+                                {lockedFor(selDay.date) && (
+                                    <button onClick={() => setLockInfo(selDay.date)} data-testid="day-locked-badge"
+                                        className="inline-flex items-center gap-1 h-6 px-2 rounded-md border border-zinc-700 bg-zinc-800/80 text-[10.5px] font-bold text-zinc-300 hover:bg-zinc-700">
+                                        <Lock size={11} /> Assigned to {lockedFor(selDay.date)!.assignedName}
+                                    </button>
+                                )}
                                 {workSchedules.length > 0 && (() => {
                                     const sch = workSchedules.find(s => s.date === selDay.date || s.date?.toUpperCase() === selDay.day || (s.date && s.date.replace(/[-\/]/g, "") === selDay.date.replace(/[-\/]/g, "")));
                                     return sch ? <span className="ml-auto text-[10px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded-md" title="Daily work location">{sch.location}</span> : null;
@@ -1292,6 +1394,41 @@ export default function SprintPlanPage() {
                     />
                 )}
             </AnimatePresence>
+
+            {/* Location Restriction: a day HR assigned to another college (multi-college professor) */}
+            {lockInfo && curCollege && (() => {
+                const lk = lockedFor(lockInfo);
+                if (!lk) return null;
+                const when = new Date(lockInfo + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "short", year: "numeric" });
+                const target = routine!.colleges.find(c => c.id === lk.assigned);
+                return (
+                    <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4" onClick={() => setLockInfo(null)}>
+                        <div role="dialog" aria-modal="true" aria-labelledby="lock-title" data-testid="lock-dialog" onClick={e => e.stopPropagation()}
+                            className="w-full max-w-[420px] rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl p-5 space-y-3">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center"><Lock size={15} className="text-zinc-300" /></div>
+                                <h3 id="lock-title" className="text-sm font-black text-white uppercase tracking-wider">Location Restriction</h3>
+                            </div>
+                            <p className="text-[13px] text-zinc-300 leading-relaxed" data-testid="lock-message">
+                                {lk.assigned === "WFH"
+                                    ? `${when} is Work From Home, but ${curCollege.name} is not one of your assigned colleges for it.`
+                                    : `Your clock-in location for ${when} has been assigned to ${lk.assignedName} by HR. You can create or edit the ${lk.assignedName} Sprint Plan for this date, but not the ${curCollege.name} Sprint Plan.`}
+                            </p>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2"><p className="text-[10px] text-zinc-500 font-bold uppercase">Assigned College</p><p className="font-bold text-emerald-300 [overflow-wrap:anywhere]" data-testid="lock-assigned">{lk.assignedName}</p></div>
+                                <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2"><p className="text-[10px] text-zinc-500 font-bold uppercase">Selected College</p><p className="font-bold text-zinc-200 [overflow-wrap:anywhere]" data-testid="lock-selected">{curCollege.name}</p></div>
+                            </div>
+                            <div className="flex flex-wrap justify-end gap-2 pt-1">
+                                {target && (
+                                    <button onClick={() => { setLockInfo(null); setSlotForm(null); setSelCollege(target.id); }} data-testid="lock-view-assigned"
+                                        className="h-9 px-3.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white">View {target.name} Sprint Plan</button>
+                                )}
+                                <button onClick={() => setLockInfo(null)} data-testid="lock-close" className="h-9 px-3.5 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700">Close</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 }

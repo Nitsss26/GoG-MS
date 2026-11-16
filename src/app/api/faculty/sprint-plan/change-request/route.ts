@@ -15,13 +15,13 @@ export async function POST(req: Request) {
         await dbConnect();
         const actor = await getSessionUser();
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        const { weekStartDate, reason, comment } = await req.json();
+        const { weekStartDate, reason, comment, college } = await req.json();
 
         if (!weekStartDate || !reason) {
             return NextResponse.json({ error: "weekStartDate and reason required" }, { status: 400 });
         }
 
-        const plan = await SprintPlan.findOne({ facultyId: actor.id, weekStartDate });
+        const plan = await SprintPlan.findOne({ facultyId: actor.id, weekStartDate, ...(college ? { college } : {}) });
         if (!plan) return NextResponse.json({ error: "Sprint plan not found" }, { status: 404 });
 
         const result = await performPlanAction(actor, String(plan._id), 'request_unlock', { reason, comment });
@@ -38,13 +38,13 @@ export async function PATCH(req: Request) {
         await dbConnect();
         const actor = await getSessionUser();
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        const { facultyId, weekStartDate, action, note } = await req.json();
+        const { facultyId, weekStartDate, action, note, college } = await req.json();
 
         if (!facultyId || !weekStartDate || !action) {
             return NextResponse.json({ error: "facultyId, weekStartDate, action required" }, { status: 400 });
         }
 
-        const plan = await SprintPlan.findOne({ facultyId, weekStartDate });
+        const plan = await SprintPlan.findOne({ facultyId, weekStartDate, ...(college ? { college } : {}) });
         if (!plan) return NextResponse.json({ error: "Sprint plan not found" }, { status: 404 });
 
         const result = await performPlanAction(actor, String(plan._id), action === 'approve' ? 'unlock' : 'reject_unlock', { note });

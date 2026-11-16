@@ -33,6 +33,7 @@ import { PENDING_LEAVE_STATUSES } from '@/lib/leave-decision';
 import { WFH_POLICY } from '@/lib/wfh-policy';
 import { CorrectionTicket } from '@/models/SalaryModule';
 import { getAcademicScope, professorsInScope, zonedNow, addDays, hasClassEnded } from '@/lib/academic';
+import { planVisibleFor } from '@/lib/professor-routine';
 import { getClassStatus, getPlanStatus, FINAL_PENDING_CLASS_STATUSES, FINAL_VERIFIER_ROLES, PROFESSOR_ROLES, CL_CH_ROLES } from '@/lib/academic-status';
 import { listForReviewer } from '@/lib/location-justification';
 import { visibleNotices } from '@/lib/notice-visibility';
@@ -90,8 +91,20 @@ async function verification(a: any) {
     const profs: any[] = await professorsInScope(await getAcademicScope(a), null);
     if (!profs.length) return 0;
     const today = zonedNow().ymd;
-    const rows: any[] = await LectureReport.find({ facultyId: { $in: profs.map(p => p.id) }, date: { $gte: addDays(today, -90), $lte: today } })
-        .select('pipelineStatus status assignment.hasAssignment assignment.addedLater assignment.verificationStatus').lean();
+    let rows: any[] = await LectureReport.find({ facultyId: { $in: profs.map(p => p.id) }, date: { $gte: addDays(today, -90), $lte: today } })
+        .select('facultyId sprintPlanId pipelineStatus status assignment.hasAssignment assignment.addedLater assignment.verificationStatus').lean();
+    // multi-college professors: only the class records of colleges in this scope (same as the verification page)
+    if (profs.some((p: any) => p._planScope && !p._planScope.all)) {
+        const byId = new Map(profs.map((p: any) => [p.id, p]));
+        const pids = Array.from(new Set(rows.map(r => String(r.sprintPlanId || '')).filter(Boolean)));
+        const planById = new Map((await SprintPlan.find({ _id: { $in: pids } }).select('facultyId college collegeFixed').lean()).map((p: any) => [String(p._id), p]));
+        rows = rows.filter(r => {
+            const fac: any = byId.get(r.facultyId), ps = fac?._planScope;
+            if (!ps || ps.all) return true;
+            const pl = planById.get(String(r.sprintPlanId || ''));
+            return pl ? planVisibleFor(fac, pl) : (ps.keys || []).includes(String(fac.location || ''));
+        });
+    }
     return rows.filter(r => {
         const ps = getClassStatus(r);
         if (keys.includes(ps)) return true;
@@ -114,13 +127,13 @@ function ticketPageRaisers(me: any, emps: any[]) {
         if (me.role === 'CURRICULUM_HEAD') return ['CURRICULUM_LEAD', 'FACULTY', 'PROFESSOR'].includes(e.role);
         if (me.role === 'CURRICULUM_LEAD') return ['FACULTY', 'PROFESSOR'].includes(e.role);
         if (me.role === 'HR') return ['AD', 'HOI', 'FACULTY', 'PROFESSOR', 'OM', 'CURRICULUM_HEAD', 'CURRICULUM_LEAD'].includes(e.role);
-        if (me.role === 'AD') return ['HOI', 'FACULTY', 'PROFESSOR', 'OM', 'MARKETING_TEAM', 'TECH_TEAM', 'CURRICULUM_HEAD', 'CURRICULUM_LEAD'].includes(e.role) && isReportee;
+        if (me.role === 'AD') return ['HOI', 'FACULTY', 'PROFESSOR', 'OM', 'MARKETING_TEAM', 'TECH_TEAM', 'PLACEMENT_INTERN_HEAD', 'CURRICULUM_HEAD', 'CURRICULUM_LEAD'].includes(e.role) && isReportee;
         if (me.role === 'HOI') {
             const loc = me.employee?.location;
             const hasAssignedHoi = mgrsOf(e).some((id: string) => hoiIds.has(id));
-            return ['FACULTY', 'PROFESSOR', 'OM', 'MARKETING_TEAM', 'TECH_TEAM'].includes(e.role) && (isReportee || (!hasAssignedHoi && !!loc && e.location === loc));
+            return ['FACULTY', 'PROFESSOR', 'OM', 'MARKETING_TEAM', 'TECH_TEAM', 'PLACEMENT_INTERN_HEAD'].includes(e.role) && (isReportee || (!hasAssignedHoi && !!loc && e.location === loc));
         }
-        if (['OM', 'MARKETING_TEAM', 'TECH_TEAM', 'TECH_INTERN'].includes(me.role)) return ['FACULTY', 'PROFESSOR'].includes(e.role) && isReportee;
+        if (['OM', 'MARKETING_TEAM', 'TECH_TEAM', 'PLACEMENT_INTERN_HEAD', 'TECH_INTERN'].includes(me.role)) return ['FACULTY', 'PROFESSOR'].includes(e.role) && isReportee;
         return isReportee;
     };
     return new Set([me.id, ...emps.filter(ok).map(e => e.id)]);
@@ -152,12 +165,13 @@ async function lectureReports(a: any) {
     for (let d = from; d <= today; d = addDays(d, 1)) {
         // same matching as GET /api/faculty/lectures
         const dayName = dayNames[new Date(d).getDay()].toUpperCase().substring(0, 3);
-        const plan = plans.find(p => d >= p.weekStartDate && d <= p.weekEndDate && getPlanStatus(p) !== 'DRAFT');
-        const entries: any[] = plan ? (plan.entries || []).filter((e: any) => e.date === d || e.day?.toUpperCase()?.substring(0, 3) === dayName) : [];
+        // one plan per college for a multi-college professor (lecture number = position in its own plan), as in GET /api/faculty/lectures
+        const items: { entry: any; plan: any; num: number }[] = [];
+        plans.filter(p => d >= p.weekStartDate && d <= p.weekEndDate && getPlanStatus(p) !== 'DRAFT').forEach(pl =>
+            (pl.entries || []).filter((e: any) => e.date === d || e.day?.toUpperCase()?.substring(0, 3) === dayName).forEach((entry: any, i: number) => items.push({ entry, plan: pl, num: i + 1 })));
         const dayReports = reports.filter(r => r.date === d);
         const used = new Set<string>();
-        entries.forEach((entry: any, idx: number) => {
-            const num = idx + 1;
+        items.forEach(({ entry, plan, num }) => {
             const free = (r: any) => !used.has(String(r._id));
             let rep = dayReports.find(r => free(r) && r.sprintEntryId && r.sprintEntryId === entry._id?.toString());
             if (!rep) rep = dayReports.find(r => free(r) && !r.sprintEntryId && ((r.sprintPlanId === plan?._id?.toString() && r.lectureNumber === num) || (r.date === d && r.lectureNumber === num)));
@@ -188,10 +202,11 @@ async function sprintPlansToRead(a: any) {
     const profs: any[] = await professorsInScope(await getAcademicScope(a), null);
     if (!profs.length) return 0;
     const recent = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    const byId = new Map(profs.map((p: any) => [p.id, p]));
     const plans: any[] = await SprintPlan.find({ facultyId: { $in: profs.map(p => p.id) } })
-        .select('status isLocked isSubmitted weekStartDate weekEndDate version hoiReads').lean();
-    // same rule as the approvals queue (GET /api/curriculum/sprint-plan?queue=1 → toRead)
-    return plans.filter(p => ['LOCKED', 'LOCKED_AGAIN'].includes(getPlanStatus(p))
+        .select('facultyId college collegeFixed status isLocked isSubmitted weekStartDate weekEndDate version hoiReads').lean();
+    // same rule as the approvals queue (GET /api/curriculum/sprint-plan?queue=1 → toRead), incl. multi-college plans of this scope only
+    return plans.filter(p => planVisibleFor(byId.get(p.facultyId), p) && ['LOCKED', 'LOCKED_AGAIN'].includes(getPlanStatus(p))
         && (p.weekEndDate || p.weekStartDate || '') >= recent
         && !(p.hoiReads || []).some((r: any) => r.byId === a.id && r.version === (p.version || 1))).length;
 }

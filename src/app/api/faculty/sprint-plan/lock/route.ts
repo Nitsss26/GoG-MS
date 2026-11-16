@@ -10,13 +10,13 @@ export async function POST(req: Request) {
         await dbConnect();
         const actor = await getSessionUser();
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        const { facultyId, weekStartDate } = await req.json();
+        const { facultyId, weekStartDate, college } = await req.json();
 
         if (!facultyId || !weekStartDate) {
             return NextResponse.json({ error: "facultyId and weekStartDate required" }, { status: 400 });
         }
 
-        const plan = await SprintPlan.findOne({ facultyId, weekStartDate });
+        const plan = await SprintPlan.findOne({ facultyId, weekStartDate, ...(college ? { college } : {}) });
         if (!plan) return NextResponse.json({ error: "Sprint plan not found" }, { status: 404 });
 
         const result = await performPlanAction(actor, String(plan._id), 'lock');

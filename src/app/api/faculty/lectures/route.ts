@@ -5,6 +5,8 @@ import { processLectureWithAI } from '@/lib/gemini';
 import { getSessionUser } from '@/lib/session-user';
 import { getAcademicScope, professorIfInScope, hasClassEnded } from '@/lib/academic';
 import { submitClassRecord, classStrength } from '@/lib/class-record-workflow';
+import { canViewPlan } from '@/lib/sprint-plan-workflow';
+import { professorRoutine, planCollegeOf } from '@/lib/professor-routine';
 import { getPlanStatus, getClassStatus, PROFESSOR_ROLES } from '@/lib/academic-status';
 
 // GET — Fetch lectures for a faculty
@@ -61,32 +63,41 @@ export async function GET(req: Request) {
         }
 
         const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-        const plans = await SprintPlan.find({ facultyId }).sort({ weekStartDate: -1 });
+        let plans: any[] = await SprintPlan.find({ facultyId }).sort({ weekStartDate: -1 });
+        // another viewer: a multi-college professor's plans of colleges outside the viewer's scope are left out
+        const hiddenPlanIds = new Set<string>();
+        if (facultyId !== actor.id) {
+            const ok = await Promise.all(plans.map((p: any) => canViewPlan(actor, p)));
+            plans.forEach((p: any, i: number) => { if (!ok[i]) hiddenPlanIds.add(String(p._id)); });
+            plans = plans.filter((p: any, i: number) => ok[i]);
+        }
 
         let allLectures: any[] = [];
+        // the professor's colleges (multi-college: HR work-location routine) — each lecture carries its plan's college
+        const profEmp: any = facultyId === actor.id ? actor.employee : await Employee.findOne({ id: facultyId }).select('id location').lean();
+        const profColleges = (await professorRoutine(profEmp || { id: facultyId }, [])).colleges;
+        const collegeNameOf = (v: string) => profColleges.find(c => c.id === v || c.keys.includes(v))?.name || v;
 
         for (const targetDate of targetDates) {
             const dayIdx = new Date(targetDate).getDay();
             const targetDayName = dayNames[dayIdx]?.toUpperCase()?.substring(0, 3) || "MON";
 
-            // Find active sprint plan containing targetDate (a draft is not a class schedule yet)
-            let activePlan = plans.find(p => targetDate >= p.weekStartDate && targetDate <= p.weekEndDate && getPlanStatus(p) !== 'DRAFT');
-
-            // Get entries for target day
-            let dayEntries: any[] = [];
-            if (activePlan) {
-                dayEntries = activePlan.entries.filter((e: any) =>
+            // Active sprint plans containing targetDate (a draft is not a class schedule yet). One plan per college
+            // for a multi-college professor; otherwise one plan, as before. Lecture number = position in its own plan.
+            const activePlans = plans.filter(p => targetDate >= p.weekStartDate && targetDate <= p.weekEndDate && getPlanStatus(p) !== 'DRAFT');
+            const dayItems: { entry: any; plan: any; lecNum: number }[] = [];
+            for (const pl of activePlans) {
+                pl.entries.filter((e: any) =>
                     e.date === targetDate || e.day?.toUpperCase()?.substring(0, 3) === targetDayName
-                );
+                ).forEach((entry: any, i: number) => dayItems.push({ entry, plan: pl, lecNum: i + 1 }));
             }
 
             // Check if lecture reports already exist for this date
-            const existingReports = await LectureReport.find({ facultyId, date: targetDate });
+            const existingReports = (await LectureReport.find({ facultyId, date: targetDate })).filter((r: any) => !hiddenPlanIds.has(String(r.sprintPlanId || '')));
 
             // Merge sprint plan entries with existing reports
             const assignedReportIds = new Set();
-            const dayLectures = await Promise.all(dayEntries.map(async (entry: any, idx: number) => {
-                const lecNum = idx + 1;
+            const dayLectures = await Promise.all(dayItems.map(async ({ entry, plan: activePlan, lecNum }, idx: number) => {
                 
                 // 0. Exact match on the sprint plan entry
                 let existing = existingReports.find((r: any) =>
@@ -117,8 +128,10 @@ export async function GET(req: Request) {
                 const timeStopParts = entry.timeStop?.split(':').map(Number) || [0, 0];
                 const scheduledDuration = (timeStopParts[0] * 60 + timeStopParts[1]) - (timeStartParts[0] * 60 + timeStartParts[1]);
 
+                const lecCollege = planCollegeOf(activePlan, profEmp?.location);
                 return {
                     _id: existing?._id || `${targetDate}-${idx}`,
+                    college: lecCollege, collegeName: collegeNameOf(lecCollege),
                     lectureNumber: lecNum,
                     sprintPlanId: activePlan?._id?.toString(),
                     isLocked: activePlan?.isLocked || false,
@@ -152,7 +165,7 @@ export async function GET(req: Request) {
             const unassignedReports = existingReports
                 .filter(r => !assignedReportIds.has(r._id.toString()))
                 .filter(r => r.status === 'Completed' || r.pipelineStatus !== 'PENDING_PROFESSOR')
-                .map(r => ({ ...r.toObject(), report: r.toObject(), pipelineStatus: getClassStatus(r), timeStart: r.timeStart || r.classStartTime, timeStop: r.timeStop || r.classEndTime }));
+                .map(r => ({ ...r.toObject(), collegeName: collegeNameOf(String(r.college || '')), report: r.toObject(), pipelineStatus: getClassStatus(r), timeStart: r.timeStart || r.classStartTime, timeStop: r.timeStop || r.classEndTime }));
 
             allLectures.push(...dayLectures, ...unassignedReports);
         }
@@ -165,7 +178,9 @@ export async function GET(req: Request) {
                 return a.lectureNumber - b.lectureNumber;
             }), 
             date: targetDates[0], 
-            sprintPlanId: plans[0]?._id?.toString() 
+            sprintPlanId: plans[0]?._id?.toString(),
+            // multi-college professor: their colleges (Lecture Reports college filter); one college → empty
+            colleges: profColleges.length > 1 ? profColleges.map(c => ({ id: c.id, name: c.name, keys: c.keys })) : [],
         });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });

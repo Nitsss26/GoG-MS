@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import { SprintPlan } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
 import { getAcademicScope, professorsInScope, selectableColleges, nowISO } from '@/lib/academic';
+import { planVisibleFor, planCollegeOf } from '@/lib/professor-routine';
 import { performPlanAction, canManagePlan } from '@/lib/sprint-plan-workflow';
 import { getPlanStatus, CL_CH_ROLES, PROFESSOR_ROLES } from '@/lib/academic-status';
 
@@ -34,7 +35,8 @@ export async function GET(req: Request) {
         // Approval queue: every plan waiting for a reviewer, whatever its week (professors plan ahead)
         if (searchParams.get('queue') === '1') {
             const waiting = ['UNLOCK_REQUESTED'];   // professors lock their own plans — no SUBMITTED review step
-            const raw = await SprintPlan.find({ facultyId: { $in: ids } }).select('-revisions').sort({ weekStartDate: 1 }).lean();
+            // multi-college professor: only the plans of colleges in this scope
+            const raw = (await SprintPlan.find({ facultyId: { $in: ids } }).select('-revisions').sort({ weekStartDate: 1 }).lean()).filter((p: any) => planVisibleFor(facultyMap.get(p.facultyId), p));
             // HOI: locked / re-locked plans they have not marked as read yet (current version; weeks not older than 7 days)
             const isHoi = actor.role === 'HOI';
             const recent = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
@@ -45,7 +47,7 @@ export async function GET(req: Request) {
                 const fac = facultyMap.get(p.facultyId);
                 // full plan (without old revisions): the page shows the plan and Lock / Return / Unlock right in the queue
                 return {
-                    ...p, facultyName: p.facultyName || fac?.name, college: fac?.location || p.college,
+                    ...p, facultyName: p.facultyName || fac?.name, college: planCollegeOf(p, fac?.location),
                     status: getPlanStatus(p),
                     submittedAt: p.resubmittedAt || p.submittedAt || p.unlockRequestedAt || null,
                     classes: (p.entries || []).length, canManage: await canManagePlan(actor, p),
@@ -59,13 +61,14 @@ export async function GET(req: Request) {
         const query: any = { facultyId: { $in: ids } };
         if (weekStartDate) query.weekStartDate = weekStartDate;
 
-        const rawPlans = await SprintPlan.find(query).sort({ weekStartDate: -1 }).lean();
+        const rawPlans = (await SprintPlan.find(query).sort({ weekStartDate: -1 }).lean()).filter((p: any) => p.facultyId === actor.id || planVisibleFor(facultyMap.get(p.facultyId), p));
         // Drafts: private to their professor — except that professors see the drafts of their own college in the
         // combined college timetable (their scope is their own college only), so clashes are visible while planning.
         const sameCollegeProf = PROFESSOR_ROLES.includes(actor.role) && !actor.delegation;
         const visible = rawPlans.filter((p: any) => getPlanStatus(p) !== 'DRAFT' || p.facultyId === actor.id || sameCollegeProf);
         const plans = await Promise.all(visible.map(async (p: any) => ({
             ...p,
+            college: planCollegeOf(p, facultyMap.get(p.facultyId)?.location),
             status: getPlanStatus(p),
             canManage: await canManagePlan(actor, p),
             canMarkRead: actor.role === 'HOI' && ['LOCKED', 'LOCKED_AGAIN'].includes(getPlanStatus(p))
@@ -76,7 +79,7 @@ export async function GET(req: Request) {
         const allEntries: any[] = [];
         plans.forEach((plan: any) => {
             const fac = facultyMap.get(plan.facultyId);
-            const planCollege = fac?.location || plan.college || "Main Campus";
+            const planCollege = planCollegeOf(plan, fac?.location) || "Main Campus";
             (plan.entries || []).forEach((e: any) => {
                 allEntries.push({
                     ...e,
@@ -151,7 +154,8 @@ export async function POST(req: Request) {
         if ((action === 'VERIFY_AND_LOCK_CAMPUS' || action === 'UNLOCK_CAMPUS' || action === 'lock' || action === 'unlock') && campus && weekStartDate) {
             const scope = await getAcademicScope(actor);
             const faculties = await professorsInScope(scope, campus);
-            const plans = await SprintPlan.find({ weekStartDate, facultyId: { $in: faculties.map((f: any) => f.id) } });
+            const facById = new Map(faculties.map((f: any) => [f.id, f]));
+            const plans = (await SprintPlan.find({ weekStartDate, facultyId: { $in: faculties.map((f: any) => f.id) } })).filter((p: any) => planVisibleFor(facById.get(p.facultyId), p));
             const locking = action === 'VERIFY_AND_LOCK_CAMPUS' || action === 'lock';
             let done = 0; const skipped: string[] = [];
             for (const p of plans) {

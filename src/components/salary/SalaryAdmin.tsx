@@ -53,7 +53,9 @@ type AdjType = "FULL" | "HALF" | "PENALTY";
 const inr = (v: number) => `₹${Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const n = (v: number | undefined | null) => { const x = Number(v); return !Number.isFinite(x) ? "0" : Number.isInteger(x) ? String(x) : x.toFixed(1); };
 const months = () => { const out: string[] = []; const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })); for (let i = 0; i < 18; i++) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); out.push(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`); } return out; };
-const Badge = ({ s, map = T_STYLE }: { s: string; map?: Record<string, string> }) => <span className={`inline-block text-[10px] font-black px-2 py-0.5 rounded-md border whitespace-nowrap ${map[s] || "bg-zinc-800 text-zinc-300 border-zinc-700"}`}>{s}</span>;
+const Badge = ({ s, map = T_STYLE, label }: { s: string; map?: Record<string, string>; label?: string }) => <span className={`inline-block text-[10px] font-black px-2 py-0.5 rounded-md border whitespace-nowrap ${map[s] || "bg-zinc-800 text-zinc-300 border-zinc-700"}`}>{label || s}</span>;
+/** Days before the joining date: shown as "Not Joined" (the status itself stays "Not Employed") */
+const payLabel = (d: any) => d?.payableStatus === "Not Employed" && /before joining/i.test(String(d?.reason || "")) ? "Not Joined" : undefined;
 const Msg = ({ m, onClose }: { m: { type: string; text: string } | null; onClose: () => void }) => !m ? null : (
     <div className={`flex items-center gap-2 rounded-xl px-4 py-3 text-xs ${m.type === "success" ? "bg-green-500/10 border border-green-500/20 text-green-400" : "bg-red-500/10 border border-red-500/20 text-red-400"}`} data-testid="sm-msg">
         {m.type === "success" ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />} {m.text}
@@ -362,7 +364,7 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
                             <div key={d.date} className={`p-4 space-y-2 text-xs ${d.correction ? (d.correction.direction === "TO_NON_PAYABLE" ? "bg-red-500/[0.04]" : "bg-violet-500/[0.04]") : ""}`} data-testid="sm-day-card">
                                 <div className="flex items-start justify-between gap-2">
                                     <p><span className="font-semibold text-white">{dmy(d.date)}</span> <span className="text-zinc-500">{d.weekday}</span>{d.holiday && <span className="block text-[10px] text-sky-300">Holiday</span>}</p>
-                                    <div className="text-right"><Badge s={d.payableStatus} map={PAY} /><p className="text-[10px] text-zinc-500 mt-0.5 tabular-nums">Value {d.payableStatus === "Not Employed" ? "—" : n(d.payable)}</p></div>
+                                    <div className="text-right"><Badge s={d.payableStatus} map={PAY} label={payLabel(d)} /><p className="text-[10px] text-zinc-500 mt-0.5 tabular-nums">Value {d.payableStatus === "Not Employed" ? "—" : n(d.payable)}</p></div>
                                 </div>
                                 <p className="text-zinc-300"><span className="text-zinc-500">In / Out:</span> {d.clockIn || "—"} / {d.clockOut || "—"} · <span className="text-zinc-500">Attendance:</span> {d.attendance}{d.leave ? <> · <span className="text-zinc-500">Leave:</span> {d.leave}</> : null}</p>
                                 {d.correction && <p className="text-[10px] text-zinc-500">Records: {d.basePayableStatus}</p>}
@@ -386,7 +388,7 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
                                         <td className="py-2 px-3 text-zinc-300">{d.attendance}</td>
                                         {isHoi && <td className="py-2 px-3 text-[11px] max-w-[360px]"><HoiLoc d={d} /></td>}
                                         <td className="py-2 px-3 text-zinc-300">{d.leave || "—"}</td>
-                                        <td className="py-2 px-3"><Badge s={d.payableStatus} map={PAY} />{d.correction && <span className="block text-[10px] text-zinc-500 mt-0.5">Records: {d.basePayableStatus}</span>}</td>
+                                        <td className="py-2 px-3"><Badge s={d.payableStatus} map={PAY} label={payLabel(d)} />{d.correction && <span className="block text-[10px] text-zinc-500 mt-0.5">Records: {d.basePayableStatus}</span>}</td>
                                         <td className="py-2 px-3 tabular-nums text-zinc-200">{d.payableStatus === "Not Employed" ? "—" : n(d.payable)}</td>
                                         <td className="py-2 px-3 text-zinc-400 [overflow-wrap:anywhere]">
                                             {dayReason(d)}
@@ -913,7 +915,7 @@ function TicketReview({ t, canEdit, onClose, onChanged, onOpenEmployee }: { t: a
                         <div style={{ display: wideSm ? "none" : undefined }} className="rounded-lg border border-zinc-800 divide-y divide-zinc-800" data-testid="ct-day-cards">
                             {days.map((d: any) => (
                                 <div key={d.date} className="p-2.5 space-y-1 text-[11px]">
-                                    <div className="flex items-start justify-between gap-2"><p className="text-white">{dmy(d.date)}{d.holiday ? <span className="text-sky-300"> · Holiday</span> : null}</p><Badge s={d.payableStatus} map={PAY} /></div>
+                                    <div className="flex items-start justify-between gap-2"><p className="text-white">{dmy(d.date)}{d.holiday ? <span className="text-sky-300"> · Holiday</span> : null}</p><Badge s={d.payableStatus} map={PAY} label={payLabel(d)} /></div>
                                     <p className="text-zinc-300">{d.clockIn || "—"} / {d.clockOut || "—"} · {d.attendance}{d.leave ? ` · ${d.leave}` : ""}</p>
                                     <p className="text-zinc-500 [overflow-wrap:anywhere]">{d.correction ? `HR correction · records: ${d.baseReason}` : d.reason}</p>
                                     {d.penalties.length ? <p className="text-amber-300 [overflow-wrap:anywhere]">{d.penalties.join(", ")}</p> : null}
@@ -930,7 +932,7 @@ function TicketReview({ t, canEdit, onClose, onChanged, onOpenEmployee }: { t: a
                                             <td className="py-1.5 px-2 text-white whitespace-nowrap">{dmy(d.date)}{d.holiday ? <span className="block text-sky-300">Holiday</span> : null}</td>
                                             <td className="py-1.5 px-2 text-zinc-300 whitespace-nowrap">{d.clockIn || "—"} / {d.clockOut || "—"}</td>
                                             <td className="py-1.5 px-2 text-zinc-300">{d.attendance}{d.leave ? ` · ${d.leave}` : ""}<span className="block text-zinc-500">{d.correction ? `HR correction · records: ${d.baseReason}` : d.reason}</span>{d.penalties.length ? <span className="block text-amber-300">{d.penalties.join(", ")}</span> : null}</td>
-                                            <td className="py-1.5 px-2"><Badge s={d.payableStatus} map={PAY} /></td>
+                                            <td className="py-1.5 px-2"><Badge s={d.payableStatus} map={PAY} label={payLabel(d)} /></td>
                                             <td className="py-1.5 px-2 text-right">{d.correctable && canEdit && !own && !closed && <button onClick={() => setDialog({ day: d })} data-testid="ct-mark" className="px-2 py-1 rounded-md bg-emerald-600 text-white text-[10px] font-black uppercase">Mark Payable</button>}</td>
                                         </tr>
                                     ))}

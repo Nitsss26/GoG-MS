@@ -522,6 +522,9 @@ const SprintPlanSchema = new Schema({
     facultyId: { type: String, required: true },
     facultyName: { type: String, required: true },
     college: { type: String },
+    // Multi-college professor (HR work-location routine has more than one college): one plan per college per week,
+    // and this plan belongs to `college` (not to the professor's Original Location). Absent on all older plans.
+    collegeFixed: { type: Boolean },
     weekStartDate: { type: String, required: true },
     weekEndDate: { type: String, required: true },
     stream: { type: String },

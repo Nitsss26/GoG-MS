@@ -13,11 +13,13 @@
  * Every role check is made here on the server, together with the college scope (Module 24).
  */
 import { LectureReport, SprintPlan, Employee, JobRun, Attendance } from '@/models/Schemas';
+import { planVisibleFor, planCollegeOf } from '@/lib/professor-routine';
 import {
     getClassStatus, getPlanStatus, PROFESSOR_ROLES, CL_CH_ROLES, PROFESSOR_EDITABLE_CLASS_STATUSES,
     CLASS_STATUS_LABEL, DEFAULT_CLASS_STRENGTH, roleShort, OM_TIME_GRACE_MINUTES, NOTES_GROUP_TYPES, notesGroupLabel,
 } from '@/lib/academic-status';
 import {
+
     getAcademicScope, scopeAllowsProfessor, collegeRecipients, employeesByIds, notifySafe, nowISO, newId,
     hasClassEnded, dayCodeOf, collegeName, AcademicScope,
 } from '@/lib/academic';
@@ -83,7 +85,12 @@ export function effectiveEntries(plan: any) {
 }
 
 async function findEntry(facultyId: string, date: string, lectureNumber?: number, sprintEntryId?: string) {
-    const plan: any = await planForDate(facultyId, date);
+    let plan: any = await planForDate(facultyId, date);
+    // multi-college professor: several submitted plans can cover the date (one per college) → the one with this class
+    if (sprintEntryId && plan && !classesOfDay(plan, date).some((e: any) => String(e._id) === String(sprintEntryId))) {
+        const all = await SprintPlan.find({ facultyId, weekStartDate: { $lte: date }, weekEndDate: { $gte: date } }).sort({ updatedAt: -1 });
+        plan = all.find((p: any) => getPlanStatus(p) !== 'DRAFT' && classesOfDay(p, date).some((e: any) => String(e._id) === String(sprintEntryId))) || plan;
+    }
     if (!plan) return { plan: null, entry: null, lectureNumber: lectureNumber || 0 };
     const list = classesOfDay(plan, date);
     let idx = sprintEntryId ? list.findIndex((e: any) => String(e._id) === String(sprintEntryId)) : -1;
@@ -131,6 +138,19 @@ export async function ensureRecordForClass(facultyId: string, date: string, lect
 // ─────────────────────────── access ───────────────────────────
 async function scopeFor(actor: Actor): Promise<AcademicScope> { return getAcademicScope(actor); }
 
+/**
+ * College of a class record: a class of a multi-college professor's college plan (collegeFixed) belongs to that
+ * plan's college; every other record keeps the old rule (professor's Original Location, else the record's college).
+ */
+async function fixedCollegeOf(record: any): Promise<string> {
+    if (!record?.sprintPlanId) return '';
+    const p: any = await SprintPlan.findById(String(record.sprintPlanId)).select('college collegeFixed').lean().catch(() => null);
+    return p?.collegeFixed && p?.college ? String(p.college) : '';
+}
+async function recordCollegeOf(record: any, profLocation?: string | null) {
+    return (await fixedCollegeOf(record)) || profLocation || record?.college;
+}
+
 /** May this actor see / act on this professor's records (college scope)? */
 export async function recordInScope(actor: Actor, record: any) {
     if (record.facultyId === actor.id) return true;
@@ -138,6 +158,9 @@ export async function recordInScope(actor: Actor, record: any) {
     const scope = await scopeFor(actor);
     if (scope.orgWide) return true;
     const prof: any = await Employee.findOne({ id: record.facultyId }).select('location').lean();
+    const fixed = await fixedCollegeOf(record);
+    // a class of another college: through that college (or the reporting line, as before)
+    if (fixed) return (scope.facultyIds || []).includes(String(record.facultyId)) || scopeAllowsProfessor({ ...scope, facultyIds: [] }, null, fixed);
     return scopeAllowsProfessor(scope, record.facultyId, prof?.location || record.college);
 }
 
@@ -200,7 +223,7 @@ function omCheckFrom(record: any, input: any, actor: Actor): { error: string } |
 
 async function omsOf(record: any) {
     const prof: any = await Employee.findOne({ id: record.facultyId }).select('location').lean();
-    return collegeRecipients(prof?.location || record.college, ['OM'], record.facultyId);
+    return collegeRecipients(await recordCollegeOf(record, prof?.location), ['OM'], record.facultyId);
 }
 async function professorOf(record: any) {
     const [p] = await employeesByIds([record.facultyId]);
@@ -293,7 +316,7 @@ export async function submitClassRecord(actor: Actor, input: SubmitInput): Promi
     const set: any = {
         ...entryFields(entry, plan),
         facultyName: actor.name,
-        college: actor.employee?.location || record.college || 'Not assigned',
+        college: (plan?.collegeFixed && plan?.college) || actor.employee?.location || record.college || 'Not assigned',
         lectureNumber,
         topicsCovered: input.topicsCovered || entry.topics || record.topicsCovered,
         scheduledDuration: entry.timeStart && entry.timeStop ? (() => { const [a, b] = entry.timeStart.split(':').map(Number); const [c, d] = entry.timeStop.split(':').map(Number); return (c * 60 + d) - (a * 60 + b); })() : record.scheduledDuration,
@@ -484,7 +507,7 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
             if (!r) return changed();
             const prof: any = await Employee.findOne({ id: r.facultyId }).select('location').lean();
             await notifySafe({
-                recipients: await collegeRecipients(prof?.location || r.college, ['CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'HOI'], r.facultyId),
+                recipients: await collegeRecipients(await recordCollegeOf(r, prof?.location), ['CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'HOI'], r.facultyId),
                 title: `Class Record Ready for Final Verification — ${r.facultyName}`,
                 message: `${actor.name} (OM) verified this class record. Any one of CL, CH or HOI can now do the final verification.`,
                 type: 'CLASS_OM_VERIFIED', link: `/academic/verification?record=${r._id}`,
@@ -582,7 +605,7 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
             });
             // The other final verifiers are told in-app that nothing is pending for them any more
             const prof: any = await Employee.findOne({ id: r.facultyId }).select('location').lean();
-            const others = (await collegeRecipients(prof?.location || r.college, ['CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'HOI'], r.facultyId)).filter((e: any) => e.id !== actor.id);
+            const others = (await collegeRecipients(await recordCollegeOf(r, prof?.location), ['CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'HOI'], r.facultyId)).filter((e: any) => e.id !== actor.id);
             await notifySafe({
                 recipients: [...others, ...(await omsOf(r))], email: false,
                 title: `Final verification done by ${who} — ${r.facultyName}`,
@@ -766,14 +789,33 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
 export async function buildClassList(professors: any[], from: string, to: string, opts: { includePlanned?: boolean } = {}) {
     const ids = professors.map((p: any) => p.id);
     const profMap = new Map(professors.map((p: any) => [p.id, p]));
-    const reports: any[] = await LectureReport.find({ facultyId: { $in: ids }, date: { $gte: from, $lte: to } }).lean();
+    let reports: any[] = await LectureReport.find({ facultyId: { $in: ids }, date: { $gte: from, $lte: to } }).lean();
     const items: any[] = [];
     const used = new Set<string>();
+    // Multi-college professors (HR work-location routine): a viewer sees only the plans / class records of
+    // colleges in their scope. Professors without such a split (_planScope absent or full) → unchanged.
+    const scoped = professors.some((p: any) => p?._planScope && !p._planScope.all);
+    const plans: any[] = (opts.includePlanned || scoped) ? await SprintPlan.find({ facultyId: { $in: ids }, weekStartDate: { $lte: to }, weekEndDate: { $gte: from } }).lean() : [];
+    const fixedCollege = new Map(plans.filter(p => p.collegeFixed && p.college).map(p => [String(p._id), String(p.college)]));
+    if (scoped) {
+        const shown = new Set(plans.filter(p => planVisibleFor(profMap.get(p.facultyId), p)).map(p => String(p._id)));
+        const hidden = new Set(plans.filter(p => !shown.has(String(p._id))).map(p => String(p._id)));
+        reports = reports.filter(r => {
+            const ps = profMap.get(r.facultyId)?._planScope;
+            if (!ps || ps.all) return true;
+            const pid = String(r.sprintPlanId || '');
+            if (pid && hidden.has(pid)) return false;
+            // professor in scope only through the routine: just the records of this scope's plans
+            if (!(ps.keys || []).includes(String(profMap.get(r.facultyId)?.location || ''))) return !!pid && shown.has(pid);
+            return true;
+        });
+    }
 
     if (opts.includePlanned) {
-        const plans: any[] = await SprintPlan.find({ facultyId: { $in: ids }, weekStartDate: { $lte: to }, weekEndDate: { $gte: from } }).lean();
         for (const plan of plans) {
             if (getPlanStatus(plan) === 'DRAFT') continue;
+            // multi-college professor: only the plans of colleges in the viewer's scope
+            if (!planVisibleFor(profMap.get(plan.facultyId), plan)) continue;
             const entries = effectiveEntries(plan);
             const dates = Array.from(new Set(entries.map((e: any) => e.date).filter((d: string) => d >= from && d <= to))) as string[];
             for (const date of dates) {
@@ -782,10 +824,10 @@ export async function buildClassList(professors: any[], from: string, to: string
                     const num = idx + 1;
                     const rep = reports.find(r => !used.has(String(r._id)) && r.facultyId === plan.facultyId && r.date === date &&
                         (r.sprintEntryId ? r.sprintEntryId === String(entry._id) : r.lectureNumber === num));
-                    if (rep) { used.add(String(rep._id)); items.push(decorate(rep, profMap)); return; }
+                    if (rep) { used.add(String(rep._id)); items.push(decorate(rep, profMap, fixedCollege)); return; }
                     items.push({
                         virtual: true, _id: `${plan.facultyId}|${date}|${num}|${entry._id}`,
-                        facultyId: plan.facultyId, facultyName: plan.facultyName, college: profMap.get(plan.facultyId)?.location || plan.college,
+                        facultyId: plan.facultyId, facultyName: plan.facultyName, college: planCollegeOf(plan, profMap.get(plan.facultyId)?.location),
                         date, lectureNumber: num, sprintPlanId: String(plan._id), sprintEntryId: String(entry._id),
                         courseName: entry.subjectName, subjectCode: entry.subjectCode, topicsCovered: entry.topics,
                         stream: entry.stream, year: entry.year, semester: entry.semester, section: entry.section,
@@ -797,7 +839,7 @@ export async function buildClassList(professors: any[], from: string, to: string
             }
         }
     }
-    reports.filter(r => !used.has(String(r._id))).forEach(r => items.push(decorate(r, profMap)));
+    reports.filter(r => !used.has(String(r._id))).forEach(r => items.push(decorate(r, profMap, fixedCollege)));
     // The professor's own clock-in / clock-out of that day (attendance), shown next to the OM's entry / exit
     if (items.length) {
         const att: any[] = await Attendance.find({ employeeId: { $in: ids }, date: { $gte: from, $lte: to } }).select('employeeId date clockIn clockOut status').lean().catch(() => []);
@@ -807,11 +849,11 @@ export async function buildClassList(professors: any[], from: string, to: string
     return items.sort((a, b) => (a.date + (a.timeStart || '')).localeCompare(b.date + (b.timeStart || '')));
 }
 
-function decorate(r: any, profMap: Map<string, any>) {
+function decorate(r: any, profMap: Map<string, any>, fixedCollege?: Map<string, string>) {
     return {
         ...r,
         _id: String(r._id),
-        college: profMap.get(r.facultyId)?.location || r.college,
+        college: (r.sprintPlanId && fixedCollege?.get(String(r.sprintPlanId))) || profMap.get(r.facultyId)?.location || r.college,
         timeStart: r.timeStart || r.classStartTime, timeStop: r.timeStop || r.classEndTime,
         pipelineStatus: getClassStatus(r),
         classEnded: hasClassEnded(r.date, r.timeStop || r.classEndTime),

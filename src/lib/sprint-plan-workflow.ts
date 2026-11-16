@@ -33,6 +33,7 @@ import {
 import { Employee } from '@/models/Schemas';
 import { validateSprintEntries } from '@/lib/time-utils';
 import { checkEntries, collegeOfEmployee, diffEntries, fmtDate } from '@/lib/sprint-plan-rules';
+import { professorRoutine, routineCollege, dayEditable, lockedDayMessage, planIsFor, planCollegeOf, weekDates } from '@/lib/professor-routine';
 
 /** "26 October – 1 November 2026" (Mon–Sun) */
 function weekText(start: string, end?: string) {
@@ -45,7 +46,7 @@ const plainEntries = (plan: any) => (plan?.entries || []).map((e: any) => (e.toO
 /** HOI (campus + reporting line) — and CL / CH when `withClCh` */
 async function planRecipients(plan: any, withClCh: boolean) {
     const prof: any = await Employee.findOne({ id: plan.facultyId }).select('location').lean();
-    const college = prof?.location || plan.college;
+    const college = planCollegeOf(plan, prof?.location);
     return { college, recipients: await collegeRecipients(college, withClCh ? ['HOI', 'CURRICULUM_LEAD', 'CURRICULUM_HEAD'] : ['HOI'], plan.facultyId) };
 }
 
@@ -64,7 +65,7 @@ export async function canManagePlan(actor: Actor, plan: any): Promise<boolean> {
     const scope = await getAcademicScope(actor);
     if (scope.orgWide) return true;
     const prof: any = await Employee.findOne({ id: plan.facultyId }).select('location').lean();
-    return scopeAllowsProfessor(scope, plan.facultyId, prof?.location || plan.college);
+    return planInScope(scope, plan, prof?.location);
 }
 
 /** Can this actor see this plan? */
@@ -74,7 +75,19 @@ export async function canViewPlan(actor: Actor, plan: any): Promise<boolean> {
     const scope = await getAcademicScope(actor);
     if (scope.orgWide) return true;
     const prof: any = await Employee.findOne({ id: plan.facultyId }).select('location').lean();
-    return scopeAllowsProfessor(scope, plan.facultyId, prof?.location || plan.college);
+    return planInScope(scope, plan, prof?.location);
+}
+
+/**
+ * A plan of another college (multi-college professor, `collegeFixed`) is in scope only through that college;
+ * the reporting line (HOI's own professors) keeps full access as before. Every other plan: unchanged rule.
+ */
+function planInScope(scope: any, plan: any, profLocation?: string | null) {
+    if (plan?.collegeFixed && plan?.college) {
+        if (scope.orgWide || (scope.facultyIds || []).includes(String(plan.facultyId))) return true;
+        return scopeAllowsProfessor({ ...scope, facultyIds: [] }, null, plan.college);
+    }
+    return scopeAllowsProfessor(scope, plan.facultyId, profLocation || plan.college);
 }
 
 /** Atomic status change: only applied while the plan is still in one of `from` */
@@ -133,14 +146,14 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
 
             // In-app + email to the reviewers: HOI (campus + reporting hierarchy), CL, CH, AD
             const subProf: any = await Employee.findOne({ id: plan.facultyId }).select('location').lean();
-            const reviewers = await collegeRecipients(subProf?.location || plan.college, ['HOI', 'CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'AD'], plan.facultyId);
+            const reviewers = await collegeRecipients(planCollegeOf(plan, subProf?.location), ['HOI', 'CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'AD'], plan.facultyId);
             await notifySafe({
                 recipients: reviewers,
                 title: `Sprint Plan ${to === 'SUBMITTED' ? 'Submitted' : 'Re-submitted'} — ${plan.facultyName}`,
                 message: `${plan.facultyName} ${to === 'SUBMITTED' ? 'submitted' : 're-submitted'} the sprint plan for the week ${weekLabel(plan.weekStartDate, plan.weekEndDate)}. Please review and lock it.`,
                 type: 'SPRINT_SUBMITTED',
                 link: `/curriculum/sprint-plans?week=${plan.weekStartDate}&plan=${plan._id}`,
-                entityType: 'SprintPlan', entityId: String(plan._id), college: subProf?.location || plan.college,
+                entityType: 'SprintPlan', entityId: String(plan._id), college: planCollegeOf(plan, subProf?.location),
                 actor,
                 rows: [...(await planDetails(plan)), { label: 'Submitted At', value: new Date(now).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) }],
             });
@@ -238,14 +251,14 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
 
             // Email + in-app: HOI + CL + CH + AD of the professor's college
             const prof: any = await Employee.findOne({ id: plan.facultyId }).select('location').lean();
-            const recipients = await collegeRecipients(prof?.location || plan.college, ['HOI', 'CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'AD'], plan.facultyId);
+            const recipients = await collegeRecipients(planCollegeOf(plan, prof?.location), ['HOI', 'CURRICULUM_LEAD', 'CURRICULUM_HEAD', 'AD'], plan.facultyId);
             await notifySafe({
                 recipients,
                 title: `Sprint Plan Unlock Request — ${plan.facultyName}`,
                 message: `${plan.facultyName} has requested to unlock the locked sprint plan for the week ${weekLabel(plan.weekStartDate, plan.weekEndDate)}.`,
                 type: 'SPRINT_UNLOCK_REQUESTED',
                 link: `/curriculum/sprint-plans?week=${plan.weekStartDate}&plan=${plan._id}`,
-                entityType: 'SprintPlan', entityId: String(plan._id), college: prof?.location || plan.college,
+                entityType: 'SprintPlan', entityId: String(plan._id), college: planCollegeOf(plan, prof?.location),
                 actor,
                 rows: [
                     ...(await planDetails(plan)),
@@ -357,7 +370,8 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
             if (!v.valid) return fail(400, v.error || 'Some classes have invalid times.');
             const missing = entries.findIndex((e: any) => !e.subjectName || !e.topics);
             if (missing >= 0) return fail(400, `Class ${missing + 1} (${entries[missing].day} ${fmtDate(entries[missing].date)}) needs a Subject and a Topic before locking.`);
-            const college = await collegeOfEmployee(actor.employee);
+            // a multi-college professor's college plan is checked against that college (hours, same class + section)
+            const college = await collegeOfEmployee(plan.collegeFixed && plan.college ? { location: plan.college } : actor.employee);
             const chk = await checkEntries({ facultyId: plan.facultyId, college, weekStartDate: plan.weekStartDate, weekEndDate: plan.weekEndDate, entries });
             if (!chk.ok) return fail(chk.status, chk.error);
 
@@ -484,9 +498,17 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
  * Professor saves the week's classes (create or edit). Allowed only while the plan is editable.
  * Never touches a locked plan.
  */
-export async function saveDraft(actor: Actor, body: { weekStartDate: string; weekEndDate: string; entries: any[]; stream?: string; year?: string }) {
+export async function saveDraft(actor: Actor, body: { weekStartDate: string; weekEndDate: string; entries: any[]; stream?: string; year?: string; college?: string }) {
     const { weekStartDate, weekEndDate, entries, stream, year } = body;
-    const existing: any = await SprintPlan.findOne({ facultyId: actor.id, weekStartDate });
+    // Multi-college professor (HR work-location routine): one plan per college; only the days HR assigned to
+    // that college may get new / changed classes. One college (or no routine): exactly the old single plan.
+    const routine = await professorRoutine(actor.employee || { id: actor.id }, weekDates(weekStartDate, weekEndDate));
+    const target = routine.multi ? (body.college ? routineCollege(routine, body.college) : routine.original || routine.colleges[0]) : null;
+    if (routine.multi && !target) return fail(403, 'You are not assigned to this college. Pick one of your assigned colleges.');
+    const weekPlans: any[] = routine.multi ? await SprintPlan.find({ facultyId: actor.id, weekStartDate }) : [];
+    const existing: any = routine.multi
+        ? weekPlans.find(p => planIsFor(p, target!, routine)) || null
+        : await SprintPlan.findOne({ facultyId: actor.id, weekStartDate });
     const status = existing ? getPlanStatus(existing) : 'DRAFT';
     if (existing && LOCKED_PLAN_STATUSES.includes(status)) {
         return fail(403, status === 'UNLOCK_REQUESTED'
@@ -512,16 +534,36 @@ export async function saveDraft(actor: Actor, body: { weekStartDate: string; wee
         const base = { createdAt: old.createdAt || '', createdBy: old.createdBy || '', updatedAt: old.updatedAt || '', updatedBy: old.updatedBy || '' };
         return changedIds.has(String(e._id)) ? { ...e, ...base, updatedAt: now, updatedBy: actor.id } : { ...e, ...base };
     });
+    // Days of another college: nothing new or changed may be saved there (removing a class is allowed)
+    if (routine.multi && target) {
+        const same = (a: any, b: any) => ['day', 'date', 'timeStart', 'timeStop', 'stream', 'year', 'semester', 'subjectCode', 'subjectName', 'topics', 'section', 'lectureType', 'unitNumber', 'content', 'className']
+            .every(k => String(a?.[k] ?? '') === String(b?.[k] ?? ''));
+        const bad = cleanEntries.findIndex((e: any) => {
+            if (dayEditable(routine, e.date, target.id)) return false;
+            const old: any = e._id ? beforeById.get(String(e._id)) : null;
+            return !old || !same(old, e);
+        });
+        if (bad >= 0) return { ...fail(403, lockedDayMessage(routine, cleanEntries[bad].date, target)), invalidIndices: [bad] } as any;
+        // the professor cannot be in two colleges at once: no overlap with the other colleges' plans of this week
+        const toM = (t: string) => { const [h, m] = String(t || '').split(':').map(Number); return h * 60 + (m || 0); };
+        for (const other of weekPlans.filter(p => !existing || String(p._id) !== String(existing._id))) {
+            const otherName = routine.colleges.find(c => planIsFor(other, c, routine))?.name || other.college || 'another college';
+            for (const o of plainEntries(other)) {
+                const i = cleanEntries.findIndex((e: any) => e.date === o.date && toM(e.timeStart) < toM(o.timeStop) && toM(o.timeStart) < toM(e.timeStop));
+                if (i >= 0) return { ...fail(400, `Class ${i + 1} (${cleanEntries[i].day} ${cleanEntries[i].timeStart}–${cleanEntries[i].timeStop}) overlaps your ${otherName} class ${o.timeStart}–${o.timeStop} on the same day.`), invalidIndices: [i] } as any;
+            }
+        }
+    }
     // Scheduling rules: own overlaps, college hours, the same class + section at the same time
     const faculty = actor.employee;
-    const college = await collegeOfEmployee(faculty);
+    const college = target ? { id: target.id, name: target.name, keys: target.keys } : await collegeOfEmployee(faculty);
     const chk = await checkEntries({ facultyId: actor.id, college, weekStartDate, weekEndDate, entries: cleanEntries });
     if (!chk.ok) return { ...fail(chk.status, chk.error), invalidIndices: chk.invalidIndices } as any;
     const logItems = changes.map(c => ({ at: now, by: actor.id, byName: actor.name, action: c.action, entryId: c.entryId, previousData: c.previousData, updatedData: c.updatedData, summary: c.summary }));
 
     if (!existing) {
         const plan = await SprintPlan.create({
-            facultyId: actor.id, facultyName: actor.name, college: faculty?.location || '',
+            facultyId: actor.id, facultyName: actor.name, college: target ? target.id : (faculty?.location || ''), ...(target ? { collegeFixed: true } : {}),
             weekStartDate, weekEndDate, stream: stream || '', year: year || '',
             entries: cleanEntries, isLocked: false, status: 'DRAFT', createdById: actor.id, version: 1,
             history: [historyItem(actor, 'Created', '', 'DRAFT')], changeLog: logItems,
@@ -531,7 +573,7 @@ export async function saveDraft(actor: Actor, body: { weekStartDate: string; wee
 
     // Plans saved before the lifecycle existed get their derived status written once
     const set: any = {
-        facultyName: actor.name, college: faculty?.location || existing.college || '',
+        facultyName: actor.name, college: target ? target.id : (faculty?.location || existing.college || ''), ...(target ? { collegeFixed: true } : {}),
         weekEndDate, stream: stream || existing.stream || '', year: year || existing.year || '',
         entries: cleanEntries, isLocked: false,
     };

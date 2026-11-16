@@ -7,6 +7,7 @@ import {
     FileText, Calendar, Users, Camera, Mic, AlertTriangle, CheckCircle2, BookOpen, Clock, X,
     Search, RotateCcw, Download, Loader2, ChevronDown, BarChart3, XCircle, Link2, Image as ImageIcon,
     Eye, Upload, ClipboardList, MoreVertical, Sparkles, CalendarDays, Info, ExternalLink, Plus,
+    Building2,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { ClassRecordDetails, ClassRecordActions } from "@/components/academic/ClassRecordDetails";
@@ -75,7 +76,14 @@ const dmy = (ymd: string) => ymd.split("-").reverse().join("-");
 
 export default function LectureReportPage() {
     const { user } = useAuth();
-    const [reports, setReports] = useState<Row[]>([]);
+    const [allReports, setReports] = useState<Row[]>([]);
+    // multi-college professor: All colleges or one college (from the API; empty for one college)
+    const [colleges, setColleges] = useState<{ id: string; name: string; keys: string[] }[]>([]);
+    const [colFilter, setColFilter] = useState("ALL");
+    const reports = useMemo(() => {
+        const c = colleges.find(x => x.id === colFilter);
+        return !c ? allReports : allReports.filter((r: any) => c.keys.includes(String(r.college || r.report?.college || "")));
+    }, [allReports, colleges, colFilter]);
     const [loading, setLoading] = useState(true);
     const [aiInsightReport, setAiInsightReport] = useState<ReportEntry | null>(null);
     const [pollingCount, setPollingCount] = useState(0);
@@ -123,12 +131,12 @@ export default function LectureReportPage() {
 
     // Polling for AI analysis
     useEffect(() => {
-        const needsPolling = reports.some(r => (r.report?.recordingUrl || r.recordingUrl) && !(r.report?.aiAnalysisAt || r.aiAnalysisAt));
+        const needsPolling = allReports.some(r => (r.report?.recordingUrl || r.recordingUrl) && !(r.report?.aiAnalysisAt || r.aiAnalysisAt));
         if (needsPolling) {
             const timer = setTimeout(() => setPollingCount(prev => prev + 1), 5000);
             return () => clearTimeout(timer);
         }
-    }, [reports]);
+    }, [allReports]);
 
     useEffect(() => {
         if (!menuFor) return;
@@ -151,6 +159,7 @@ export default function LectureReportPage() {
             if (no !== latest.current) return;
             // newest first
             setReports((data.lectures || []).slice().sort((a: Row, b: Row) => (b.date + (b.timeStart || "")).localeCompare(a.date + (a.timeStart || ""))));
+            setColleges(Array.isArray(data.colleges) ? data.colleges : []);
         } catch (e) {
             console.error(e);
         } finally {
@@ -266,6 +275,20 @@ export default function LectureReportPage() {
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                    {/* College (only for a professor who teaches at more than one college) */}
+                    {colleges.length > 1 && (
+                        <label className="h-11 flex items-center gap-2.5 pl-3 pr-2 rounded-xl border border-zinc-800 bg-zinc-900/70 hover:border-emerald-500/40">
+                            <Building2 size={16} className="text-emerald-400 shrink-0" />
+                            <span className="min-w-0">
+                                <span className="block text-[9.5px] font-bold uppercase tracking-wider text-zinc-500 leading-3">College</span>
+                                <select value={colFilter} onChange={e => setColFilter(e.target.value)} data-testid="college-filter"
+                                    className="block max-w-[200px] bg-transparent text-xs font-bold text-white focus:outline-none [color-scheme:dark] cursor-pointer">
+                                    <option value="ALL">All colleges</option>
+                                    {colleges.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                            </span>
+                        </label>
+                    )}
                     {/* Date range */}
                     <div className="relative">
                         <button onClick={() => setRangeOpen(v => !v)} aria-expanded={rangeOpen} data-testid="range-button"

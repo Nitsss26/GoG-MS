@@ -5,6 +5,44 @@ import { getSessionUser } from '@/lib/session-user';
 import { LocationScheduleAudit } from '@/models/LocationJustification';
 import { hoiDailyLocations, FIELD_VISIT_LOCATION, AUTO_FETCH_KEY } from '@/lib/hoi-daily-locations';
 import { randomBytes } from 'crypto';
+import { notifySafe, resolveCollege } from '@/lib/academic';
+import { PROFESSOR_ROLES } from '@/lib/academic-status';
+
+const LONG_DAY: Record<string, string> = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };
+/**
+ * Multi-college professors: the work-location routine decides which college's Sprint Plan a day belongs to.
+ * When a professor's day moves to another college, tell the professor (OMS + email) to update that Sprint Plan.
+ * Classes already planned for the old college stay (locked there); nothing is deleted.
+ */
+async function tellProfessorAboutDayChange(employeeId: string, date: string, oldValue: string, newValue: string, actor: any) {
+    const prof: any = await Employee.findOne({ id: employeeId }).select('id name email role location').lean();
+    if (!prof || !PROFESSOR_ROLES.includes(prof.role)) return;
+    const from = String(oldValue || prof.location || '').trim(), to = String(newValue || '').trim();
+    if (!to || from.toLowerCase() === to.toLowerCase()) return;
+    const [a, b] = await Promise.all([resolveCollege(from), resolveCollege(to)]);
+    if (a && b && a.id === b.id) return;
+    const isWfh = to.toLowerCase() === 'wfh';
+    if (!b && !isWfh) return;   // not a college (nothing to plan)
+    const dayText = LONG_DAY[date] ? `every ${LONG_DAY[date]}` : new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+    const newName = isWfh ? 'Work From Home' : b!.name;
+    await notifySafe({
+        recipients: [prof],
+        title: `Update your Sprint Plan — ${LONG_DAY[date] || date}`,
+        message: isWfh
+            ? `HR changed your work location for ${dayText} to Work From Home. You can plan that day in the Sprint Plan of any of your colleges.`
+            : `Update your Sprint Plan for ${dayText}: your new clock-in location is ${newName}. Plan that day's classes in the ${newName} Sprint Plan.`,
+        type: 'SPRINT_LOCATION_CHANGED',
+        link: '/faculty/sprint-plan',
+        entityType: 'WorkSchedule', entityId: `${employeeId}:${date}`, college: isWfh ? (a?.id || from) : b!.id, actor,
+        rows: [
+            { label: 'Day', value: LONG_DAY[date] ? `Every ${LONG_DAY[date]}` : date },
+            { label: 'Previous College', value: a?.name || from || '—' },
+            { label: 'New Clock-In Location', value: newName },
+            { label: 'Changed By', value: actor.name },
+        ],
+        note: a ? `Classes you already planned in the ${a.name} Sprint Plan for this day are kept there but locked; move them to the ${newName} plan.` : undefined,
+    });
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -93,6 +131,9 @@ export async function POST(req: Request) {
                 }).catch((e: any) => console.error('[schedule audit]', e?.message));
             }
         }
+
+        // professor's day moved to another college → "Update your Sprint Plan" (never blocks the save)
+        await tellProfessorAboutDayChange(String(employeeId), String(date), String(before?.location || ''), String(location || ''), actor).catch((e: any) => console.error('[schedule notify]', e?.message));
 
         // A new change means the whole schedule of this employee is unread for HR again
         if (!byHR) {

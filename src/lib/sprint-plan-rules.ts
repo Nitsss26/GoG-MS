@@ -84,8 +84,14 @@ export async function checkEntries(input: { facultyId: string; college: CollegeR
     const withSection = entries.map((x, i) => ({ x, i })).filter(({ x }) => String(x.section || '').trim() && classKeyOf(x));
     if (withSection.length) {
         const ids = (await collegeProfessorIds(college.keys)).filter(id => id !== facultyId);
-        if (ids.length) {
-            const others: any[] = await SprintPlan.find({ facultyId: { $in: ids }, weekStartDate: input.weekStartDate }).select('facultyId facultyName entries').lean();
+        {
+            // this college's plans: its professors' plans + multi-college professors' plans saved for this college
+            // (a multi-college professor's plan of another college is not this college's class)
+            const others: any[] = (await SprintPlan.find({
+                weekStartDate: input.weekStartDate, facultyId: { $ne: facultyId },
+                $or: [{ facultyId: { $in: ids } }, { collegeFixed: true, college: { $in: college.keys } }],
+            }).select('facultyId facultyName entries college collegeFixed').lean())
+                .filter((p: any) => !(p.collegeFixed && p.college && !college.keys.includes(String(p.college))));
             for (const { x, i } of withSection) {
                 for (const p of others) {
                     const hit = (p.entries || []).find((o: any) => o.date === x.date && classKeyOf(o) === classKeyOf(x) && overlaps(o, x));

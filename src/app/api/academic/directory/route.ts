@@ -5,6 +5,7 @@ import { Employee, Location, SprintPlan, LectureReport } from '@/models/Schemas'
 import {
     getAcademicScope, professorsInScope, scopeAllowsProfessor, zonedNow, mondayOf, addDays, isValidYmd,
 } from '@/lib/academic';
+import { planVisibleFor } from '@/lib/professor-routine';
 import { buildClassList } from '@/lib/class-record-workflow';
 import {
     PLAN_AUTHORITY_ROLES, PROFESSOR_ROLES, CL_CH_ROLES, getPlanStatus, PLAN_STATUS_LABEL, planApproval,
@@ -68,7 +69,9 @@ export async function GET(req: Request) {
         // ── this week's sprint plans and classes ──
         const plans: any[] = await SprintPlan.find({ facultyId: { $in: profIds }, weekStartDate: week })
             .select('facultyId facultyName weekStartDate weekEndDate status isLocked entries approval lockedById lockedByName lockedByRole lockedAt lockedBy submittedAt resubmittedAt').lean();
-        const planByProf = new Map(plans.map(p => [p.facultyId, p]));
+        // multi-college professor: only the plan(s) of colleges in this scope
+        const profScoped = new Map(profs.map((p: any) => [p.id, p]));
+        const planByProf = new Map(plans.filter(p => planVisibleFor(profScoped.get(p.facultyId), p)).map(p => [p.facultyId, p]));
         const classes: any[] = profs.length ? await buildClassList(profs, week, weekEnd, { includePlanned: true }) : [];
         const classesByProf = new Map<string, any[]>();
         classes.forEach(c => { if (!classesByProf.has(c.facultyId)) classesByProf.set(c.facultyId, []); classesByProf.get(c.facultyId)!.push(c); });

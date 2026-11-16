@@ -6,6 +6,7 @@ import { getSessionUser } from '@/lib/session-user';
 import { saveDraft, canViewPlan, canManagePlan } from '@/lib/sprint-plan-workflow';
 import { getPlanStatus, PROFESSOR_ROLES } from '@/lib/academic-status';
 import { getAcademicScope, professorIfInScope } from '@/lib/academic';
+import { professorRoutine, weekDates } from '@/lib/professor-routine';
 
 // GET — Fetch sprint plans for a faculty (the professor themself, or a role whose college scope includes them)
 export async function GET(req: Request) {
@@ -20,12 +21,14 @@ export async function GET(req: Request) {
 
         if (!facultyId) return NextResponse.json({ error: "facultyId required" }, { status: 400 });
 
+        let profEmp: any = facultyId === actor.id ? actor.employee : null;
         if (facultyId !== actor.id) {
             if (PROFESSOR_ROLES.includes(actor.role)) {
                 return NextResponse.json({ error: 'You can only open your own sprint plan here.' }, { status: 403 });
             }
             const scope = await getAcademicScope(actor);
-            if (!(await professorIfInScope(scope, facultyId))) {
+            profEmp = await professorIfInScope(scope, facultyId);
+            if (!profEmp) {
                 return NextResponse.json({ error: 'This professor is not in your campus or reporting hierarchy.' }, { status: 403 });
             }
         }
@@ -33,7 +36,9 @@ export async function GET(req: Request) {
         const query: any = { facultyId };
         if (weekStartDate) query.weekStartDate = weekStartDate;
 
-        const plans = await SprintPlan.find(query).sort({ weekStartDate: -1 }).lean();
+        let plans: any[] = await SprintPlan.find(query).sort({ weekStartDate: -1 }).lean();
+        // another viewer: a multi-college professor's plans of colleges outside the viewer's scope are left out
+        if (facultyId !== actor.id) plans = (await Promise.all(plans.map(async (p: any) => (await canViewPlan(actor, p)) ? p : null))).filter(Boolean);
         // Status for plans saved before the lifecycle existed, and what the viewer may do
         const withStatus = await Promise.all(plans.map(async (p: any) => ({
             ...p,
@@ -52,7 +57,14 @@ export async function GET(req: Request) {
             schedules = weekEntries;
         }
 
-        return NextResponse.json({ plans: withStatus, schedules });
+        // the professor's college for each day of the week (HR work-location routine) — multi-college sprint plans
+        let routine: any = null;
+        if (weekStartDate && profEmp) {
+            const r = await professorRoutine(profEmp, weekDates(weekStartDate));
+            routine = { multi: r.multi, original: r.original?.id || '', colleges: r.colleges.map(c => ({ id: c.id, name: c.name, keys: c.keys })), days: r.days };
+        }
+
+        return NextResponse.json({ plans: withStatus, schedules, routine });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -66,7 +78,7 @@ export async function POST(req: Request) {
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const body = await req.json();
-        const { facultyId, weekStartDate, weekEndDate, entries, stream, year } = body;
+        const { facultyId, weekStartDate, weekEndDate, entries, stream, year, college } = body;
 
         if (!weekStartDate || !weekEndDate) {
             return NextResponse.json({ error: "weekStartDate, weekEndDate required" }, { status: 400 });
@@ -93,7 +105,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: `Class ${outside + 1} is not inside this week.`, invalidIndices: [outside] }, { status: 400 });
         }
 
-        const result = await saveDraft(actor, { weekStartDate, weekEndDate, entries: entries || [], stream, year });
+        const result = await saveDraft(actor, { weekStartDate, weekEndDate, entries: entries || [], stream, year, college });
         if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
         const plan: any = result.plan.toObject ? result.plan.toObject() : result.plan;
         return NextResponse.json({ message: result.message, plan: { ...plan, status: getPlanStatus(plan), canManage: false } });

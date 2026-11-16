@@ -41,25 +41,41 @@ const dmy = (s: string) => s.split("-").reverse().join("-");
 const shortDmy = (s: string) => (s ? new Date(s + "T00:00:00Z").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }) : "");
 /** View modes (HOI / OM / AD / Founder / CL / CH): the selected college(s) as one timetable, one per year or one per semester */
 type ViewMode = "full" | "year" | "sem";
+/** roles that see the "Campus not assigned" group (professors whose college HR has not set) */
+const UNASSIGNED_ROLES = ["AD", "CURRICULUM_LEAD", "CURRICULUM_HEAD", "FOUNDER"];
 const VIEW_MODES: { key: ViewMode; label: string }[] = [{ key: "full", label: "Full College" }, { key: "year", label: "Year-Wise" }, { key: "sem", label: "Semester-Wise" }];
 /** first number in a value ("2nd Year" → 2, "Semester 3" → 3); no number → after the numbered ones */
 const ordNum = (v: string) => { const m = String(v || "").match(/\d+/); return m ? Number(m[0]) : 999; };
 const yearOf = (c: any) => String(c.year || "").trim();
 const semOf = (c: any) => String(c.semester || "").trim();
+/** download: what the timetable heading already shows, so the class boxes leave it out */
+type SheetHide = { year?: boolean; sem?: boolean; branch?: boolean };
+/** download heading: year / semester / branch of a timetable, each shown as a coloured pill */
+type SheetTag = { kind: "year" | "sem" | "branch"; text: string };
+const TAG_STYLE: Record<SheetTag["kind"], { bg: string; line: string; color: string }> = {
+    year: { bg: "#fef3c7", line: "#f59e0b", color: "#92400e" },
+    sem: { bg: "#dbeafe", line: "#3b82f6", color: "#1e3a8a" },
+    branch: { bg: "#ede9fe", line: "#8b5cf6", color: "#4c1d95" },
+};
 const semText = (v: string) => (/^\d+$/.test(v) ? `Semester ${v}` : v);
 /** Groups of classes by the year / semester stored on the sprint plan entries (no guessing; missing → "… not set") */
 const branchOf = (c: any) => String(c.branch || "").trim();
 /** byBranch (Branch-Wise button): each year / semester table is split once more by branch (Full College: one table per branch) */
-const groupClasses = (list: any[], mode: ViewMode, byBranch = false): { key: string; label: string; list: any[] }[] => {
-    if (mode === "full" && !byBranch) return [{ key: "all", label: "", list }];
-    const map = new Map<string, { key: string; label: string; y: string; s: string; br: string; list: any[] }>();
+const groupClasses = (list: any[], mode: ViewMode, byBranch = false): { key: string; label: string; tags: SheetTag[]; list: any[] }[] => {
+    if (mode === "full" && !byBranch) return [{ key: "all", label: "", tags: [], list }];
+    const map = new Map<string, { key: string; label: string; tags: SheetTag[]; y: string; s: string; br: string; list: any[] }>();
     for (const c of list) {
         const y = yearOf(c), sm = semOf(c), br = byBranch ? branchOf(c) : "";
         const base = mode === "full" ? "" : mode === "year" ? y.toLowerCase() : `${y.toLowerCase()}||${sm.toLowerCase()}`;
         const key = byBranch ? `${base}##${br.toLowerCase()}` : base;
         const baseLabel = mode === "full" ? "" : mode === "year" ? (y || "Year not set") : [y, sm ? semText(sm) : "Semester not set"].filter(Boolean).join(" / ");
         const label = byBranch ? [baseLabel, br || "Branch not set"].filter(Boolean).join(" / ") : baseLabel;
-        if (!map.has(key)) map.set(key, { key, label, y, s: sm, br, list: [] });
+        const tags: SheetTag[] = [
+            ...(mode === "year" ? [{ kind: "year" as const, text: y || "Year not set" }] : []),
+            ...(mode === "sem" ? [...(y ? [{ kind: "year" as const, text: y }] : []), { kind: "sem" as const, text: sm ? semText(sm) : "Semester not set" }] : []),
+            ...(byBranch ? [{ kind: "branch" as const, text: br || "Branch not set" }] : []),
+        ];
+        if (!map.has(key)) map.set(key, { key, label, tags, y, s: sm, br, list: [] });
         map.get(key)!.list.push(c);
     }
     return Array.from(map.values()).sort((a, b) =>
@@ -78,6 +94,17 @@ const SHEET_COLORS = [
     { fill: "#99f6e4", line: "#0d9488" }, { fill: "#fecaca", line: "#dc2626" }, { fill: "#d9f99d", line: "#65a30d" },
     { fill: "#c7d2fe", line: "#4f46e5" }, { fill: "#a5f3fc", line: "#0891b2" }, { fill: "#f5d0fe", line: "#c026d3" },
 ];
+/** colour of the i-th professor: the 12 colours above first, then new distinct colours (golden-angle hues) — never two professors alike */
+const hslHex = (h: number, sat: number, l: number) => {
+    const a = (sat / 100) * Math.min(l / 100, 1 - l / 100);
+    const f = (n: number) => { const k = (n + h / 30) % 12; const c = l / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); return Math.round(255 * c).toString(16).padStart(2, "0"); };
+    return `#${f(0)}${f(8)}${f(4)}`;
+};
+const profPalette = (i: number) => {
+    if (i < SHEET_COLORS.length) return SHEET_COLORS[i];
+    const h = (i * 137.508 + 15) % 360;
+    return { fill: hslHex(h, 80, 86), line: hslHex(h, 70, 42) };
+};
 const safeFile = (v: string) => String(v || "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 
 export default function WeeklyCalendarPage() {
@@ -107,7 +134,7 @@ export default function WeeklyCalendarPage() {
     const [byBranch, setByBranch] = useState(false);
     const [imgBusy, setImgBusy] = useState("");          // file name of the image being created
     const [exportMsg, setExportMsg] = useState("");      // progress of "Download Complete Calendar"
-    const [sheet, setSheet] = useState<{ id: string; college: string; sub: string; list: any[]; logo: string | null } | null>(null);   // image / PDF page being drawn
+    const [sheet, setSheet] = useState<{ id: string; college: string; sub: string; list: any[]; logo: string | null; hide?: SheetHide; tags?: SheetTag[] } | null>(null);   // image / PDF page being drawn
     const logoRef = useRef<string | null | undefined>(undefined);
     const sheetRef = useRef<HTMLDivElement | null>(null);
     const [closedTables, setClosedTables] = useState<Record<string, boolean>>({});   // collapsed timetables (by image file name)
@@ -138,6 +165,13 @@ export default function WeeklyCalendarPage() {
     useEffect(() => { if (user) load(); }, [user, week, view, college, facultyId]);
 
     const classes: any[] = data?.classes || [];
+    // one fixed colour per professor (same in every timetable, week, on screen and in downloads): order of professor id
+    const profOrder = useMemo(() => {
+        const ids = Array.from(new Set([...(data?.professors || []).map((p: any) => String(p.id)), ...(data?.classes || []).map((c: any) => String(c.facultyId))]))
+            .filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        return new Map(ids.map((id, i) => [id, i]));
+    }, [data]);
+    const profColor = (id: any) => profPalette(profOrder.get(String(id)) ?? 0);
     const options = useMemo(() => {
         const uniq = (k: string) => Array.from(new Set(classes.map(c => c[k]).filter(Boolean))).sort() as string[];
         return { subject: uniq("subjectName"), className: uniq("className"), section: uniq("section"), branch: uniq("branch"), year: uniq("year"), semester: uniq("semester") };
@@ -217,12 +251,12 @@ export default function WeeklyCalendarPage() {
             const v = String(c.college || "");
             if (v && !list.some((x: any) => x.keys.includes(v))) list.push({ id: v, name: v, keys: [v] });
         });
-        // professors appointed under the HOI whose campus HR has not set yet — never hide their classes
-        if (classes.some(c => !c.college) || (data?.professors || []).some((p: any) => !p.location)) {
+        // professors whose campus HR has not set yet → "Campus not assigned" (only AD, CL, CH and Founder see it; HOI / OM … see their own colleges)
+        if (UNASSIGNED_ROLES.includes(role) && (classes.some(c => !c.college) || (data?.professors || []).some((p: any) => !p.location))) {
             list.push({ id: "__none__", name: "Campus not assigned", keys: [""] });
         }
         return list;
-    }, [data?.colleges, classes]);
+    }, [data?.colleges, classes, role]);
     // HOI / OM … with exactly one college: that college is selected automatically
     useEffect(() => {
         if (isProf || campus !== "ALL" || campusList.length !== 1 || campusList[0].id === "__none__") return;
@@ -354,7 +388,7 @@ export default function WeeklyCalendarPage() {
         return logoRef.current;
     };
     /** draw one sheet off screen and turn it into a PNG (landscape, A4 ratio) */
-    const sheetToPng = async (spec: { college: string; sub: string; list: any[] }) => {
+    const sheetToPng = async (spec: { college: string; sub: string; list: any[]; hide?: SheetHide; tags?: SheetTag[] }) => {
         const logo = await loadLogo();
         const id = `${Date.now()}-${Math.random()}`;
         setSheet({ ...spec, id, logo });
@@ -376,7 +410,7 @@ export default function WeeklyCalendarPage() {
         return { url, W, H };
     };
     /** several sheets → one landscape A4 PDF (one page per sheet) */
-    const sheetsToPdf = async (specs: { college: string; sub: string; list: any[] }[], fileName: string, progress = false) => {
+    const sheetsToPdf = async (specs: { college: string; sub: string; list: any[]; hide?: SheetHide; tags?: SheetTag[] }[], fileName: string, progress = false) => {
         const { jsPDF } = await import("jspdf");
         const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
         const PW = doc.internal.pageSize.getWidth(), PH = doc.internal.pageSize.getHeight();
@@ -407,12 +441,14 @@ export default function WeeklyCalendarPage() {
         }
     };
 
+    /** a year / semester / branch timetable already names them in its heading → its class boxes leave them out */
+    const sheetHide = (label?: string): SheetHide => (label ? { year: mode !== "full", sem: mode === "sem", branch: byBranch } : {});
     /** Download Image of one timetable */
-    const downloadImage = async (file: string, list: any[], college: string, sub: string) => {
+    const downloadImage = async (file: string, list: any[], college: string, sub: string, hide?: SheetHide, tags?: SheetTag[]) => {
         if (imgBusy || pdfBusy || !list.length) return;
         setImgBusy(file);
         try {
-            const img = await sheetToPng({ college, sub, list });
+            const img = await sheetToPng({ college, sub, list, hide, tags });
             const a = document.createElement("a"); a.href = img.url; a.download = file; a.click();
         } catch (e: any) {
             console.error("[weekly-calendar] image failed", e);
@@ -421,20 +457,20 @@ export default function WeeklyCalendarPage() {
             setSheet(null); setImgBusy("");
         }
     };
-    const imageButton = (file: string, list: any[], college: string, sub: string) => (
+    const imageButton = (file: string, list: any[], college: string, sub: string, hide?: SheetHide, tags?: SheetTag[]) => (
         <button type="button" data-export-hide="1" data-testid="download-image" data-file={file} disabled={!!imgBusy || pdfBusy}
-            onClick={() => downloadImage(file, list, college, sub)}
+            onClick={() => downloadImage(file, list, college, sub, hide, tags)}
             className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 text-[11px] font-black hover:bg-emerald-500/20 disabled:opacity-60">
             {imgBusy === file ? <Loader2 size={13} className="animate-spin" /> : <ImageDown size={13} />} {imgBusy === file ? "Preparing…" : "Download Image"}
         </button>
     );
     /** "Download Complete Calendar": the selected college(s), week and view mode → one PDF, one page per timetable */
     const downloadComplete = async () => {
-        const specs: { college: string; sub: string; list: any[] }[] = [];
+        const specs: { college: string; sub: string; list: any[]; hide?: SheetHide; tags?: SheetTag[] }[] = [];
         for (const cp of campusesInView) {
             const list = classesOf(cp.id);
             if (!list.length) continue;
-            for (const g of groupClasses(list, mode, byBranch)) specs.push({ college: cp.name, sub: `${modeTitle} • ${g.label || "Weekly Timetable"}`, list: g.list });
+            for (const g of groupClasses(list, mode, byBranch)) specs.push({ college: cp.name, sub: `${modeTitle} • ${g.label || "Weekly Timetable"}`, list: g.list, hide: sheetHide(g.label), tags: g.tags });
         }
         if (!specs.length) { setNotice("No classes to download for this college and week."); setTimeout(() => setNotice(""), 3000); return; }
         setPdfBusy(true); setExportMsg("Creating PDF…");
@@ -447,13 +483,13 @@ export default function WeeklyCalendarPage() {
         } finally { setSheet(null); setPdfBusy(false); setExportMsg(""); }
     };
 
-    /** the printable sheet (white page; each class from its start time to its end time; same start = one below the other; empty periods = "Free") */
+    /** the printable sheet (white page; each class from its start time to its end time; same start = one below the other; empty periods = "Academic Lecture") */
     const renderSheet = () => {
         if (!sheet || !data) return null;
         const list = sheet.list;
         // Download layout: each class starts in the row of ITS OWN start time and its box reaches down to its end time.
         // Classes with the same start time are one box (one below the other); classes that overlap but start at different
-        // times sit side by side in that day (the day column is split only where needed). No running class → "Free".
+        // times sit side by side in that day (the day column is split only where needed). No running class → "Academic Lecture".
         const validList = list.filter(c => toMin(c.timeStop) > toMin(c.timeStart));
         const invalid = list.filter(c => !(toMin(c.timeStop) > toMin(c.timeStart)));
         const bounds = Array.from(new Set(validList.flatMap(c => [toMin(c.timeStart), toMin(c.timeStop)]))).sort((x, y) => x - y);
@@ -482,8 +518,8 @@ export default function WeeklyCalendarPage() {
         });
         const freeStyle: React.CSSProperties = { textAlign: "center", color: "#9ca3af", fontSize: 13, fontWeight: 600, padding: "16px 0" };
         const profs = Array.from(new Map([...list].sort((x, y) => (x.date + x.timeStart).localeCompare(y.date + y.timeStart)).map(c => [String(c.facultyId), c.facultyName])).entries());
-        // colour = professor; every professor of this timetable gets a different colour
-        const pal = (id: string) => SHEET_COLORS[Math.max(0, profs.findIndex(([pid]) => pid === String(id))) % SHEET_COLORS.length];
+        // colour = professor: each professor keeps one fixed colour (profColor), the same in every timetable and on screen
+        const pal = (id: string) => profColor(id);   // the professor's own colour (same as on screen)
         const GREEN = "#0b4a2e", LINE = "#d4d4d8";
         const extraLanes = lanes.reduce((n, l) => n + l.count - 1, 0);
         const baseWidth = 1600 + 230 * extraLanes;
@@ -501,7 +537,8 @@ export default function WeeklyCalendarPage() {
                                                                 const p = pal(c.facultyId);
                                                                 const lab = /lab|practical/i.test(`${c.lectureType || ""} ${c.subjectName || ""}`);
                                                                 const strong = (v: React.ReactNode) => <b style={{ fontWeight: 900, color: "#18181b" }}>{v}</b>;   // year / semester stand out
-                                                                const meta = [c.branch || c.className, c.year ? strong(sup(String(c.year))) : "", c.semester ? strong(semText(String(c.semester))) : "", c.section ? `Sec ${c.section}` : ""].filter(Boolean);
+                                                                const hd = sheet.hide || {};
+                                                                const meta = [hd.branch && c.branch ? "" : (c.branch || c.className), c.year && !hd.year ? strong(sup(String(c.year))) : "", c.semester && !hd.sem ? strong(semText(String(c.semester))) : "", c.section ? `Sec ${c.section}` : ""].filter(Boolean);
                                                                 return (
                                                                     <div key={c.id} data-testid="sheet-class" style={{ flex: "1 1 auto", background: filled ? "transparent" : p.fill, borderLeft: `5px solid ${filled ? "transparent" : p.line}`, borderRadius: 8, padding: "7px 8px", textAlign: "left" }}>
                                                                         <div style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 13.5, fontWeight: 900, color: "#18181b", lineHeight: 1.25 }}>
@@ -531,7 +568,15 @@ export default function WeeklyCalendarPage() {
                                 <CalendarDays size={28} style={{ color: "#27272a" }} />
                                 <div>
                                     <div style={{ fontSize: 24, fontWeight: 900, color: "#18181b", lineHeight: 1.1 }}>Weekly Calendar</div>
-                                    <div style={{ fontSize: 13, fontWeight: 600, color: "#52525b", marginTop: 3 }} data-testid="sheet-sub">{sheet.sub}</div>
+                                    {sheet.tags?.length
+                                        // year / semester / branch of this timetable → coloured pills
+                                        ? <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 5 }} data-testid="sheet-sub" data-text={sheet.sub}>
+                                            <span style={{ fontSize: 13, fontWeight: 600, color: "#52525b" }}>{sheet.sub.split(" • ")[0]}</span>
+                                            {sheet.tags.map((t, i) => (
+                                                <span key={i} data-testid={`sheet-tag-${t.kind}`} style={{ display: "inline-flex", alignItems: "center", padding: "3px 11px", borderRadius: 999, background: TAG_STYLE[t.kind].bg, border: `1.5px solid ${TAG_STYLE[t.kind].line}`, color: TAG_STYLE[t.kind].color, fontSize: 14, fontWeight: 900, lineHeight: 1.3 }}>{sup(t.text)}</span>
+                                            ))}
+                                        </div>
+                                        : <div style={{ fontSize: 13, fontWeight: 600, color: "#52525b", marginTop: 3 }} data-testid="sheet-sub" data-text={sheet.sub}>{sheet.sub}</div>}
                                 </div>
                             </div>
                         </div>
@@ -579,10 +624,10 @@ export default function WeeklyCalendarPage() {
                                             const cellStyle = (busy: boolean): React.CSSProperties => ({ borderTop: `1px solid ${LINE}`, borderRight: `1px solid ${LINE}`, padding: 6, verticalAlign: "top", background: busy ? "#f8faf9" : "#ffffff", height: 1 });
                                             if (row.other) {
                                                 const items = invalid.filter(c => c.date === d.date);
-                                                return <td key={d.date} colSpan={L.count} data-testid="sheet-cell" data-count={items.length} style={cellStyle(false)}>{items.length ? cards(items) : <div data-testid="sheet-free" style={freeStyle}>Free</div>}</td>;
+                                                return <td key={d.date} colSpan={L.count} data-testid="sheet-cell" data-count={items.length} style={cellStyle(false)}>{items.length ? cards(items) : <div data-testid="sheet-free" style={freeStyle}>Academic Lecture</div>}</td>;
                                             }
                                             const running = L.groups.some(g => g.start < row.to && g.end > row.from);
-                                            if (!running) return <td key={d.date} colSpan={L.count} data-testid="sheet-cell" data-count={0} style={cellStyle(false)}><div data-testid="sheet-free" style={freeStyle}>Free</div></td>;
+                                            if (!running) return <td key={d.date} colSpan={L.count} data-testid="sheet-cell" data-count={0} style={cellStyle(false)}><div data-testid="sheet-free" style={freeStyle}>Academic Lecture</div></td>;
                                             return Array.from({ length: L.count }, (_, k) => {
                                                 const g = L.groups.find(x => x.lane === k && x.start === row.from);
                                                 if (g) {
@@ -592,7 +637,10 @@ export default function WeeklyCalendarPage() {
                                                     const one = g.items.length === 1, p0 = pal(g.items[0].facultyId);
                                                     return (
                                                         <td key={`${d.date}-${k}`} rowSpan={span > 1 ? span : undefined} data-testid="sheet-cell" data-count={g.items.length} data-span={span} style={{ ...cellStyle(false), position: "relative" }}>
-                                                            <div data-testid="sheet-box" style={{ position: "absolute", inset: 6, borderRadius: 8, background: one ? p0.fill : "#f1f5f3", borderLeft: one ? `5px solid ${p0.line}` : "none", border: one ? undefined : "1px dashed #a1a1aa" }} />
+                                                            {/* one class: coloured box with the professor's colour line on the left (no "border" key here — it would wipe that line) */}
+                                                            <div data-testid="sheet-box" style={one
+                                                                ? { position: "absolute", inset: 6, borderRadius: 8, background: p0.fill, borderLeft: `5px solid ${p0.line}` }
+                                                                : { position: "absolute", inset: 6, borderRadius: 8, background: "#f1f5f3", border: "1px dashed #a1a1aa" }} />
                                                             <div style={{ position: "relative" }}>{cards(g.items, one)}</div>
                                                         </td>
                                                     );
@@ -624,7 +672,7 @@ export default function WeeklyCalendarPage() {
     };
 
     // ── Timetable (same look and colours as the Sprint Plan timetable). compact = all-campuses overview ──
-    const Timetable = ({ list, compact, title, badge, exportFile, sheetCollege, sheetLabel }: { list: any[]; compact?: boolean; title?: string; badge?: string; exportFile?: string; sheetCollege?: string; sheetLabel?: string }) => {
+    const Timetable = ({ list, compact, title, badge, exportFile, sheetCollege, sheetLabel, sheetTags }: { list: any[]; compact?: boolean; title?: string; badge?: string; exportFile?: string; sheetCollege?: string; sheetLabel?: string; sheetTags?: SheetTag[] }) => {
         const grid = rowsFor(list);
         const rows = grid.rows;
         const profsHere = Array.from(new Map(list.map(c => [c.facultyId, c.facultyName])).entries());
@@ -633,7 +681,7 @@ export default function WeeklyCalendarPage() {
         const colorKeys = showProfessor
             ? profsHere.map(([id]) => String(id))
             : Array.from(new Set([...list].sort((x, y) => (x.date + x.timeStart).localeCompare(y.date + y.timeStart)).map(c => String(c.subjectName || c.topics || "Lecture").toLowerCase())));
-        const colorOf = (c: any) => CARD_COLORS[Math.max(0, colorKeys.indexOf(showProfessor ? String(c.facultyId) : String(c.subjectName || c.topics || "Lecture").toLowerCase())) % CARD_COLORS.length];
+        const colorOf = (c: any) => showProfessor ? profColor(c.facultyId).line : CARD_COLORS[Math.max(0, colorKeys.indexOf(String(c.subjectName || c.topics || "Lecture").toLowerCase())) % CARD_COLORS.length];
         const shortDate = (ymd: string) => new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
         const closed = !!(exportFile && !compact && closedTables[exportFile]);
         return (
@@ -652,7 +700,7 @@ export default function WeeklyCalendarPage() {
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
                         <p className="flex items-center gap-1.5 text-[11px] text-zinc-400">{!exportFile && badge ? `${badge} · ` : ""}<Calendar size={13} className="text-zinc-500" /> {shortDmy(data.weekStart)} – {shortDmy(data.weekEnd)}</p>
-                        {exportFile && imageButton(exportFile, list, sheetCollege || String(title || "").replace(/^Weekly Schedule — /, ""), `${modeTitle} • ${sheetLabel || "Weekly Timetable"}`)}
+                        {exportFile && imageButton(exportFile, list, sheetCollege || String(title || "").replace(/^Weekly Schedule — /, ""), `${modeTitle} • ${sheetLabel || "Weekly Timetable"}`, sheetHide(sheetLabel), sheetTags)}
                     </div>
                 </div>}
                 {!closed && (<>
@@ -768,7 +816,7 @@ export default function WeeklyCalendarPage() {
                         <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Colour = Professor</span>
                         {profsHere.map(([id, name]) => (
                             <span key={id} className="flex items-center gap-2">
-                                <span className="w-3 h-3 rounded-md border" style={{ background: `${CARD_COLORS[Math.max(0, colorKeys.indexOf(String(id))) % CARD_COLORS.length]}40`, borderColor: CARD_COLORS[Math.max(0, colorKeys.indexOf(String(id))) % CARD_COLORS.length] }} />
+                                <span className="w-3 h-3 rounded-md border" style={{ background: `${profColor(id).line}40`, borderColor: profColor(id).line }} />
                                 <span className="font-bold text-zinc-300">{name}</span>
                             </span>
                         ))}
@@ -986,7 +1034,7 @@ export default function WeeklyCalendarPage() {
                         const a = CAMPUS_ACCENTS[i % CAMPUS_ACCENTS.length];
                         const tables = groups.map(g => (
                             <div key={g.key} data-testid="group-table" data-group={g.label}>
-                                <Timetable list={g.list} title={`${cp.name} — ${g.label}`} exportFile={imageFile(cp.id, g.label)} sheetCollege={cp.name} sheetLabel={g.label} />
+                                <Timetable list={g.list} title={`${cp.name} — ${g.label}`} exportFile={imageFile(cp.id, g.label)} sheetCollege={cp.name} sheetLabel={g.label} sheetTags={g.tags} />
                             </div>
                         ));
                         if (singleSection) return <div key={cp.id} className="space-y-4">{tables.length ? tables : <p className="py-10 text-center text-xs text-zinc-500">No classes this week.</p>}</div>;
