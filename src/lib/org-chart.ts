@@ -4,6 +4,7 @@
  *
  *  CEO · COO · CTO  (role FOUNDER)
  *        │
+ *  PLACEMENT & INTERN HEAD (one box, left of the Tech Lead, same level)
  *  TECH LEAD (TL) ── Tech Team (→ Tech Interns under their assigned Tech Team member) / Marketing Team
  *  AD             ── HOIs (each → its Professors, OMs, Tech & Marketing employees) · CL / CH · No HOI Assigned
  *  HR             ── HR Executive
@@ -29,6 +30,8 @@ export type OrgHoi = { person: OrgPerson; members: OrgPerson[] };
 export type OrgChartData = {
     executives: OrgPerson[];
     techLeads: OrgPerson[];
+    /** Placement & Intern Head (role PLACEMENT_INTERN_HEAD): one box immediately left of the Tech Lead */
+    placementHeads: OrgPerson[];
     ads: OrgPerson[];
     hrHeads: OrgPerson[];
     hrExecutives: OrgPerson[];
@@ -49,7 +52,7 @@ const INACTIVE = /inactive|terminated|resigned|exited|relieved|left|removed|sepa
 const ACADEMIC = ["PROFESSOR", "FACULTY", "OM"];
 const HOI_MEMBER_ROLES = ["PROFESSOR", "FACULTY", "OM", "TECH_TEAM", "MARKETING_TEAM"];
 // Roles that already have their own fixed place — department text never moves them
-const FIXED_ROLES = ["FOUNDER", "TL", "AD", "HR", "HOI", "CURRICULUM_LEAD", "CURRICULUM_HEAD", "PROFESSOR", "FACULTY", "OM", "TECH_INTERN"];
+const FIXED_ROLES = ["FOUNDER", "TL", "PLACEMENT_INTERN_HEAD", "AD", "HR", "HOI", "CURRICULUM_LEAD", "CURRICULUM_HEAD", "PROFESSOR", "FACULTY", "OM", "TECH_INTERN"];
 const HR_EXEC = /\bhr\s*exec/i;
 const isTechDept = (d: string) => /^(tech|technology|tech\s*team|it|engineering|software)$/i.test(d.trim());
 const isMarketingDept = (d: string) => /marketing/i.test(d);
@@ -69,7 +72,7 @@ export function toOrgPerson(e: any, override?: { name?: string; designation?: st
     const fallback: Record<string, string> = {
         FOUNDER: "Founder", TL: "Tech Lead", AD: "AD", HR: "HR", HOI: "HOI", OM: "Operation Manager",
         PROFESSOR: "Professor", FACULTY: "Professor", CURRICULUM_LEAD: "CL", CURRICULUM_HEAD: "CH",
-        TECH_TEAM: "Tech Team", TECH_INTERN: "Tech Intern", MARKETING_TEAM: "Marketing Team", HR_EXECUTIVE: "HR Executive",
+        TECH_TEAM: "Tech Team", PLACEMENT_INTERN_HEAD: "Placement & Intern Head", TECH_INTERN: "Tech Intern", MARKETING_TEAM: "Marketing Team", HR_EXECUTIVE: "HR Executive",
     };
     const name = String(override?.name || e.name || e.id || "").trim();
     return {
@@ -89,6 +92,7 @@ export function buildOrgChart(people: OrgPerson[], statusOf: (id: string) => str
 
     const executives = of("FOUNDER").sort((a, b) => execRank(a) - execRank(b) || byName(a, b));
     const techLeads = of("TL");
+    const placementHeads = of("PLACEMENT_INTERN_HEAD");
     const ads = of("AD");
     const hrAll = active.filter(p => p.role === "HR" || p.role === "HR_EXECUTIVE" || (!FIXED_ROLES.includes(p.role) && HR_EXEC.test(p.designation)));
     const hrExecutives = hrAll.filter(p => p.role === "HR_EXECUTIVE" || HR_EXEC.test(p.designation)).sort(byName);
@@ -128,7 +132,7 @@ export function buildOrgChart(people: OrgPerson[], statusOf: (id: string) => str
     const placements: Record<string, string[]> = {};
     const put = (id: string, key: string) => { (placements[id] ||= []).includes(key) || placements[id].push(key); };
     executives.forEach(p => put(p.id, "root"));
-    [...techLeads, ...ads, ...hrHeads].forEach(p => put(p.id, "root"));
+    [...placementHeads, ...techLeads, ...ads, ...hrHeads].forEach(p => put(p.id, "root"));
     techTeam.forEach(p => put(p.id, "grp:tech"));
     Object.values(techChildren).flat().forEach(p => put(p.id, "grp:tech"));
     techInterns.forEach(p => put(p.id, "grp:techinterns"));
@@ -138,5 +142,5 @@ export function buildOrgChart(people: OrgPerson[], statusOf: (id: string) => str
     noHoi.forEach(p => put(p.id, "grp:nohoi"));
     hois.forEach(h => { put(h.person.id, "root"); h.members.forEach(m => put(m.id, `hoi:${h.person.id}`)); });
 
-    return { executives, techLeads, ads, hrHeads, hrExecutives, techTeam, marketingTeam, techChildren, techInterns, hois, clch, noHoi, placements };
+    return { executives, techLeads, placementHeads, ads, hrHeads, hrExecutives, techTeam, marketingTeam, techChildren, techInterns, hois, clch, noHoi, placements };
 }

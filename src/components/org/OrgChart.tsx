@@ -30,7 +30,7 @@ const TONES: Record<string, Tone> = {
 };
 const toneOf = (p: OrgPerson): string => {
     if (p.role === "FOUNDER") return "exec";
-    if (p.role === "TL") return "tl";
+    if (p.role === "TL" || p.role === "PLACEMENT_INTERN_HEAD") return "tl";   // Placement & Intern Head: same card styling as Tech Lead
     if (p.role === "AD") return "ad";
     if (p.role === "HR_EXECUTIVE" || /\bhr\s*exec/i.test(p.designation)) return "hrexec";
     if (p.role === "HR") return "hr";
@@ -265,19 +265,26 @@ export default function OrgChart({ data, highlightId }: { data: OrgChartData; hi
     const MID = GAP_Y / 2 + CARD_H / 2;                 // y of a row-2 card's middle inside the band
     const BAND = GAP_Y / 2 + CARD_H + TAIL + GAP_Y / 2; // row-2 band height (top line, card, tail, line to the shared bus)
     const TOP = CARD_H + TAIL + GAP_Y / 2;              // executives row + line down to the row-2 bus
+    // Placement & Intern Head: one box immediately LEFT of the Tech Lead, same level, joined to the executives only
+    const pih = data.placementHeads || [];
+    const hasPih = pih.length > 0;
+    // with that box in the row, the Tech Lead → Tech Team / Marketing line runs just below the cards (through the Tech Lead's
+    // tail) so it passes under the Placement & Intern Head box instead of through it
+    const SIDE_Y = hasPih ? GAP_Y / 2 + CARD_H + TAIL / 2 : MID;
     const second = [
+        ...(hasPih ? [{ key: "pih", people: pih, label: "Placement & Intern Head" }] : []),
         { key: "tl", people: data.techLeads, label: "Tech Lead" },
         { key: "ad", people: data.ads, label: "AD" },
         { key: "hr", people: data.hrHeads, label: "HR" },
     ];
-    const sideColumn = (side: "left" | "right", items: { key: string; node: ReactNode; drop?: number }[], testId: string) => (
+    const sideColumn = (side: "left" | "right", items: { key: string; node: ReactNode; drop?: number }[], testId: string, lineY = MID) => (
         <div className="flex flex-col items-center" data-testid={testId}
             style={side === "left" ? { paddingLeft: GAP_X / 2 } : { paddingRight: GAP_X / 2 }}>
             <div style={{ height: TOP }} />
             <div className="relative w-full" style={{ height: BAND }}>
                 {/* side line from the Tech Lead / HR card, then down to the groups */}
-                <div className={cn("absolute h-[2px]", LINE, side === "left" ? "left-1/2 right-0" : "left-0 right-1/2")} style={{ top: MID }} />
-                <div className={cn("absolute w-[2px] left-1/2 -translate-x-1/2 bottom-0", LINE)} style={{ top: MID }} />
+                <div className={cn("absolute h-[2px]", LINE, side === "left" ? "left-1/2 right-0" : "left-0 right-1/2")} style={{ top: lineY }} />
+                <div className={cn("absolute w-[2px] left-1/2 -translate-x-1/2 bottom-0", LINE)} style={{ top: lineY }} />
             </div>
             <Branches items={items} />
         </div>
@@ -302,30 +309,42 @@ export default function OrgChart({ data, highlightId }: { data: OrgChartData; hi
                     ) : group("tech", "Tech Team", <Code2 size={12} />, "tech", data.techTeam, "No Tech Team employees yet.", data.techChildren),
                 },
                 { key: "marketing", drop: skipDepth, node: group("marketing", "Marketing Team", <Megaphone size={12} />, "marketing", data.marketingTeam, "No Marketing Team employees yet.") },
-            ], "org-col-techlead")}
+            ], "org-col-techlead", SIDE_Y)}
 
             <div className="flex flex-col items-center" data-testid="org-col-main">
                 <SectionRow people={data.executives} placeholder="CEO" highlightId={highlightId} />
                 <VLine h={GAP_Y / 2} />
                 <div className="flex w-full items-start">
-                    <div className="flex-1 self-stretch relative"><div className={cn("absolute left-0 right-0 h-[2px]", LINE)} style={{ top: MID }} /></div>
+                    <div className="flex-1 self-stretch relative"><div className={cn("absolute left-0 right-0 h-[2px]", LINE)} style={{ top: SIDE_Y }} /></div>
                     <div className="flex items-start">
-                        {second.map((c, i) => (
-                            <div key={c.key} className="relative flex flex-col items-center" style={{ paddingLeft: GAP_X / 2, paddingRight: GAP_X / 2 }}>
+                        {second.map((c, i) => {
+                            const isPih = c.key === "pih";
+                            const busFrom = hasPih ? 1 : 0;   // the shared bus to HOIs / CL / CH starts at the Tech Lead
+                            return (
+                            <div key={c.key} className="relative flex flex-col items-center" style={{ paddingLeft: GAP_X / 2, paddingRight: GAP_X / 2 }} data-testid={isPih ? "org-col-pih" : undefined}>
                                 {/* top bus from the executives */}
                                 {i > 0 && <div className={cn("absolute top-0 left-0 w-1/2 h-[2px]", LINE)} />}
                                 {i < second.length - 1 && <div className={cn("absolute top-0 right-0 w-1/2 h-[2px]", LINE)} />}
-                                {/* side lines: Tech Lead → left column, HR → right column */}
-                                {i === 0 && <div className={cn("absolute left-0 w-1/2 h-[2px]", LINE)} style={{ top: MID }} />}
+                                {/* side lines: Tech Lead → left column (under the Placement & Intern Head box when it is there), HR → right column */}
+                                {isPih && <div className={cn("absolute left-0 right-0 h-[2px]", LINE)} style={{ top: SIDE_Y }} data-testid="org-pih-pass" />}
+                                {c.key === "tl" && <div className={cn("absolute left-0 w-1/2 h-[2px]", LINE)} style={{ top: SIDE_Y }} />}
                                 {i === second.length - 1 && <div className={cn("absolute right-0 w-1/2 h-[2px]", LINE)} style={{ top: MID }} />}
                                 <VLine h={GAP_Y / 2} />
-                                <SectionRow people={c.people} placeholder={c.label} highlightId={highlightId} />
-                                <VLine h={GAP_Y / 2} />
-                                {/* shared bus under all three → HOIs and CL / CH */}
-                                {i > 0 && <div className={cn("absolute bottom-0 left-0 w-1/2 h-[2px]", LINE)} />}
-                                {i < second.length - 1 && <div className={cn("absolute bottom-0 right-0 w-1/2 h-[2px]", LINE)} />}
+                                {isPih ? (
+                                    // a leaf at this level: no line down to the HOI bus (keeps the same row height)
+                                    <div className="relative flex" style={{ gap: 18, paddingBottom: TAIL + GAP_Y / 2 }} data-testid="org-section-pih">
+                                        {c.people.map(p => <PersonCard key={p.id} p={p} highlight={highlightId === p.id} />)}
+                                    </div>
+                                ) : (<>
+                                    <SectionRow people={c.people} placeholder={c.label} highlightId={highlightId} />
+                                    <VLine h={GAP_Y / 2} />
+                                </>)}
+                                {/* shared bus under Tech Lead · AD · HR → HOIs and CL / CH */}
+                                {!isPih && i > busFrom && <div className={cn("absolute bottom-0 left-0 w-1/2 h-[2px]", LINE)} />}
+                                {!isPih && i < second.length - 1 && <div className={cn("absolute bottom-0 right-0 w-1/2 h-[2px]", LINE)} />}
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                     <div className="flex-1 self-stretch relative"><div className={cn("absolute left-0 right-0 h-[2px]", LINE)} style={{ top: MID }} /></div>
                 </div>
