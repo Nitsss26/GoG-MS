@@ -49,6 +49,7 @@ export type OrgChartData = {
 };
 
 const INACTIVE = /inactive|terminated|resigned|exited|relieved|left|removed|separated/i;
+const EXCLUDED_ORG_IDS = new Set(["EMP001", "EMP251"]);
 const ACADEMIC = ["PROFESSOR", "FACULTY", "OM"];
 const HOI_MEMBER_ROLES = ["PROFESSOR", "FACULTY", "OM", "TECH_TEAM", "MARKETING_TEAM"];
 // Roles that already have their own fixed place — department text never moves them
@@ -70,15 +71,22 @@ const memberRank: Record<string, number> = { PROFESSOR: 0, FACULTY: 0, OM: 1, TE
 export function toOrgPerson(e: any, override?: { name?: string; designation?: string }): OrgPerson {
     const role = String(e.role || "").toUpperCase();
     const fallback: Record<string, string> = {
-        FOUNDER: "Founder", TL: "Tech Lead", AD: "AD", HR: "HR", HOI: "HOI", OM: "Operation Manager",
+        FOUNDER: "Founder", TL: "Technology, Marketing & Curriculum Head", AD: "Associate Director Business & Operations", HR: "HR", HOI: "HOI", OM: "Operation Manager",
         PROFESSOR: "Professor", FACULTY: "Professor", CURRICULUM_LEAD: "CL", CURRICULUM_HEAD: "CH",
         TECH_TEAM: "Tech Team", PLACEMENT_INTERN_HEAD: "Placement & Intern Head", TECH_INTERN: "Tech Intern", MARKETING_TEAM: "Marketing Team", HR_EXECUTIVE: "HR Executive",
     };
     const name = String(override?.name || e.name || e.id || "").trim();
+    let designation = String(override?.designation || e.designation || fallback[role] || role.replace(/_/g, " ")).trim();
+    if (role === "TL" || designation.toLowerCase() === "tech lead" || designation.toLowerCase() === "tl") {
+        designation = "Technology, Marketing & Curriculum Head";
+    }
+    if (role === "AD" || designation.toLowerCase() === "ad" || designation.toLowerCase() === "associate director") {
+        designation = "Associate Director Business & Operations";
+    }
     return {
         id: String(e.id),
         name,
-        designation: String(override?.designation || e.designation || fallback[role] || role.replace(/_/g, " ")).trim(),
+        designation,
         role,
         dept: String(e.dept || "").trim(),
         photo: e.photoUrl || e.passportPhotoUrl || undefined,   // profile photo (HR can replace it) first
@@ -87,7 +95,7 @@ export function toOrgPerson(e: any, override?: { name?: string; designation?: st
 }
 
 export function buildOrgChart(people: OrgPerson[], statusOf: (id: string) => string = () => "Active"): OrgChartData {
-    const active = people.filter(p => p.id && p.name && !INACTIVE.test(statusOf(p.id) || ""));
+    const active = people.filter(p => p.id && p.name && !EXCLUDED_ORG_IDS.has(String(p.id).trim().toUpperCase()) && !INACTIVE.test(statusOf(p.id) || ""));
     const of = (role: string) => active.filter(p => p.role === role).sort(byName);
 
     const executives = of("FOUNDER").sort((a, b) => execRank(a) - execRank(b) || byName(a, b));

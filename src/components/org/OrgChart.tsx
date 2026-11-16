@@ -6,8 +6,8 @@ import { cn } from "@/lib/utils";
 import type { OrgChartData, OrgPerson } from "@/lib/org-chart";
 
 /* ── Layout constants: every card has the same size so each hierarchy depth lines up across the whole chart ── */
-const CARD_W = 228;
-const CARD_H = 64;
+const CARD_W = 256;
+const CARD_H = 68;
 const GAP_Y = 52;          // vertical space between depths (half above the bus, half below)
 const GAP_X = 28;          // horizontal space between sibling subtrees
 const TAIL = 14;           // line under a section row
@@ -48,10 +48,49 @@ const VLine = ({ h, className }: { h: number; className?: string }) => <div clas
 
 /* ── Employee card ── */
 // Org chart shows the full title for short executive designations (display only — the stored designation is unchanged)
-const FULL_TITLE: Record<string, string> = { COO: "Chief Operating Officer", CEO: "Chief Executive Officer", CTO: "Chief Technology Officer", CFO: "Chief Financial Officer" };
+const FULL_TITLE: Record<string, string> = {
+    COO: "CO-FOUNDER & COO",
+    CEO: "Chief Executive Officer",
+    CTO: "Chief Technology Officer",
+    CFO: "Chief Financial Officer",
+    AD: "Associate Director Business & Operations",
+    "ASSOCIATE DIRECTOR": "Associate Director Business & Operations",
+    TL: "Technology, Marketing & Curriculum Head",
+    "TECH LEAD": "Technology, Marketing & Curriculum Head",
+};
 const fullTitle = (d?: string) => (d && FULL_TITLE[d.trim().toUpperCase()]) || d || "";
+
+const splitDesignation = (d?: string): { line1: string; line2: string } | null => {
+    if (!d) return null;
+    const full = fullTitle(d).trim();
+    if (/^Technology,\s*Marketing\s*(&|and)\s*Curriculum\s+Head$/i.test(full)) {
+        return { line1: full.replace(/\s+Head$/i, "").trim(), line2: "Head" };
+    }
+    if (/^Associate\s+Director\s+Business\s*(&|and)\s*Operations$/i.test(full)) {
+        return { line1: full.replace(/\s+Operations$/i, "").trim(), line2: "Operations" };
+    }
+    if (/^Placement\s*(&|and)\s*Intern(ship)?\s+Head$/i.test(full)) {
+        return { line1: full.replace(/\s+Head$/i, "").trim(), line2: "Head" };
+    }
+    if (/^HR,\s*Finance\s*(&|and)\s*Admin\s+Head$/i.test(full)) {
+        return { line1: full.replace(/\s+Head$/i, "").trim(), line2: "Head" };
+    }
+    if (full.length > 24 && /\s+(Head|Operations)$/i.test(full)) {
+        const lastWordMatch = full.match(/\s+(Head|Operations)$/i);
+        if (lastWordMatch && lastWordMatch.index !== undefined) {
+            return {
+                line1: full.slice(0, lastWordMatch.index).trim(),
+                line2: lastWordMatch[1],
+            };
+        }
+    }
+    return null;
+};
+
 export function PersonCard({ p, highlight }: { p: OrgPerson; highlight?: boolean }) {
     const t = TONES[toneOf(p)];
+    const displayDesig = fullTitle(p.designation);
+    const split = splitDesignation(displayDesig);
     return (
         <div data-person={p.id} data-testid="org-card"
             className={cn("relative z-10 bg-zinc-950 border rounded-2xl flex items-center gap-3 px-3 transition-shadow", t.ring, t.glow, highlight && "ring-2 ring-primary ring-offset-2 ring-offset-zinc-950")}
@@ -59,28 +98,44 @@ export function PersonCard({ p, highlight }: { p: OrgPerson; highlight?: boolean
             <div className={cn("relative w-10 h-10 rounded-full border flex items-center justify-center text-[12px] font-black shrink-0 overflow-hidden", t.avatar)}>
                 {initials(p.name)}{p.photo && <img src={p.photo} alt="" className="absolute inset-0 w-full h-full object-cover" />}
             </div>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 py-0.5">
                 <p className="text-[11px] font-black text-white uppercase tracking-wide truncate" title={p.name} data-testid="org-name">{p.name}</p>
-                <p className="text-[10px] text-zinc-400 font-semibold truncate mt-0.5" title={fullTitle(p.designation)} data-testid="org-desig">{fullTitle(p.designation)}</p>
+                {split ? (
+                    <div className="text-[9.5px] leading-[1.25] text-zinc-400 font-semibold mt-0.5" title={displayDesig} data-testid="org-desig">
+                        <div className="truncate">{split.line1}</div>
+                        <div className="text-center">{split.line2}</div>
+                    </div>
+                ) : (
+                    <p className="text-[9.5px] leading-[1.25] text-zinc-400 font-semibold line-clamp-2 mt-0.5 break-words" title={displayDesig} data-testid="org-desig">{displayDesig}</p>
+                )}
             </div>
         </div>
     );
 }
 
 function PlaceholderCard({ label }: { label: string }) {
+    const split = splitDesignation(label);
     return (
-        <div className="relative z-10 border border-dashed border-zinc-700 rounded-2xl flex flex-col items-center justify-center bg-zinc-950" style={{ width: CARD_W, height: CARD_H }}>
-            <p className="text-[11px] font-black text-zinc-400 uppercase tracking-wide">{label}</p>
+        <div className="relative z-10 border border-dashed border-zinc-700 rounded-2xl flex flex-col items-center justify-center bg-zinc-950 px-2 text-center" style={{ width: CARD_W, height: CARD_H }}>
+            {split ? (
+                <div className="text-[11px] font-black text-zinc-400 uppercase tracking-wide leading-tight">
+                    <div>{split.line1}</div>
+                    <div className="text-center">{split.line2}</div>
+                </div>
+            ) : (
+                <p className="text-[11px] font-black text-zinc-400 uppercase tracking-wide line-clamp-2 leading-tight">{label}</p>
+            )}
             <p className="text-[10px] text-zinc-600">Not assigned yet</p>
         </div>
     );
 }
 
 /** One or more cards in a row joined underneath (CEO·COO·CTO, or several TLs). Always ends with a short tail so all rows are equal height. */
-function SectionRow({ people, placeholder, highlightId }: { people: OrgPerson[]; placeholder: string; highlightId?: string | null }) {
-    if (!people.length) return <div className="flex flex-col items-center" data-testid={`org-section-${placeholder.toLowerCase().replace(/[^a-z]/g, "")}`}><PlaceholderCard label={placeholder} /><VLine h={TAIL} /></div>;
+function SectionRow({ id, people, placeholder, highlightId }: { id?: string; people: OrgPerson[]; placeholder: string; highlightId?: string | null }) {
+    const testId = id ? `org-section-${id}` : `org-section-${placeholder.toLowerCase().replace(/[^a-z]/g, "")}`;
+    if (!people.length) return <div className="flex flex-col items-center" data-testid={testId} data-section={id}><PlaceholderCard label={placeholder} /><VLine h={TAIL} /></div>;
     return (
-        <div className="relative flex flex-col items-center" data-testid={`org-section-${placeholder.toLowerCase().replace(/[^a-z]/g, "")}`}>
+        <div className="relative flex flex-col items-center" data-testid={testId} data-section={id}>
             <div className="relative flex" style={{ gap: 18 }}>
                 {people.map(p => (
                     <div key={p.id} className="flex flex-col items-center">
@@ -170,7 +225,7 @@ function useClchLinks(rootRef: React.RefObject<HTMLDivElement | null>, deps: unk
             const b = el.getBoundingClientRect();
             return { l: (b.left - r.left) / scale, t: (b.top - r.top) / scale, r: (b.right - r.left) / scale, b: (b.bottom - r.top) / scale };
         };
-        const tl = box(root.querySelector('[data-testid="org-section-techlead"] [data-person]'));
+        const tl = box(root.querySelector('[data-testid="org-section-tl"] [data-person], [data-testid="org-section-techlead"] [data-person], [data-section="tl"] [data-person]'));
         const clch = box(root.querySelector('[data-testid="org-clch-node"]'));
         const hois = Array.from(root.querySelectorAll('[data-testid="org-hoi"] > [data-person]')).map(box).filter(Boolean) as NonNullable<ReturnType<typeof box>>[];
         if (!clch) { setLinks(null); return; }
@@ -273,8 +328,8 @@ export default function OrgChart({ data, highlightId }: { data: OrgChartData; hi
     const SIDE_Y = hasPih ? GAP_Y / 2 + CARD_H + TAIL / 2 : MID;
     const second = [
         ...(hasPih ? [{ key: "pih", people: pih, label: "Placement & Intern Head" }] : []),
-        { key: "tl", people: data.techLeads, label: "Tech Lead" },
-        { key: "ad", people: data.ads, label: "AD" },
+        { key: "tl", people: data.techLeads, label: "Technology, Marketing & Curriculum Head" },
+        { key: "ad", people: data.ads, label: "Associate Director Business & Operations" },
         { key: "hr", people: data.hrHeads, label: "HR" },
     ];
     const sideColumn = (side: "left" | "right", items: { key: string; node: ReactNode; drop?: number }[], testId: string, lineY = MID) => (
@@ -312,7 +367,7 @@ export default function OrgChart({ data, highlightId }: { data: OrgChartData; hi
             ], "org-col-techlead", SIDE_Y)}
 
             <div className="flex flex-col items-center" data-testid="org-col-main">
-                <SectionRow people={data.executives} placeholder="CEO" highlightId={highlightId} />
+                <SectionRow id="ceo" people={data.executives} placeholder="CEO" highlightId={highlightId} />
                 <VLine h={GAP_Y / 2} />
                 <div className="flex w-full items-start">
                     <div className="flex-1 self-stretch relative"><div className={cn("absolute left-0 right-0 h-[2px]", LINE)} style={{ top: SIDE_Y }} /></div>
@@ -336,7 +391,7 @@ export default function OrgChart({ data, highlightId }: { data: OrgChartData; hi
                                         {c.people.map(p => <PersonCard key={p.id} p={p} highlight={highlightId === p.id} />)}
                                     </div>
                                 ) : (<>
-                                    <SectionRow people={c.people} placeholder={c.label} highlightId={highlightId} />
+                                    <SectionRow id={c.key} people={c.people} placeholder={c.label} highlightId={highlightId} />
                                     <VLine h={GAP_Y / 2} />
                                 </>)}
                                 {/* shared bus under Tech Lead · AD · HR → HOIs and CL / CH */}
@@ -422,6 +477,7 @@ export function OrgCanvas({ children }: { children: ReactNode }) {
         const el = inner.current; if (!el || exporting) return;
         setMenu(false); setExporting(kind); setExportError("");
         try {
+            // @ts-ignore
             const { toPng } = await import("html-to-image");
             // Employee photos from other websites cannot be drawn into the file directly: load each one through
             // our own server (/api/image-proxy) as a data URL for the export, then put the original back.

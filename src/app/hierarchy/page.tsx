@@ -41,7 +41,9 @@ export default function HierarchyPage() {
     }, [load]);
 
     const data = useMemo(() => {
-        const src: any[] = live || employees || [];
+        const EXCLUDED_ORG_IDS = new Set(["EMP001", "EMP251"]);
+        const rawSrc: any[] = live || employees || [];
+        const src = rawSrc.filter(e => e?.id && !EXCLUDED_ORG_IDS.has(String(e.id).trim().toUpperCase()));
         // Keep the Org Chart display corrections that already exist in orgHierarchy (name / designation / hidden entries)
         const nodeById = new Map(orgHierarchy.map(n => [n.id, n]));
         const knownIds = new Set((employees || []).map((e: any) => e.id));
@@ -54,6 +56,10 @@ export default function HierarchyPage() {
                 const fix: { name?: string; designation?: string } = {};
                 if (n && ctx && n.name !== ctx.name) fix.name = n.name;
                 if (n && ctx && n.designation !== (ctx.designation || ctx.role)) fix.designation = n.designation;
+                if (e.role === "TL") fix.designation = "Technology, Marketing & Curriculum Head";
+                if (e.role === "AD" && (!e.designation || e.designation.trim() === "AD" || e.designation.trim() === "Associate Director")) {
+                    fix.designation = "Associate Director Business & Operations";
+                }
                 const p = toOrgPerson(e, fix);
                 return managerMap[p.id] ? { ...p, managerId: managerMap[p.id] } : p;
             });
