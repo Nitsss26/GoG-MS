@@ -59,38 +59,9 @@ const FULL_TITLE: Record<string, string> = {
     "TECH LEAD": "Technology, Marketing & Curriculum Head",
 };
 const fullTitle = (d?: string) => (d && FULL_TITLE[d.trim().toUpperCase()]) || d || "";
-
-const splitDesignation = (d?: string): { line1: string; line2: string } | null => {
-    if (!d) return null;
-    const full = fullTitle(d).trim();
-    if (/^Technology,\s*Marketing\s*(&|and)\s*Curriculum\s+Head$/i.test(full)) {
-        return { line1: full.replace(/\s+Head$/i, "").trim(), line2: "Head" };
-    }
-    if (/^Associate\s+Director\s+Business\s*(&|and)\s*Operations$/i.test(full)) {
-        return { line1: full.replace(/\s+Operations$/i, "").trim(), line2: "Operations" };
-    }
-    if (/^Placement\s*(&|and)\s*Intern(ship)?\s+Head$/i.test(full)) {
-        return { line1: full.replace(/\s+Head$/i, "").trim(), line2: "Head" };
-    }
-    if (/^HR,\s*Finance\s*(&|and)\s*Admin\s+Head$/i.test(full)) {
-        return { line1: full.replace(/\s+Head$/i, "").trim(), line2: "Head" };
-    }
-    if (full.length > 24 && /\s+(Head|Operations)$/i.test(full)) {
-        const lastWordMatch = full.match(/\s+(Head|Operations)$/i);
-        if (lastWordMatch && lastWordMatch.index !== undefined) {
-            return {
-                line1: full.slice(0, lastWordMatch.index).trim(),
-                line2: lastWordMatch[1],
-            };
-        }
-    }
-    return null;
-};
-
 export function PersonCard({ p, highlight }: { p: OrgPerson; highlight?: boolean }) {
     const t = TONES[toneOf(p)];
     const displayDesig = fullTitle(p.designation);
-    const split = splitDesignation(displayDesig);
     return (
         <div data-person={p.id} data-testid="org-card"
             className={cn("relative z-10 bg-zinc-950 border rounded-2xl flex items-center gap-3 px-3 transition-shadow", t.ring, t.glow, highlight && "ring-2 ring-primary ring-offset-2 ring-offset-zinc-950")}
@@ -100,31 +71,16 @@ export function PersonCard({ p, highlight }: { p: OrgPerson; highlight?: boolean
             </div>
             <div className="min-w-0 flex-1 py-0.5">
                 <p className="text-[11px] font-black text-white uppercase tracking-wide truncate" title={p.name} data-testid="org-name">{p.name}</p>
-                {split ? (
-                    <div className="text-[9.5px] leading-[1.25] text-zinc-400 font-semibold mt-0.5" title={displayDesig} data-testid="org-desig">
-                        <div className="truncate">{split.line1}</div>
-                        <div className="text-center">{split.line2}</div>
-                    </div>
-                ) : (
-                    <p className="text-[9.5px] leading-[1.25] text-zinc-400 font-semibold line-clamp-2 mt-0.5 break-words" title={displayDesig} data-testid="org-desig">{displayDesig}</p>
-                )}
+                <p className="text-[9.5px] leading-[1.25] text-zinc-400 font-semibold line-clamp-2 mt-0.5 break-words" title={displayDesig} data-testid="org-desig">{displayDesig}</p>
             </div>
         </div>
     );
 }
 
 function PlaceholderCard({ label }: { label: string }) {
-    const split = splitDesignation(label);
     return (
         <div className="relative z-10 border border-dashed border-zinc-700 rounded-2xl flex flex-col items-center justify-center bg-zinc-950 px-2 text-center" style={{ width: CARD_W, height: CARD_H }}>
-            {split ? (
-                <div className="text-[11px] font-black text-zinc-400 uppercase tracking-wide leading-tight">
-                    <div>{split.line1}</div>
-                    <div className="text-center">{split.line2}</div>
-                </div>
-            ) : (
-                <p className="text-[11px] font-black text-zinc-400 uppercase tracking-wide line-clamp-2 leading-tight">{label}</p>
-            )}
+            <p className="text-[11px] font-black text-zinc-400 uppercase tracking-wide line-clamp-2 leading-tight">{label}</p>
             <p className="text-[10px] text-zinc-600">Not assigned yet</p>
         </div>
     );
