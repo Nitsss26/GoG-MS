@@ -9,7 +9,7 @@
  *    Vacation banner    = a holiday announcement with "Dashboard Vacation Banner" on, only on its approved holiday
  *                         days that apply to this employee (Holiday records + exclusions — the source of truth).
  *  The opening animation is recorded per employee + celebration + date (CelebrationSeen), so it runs once.
- *    New Member Welcome (HR): shown only on the day HR publishes it — the new member gets their own welcome banner,
+ *    New Member Welcome (HR): shown for 24 hours from the moment HR publishes it (3 PM → 3 PM next day) — the new member gets their own welcome banner,
  *                       everyone else the colleagues' welcome banner. Order: own birthday > Festival > Vacation > Welcome > Colleague Birthday.
  *  Management (HR / HR Executive / Founder): templates, active banners, per-employee overrides, DOB edit, festivals, welcomes.
  */
@@ -26,6 +26,17 @@ import {
 const INACTIVE = /^(inactive|removed|exited|resigned|terminated)$/i;
 export const canManageCelebrations = (a: any) => !!a && ['HR', 'FOUNDER'].includes(a.role);
 const nowIso = () => new Date().toISOString();
+
+/** New Member Welcome stays up for 24 hours from the moment it is published (e.g. 3 PM today → 3 PM tomorrow) */
+export const WELCOME_HOURS = 24;
+export const welcomeUntil = (w: any) => { const t = Date.parse(String(w?.createdAt || '')); return Number.isFinite(t) ? new Date(t + WELCOME_HOURS * 3600000).toISOString() : ''; };
+/** Is this welcome showing right now? (an old row without createdAt: on its own date, as before) */
+export function welcomeLive(w: any, nowMs = Date.now()) {
+    const t = Date.parse(String(w?.createdAt || ''));
+    if (!Number.isFinite(t)) return w?.date === zonedNow().ymd;
+    return nowMs >= t && nowMs < t + WELCOME_HOURS * 3600000;
+}
+const ymdMinus = (ymd: string, n: number) => { const d = new Date(`${ymd}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
 const newId = (p: string) => `${p}-${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`.toUpperCase();
 const roleLabel = (a: any) => (a?.hrExecutive ? 'HR Executive' : a?.role === 'FOUNDER' ? 'Founder' : a?.role || '');
 export const HTTPS = (u: any) => typeof u === 'string' && /^https:\/\//i.test(u) && u.length < 2048;
@@ -122,8 +133,10 @@ export async function resolveToday(actor: any, at?: string): Promise<TodayCelebr
     }
     const fest = festival ? festivalBanner(festival, tpl.get(festival.bannerTemplateId)) : null;
 
-    // New Member Welcome published today (only today)
-    const wl: any[] = await WelcomeCelebration.find({ date: today, status: 'Active' }).sort({ createdAt: 1 }).lean();
+    // New Member Welcome: showing for 24 hours from publishing (a preview of another date keeps "that date")
+    const wl: any[] = at && isValidYmd(at)
+        ? await WelcomeCelebration.find({ date: today, status: 'Active' }).sort({ createdAt: 1 }).lean()
+        : (await WelcomeCelebration.find({ date: { $in: [today, ymdMinus(today, 1)] }, status: 'Active' }).sort({ createdAt: 1 }).lean()).filter((w: any) => welcomeLive(w));
     const wEmps: any[] = wl.length ? await Employee.find({ id: { $in: wl.map(w => w.employeeId) } }).select('id name designation current_designation_at_gog location photoUrl passport_size_photo status').lean() : [];
     const wEmp = new Map(wEmps.filter(e => !INACTIVE.test(String(e.status || ''))).map(e => [e.id, e]));
     const myWelcome = wl.find(w => w.employeeId === actor.id && wEmp.has(w.employeeId));
@@ -172,6 +185,14 @@ export async function markOpeningSeen(actor: any, key: string) {
 const audit = (actor: any, action: string, x: { entityId?: string; employeeId?: string; before?: any; after?: any }) =>
     CelebrationAudit.create({ id: newId('CA'), action, ...x, by: actor.id, byName: actor.name, byRole: roleLabel(actor), at: nowIso() }).catch((e: any) => console.error('[celebration-audit]', e?.message));
 
+/** A welcome of this employee that is still showing (published within the last 24 hours) */
+async function liveWelcomeOf(employeeId: string) {
+    const today = zonedNow().ymd;
+    const rows: any[] = await WelcomeCelebration.find({ employeeId, date: { $in: [today, ymdMinus(today, 1)] }, status: 'Active' }).lean();
+    return rows.find(w => welcomeLive(w)) || null;
+}
+const untilText = (iso: string) => (iso ? new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true }) : '24 hours');
+
 export async function managementData() {
     const [templates, setting, overrides, festivals, emps, loc, welcomes]: any[] = await Promise.all([
         CelebrationTemplate.find({}).sort({ createdAt: -1 }).lean(),
@@ -191,7 +212,9 @@ export async function managementData() {
             dobMonth: p?.m || 0, dobDay: p?.d || 0, selfTemplateId: o?.selfTemplateId || '', colleagueTemplateId: o?.colleagueTemplateId || '', configured: !!(o?.selfTemplateId || o?.colleagueTemplateId),
         };
     }).sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    return { templates, setting: setting || { key: 'birthday', selfTemplateId: '', colleagueTemplateId: '' }, employees, festivals, festivalsList: FESTIVALS, welcomes, today: zonedNow().ymd };
+    // each welcome: still showing? until when? (24 hours from publishing)
+    const welcomeRows = (welcomes as any[]).map(w => ({ ...w, live: welcomeLive(w), liveUntil: welcomeUntil(w) }));
+    return { templates, setting: setting || { key: 'birthday', selfTemplateId: '', colleagueTemplateId: '' }, employees, festivals, festivalsList: FESTIVALS, welcomes: welcomeRows, today: zonedNow().ymd };
 }
 
 const tplFields = (b: any) => {
@@ -331,7 +354,7 @@ export async function manage(actor: any, b: any) {
             return { ok: true as const, message: `${f.name} celebration removed. Holidays are not changed.` };
         }
         case 'welcome_save': {
-            // New Member Welcome: published for TODAY only (IST); editing is possible only on that same day
+            // New Member Welcome: shown for 24 hours from publishing; it can be edited / removed while it is showing
             const today = zonedNow().ymd;
             const emp: any = await Employee.findOne({ id: String(b.employeeId || '') }).select('id name status').lean();
             if (!emp) return fail(404, 'Choose the new member.');
@@ -351,17 +374,17 @@ export async function manage(actor: any, b: any) {
             if (b.id) {
                 const before: any = await WelcomeCelebration.findOne({ id: String(b.id), status: 'Active' }).lean();
                 if (!before) return fail(404, 'Welcome not found.');
-                if (before.date !== today) return fail(409, 'A welcome can be edited only on the day it was published.');
-                if (before.employeeId !== emp.id && await WelcomeCelebration.exists({ employeeId: emp.id, date: today, status: 'Active' })) return fail(409, `${emp.name} already has a welcome today.`);
+                if (!welcomeLive(before)) return fail(409, 'This welcome is no longer showing (24 hours are over), so it cannot be edited.');
+                if (before.employeeId !== emp.id && (await liveWelcomeOf(emp.id))) return fail(409, `${emp.name} already has a welcome showing.`);
                 await WelcomeCelebration.updateOne({ id: before.id }, { $set: doc });
                 await audit(actor, 'WELCOME_UPDATE', { entityId: before.id, employeeId: emp.id, before, after: doc });
-                return { ok: true as const, id: before.id, message: `Welcome for ${emp.name} saved — shown today only.` };
+                return { ok: true as const, id: before.id, message: `Welcome for ${emp.name} saved — showing till ${untilText(welcomeUntil(before))}.` };
             }
-            if (await WelcomeCelebration.exists({ employeeId: emp.id, date: today, status: 'Active' })) return fail(409, `${emp.name} already has a welcome today. Edit it instead.`);
+            if (await liveWelcomeOf(emp.id)) return fail(409, `${emp.name} already has a welcome showing. Edit it instead.`);
             const id = newId('WC');
             await WelcomeCelebration.create({ id, ...doc, date: today, status: 'Active', createdBy: actor.id, createdByName: actor.name, createdAt: now });
             await audit(actor, 'WELCOME_CREATE', { entityId: id, employeeId: emp.id, after: { ...doc, date: today } });
-            return { ok: true as const, id, message: `Welcome banner for ${emp.name} published — everyone sees it on the dashboard today only.` };
+            return { ok: true as const, id, message: `Welcome banner for ${emp.name} published — everyone sees it on the dashboard for 24 hours (till ${untilText(welcomeUntil({ createdAt: now }))}).` };
         }
         case 'welcome_delete': {
             const w: any = await WelcomeCelebration.findOne({ id: String(b.id || ''), status: 'Active' }).lean();

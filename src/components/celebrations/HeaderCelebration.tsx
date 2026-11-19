@@ -72,7 +72,7 @@ export function HeaderGreeting({ banner, children, compact }: { banner: BannerDa
     if (!banner) return <>{children}</>;
     const textAlign = banner.align === "center" ? "center" : banner.align === "right" ? "right" : "left";
     const pos = personKind(banner.kind) ? (banner.photoPosition || "right") : "none";
-    const photo = pos !== "none" && <Photo url={banner.person?.photoUrl} name={banner.person?.name} size={compact ? 48 : 56} />;
+    const photo = pos !== "none" && <Photo url={banner.person?.photoUrl} name={banner.person?.name} size={compact ? 68 : 88} />;
     return (
         <div className="relative flex items-center gap-3 min-w-0 flex-1" style={{ justifyContent: banner.align === "center" ? "center" : banner.align === "right" ? "flex-end" : "flex-start" }}>
             {pos !== "right" && photo}

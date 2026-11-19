@@ -31,7 +31,8 @@ export default function CelebrationBanner({ banner, testId = "celebration-banner
     const align = banner.align || "left";
     const isBday = banner.kind === "birthday-self" || banner.kind === "birthday-colleague" || banner.kind === "welcome-self" || banner.kind === "welcome-colleague";   // banners with the person
     const photoPos = isBday ? (banner.photoPosition || "right") : "none";
-    const photoSize = narrow ? 44 : w < 900 ? 56 : 64;
+    // birthday / new member photo: big enough to see the face (still inside the strip height below)
+    const photoSize = narrow ? 80 : w < 900 ? 104 : 128;
     // slim strip: about half of the earlier banner height
     const stripH = narrow ? 88 : w < 900 ? 140 : 168;
     const textAlign = align === "center" ? "center" : align === "right" ? "right" : "left";
@@ -78,16 +79,24 @@ export default function CelebrationBanner({ banner, testId = "celebration-banner
     );
 }
 
-/** Several colleagues' birthdays: one compact strip (instead of changing the header for each) */
+/**
+ * Several colleagues' birthdays: each one gets the same full birthday banner as a single birthday does (its own
+ * template), one below the other. A colleague without banner data falls back to the compact card.
+ */
 export function ColleagueBirthdays({ list }: { list: ColleagueBirthday[] }) {
     if (!list.length) return null;
+    if (list.every(c => c.banner)) return (
+        <div className="space-y-3" data-testid="cel-colleagues">
+            {list.map(c => <div key={c.id} data-testid="cel-colleague"><CelebrationBanner banner={c.banner!} testId="celebration-colleague" /></div>)}
+        </div>
+    );
     return (
         <div className="rounded-2xl border border-pink-500/20 bg-pink-500/[0.05] p-3" data-testid="cel-colleagues">
             <p className="text-[10px] font-black uppercase tracking-widest text-pink-300 flex items-center gap-1.5 mb-2"><Cake size={12} /> Birthdays Today</p>
             <div className="flex gap-2 overflow-x-auto pb-1">
                 {list.map(c => (
                     <div key={c.id} className="flex items-center gap-2.5 shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/70 pl-1.5 pr-3 py-1.5" data-testid="cel-colleague">
-                        <Photo url={c.photoUrl} name={c.name} size={34} />
+                        <Photo url={c.photoUrl} name={c.name} size={52} />
                         <div className="min-w-0"><p className="text-xs font-bold text-white whitespace-nowrap">Happy Birthday, {c.name}!</p><p className="text-[10px] text-zinc-400 whitespace-nowrap">{[c.designation, c.college].filter(Boolean).join(" · ")}</p></div>
                     </div>
                 ))}

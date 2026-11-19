@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { getSessionUser } from '@/lib/session-user';
-import { canCapture, canReview, createSubmission, listSubmissions, omProfessors, reviewHistory } from '@/lib/full-attire';
+import { canCapture, canReview, captureList, createSubmission, listSubmissions, reviewHistory } from '@/lib/full-attire';
 import { DRESS_CODE_REASONS } from '@/lib/dress-code-reasons';
 
 export const dynamic = 'force-dynamic';
@@ -9,6 +9,8 @@ export const dynamic = 'force-dynamic';
 /**
  * Full Attire Management.
  *   GET  ?view=om                         OM: own college professors + own submissions (with HR decisions)
+ *                                         (also a Professor / HOI with an active OM Given Access grant: the granting
+ *                                          OM's professors + themselves; `delegated` lists the grants)
  *   GET  ?view=review&status=pending|reviewed|all&q=   HR / HR Executive / Founder: submissions to review
  *   GET  ?history=<professorId>           HR / HR Executive / Founder: one professor's review history
  *   POST { clientKey, imageUrl, capturedAt, order: [professorId…], reupload? }   OM: submit a live capture
@@ -21,9 +23,14 @@ export async function GET(req: Request) {
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         const sp = new URL(req.url).searchParams;
         if (sp.get('view') === 'om') {
-            if (!canCapture(actor)) return NextResponse.json({ error: 'Full Attire capture is for Operations Managers.' }, { status: 403 });
-            const [p, mine] = await Promise.all([omProfessors(actor), listSubmissions(actor, { mine: true })]);
-            return NextResponse.json({ ...p, submissions: mine });
+            const ctx = await captureList(actor);
+            if (!ctx) return NextResponse.json({ error: canCapture(actor) ? 'Full Attire is not available.' : 'Full Attire capture is for Operations Managers. If your OM gave you access, it is not active right now.' }, { status: 403 });
+            const mine = await listSubmissions(actor, { mine: true });
+            return NextResponse.json({
+                ...ctx.list, submissions: mine,
+                // OM Given Access: which grants are in use (shown on the page) — absent for an OM
+                ...(ctx.delegated ? { delegated: { grants: ctx.delegated.grants.map(g => ({ id: g.id, grantedByName: g.grantedByName, startDate: g.startDate, endDate: g.endDate })) } } : {}),
+            });
         }
         if (!canReview(actor)) return NextResponse.json({ error: 'Only HR, HR Executive or Founders can review Full Attire.' }, { status: 403 });
         const hist = sp.get('history');

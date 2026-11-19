@@ -15,6 +15,7 @@ import { ManualEmail } from '@/models/ManualEmail';
 import { getAcademicScope, professorsInScope, hoisAbove } from '@/lib/academic';
 import { DRESS_CODE_REASONS, dressReasonText } from '@/lib/dress-code-reasons';
 import { MAIN_ADMIN_EMAIL } from '@/lib/mail-server';
+import { activeGrantsFor } from '@/lib/temp-access';
 
 export const MAX_GROUP = 20;
 const URL_RE = /^https:\/\/[^\s"'<>]+$/i;
@@ -50,6 +51,38 @@ export async function omProfessors(actor: any) {
     };
 }
 
+/**
+ * Who may capture and for whom (checked on every request):
+ *   OM → exactly as before (omProfessors), delegated = null
+ *   Professor / HOI with an active OM Given Access grant → the granting OM(s)' professors + themselves ("You")
+ *   anyone else → null
+ */
+export async function captureList(actor: any): Promise<{ list: { colleges: any[]; professors: any[] }; delegated: null | { grants: any[]; coverage: Map<string, string[]> } } | null> {
+    if (canCapture(actor)) return { list: await omProfessors(actor), delegated: null };
+    const { grants, oms } = await activeGrantsFor(actor);
+    if (!grants.length) return null;
+    const parts = await Promise.all(oms.map(o => omProfessors({ id: o.id, name: o.name, role: 'OM', employee: o })));
+    const colleges: any[] = [], professors: any[] = [];
+    const coverage = new Map<string, string[]>();   // professorId → grant ids that allow photographing them
+    parts.forEach((p, i) => {
+        const gIds = grants.filter(g => g.grantedByEmployeeId === oms[i].id).map(g => g.id);
+        p.colleges.forEach((c: any) => { if (!colleges.some(x => x.id === c.id)) colleges.push(c); });
+        p.professors.filter((x: any) => !x.self && x.id !== actor.id).forEach((x: any) => {
+            if (!professors.some(y => y.id === x.id)) professors.push(x);
+            coverage.set(x.id, Array.from(new Set([...(coverage.get(x.id) || []), ...gIds])));
+        });
+    });
+    // the employee's own Full Attire (shown first, marked "You")
+    const me: any = await Employee.findOne({ id: actor.id }).select('id name dept designation location').lean();
+    if (me) {
+        const names = await locNames();
+        const today = await uploadedToday([me.id]);
+        professors.unshift({ id: me.id, name: me.name, dept: me.dept || '', designation: me.designation || (actor.role === 'HOI' ? 'HOI' : 'Professor'), location: me.location || '', college: names.get(me.location) || me.location || '', today: today.get(me.id) || null, self: true });
+        coverage.set(me.id, grants.map(g => g.id));
+    }
+    return { list: { colleges, professors }, delegated: { grants, coverage } };
+}
+
 /** Start of today (IST) as an ISO time — "today" for Full Attire uploads */
 const istDayStartIso = () => { const d = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10); return new Date(`${d}T00:00:00+05:30`).toISOString(); };
 
@@ -72,7 +105,9 @@ async function nextId() {
 }
 
 export async function createSubmission(actor: any, body: any) {
-    if (!canCapture(actor)) return { ok: false as const, status: 403, error: 'Only an Operations Manager can submit Full Attire photos.' };
+    // OM, or a Professor / HOI with an active OM Given Access grant (validated again here — never trusted from the page)
+    const ctx = canCapture(actor) ? null : await captureList(actor);
+    if (!canCapture(actor) && !ctx) return { ok: false as const, status: 403, error: 'Only an Operations Manager can submit Full Attire photos.' };
     const clientKey = String(body?.clientKey || '').trim().slice(0, 80);
     const imageUrl = String(body?.imageUrl || '').trim();
     const order: string[] = Array.isArray(body?.order) ? body.order.map((x: any) => String(x)) : [];
@@ -85,7 +120,8 @@ export async function createSubmission(actor: any, body: any) {
     if (dup) return { ok: false as const, status: 409, error: `This photo was already submitted (${dup.id}).` };
 
     // backend scope check: every professor must be in the OM's authorised list
-    const { professors, colleges } = await omProfessors(actor);
+    // (OM Given Access: the granting OM(s)' list + the employee themselves)
+    const { professors, colleges } = ctx ? ctx.list : await omProfessors(actor);
     const byId = new Map(professors.map(p => [p.id, p]));
     const outside = order.filter(id => !byId.has(id));
     if (outside.length) return { ok: false as const, status: 403, error: `Not in your college: ${outside.join(', ')}` };
@@ -104,10 +140,22 @@ export async function createSubmission(actor: any, body: any) {
     const collegeName = first.college || colleges[0]?.name || '';
     const id = await nextId();
     const standingOrder = order.map((pid, i) => ({ position: i + 1, professorId: pid, professorName: byId.get(pid)!.name }));
+    // OM Given Access: the actual submitter stays in omId / omName; how and who granted it is stored next to it
+    const del = ctx?.delegated;
+    const usedGrants = del ? del.grants.filter(g => order.some(pid => (del.coverage.get(pid) || []).includes(g.id))) : [];
+    const via = del ? {
+        submittedVia: 'OM_GIVEN_ACCESS', submitterRole: actor.role === 'HOI' ? 'HOI' : 'PROFESSOR',
+        grantIds: usedGrants.map(g => g.id),
+        grantedByIds: Array.from(new Set(usedGrants.map(g => g.grantedByEmployeeId))),
+        grantedByNames: Array.from(new Set(usedGrants.map(g => g.grantedByName))),
+    } : null;
+    const byRole = via ? (via.submitterRole === 'HOI' ? 'HOI' : 'Professor') : 'OM';
+    const viaNote = via ? ` · via OM Given Access (granted by ${via.grantedByNames.join(', ')})` : '';
     try {
         await FullAttireSubmission.create({
             id, clientKey, type: order.length > 1 ? 'group' : 'single', college, collegeName, omId: actor.id, omName: actor.name,
             imageUrl, capturedAt, submittedAt: now, professorIds: order, standingOrder, status: 'Pending Review',
+            ...(via || {}),
         });
     } catch (e: any) {
         if (e?.code === 11000) return { ok: false as const, status: 409, error: 'This photo was already submitted.' };
@@ -116,7 +164,7 @@ export async function createSubmission(actor: any, body: any) {
     await FullAttireReview.insertMany(standingOrder.map(s => ({
         id: `${id}:${s.professorId}`, submissionId: id, professorId: s.professorId, professorName: s.professorName, position: s.position,
         college: byId.get(s.professorId)!.location || college, collegeName: byId.get(s.professorId)!.college || collegeName, status: 'pending', createdAt: now,
-        history: [{ at: now, by: actor.id, byName: actor.name, role: 'OM', action: already.has(s.professorId) ? 'Re-uploaded' : 'Submitted', note: `${order.length > 1 ? `Group photo · position ${s.position} of ${order.length}` : 'Single photo'}${already.has(s.professorId) ? ` · replaces today's photo ${already.get(s.professorId)!.submissionId}` : ''}` }],
+        history: [{ at: now, by: actor.id, byName: actor.name, role: byRole, action: already.has(s.professorId) ? 'Re-uploaded' : 'Submitted', note: `${order.length > 1 ? `Group photo · position ${s.position} of ${order.length}` : 'Single photo'}${already.has(s.professorId) ? ` · replaces today's photo ${already.get(s.professorId)!.submissionId}` : ''}${viaNote}` }],
     })));
     // Re-upload: today's earlier photo that HR has not reviewed yet is replaced (HR reviews only the new one);
     // a photo HR already accepted / rejected stays as it is (its decision and email are kept)
@@ -124,7 +172,7 @@ export async function createSubmission(actor: any, body: any) {
     const oldSubs = new Set<string>();
     for (const prev of Array.from(already.values())) {
         const u = await FullAttireReview.updateOne({ id: prev.reviewId, status: 'pending' },
-            { $set: { status: 'replaced' }, $push: { history: { at: now, by: actor.id, byName: actor.name, role: 'OM', action: 'Replaced', note: `Re-uploaded in ${id}` } } });
+            { $set: { status: 'replaced' }, $push: { history: { at: now, by: actor.id, byName: actor.name, role: byRole, action: 'Replaced', note: `Re-uploaded in ${id}` } } });
         if (u.modifiedCount) { replaced++; oldSubs.add(prev.submissionId); }
     }
     for (const sid of Array.from(oldSubs)) {
@@ -166,7 +214,7 @@ export async function listSubmissions(actor: any, opts: { mine?: boolean; status
 
 export async function reviewHistory(professorId: string) {
     const rs: any[] = await FullAttireReview.find({ professorId }).sort({ createdAt: -1 }).lean();
-    const subs: any[] = rs.length ? await FullAttireSubmission.find({ id: { $in: rs.map(r => r.submissionId) } }).select('id imageUrl omName submittedAt type').lean() : [];
+    const subs: any[] = rs.length ? await FullAttireSubmission.find({ id: { $in: rs.map(r => r.submissionId) } }).select('id imageUrl omName submittedAt type submittedVia submitterRole grantedByNames').lean() : [];
     const m = new Map(subs.map(s => [s.id, s]));
     return rs.map(r => ({ ...r, reasonText: dressReasonText(r.reasons, r.other), submission: m.get(r.submissionId) || null }));
 }

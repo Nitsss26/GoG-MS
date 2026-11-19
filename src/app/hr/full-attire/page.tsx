@@ -95,6 +95,7 @@ export default function HrFullAttirePage() {
                                     <span className="font-mono font-bold text-white">{s.id}</span>
                                     <span className="text-zinc-400">College: <span className="text-zinc-200">{s.collegeName || "—"}</span></span>
                                     <span className="text-zinc-400">Submitted by: <span className="text-zinc-200">{s.omName}</span></span>
+                                    {s.submittedVia === "OM_GIVEN_ACCESS" && <span className="text-sky-300" data-testid="fa-via">{s.submitterRole === "HOI" ? "HOI" : "Professor"} · via OM Given Access · granted by {(s.grantedByNames || []).join(", ") || "—"}</span>}
                                     <span className="text-zinc-400">{dt(s.submittedAt)}</span>
                                     <span className="ml-auto text-[10px] font-black uppercase tracking-widest text-zinc-500">{s.type === "group" ? `Group · ${s.reviews.length} professors` : "Single"}</span>
                                 </div>
@@ -160,7 +161,7 @@ export default function HrFullAttirePage() {
                                     {h.submission?.imageUrl && <img src={h.submission.imageUrl} alt="" className="w-16 h-16 rounded-lg object-cover shrink-0" />}
                                     <div className="min-w-0 space-y-0.5">
                                         <p className="text-white font-bold">{h.submissionId} <span className={cn("ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] font-black", st.c)}>{st.l}</span></p>
-                                        <p className="text-zinc-500">Submitted by {h.submission?.omName || "—"} · {dt(h.submission?.submittedAt)}</p>
+                                        <p className="text-zinc-500">Submitted by {h.submission?.omName || "—"}{h.submission?.submittedVia === "OM_GIVEN_ACCESS" ? ` (${h.submission.submitterRole === "HOI" ? "HOI" : "Professor"}, via OM Given Access · granted by ${(h.submission.grantedByNames || []).join(", ")})` : ""} · {dt(h.submission?.submittedAt)}</p>
                                         {h.reviewedAt && <p className="text-zinc-400">Reviewed by {h.reviewedByName} ({h.reviewedByRole}) · {dt(h.reviewedAt)}</p>}
                                         {h.status === "rejected" && <p className="text-red-200 [overflow-wrap:anywhere]">{h.reasonText}{h.explanation ? ` — ${h.explanation}` : ""}</p>}
                                     </div>
@@ -211,7 +212,7 @@ function RejectDialog({ sub, r, reasons, onCancel, onConfirm }: { sub: any; r: a
                         <img src={sub.imageUrl} alt="" className="w-20 h-20 rounded-xl object-cover bg-black shrink-0" />
                         <div className="space-y-0.5 min-w-0">
                             {row("Professor", `${r.professorName}${sub.type === "group" ? ` (position ${r.position})` : ""}`)}{row("Employee ID", r.professorId)}{row("College", r.collegeName || sub.collegeName)}
-                            {row("Submission", sub.id)}{row("Submitted By", sub.omName)}{row("Capture Date", dt(sub.capturedAt))}{row("Review Date", dt(new Date().toISOString()))}
+                            {row("Submission", sub.id)}{row("Submitted By", sub.omName)}{sub.submittedVia === "OM_GIVEN_ACCESS" && <>{row("Submitter Role", sub.submitterRole === "HOI" ? "HOI" : "Professor")}{row("Submitted Via", "OM Given Access")}{row("Granted By", (sub.grantedByNames || []).join(", "))}</>}{row("Capture Date", dt(sub.capturedAt))}{row("Review Date", dt(new Date().toISOString()))}
                         </div>
                     </div>
                     <div>

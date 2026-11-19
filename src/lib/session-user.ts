@@ -12,7 +12,7 @@ import { verifySessionToken, COOKIE_NAME, SessionPayload } from '@/lib/session';
  * The session stores the Mongo _id (or the employee id as a fallback), so the
  * employee record is looked up to get the real employee id and name.
  */
-export async function getSessionUser(opts: { ignoreDelegation?: boolean } = {}): Promise<{ session: SessionPayload; id: string; name: string; role: string; employee: any; baseRole?: string; hrExecutive?: boolean; delegation?: import('@/lib/access-control').Delegation } | null> {
+export async function getSessionUser(opts: { ignoreDelegation?: boolean } = {}): Promise<{ session: SessionPayload; id: string; name: string; role: string; employee: any; baseRole?: string; hrExecutive?: boolean; customRole?: string; delegation?: import('@/lib/access-control').Delegation } | null> {
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get(COOKIE_NAME);
     if (!sessionCookie?.value) return null;
@@ -29,6 +29,8 @@ export async function getSessionUser(opts: { ignoreDelegation?: boolean } = {}):
     if (!employee) return null;
     // Role changed by HR after this login => log in again
     if (employee.role !== storedRole) return null;
+    // HR-created role (Role Management) changed after this login => log in again (both empty for every other employee)
+    if (String(employee.customRole || '') !== String(session.customRole || '')) return null;
 
     const base = {
         session,
@@ -37,6 +39,7 @@ export async function getSessionUser(opts: { ignoreDelegation?: boolean } = {}):
         role: session.role,
         employee,
         ...(session.hrExecutive ? { hrExecutive: true } : {}),
+        ...(employee.customRole ? { customRole: String(employee.customRole) } : {}),
     };
     if (opts.ignoreDelegation) return base as any;
 

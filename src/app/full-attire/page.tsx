@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { cn } from "@/lib/utils";
 import {
     Shirt, Search, Camera, RefreshCw, Check, X, Loader2, ChevronUp, ChevronDown, Users, User, AlertTriangle,
-    CheckCircle2, XCircle, Clock, SwitchCamera, Send, Trash2,
+    CheckCircle2, XCircle, Clock, SwitchCamera, Send, Trash2, KeySquare,
 } from "lucide-react";
 
 /**
@@ -30,7 +31,7 @@ const tm = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString("en-IN", { 
 
 export default function FullAttirePage() {
     const { user } = useAuth();
-    const [data, setData] = useState<{ colleges: any[]; professors: Prof[]; submissions: any[] } | null>(null);
+    const [data, setData] = useState<{ colleges: any[]; professors: Prof[]; submissions: any[]; delegated?: { grants: { id: string; grantedByName: string; startDate: string; endDate: string }[] } } | null>(null);
     const [error, setError] = useState("");
     const [q, setQ] = useState("");
     const [mode, setMode] = useState<"single" | "multiple">("single");
@@ -39,14 +40,17 @@ export default function FullAttirePage() {
     const [photo, setPhoto] = useState<{ blob: Blob; url: string; capturedAt: string } | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+    const [denied, setDenied] = useState("");
     const keyRef = useRef(newKey());
 
     const load = useCallback(async () => {
         try {
             const r = await fetch("/api/full-attire?view=om", { cache: "no-store" });
             const d = await r.json();
+            // no access (not an OM, and no active OM Given Access) → nothing of the page is shown
+            if (r.status === 403) { setData(null); setDenied(d.error || "Full Attire capture is for Operations Managers."); return; }
             if (!r.ok) throw new Error(d.error || "Could not load professors");
-            setData(d); setError("");
+            setData(d); setError(""); setDenied("");
         } catch (e: any) { setError(e.message); }
     }, []);
     useEffect(() => { load(); }, [load]);
@@ -84,7 +88,9 @@ export default function FullAttirePage() {
     };
 
     if (!user) return null;
-    if (user.role !== "OM") return <div className="p-8 text-center text-sm text-zinc-500">Full Attire capture is for Operations Managers.</div>;
+    // OM as before; a Professor / HOI only while the server confirms an active OM Given Access grant
+    if (denied) return <div className="p-8 text-center text-sm text-zinc-500" data-testid="fa-denied">{denied}</div>;
+    if (user.role !== "OM" && !data) return null;
 
     const group = order.length > 1;
     /** selected professors whose Full Attire was already uploaded today (any OM) */
@@ -92,9 +98,22 @@ export default function FullAttirePage() {
     return (
         <div className="p-3 sm:p-6 space-y-4 max-w-5xl mx-auto w-full" data-testid="full-attire-om">
             <header className="space-y-1">
-                <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2"><Shirt size={20} className="text-primary" /> Full Attire</h1>
+                <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2 mr-auto"><Shirt size={20} className="text-primary" /> Full Attire</h1>
+                    {/* OM Given Access: only the OM (not a Professor / HOI using a grant) can give access */}
+                    {user.role === "OM" && (
+                        <Link href="/full-attire/give-access" data-testid="fa-give-access" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/40 bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20">
+                            <KeySquare size={13} /> Give Access
+                        </Link>
+                    )}
+                </div>
                 <p className="text-xs text-zinc-400">College: <span className="text-zinc-200 font-semibold" data-testid="fa-colleges">{(data?.colleges || []).map(c => c.name).join(", ") || "—"}</span></p>
                 <p className="text-[11px] text-zinc-500">Live camera only — select the professor(s), then capture one photo and submit it for HR review.</p>
+                {data?.delegated && data.delegated.grants.length > 0 && (
+                    <p className="text-[11px] rounded-lg border border-sky-500/25 bg-sky-500/10 text-sky-200 px-3 py-2 [overflow-wrap:anywhere]" data-testid="fa-delegated">
+                        OM Given Access — granted by {data.delegated.grants.map(g => `${g.grantedByName} (till ${new Date(`${g.endDate}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" })})`).join(", ")}. Your submissions go to HR exactly like an OM's.
+                    </p>
+                )}
             </header>
 
             {notice && <div data-testid="fa-notice" className={cn("rounded-xl border px-4 py-3 text-xs flex items-start gap-2", notice.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-red-500/30 bg-red-500/10 text-red-200")}>{notice.ok ? <CheckCircle2 size={15} className="shrink-0" /> : <AlertTriangle size={15} className="shrink-0" />}<span className="min-w-0 [overflow-wrap:anywhere]">{notice.text}</span><button onClick={() => setNotice(null)} className="ml-auto shrink-0 opacity-70" aria-label="Close"><X size={14} /></button></div>}
@@ -199,28 +218,65 @@ export default function FullAttirePage() {
             {/* my submissions */}
             <section className="space-y-2" data-testid="fa-mine">
                 <h2 className="text-sm font-bold text-white">My Submissions</h2>
-                {!(data?.submissions || []).length ? <p className="text-xs text-zinc-500">No submissions yet.</p> : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {(data?.submissions || []).map((s: any) => (
-                            <div key={s.id} className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-3 flex gap-3" data-testid="fa-mine-item">
-                                <a href={s.imageUrl} target="_blank" rel="noreferrer" className="shrink-0"><img src={s.imageUrl} alt="" className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl object-cover bg-black border border-zinc-800" /></a>
-                                <div className="min-w-0 flex-1 space-y-1">
-                                    <p className="text-xs font-bold text-white">{s.id} <span className="font-normal text-zinc-500">· {s.type === "group" ? `Group (${s.reviews.length})` : "Single"}</span></p>
-                                    <p className="text-[10px] text-zinc-500">{dt(s.submittedAt)}</p>
-                                    <div className="space-y-1">
-                                        {s.reviews.map((r: any) => { const st = ST[r.status] || ST.pending; return (
-                                            <div key={r.id} className="text-[11px]">
-                                                <span className="text-zinc-300">{s.type === "group" ? `${r.position}. ` : ""}{r.professorName}</span>{" "}
-                                                <span className={cn("inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] font-black", st.c)}><st.I size={10} /> {st.l}</span>
-                                                {r.status === "rejected" && <span className="block text-red-300/80 [overflow-wrap:anywhere]">{r.reasonText}{r.explanation ? ` — ${r.explanation}` : ""}</span>}
+                {!(data?.submissions || []).length ? <p className="text-xs text-zinc-500">No submissions yet.</p> : (() => {
+                    const subs: any[] = data?.submissions || [];
+                    // in this list "accepted" reads "Approved"
+                    const stOf = (r: any) => { const st = ST[r.status] || ST.pending; return r.status === "accepted" ? { ...st, l: "Approved" } : st; };
+                    const all = subs.flatMap(x => x.reviews || []);
+                    const count = (k: string) => all.filter((r: any) => (r.status || "pending") === k).length;
+                    const pill = (r: any) => { const st = stOf(r); return <span className={cn("inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] font-black whitespace-nowrap", st.c)} data-testid="fa-mine-status"><st.I size={10} /> {st.l}</span>; };
+                    const reason = (r: any) => r.status === "rejected" ? `${r.reasonText || ""}${r.explanation ? ` — ${r.explanation}` : ""}` : "—";
+                    const who = (x: any, r: any) => `${x.type === "group" ? `${r.position}. ` : ""}${r.professorName}`;
+                    const typeText = (x: any) => x.type === "group" ? `Group (${x.reviews.length})` : "Single";
+                    return (<>
+                        <div className="flex flex-wrap gap-2 text-[11px] font-bold" data-testid="fa-mine-counts">
+                            <span className="px-2.5 py-1 rounded-lg border text-emerald-300 bg-emerald-500/10 border-emerald-500/25">Approved {count("accepted")}</span>
+                            <span className="px-2.5 py-1 rounded-lg border text-red-300 bg-red-500/10 border-red-500/25">Rejected {count("rejected")}</span>
+                            <span className="px-2.5 py-1 rounded-lg border text-amber-300 bg-amber-500/10 border-amber-500/25">Pending {count("pending")}</span>
+                        </div>
+                        {/* tablet / desktop: one line per professor */}
+                        <div className="hidden md:block rounded-2xl border border-zinc-800 bg-zinc-900/50 overflow-x-auto [contain:inline-size]" data-testid="fa-mine-table">
+                            <table className="w-full min-w-[720px] text-xs text-left">
+                                <thead><tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b border-zinc-800">
+                                    {["Photo", "Submission ID", "Date & Time", "Type", "Professor", "Status", "Reason"].map(h => <th key={h} className="px-3 py-2.5 font-bold whitespace-nowrap">{h}</th>)}
+                                </tr></thead>
+                                <tbody>
+                                    {subs.map((x: any) => (x.reviews || []).map((r: any, i: number) => (
+                                        <tr key={r.id} className={cn("align-top", i === x.reviews.length - 1 && "border-b border-zinc-800/70")} data-testid="fa-mine-row">
+                                            {i === 0 && <>
+                                                <td rowSpan={x.reviews.length} className="px-3 py-2.5" data-testid="fa-mine-item"><a href={x.imageUrl} target="_blank" rel="noreferrer"><img src={x.imageUrl} alt="" className="w-14 h-14 rounded-lg object-cover bg-black border border-zinc-800" /></a></td>
+                                                <td rowSpan={x.reviews.length} className="px-3 py-2.5 font-bold text-white whitespace-nowrap">{x.id}</td>
+                                                <td rowSpan={x.reviews.length} className="px-3 py-2.5 text-zinc-400 whitespace-nowrap">{dt(x.submittedAt)}</td>
+                                                <td rowSpan={x.reviews.length} className="px-3 py-2.5 text-zinc-400 whitespace-nowrap">{typeText(x)}</td>
+                                            </>}
+                                            <td className="px-3 py-2.5 text-zinc-200">{who(x, r)}</td>
+                                            <td className="px-3 py-2.5">{pill(r)}</td>
+                                            <td className={cn("px-3 py-2.5 [overflow-wrap:anywhere] max-w-[320px]", r.status === "rejected" ? "text-red-300/90" : "text-zinc-600")}>{reason(r)}</td>
+                                        </tr>
+                                    )))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {/* phone: one line per professor, the photo once per submission */}
+                        <div className="md:hidden rounded-2xl border border-zinc-800 bg-zinc-900/50 divide-y divide-zinc-800" data-testid="fa-mine-list">
+                            {subs.map((x: any) => (
+                                <div key={x.id} className="p-3 flex gap-3" data-testid="fa-mine-item-m">
+                                    <a href={x.imageUrl} target="_blank" rel="noreferrer" className="shrink-0"><img src={x.imageUrl} alt="" className="w-14 h-14 rounded-lg object-cover bg-black border border-zinc-800" /></a>
+                                    <div className="min-w-0 flex-1 space-y-1.5">
+                                        <p className="text-xs font-bold text-white [overflow-wrap:anywhere]">{x.id} <span className="font-normal text-zinc-500">· {typeText(x)}</span></p>
+                                        <p className="text-[10px] text-zinc-500">{dt(x.submittedAt)}</p>
+                                        {(x.reviews || []).map((r: any) => (
+                                            <div key={r.id} className="text-[11px] flex flex-wrap items-center gap-x-2 gap-y-0.5" data-testid="fa-mine-row-m">
+                                                <span className="text-zinc-200">{who(x, r)}</span>{pill(r)}
+                                                {r.status === "rejected" && <span className="basis-full text-red-300/90 [overflow-wrap:anywhere]">{reason(r)}</span>}
                                             </div>
-                                        ); })}
+                                        ))}
                                     </div>
                                 </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
+                            ))}
+                        </div>
+                    </>);
+                })()}
             </section>
 
             {camOpen && <CameraCapture onClose={() => setCamOpen(false)} onCaptured={(blob, capturedAt) => { setPhoto({ blob, url: URL.createObjectURL(blob), capturedAt }); setCamOpen(false); }} title={group ? `Group photo · ${order.length} professors` : byId.get(order[0])?.name || ""} names={order.map(id => byId.get(id)?.name || id)} />}

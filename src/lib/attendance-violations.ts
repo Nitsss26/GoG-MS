@@ -154,11 +154,20 @@ function renderText(name: string, empId: string, violation: string, m: Mail) {
     return [`Dear ${name},`, '', m.paragraphs[0], '', ...rows.map(([k, v]) => `${k}: ${v}`), '', ...m.paragraphs.slice(1).flatMap(p => [p, '']), `Required action: ${m.action}`, '', 'Regards,', 'HR Department', 'Geeks of Gurukul'].join('\n');
 }
 
+/**
+ * Subject with the employee and the date: every employee's mail is its own conversation in the mailbox
+ * (HR is copied on each one — with the same subject, mail apps put all employees' mails into one thread)
+ */
+const subjectFor = (subject: string, v: any) => {
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(String(v?.date || '')) ? new Date(`${v.date}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '';
+    return [subject, [v?.employeeName, v?.employeeId ? `(${v.employeeId})` : ''].filter(Boolean).join(' '), d].filter(Boolean).join(' — ');
+};
+
 /** The existing violation email (same templates / escalation wording), for a manual send from Email Management */
 export function composeViolationMail(v: any) {
     const m = buildMail(v);
     const label = VIOLATION_LABEL[v.type as ViolationType];
-    return { subject: m.subject, html: renderHtml(v.employeeName, v.employeeId, label, m), text: renderText(v.employeeName, v.employeeId, label, m) };
+    return { subject: subjectFor(m.subject, v), html: renderHtml(v.employeeName, v.employeeId, label, m), text: renderText(v.employeeName, v.employeeId, label, m) };
 }
 
 /** Sends (or retries) the email of a violation. Atomic claim → never two sends at the same time. */
@@ -173,7 +182,7 @@ export async function sendViolationEmail(id: string) {
     }
     const m = buildMail(v);
     const label = VIOLATION_LABEL[v.type as ViolationType];
-    const res: any = await sendMailInternal({ to: v.email, subject: m.subject, html: renderHtml(v.employeeName, v.employeeId, label, m), text: renderText(v.employeeName, v.employeeId, label, m) });
+    const res: any = await sendMailInternal({ to: v.email, subject: subjectFor(m.subject, v), html: renderHtml(v.employeeName, v.employeeId, label, m), text: renderText(v.employeeName, v.employeeId, label, m) });
     if (res?.success) {
         await AttendanceViolation.updateOne({ id }, { $set: { emailStatus: 'Sent', emailSentAt: new Date().toISOString(), emailMessageId: res.messageId || '', emailError: '' } });
         return { sent: true };
@@ -303,7 +312,7 @@ export async function sendDecisionEmail(v: any, decision: string, remarks: strin
             rows: [['Attendance Date', fmtDate(v.date)], ['Instance', String(v.instance)], ['Proposed Deduction', v.proposedDeduction], ['Action Status', decision], ['HR Remarks', remarks || '—']],
             paragraphs: [`HR has reviewed the ${label} deduction recorded for ${fmtDate(v.date)}.`, decision === 'Approved for Payroll' ? 'The deduction has been approved for payroll as per the approved Attendance SOP.' : 'The deduction has been waived. No salary deduction will be made for this instance.'],
             action: 'Contact HR if you have any questions.' };
-    const res: any = await sendMailInternal({ to: v.email, subject: m.subject, html: renderHtml(v.employeeName, v.employeeId, label, m), text: renderText(v.employeeName, v.employeeId, label, m) });
+    const res: any = await sendMailInternal({ to: v.email, subject: subjectFor(m.subject, v), html: renderHtml(v.employeeName, v.employeeId, label, m), text: renderText(v.employeeName, v.employeeId, label, m) });
     await AttendanceViolation.updateOne({ id: v.id }, { $set: { decisionEmailStatus: res?.success ? 'Sent' : 'Failed' } });
     return !!res?.success;
 }

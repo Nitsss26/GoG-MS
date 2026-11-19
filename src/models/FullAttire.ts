@@ -20,6 +20,13 @@ const FullAttireSubmissionSchema = new Schema({
     professorIds: [String],
     standingOrder: [{ position: Number, professorId: String, professorName: String }], // left → right
     status: { type: String, default: 'Pending Review' },           // Pending Review | Partly Reviewed | Reviewed
+    // OM Given Access: a Professor / HOI submitted with an OM's temporary grant. omId / omName then hold the ACTUAL
+    // submitter (as for an OM submission); these say how and who granted it. Absent on every OM submission.
+    submittedVia: { type: String },                                // 'OM_GIVEN_ACCESS'
+    submitterRole: { type: String },                               // PROFESSOR | HOI
+    grantIds: [String],
+    grantedByIds: [String],
+    grantedByNames: [String],
 });
 
 const FullAttireReviewSchema = new Schema({
@@ -45,3 +52,28 @@ const FullAttireReviewSchema = new Schema({
 
 export const FullAttireSubmission = mongoose.models.FullAttireSubmission || mongoose.model('FullAttireSubmission', FullAttireSubmissionSchema);
 export const FullAttireReview = mongoose.models.FullAttireReview || mongoose.model('FullAttireReview', FullAttireReviewSchema);
+
+/**
+ * OM Given Access: an OM lets a Professor / HOI of their scope use Full Attire for some days (IST dates, both
+ * inclusive). The status is ALWAYS worked out from the dates and the revoke fields when access is checked — never
+ * trusted from storage. Nothing else of the OM role is given, and the employee's own role never changes.
+ */
+const TemporaryAccessGrantSchema = new Schema({
+    id: { type: String, required: true, unique: true },            // TAG-…
+    permission: { type: String, required: true, default: 'FULL_ATTIRE' },
+    grantedByEmployeeId: { type: String, required: true, index: true },
+    grantedByName: { type: String },
+    grantedToEmployeeId: { type: String, required: true, index: true },
+    grantedToName: { type: String },
+    grantedToRole: { type: String },                               // PROFESSOR | FACULTY | HOI (at grant time)
+    startDate: { type: String, required: true },                   // YYYY-MM-DD (IST)
+    endDate: { type: String, required: true },                     // YYYY-MM-DD (IST), inclusive
+    reason: { type: String },
+    createdAt: { type: String, required: true },
+    revokedAt: { type: String },
+    revokedBy: { type: String },
+    revokedByName: { type: String },
+    revokeKind: { type: String },                                  // revoked (was active) | cancelled (was scheduled)
+});
+
+export const TemporaryAccessGrant = mongoose.models.TemporaryAccessGrant || mongoose.model('TemporaryAccessGrant', TemporaryAccessGrantSchema);

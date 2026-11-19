@@ -42,6 +42,8 @@ export interface SessionPayload {
     hrExecutive?: boolean;
     /** The role stored on the employee record (differs from `role` only for HR Executive) */
     actualRole?: string;
+    /** Admin → Role Management: the HR-created role of this designation record (only when it has one) */
+    customRole?: string;
 }
 
 /** HR Executive designation: an HR-like role without Reimbursements access */
@@ -50,13 +52,15 @@ export const HR_EXECUTIVE_ROLE = 'HR_EXECUTIVE';
 /**
  * Create a signed session token from user data.
  */
-export function createSessionToken(userId: string, email: string, role: string): string {
+export function createSessionToken(userId: string, email: string, role: string, customRole?: string | null): string {
     const payload: SessionPayload = {
         userId,
         email,
         role,
         iat: Date.now(),
         exp: Date.now() + SESSION_DURATION_MS,
+        // only employees with an HR-created role carry it (every other token is exactly as before)
+        ...(customRole ? { customRole: String(customRole) } : {}),
     };
     const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
     const signature = crypto.createHmac('sha256', SECRET).update(encoded).digest('base64url');

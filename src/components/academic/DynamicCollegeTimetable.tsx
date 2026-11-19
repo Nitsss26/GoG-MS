@@ -224,7 +224,6 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
         if (!el || exporting) return;
         setExporting(kind); setExportError("");
         try {
-            // @ts-ignore
             const { toPng } = await import("html-to-image");
             const w = el.scrollWidth, h = el.scrollHeight;
             const opts: any = { width: w, height: h, pixelRatio: 2, backgroundColor: "#ffffff", cacheBust: true, style: { position: "static", left: "0", top: "0" } };

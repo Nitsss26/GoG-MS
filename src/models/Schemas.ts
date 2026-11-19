@@ -32,6 +32,9 @@ const EmployeeSchema = new Schema({
     // Unique per (email, role) among active records — see src/lib/db-startup.ts
     email: { type: String, required: true },
     role: { type: String, required: true },
+    // Admin → Role Management: a role created by HR on top of `role` (its base role). The employee works exactly as
+    // `role` everywhere; this only names the role and applies its sidebar / module restrictions and Org Chart place.
+    customRole: { type: String },
     // HOI / OM: authorised clock-in / clock-out locations (Location ids) — separate from Original Location (`location`)
     attendanceLocations: [String],
     // HR changes to attendanceLocations, oldest first (audit log)
@@ -1131,3 +1134,44 @@ const LocationClockInAttemptSchema = new Schema({
     reviewStatus: { type: String, default: 'Pending' }
 }, { timestamps: true });
 export const LocationClockInAttempt = mongoose.models.LocationClockInAttempt || mongoose.model('LocationClockInAttempt', LocationClockInAttemptSchema);
+
+// Admin → Role Management (HR, Founder): sidebar items a role does not see, and modules blocked for it.
+// A role without a document here works exactly as before (nothing restricted).
+const RoleConfigSchema = new Schema({
+    role: { type: String, required: true, unique: true },   // role id as stored on the employee (HR_EXECUTIVE for HR Executive)
+    hidden: [String],                                       // sidebar paths not shown (page still opens)
+    blocked: [String],                                      // sidebar paths not shown + page / its APIs refused
+    updatedBy: String, updatedByName: String, updatedByRole: String, updatedAt: String,
+});
+export const RoleConfig = mongoose.models.RoleConfig || mongoose.model('RoleConfig', RoleConfigSchema);
+
+// Every Role Management change: who, when, and the before / after of each item
+const RoleAuditLogSchema = new Schema({
+    id: { type: String, required: true, unique: true },
+    role: { type: String, required: true, index: true },
+    action: { type: String, required: true },               // ACCESS_UPDATED | ACCESS_RESET
+    changes: [{ path: String, label: String, from: String, to: String }],
+    before: { hidden: [String], blocked: [String] },
+    after: { hidden: [String], blocked: [String] },
+    note: String,
+    summary: String,                                        // role created / edited / published / deleted: what changed
+    actorId: String, actorName: String, actorRole: String,
+    at: { type: String, required: true, index: true },
+});
+export const RoleAuditLog = mongoose.models.RoleAuditLog || mongoose.model('RoleAuditLog', RoleAuditLogSchema);
+
+// Admin → Role Management → Create Role: a new role on top of an existing (base) role. Employees given this role are
+// stored with role = baseRole and customRole = roleId, so every existing feature treats them as the base role.
+const RoleDefinitionSchema = new Schema({
+    roleId: { type: String, required: true, unique: true },  // e.g. ASSISTANT_PROFESSOR
+    label: { type: String, required: true },                 // e.g. Assistant Professor
+    description: String,
+    baseRole: { type: String, required: true },              // existing role whose features it uses (fixed once published)
+    status: { type: String, enum: ['DRAFT', 'PUBLISHED'], default: 'DRAFT' },
+    // Org Chart: SAME = where the base role is shown; OWN = own box under TL / AD / HR / the employee's HOI
+    org: { mode: { type: String, default: 'SAME' }, parent: String },
+    createdBy: String, createdByName: String, createdAt: String,
+    updatedBy: String, updatedByName: String, updatedAt: String,
+    publishedBy: String, publishedByName: String, publishedAt: String,
+});
+export const RoleDefinition = mongoose.models.RoleDefinition || mongoose.model('RoleDefinition', RoleDefinitionSchema);

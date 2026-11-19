@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Cake, PartyPopper, UserPlus, Upload, Loader2, Eye, Trash2, Pencil, Check, Search, X, CalendarDays, Settings2, Image as ImageIcon, RefreshCw, Plus, CheckCircle2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -23,7 +23,7 @@ import { FESTIVALS, THEMES, THEME_CATEGORIES, BIRTHDAY_SELF_THEMES, BIRTHDAY_COL
 type Tpl = { id: string; category: string; festivalKey?: string; name: string; imageUrl: string; greeting?: string; subtext?: string; headingColor?: string; textColor?: string; overlayColor?: string; bgColor?: string; align?: string; photoPosition?: string };
 type Emp = { id: string; name: string; role: string; designation: string; dept: string; college: string; photoUrl: string; dob: string; dobMonth: number; dobDay: number; selfTemplateId: string; colleagueTemplateId: string; configured: boolean };
 type Fest = { id: string; festivalKey: string; name: string; date: string; theme: ThemeKey; bannerTemplateId: string; greeting: string; textColor: string; bgColor: string; animation: boolean; subtle: boolean; status: string };
-type Welcome = { id: string; employeeId: string; employeeName: string; date: string; imageUrl: string; selfImageUrl: string; greeting: string; subtext: string; selfGreeting: string; selfSubtext: string; headingColor: string; textColor: string; overlayColor: string; bgColor: string; align: string; photoPosition: string; createdByName?: string; createdAt?: string };
+type Welcome = { id: string; employeeId: string; employeeName: string; date: string; imageUrl: string; selfImageUrl: string; greeting: string; subtext: string; selfGreeting: string; selfSubtext: string; headingColor: string; textColor: string; overlayColor: string; bgColor: string; align: string; photoPosition: string; createdByName?: string; createdAt?: string; /** showing now (24 hours from publishing) / until when — from the server */ live?: boolean; liveUntil?: string };
 type Data = { templates: Tpl[]; setting: { selfTemplateId?: string; colleagueTemplateId?: string; selfTheme?: string; colleagueTheme?: string }; employees: Emp[]; festivals: Fest[]; welcomes?: Welcome[]; today?: string };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -89,7 +89,8 @@ function birthdayPreview(view: "self" | "colleague", t: Tpl | undefined, e?: Emp
 
 function BirthdaySection({ data, act, setErr }: { data: Data; act: (b: any) => Promise<any>; setErr: (s: string) => void }) {
     const { user } = useAuth();
-    const wide = useMinWidth(1024);
+    // table only where it fits next to the sidebar without sideways scrolling; smaller screens get the cards
+    const wide = useMinWidth(1280);
     const self = data.templates.filter(t => t.category === "BIRTHDAY_SELF");
     const coll = data.templates.filter(t => t.category === "BIRTHDAY_COLLEAGUE");
     const tplById = (id?: string) => data.templates.find(t => t.id === id);
@@ -144,13 +145,14 @@ function BirthdaySection({ data, act, setErr }: { data: Data; act: (b: any) => P
                 </div>
                 {!shown.length ? <p className="py-10 text-center text-xs text-zinc-500" data-testid="cm-dir-empty">No employees match.</p> : wide ? (
                     <div className="overflow-x-auto rounded-xl border border-zinc-800">
-                        <table className="w-full text-xs min-w-[980px]" data-testid="cm-dir-table">
+                        {/* the buttons sit in their own line under each employee (no Actions column → no sideways scrolling) */}
+                        <table className="w-full text-xs min-w-[720px]" data-testid="cm-dir-table">
                             <thead className="bg-zinc-900/80 text-[10px] uppercase tracking-wider text-zinc-500"><tr>
-                                {["Employee Name", "Employee ID", "Designation", "College / Department", "Date of Birth", "Birthday Banner", "Status", ""].map(h => <th key={h} className="text-left font-bold px-3 py-2.5">{h === "" ? <span className="block text-right">Actions</span> : h}</th>)}
+                                {["Employee Name", "Employee ID", "Designation", "College / Department", "Date of Birth", "Birthday Banner", "Status"].map(h => <th key={h} className="text-left font-bold px-3 py-2.5">{h}</th>)}
                             </tr></thead>
-                            <tbody className="divide-y divide-zinc-800/70">
-                                {shown.map(e => (
-                                    <tr key={e.id} data-testid="cm-dir-row" data-id={e.id} className="hover:bg-white/[0.02]">
+                            <tbody>
+                                {shown.map(e => (<Fragment key={e.id}>
+                                    <tr data-testid="cm-dir-row" data-id={e.id} className="border-t border-zinc-800/70">
                                         <td className="px-3 py-2.5"><span className="flex items-center gap-2"><Avatar e={e} /> <b className="text-white">{e.name}</b>{e.dobMonth === tm && e.dobDay === td && <Cake size={12} className="text-pink-300" />}</span></td>
                                         <td className="px-3 py-2.5 font-mono text-[11px] text-zinc-400">{e.id}</td>
                                         <td className="px-3 py-2.5 text-zinc-300">{e.designation}</td>
@@ -158,9 +160,11 @@ function BirthdaySection({ data, act, setErr }: { data: Data; act: (b: any) => P
                                         <td className="px-3 py-2.5 text-zinc-200 whitespace-nowrap" data-testid="cm-dir-dob">{dobLabel(e)}</td>
                                         <td className="px-3 py-2.5 text-zinc-300">{selfOf(e)?.name || "Default"}</td>
                                         <td className="px-3 py-2.5"><span className={cn("inline-flex px-2 py-0.5 rounded-md border text-[10.5px] font-bold", e.configured ? "text-sky-300 bg-sky-500/10 border-sky-500/25" : "text-zinc-400 bg-zinc-800 border-zinc-700")} data-testid="cm-dir-status">{e.configured ? "Configured" : "Default"}</span></td>
-                                        <td className="px-3 py-2"><RowActions e={e} onDob={() => setDobFor(e)} onCfg={() => setCfgFor(e)} onPreview={v => openPreview(v, e)} /></td>
                                     </tr>
-                                ))}
+                                    <tr data-testid="cm-dir-actions-row" data-id={e.id}>
+                                        <td colSpan={7} className="px-3 pt-0 pb-2.5"><RowActions e={e} onDob={() => setDobFor(e)} onCfg={() => setCfgFor(e)} onPreview={v => openPreview(v, e)} /></td>
+                                    </tr>
+                                </Fragment>))}
                             </tbody>
                         </table>
                     </div>
@@ -493,15 +497,21 @@ function WelcomeSection({ data, act }: { data: Data; act: (b: any) => Promise<an
         return data.employees.filter(e => !t || `${e.name} ${e.id} ${e.designation} ${e.college}`.toLowerCase().includes(t)).slice(0, 200);
     }, [data.employees, q]);
     const list = data.welcomes || [];
-    const todays = list.filter(x => x.date === today), past = list.filter(x => x.date !== today);
+    // showing = within 24 hours of publishing (server decides; old rows without that info: their own date)
+    const isLive = (x: Welcome) => (x.live !== undefined ? x.live : x.date === today);
+    const untilText = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : "");
+    const todays = list.filter(isLive), past = list.filter(x => !isLive(x));
     const save = async () => {
         if (!w.employeeId) { setFormErr("Choose the new member."); return; }
-        setBusy(true); setFormErr("");
-        try { const d = await act({ action: "welcome_save", ...w }); setW({ ...w, id: d.id || w.id }); }
+        setBusy(true); setFormErr(""); setSaved("");
+        try { const d = await act({ action: "welcome_save", ...w }); setW({ ...w, id: d.id || w.id }); setSaved(d.message || "Saved."); }
         catch (e: any) { setFormErr(e.message); } finally { setBusy(false); }
     };
+    // "Saved" right next to the button; hidden again after a few seconds or as soon as the form is changed
+    const [saved, setSaved] = useState("");
+    useEffect(() => { if (!saved) return; const t = setTimeout(() => setSaved(""), 6000); return () => clearTimeout(t); }, [saved]);
     const del = async (x: Welcome) => { setFormErr(""); try { await act({ action: "welcome_delete", id: x.id }); if (w.id === x.id) setW(blankWelcome()); } catch (e: any) { setFormErr(e.message); } };
-    const set = (k: keyof Welcome) => (v: string) => setW({ ...w, [k]: v });
+    const set = (k: keyof Welcome) => (v: string) => { setSaved(""); setW({ ...w, [k]: v }); };
     const colleagueSample = welcomeBanner("welcome-colleague", w, personOf(emp));
     const selfSample = welcomeBanner("welcome-self", w, personOf(emp));
     return (
@@ -509,7 +519,7 @@ function WelcomeSection({ data, act }: { data: Data; act: (b: any) => Promise<an
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-4" data-testid="cm-wel-form">
                 <div className="flex items-center justify-between gap-2"><p className="text-sm font-bold text-white flex items-center gap-2"><UserPlus size={15} className="text-teal-300" /> {w.id ? `Edit Welcome — ${w.employeeName || emp?.name || ""}` : "New Member Welcome"}</p>
                     {w.id && <button onClick={() => setW(blankWelcome())} className={`${btn} h-8 border-zinc-700 bg-zinc-900 text-zinc-200`}><Plus size={12} /> New</button>}</div>
-                <p className="text-[11px] text-teal-200 bg-teal-500/5 border border-teal-500/20 rounded-lg px-3 py-2" data-testid="cm-wel-note">Shown on everyone&apos;s dashboard <b>only today ({dmy(today)})</b> — the day it is published. The new member sees their own welcome banner; everyone else sees the colleagues&apos; banner.</p>
+                <p className="text-[11px] text-teal-200 bg-teal-500/5 border border-teal-500/20 rounded-lg px-3 py-2" data-testid="cm-wel-note">Shown on everyone&apos;s dashboard <b>for 24 hours from the moment it is published</b> (e.g. published at 3 PM → showing till 3 PM the next day). The new member sees their own welcome banner; everyone else sees the colleagues&apos; banner.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div><label className={lbl} htmlFor="cm-wel-search">Find Employee</label>
                         <div className="relative"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" /><input id="cm-wel-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Name, ID, designation…" className={cn(field, "pl-8")} data-testid="cm-wel-search" /></div></div>
@@ -540,20 +550,21 @@ function WelcomeSection({ data, act }: { data: Data; act: (b: any) => Promise<an
                 <div className="flex flex-wrap gap-2 justify-end">
                     <button onClick={() => setPreview({ title: `Colleagues' Dashboard — Welcome ${emp?.name || ""}`, payload: welcomePreview("colleague", w, emp) })} disabled={!emp} data-testid="cm-wel-prev-colleague" className={`${btn} h-10 border-sky-500/30 bg-sky-500/10 text-sky-200`}><Eye size={13} /> Colleagues</button>
                     <button onClick={() => setPreview({ title: `New Member's Dashboard — ${emp?.name || ""}`, payload: welcomePreview("self", w, emp) })} disabled={!emp} data-testid="cm-wel-prev-self" className={`${btn} h-10 border-teal-500/30 bg-teal-500/10 text-teal-200`}><Eye size={13} /> New Member</button>
-                    <button onClick={save} disabled={busy || !w.employeeId} data-testid="cm-wel-save" className={`${btn} h-10 border-primary/40 bg-primary text-white`}>{busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} {w.id ? "Save Welcome" : "Publish Welcome (today)"}</button>
+                    <button onClick={save} disabled={busy || !w.employeeId} data-testid="cm-wel-save" className={`${btn} h-10 border-primary/40 bg-primary text-white`}>{busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} {saved ? "Saved" : w.id ? "Save Welcome" : "Publish Welcome (24 hours)"}</button>
                 </div>
+                {saved && <p className="flex items-start gap-1.5 text-xs text-emerald-200 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2" data-testid="cm-wel-saved" role="status"><CheckCircle2 size={14} className="shrink-0 mt-px" /><span className="[overflow-wrap:anywhere]">{saved}</span></p>}
             </div>
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-3" data-testid="cm-wel-list">
                 <p className="text-sm font-bold text-white">Welcomes <span className="text-[11px] text-zinc-500 font-medium">{list.length}</span></p>
                 {!list.length ? <p className="py-6 text-center text-xs text-zinc-500">No welcome banners yet.</p> : (
                     <div className="space-y-2">
                         {[...todays, ...past].map(x => {
-                            const live = x.date === today;
+                            const live = isLive(x);
                             const e = data.employees.find(m => m.id === x.employeeId) || null;
                             return (
                                 <div key={x.id} className={cn("rounded-xl border p-3 space-y-2", w.id === x.id ? "border-primary/40 bg-primary/5" : "border-zinc-800 bg-zinc-950/40")} data-testid="cm-wel-row" data-live={live ? "1" : "0"}>
-                                    <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-bold text-white [overflow-wrap:anywhere]">{x.employeeName}</p><p className="text-[11px] text-zinc-400">{dmy(x.date)}{x.createdByName ? ` · by ${x.createdByName}` : ""}</p></div>
-                                        <span className={cn("shrink-0 inline-flex px-2 py-0.5 rounded-md border text-[10px] font-bold", live ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/25" : "text-zinc-400 bg-zinc-800 border-zinc-700")}>{live ? "Showing today" : "Past"}</span></div>
+                                    <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-bold text-white [overflow-wrap:anywhere]">{x.employeeName}</p><p className="text-[11px] text-zinc-400">{x.createdAt ? untilText(x.createdAt) : dmy(x.date)}{x.createdByName ? ` · by ${x.createdByName}` : ""}</p></div>
+                                        <span className={cn("shrink-0 inline-flex px-2 py-0.5 rounded-md border text-[10px] font-bold", live ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/25" : "text-zinc-400 bg-zinc-800 border-zinc-700")}><span data-testid="cm-wel-status">{live ? (x.liveUntil ? `Showing till ${untilText(x.liveUntil)}` : "Showing today") : "Past"}</span></span></div>
                                     <div className="flex flex-wrap gap-1.5">
                                         {live && <button onClick={() => setW({ ...blankWelcome(), ...x })} data-testid="cm-wel-edit" className={`${btn} h-8 border-zinc-700 bg-zinc-900 text-zinc-200`}><Pencil size={12} /> Edit</button>}
                                         <button onClick={() => setPreview({ title: `Colleagues' Dashboard — Welcome ${x.employeeName}`, payload: welcomePreview("colleague", x, e) })} data-testid="cm-wel-row-preview" className={`${btn} h-8 border-zinc-700 bg-zinc-900 text-zinc-200`}><Eye size={12} /> Preview</button>

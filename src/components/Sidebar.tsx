@@ -1,14 +1,7 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
-import {
-    LayoutDashboard, Users, Calendar, LogOut, ShieldCheck, User, Clock,
-    Briefcase, Award, Network, Megaphone, Ticket, Receipt,
-    FileText, CalendarCheck, AlertTriangle, UserCog, Star, MapPin, ClipboardList,
-    Crown, Bell, Activity, Flag, ShieldAlert, Trophy, TrendingUp, Shirt,
-    BookOpen, Mic, GraduationCap, Video, Download, CalendarDays, BadgeCheck, CalendarRange, KeySquare, Layers,
-    Wallet, Mail, Home, BookUser, ChevronDown,
-} from "lucide-react";
+import { LogOut, ShieldCheck, User, Briefcase, Crown, ChevronDown, Layers } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
@@ -16,132 +9,9 @@ import { cn } from "@/lib/utils";
 import type { Role } from "@/context/AuthContext";
 import { useSidebarCounts, badgeText } from "@/lib/use-sidebar-counts";
 
-/** Placement & Intern Head: own portal (dashboard) — same Tech Team features otherwise */
-const PIH_HOME = "/placement-intern-head/dashboard";
-const coreMenu = [
-    { label: "Dashboard", icon: LayoutDashboard, path: "/" },
-    { label: "Attendance", icon: Clock, path: "/attendance" },
-    { label: "Campus MoM", icon: Video, path: "/curriculum/mom" },
-    { label: "Leave", icon: Calendar, path: "/leave" },
-    { label: "Meetings", icon: Video, path: "/meetings" },
-    { label: "Org Chart", icon: Network, path: "/hierarchy" },
-    { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
-    { label: "Tickets", icon: Ticket, path: "/tickets" },
-    { label: "Reimbursement", icon: Receipt, path: "/reimbursement" },
-];
-
-const personalMenu = [
-    { label: "My Profile", icon: User, path: "/profile" },
-    { label: "Announcements", icon: Megaphone, path: "/announcements" },
-    { label: "SOP", icon: FileText, path: "/sop" },
-    { label: "Flag Calendar", icon: Flag, path: "/flag-calendar" },
-    { label: "Change Password", icon: ShieldCheck, path: "/change-password" },
-    { label: "My Salary & Payable Days", icon: Wallet, path: "/my-payable-days" },
-    // Notifications moved to the bell at the top right (NotificationBell)
-];
-
-const managerMenu = [
-    { label: "Manager Hub", icon: Briefcase, path: "/manager" },
-    { label: "Academic Monitoring", icon: BookOpen, path: "/manager/reportees/academic-data" },
-    { label: "Weekly Calendar", icon: CalendarDays, path: "/academic/weekly-calendar", roles: ["OM", "HOI", "AD", "FOUNDER"] as Role[] },
-    { label: "Class Verification", icon: BadgeCheck, path: "/academic/verification", roles: ["OM", "HOI", "AD", "FOUNDER"] as Role[] },
-    { label: "Full Attire", icon: Shirt, path: "/full-attire", roles: ["OM"] as Role[] },
-    { label: "Location Justifications", icon: MapPin, path: "/attendance/location-justifications", roles: ["HOI", "AD"] as Role[] },
-    { label: "Sprint Plan Audit", icon: CalendarCheck, path: "/curriculum/sprint-plans", roles: ["HOI"] as Role[] },
-    { label: "Leave Approval", icon: CalendarCheck, path: "/manager/leave-approval", hideFor: ["OM"] as Role[] },
-    { label: "Leave Summary", icon: CalendarRange, path: "/leave-summary", roles: ["HOI", "AD"] as Role[] },
-    { label: "Responsibility Approvals", icon: Award, path: "/manager/responsibility-approvals", roles: ["AD", "FOUNDER"] as Role[] },
-    { label: "Report Misbehaviour", icon: AlertTriangle, path: "/manager/misbehaviour" },
-    // "Ratings" removed: Monthly Feedback does the same job and is the one that is saved + counted on the Leaderboard
-    { label: "Work Location", icon: MapPin, path: "/manager/work-location", hideFor: ["OM", "AD"] as Role[] },
-    { label: "Monthly Feedback", icon: TrendingUp, path: "/management/monthly", roles: ["FOUNDER", "AD", "HOI"] as Role[] },
-    { label: "Holidays", icon: CalendarCheck, path: "/manager/holidays", hideFor: ["OM", "AD"] as Role[] },
-    { label: "Attendance Override", icon: ClipboardList, path: "/manager/attendance-override", hideFor: ["OM", "AD", "HR", "FOUNDER"] as Role[] },
-    { label: "Locations Map", icon: MapPin, path: "/locations", hideFor: ["OM"] as Role[] },
-];
-
-const hrMenu = [
-    { label: "HR Hub", icon: UserCog, path: "/hr" },
-    { label: "Workforce", icon: Users, path: "/employees" },
-    { label: "Employee Directory", icon: BookUser, path: "/hr/employee-directory" },
-    { label: "Leave Management", icon: CalendarCheck, path: "/hr/leave-management" },
-    { label: "WFH Management", icon: Home, path: "/hr/wfh-management" },
-    { label: "Leave Summary", icon: CalendarRange, path: "/leave-summary" },
-    { label: "Work Location", icon: MapPin, path: "/hr/work-location" },
-    { label: "Holiday Approval", icon: CalendarCheck, path: "/hr/holiday-approval" },
-    { label: "Attendance Log", icon: Clock, path: "/hr/attendance-log" },
-    { label: "Attendance Override", icon: ClipboardList, path: "/hr/attendance-override" },
-    { label: "Dress Code", icon: Shirt, path: "/hr/dress-code" },
-    { label: "Full Attire", icon: Shirt, path: "/hr/full-attire" },
-    { label: "SOP Management", icon: FileText, path: "/hr/sop" },
-    { label: "Reimbursements", icon: Receipt, path: "/hr/reimbursements" },
-    { label: "PIP Management", icon: ShieldAlert, path: "/hr/pip" },
-    { label: "Report Misbehaviour", icon: AlertTriangle, path: "/manager/misbehaviour" },
-    { label: "Locations", icon: MapPin, path: "/locations" },
-    { label: "Schedule Changes", icon: MapPin, path: "/hr/schedule-approval" },
-    { label: "Engagement", icon: Award, path: "/engagement" },
-    { label: "Onboarding", icon: UserCog, path: "/hr/onboarding" },
-    { label: "Flag Removal", icon: Flag, path: "/hr/flag-removal" },
-    { label: "Employee Salary Management", icon: Wallet, path: "/hr/salary-management" },
-];
-
-// HR / HR Executive: approvals grouped under their own heading (Tickets moves here from Core; Flag Calendar goes to HR Administration)
-const HR_APPROVAL_PATHS = ["/tickets", "/hr/reimbursements", "/hr/leave-management", "/hr/wfh-management", "/hr/dress-code", "/hr/full-attire", "/hr/schedule-approval"];
-// HR / HR Executive sidebar only (Founder keeps them): Attendance Override and Engagement are not listed
-const HR_LAYOUT_HIDDEN = ["/hr/attendance-override", "/engagement"];
-const hrApprovalsMenu = HR_APPROVAL_PATHS.map(p => p === "/tickets" ? { label: "Tickets", icon: Ticket, path: "/tickets" } : hrMenu.find(i => i.path === p)!);
-
-// Email Management (HR, HR Executive, Founder): dress code / late / no clock-in / no clock-out emails sent by hand
-const emailMenu = [
-    { label: "Email Management", icon: Mail, path: "/hr/email-management" },
-];
-
-const founderMenu = [
-    { label: "Founder Console", icon: Crown, path: "/founder" },
-    { label: "Communications Log", icon: Activity, path: "/founder/communications" },
-    { label: "Workforce", icon: Users, path: "/employees" },
-];
-
-const techLeadMenu = [
-    { label: "Leave Approval", icon: CalendarCheck, path: "/manager/leave-approval", roles: ["TL"] as Role[] },
-    { label: "Asset Exports", icon: Download, path: "/tech-lead/exports" },
-    { label: "System Status", icon: Activity, path: "/tech-lead/status" },
-];
-
-const facultyMenu = [
-    { label: "Faculty Dashboard", icon: GraduationCap, path: "/faculty" },
-    { label: "Sprint Plan", icon: CalendarCheck, path: "/faculty/sprint-plan" },
-    { label: "Weekly Calendar", icon: CalendarDays, path: "/academic/weekly-calendar" },
-    { label: "Lecture Report", icon: Mic, path: "/faculty/lecture-report" },
-];
-
-const curriculumMenu = [
-    { label: "CL / CH Portal", icon: GraduationCap, path: "/curriculum" },
-    { label: "Academic Directory", icon: Network, path: "/academic/directory" },
-    { label: "Sprint Plan Grid", icon: CalendarCheck, path: "/curriculum/sprint-plans" },
-    { label: "Lecture Quality Hub", icon: Mic, path: "/curriculum/lectures" },
-    { label: "Weekly Calendar", icon: CalendarDays, path: "/academic/weekly-calendar", roles: ["CURRICULUM_HEAD", "CURRICULUM_LEAD"] as Role[] },
-    { label: "Class Verification", icon: BadgeCheck, path: "/academic/verification", roles: ["CURRICULUM_HEAD", "CURRICULUM_LEAD"] as Role[] },
-    { label: "Assign Faculty Tasks", icon: ClipboardList, path: "/curriculum/tasks" },
-    { label: "Campus Daily MoM", icon: Video, path: "/curriculum/mom" },
-];
-
-// HOI / OM / AD / CL / CH: collapsible sidebar — Core, Personal, Academic Management, Faculty Management
-const MGR_LAYOUT_ROLES: Role[] = ["HOI", "OM", "AD", "CURRICULUM_LEAD", "CURRICULUM_HEAD"];
-/** pages that go under "Academic Management" (everything else of Manager Suite / CL-CH Portal / My Team → "Faculty Management") */
-const ACADEMIC_PATHS = ["/curriculum", "/manager/reportees/academic-data", "/academic/directory", "/academic/weekly-calendar", "/academic/verification", "/curriculum/sprint-plans", "/curriculum/lectures", "/curriculum/mom"];
-// Roles that can see Manager Suite
-const MANAGER_ROLES: Role[] = ["FOUNDER", "AD", "HOI", "OM"];
-// Roles that can see Curriculum Suite
-const CURRICULUM_ROLES: Role[] = ["CURRICULUM_HEAD", "CURRICULUM_LEAD", "FOUNDER", "AD"];
-// Roles that can see HR Administration
-const HR_ROLES: Role[] = ["FOUNDER", "HR"];
-// Roles that can see Faculty Suite
-const FACULTY_ROLES: Role[] = ["FACULTY", "PROFESSOR"];
-// Roles that can see Tech Support
-const TECH_LEAD_ROLES: Role[] = ["TL", "FOUNDER"];
-
-type NavItem = { label: string; icon: typeof LayoutDashboard; path: string; roles?: Role[]; hideFor?: Role[]; badge?: number };
+import { buildSidebar, applyRestriction, ROLE_COLORS, omGivenAccessSection, type NavItem } from "@/lib/sidebar-menu";
+import { useTempAccess } from "@/lib/use-temp-access";
+import { useRoleRestriction } from "@/lib/use-role-restriction";
 
 /** Filled circular count badge at the right end of a menu item (two digits grow into a pill; hidden at 0) */
 function CountBadge({ n }: { n?: number }) {
@@ -194,26 +64,6 @@ function NavSection({ title, items, pathname, onNavigate, inHub, counts = {}, co
     );
 }
 
-// Role badge colors
-const ROLE_COLORS: Record<Role, { bg: string; text: string; label: string }> = {
-    FOUNDER: { bg: "bg-amber-500/20", text: "text-amber-400", label: "Founder" },
-    HR: { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "HR Admin" },
-    AD: { bg: "bg-purple-500/20", text: "text-purple-400", label: "Assoc. Director" },
-    TL: { bg: "bg-blue-500/20", text: "text-blue-400", label: "Tech Lead" },
-    HOI: { bg: "bg-orange-500/20", text: "text-orange-400", label: "Head of Inst." },
-    OM: { bg: "bg-cyan-500/20", text: "text-cyan-400", label: "Ops Manager" },
-    MARKETING_TEAM: { bg: "bg-indigo-500/20", text: "text-indigo-400", label: "Marketing Team" },
-    TECH_TEAM: { bg: "bg-rose-500/20", text: "text-rose-400", label: "Tech Team" },
-    PLACEMENT_INTERN_HEAD: { bg: "bg-emerald-500/20", text: "text-emerald-300", label: "Placement & Intern Head" },
-    TECH_INTERN: { bg: "bg-rose-500/20", text: "text-rose-300", label: "Tech Intern" },
-    FACULTY: { bg: "bg-pink-500/20", text: "text-pink-400", label: "Faculty" },
-    PROFESSOR: { bg: "bg-pink-500/20", text: "text-pink-400", label: "Professor" },
-    CURRICULUM_HEAD: { bg: "bg-teal-500/20", text: "text-teal-400", label: "Curriculum Head" },
-    CURRICULUM_LEAD: { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "Curriculum Lead" },
-    HR_EXECUTIVE: { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "HR Executive" },
-};
-/** HR Executive works in the HR portal without Reimbursements; the Tech Intern portal has no Reimbursement either */
-const NO_REIMBURSEMENT = (items: NavItem[], u: any) => (u?.hrExecutive || u?.role === "TECH_INTERN" ? items.filter(i => i.path !== "/reimbursement" && i.path !== "/hr/reimbursements") : items);
 
 export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
     const { user: contextUser, realUser, logout, getMyNotifications, workSchedules, hubs = [], activeHub, enterHub, exitHub, canManageAccess, employees: allEmployees = [] } = useAuth();
@@ -243,68 +93,29 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
     // Notification badges (pending / unread counts from the server, for the logged-in designation)
     const counts = useSidebarCounts(user?.id, pathname);
 
-    // HR / HR Executive: collapsible sections (Core, Personal, HR Approvals, HR Administration, Email Management);
-    // the section of the open page opens by itself, the rest stay as the user left them
-    const hrLayout = role === "HR";
-    const hrSections: { key: string; title: string; items: NavItem[] }[] = hrLayout ? [
-        { key: "core", title: "Core", items: NO_REIMBURSEMENT([...coreMenu.filter(i => i.path !== "/tickets"), personalMenu.find(i => i.path === "/announcements")!], user) },
-        { key: "personal", title: "Personal", items: personalMenu.filter(i => i.path !== "/flag-calendar" && i.path !== "/announcements") },
-        { key: "approvals", title: "HR Approvals", items: NO_REIMBURSEMENT(hrApprovalsMenu.map(i => i.path === "/hr/schedule-approval" ? { ...i, badge: unreadScheduleChanges } : i), user) },
-        { key: "admin", title: (user as any)?.hrExecutive ? "HR Executive Portal" : "HR Administration", items: NO_REIMBURSEMENT([...hrMenu.filter(i => !HR_APPROVAL_PATHS.includes(i.path) && !HR_LAYOUT_HIDDEN.includes(i.path)), { label: "Flag Calendar", icon: Flag, path: "/flag-calendar" }], user) },
-        { key: "email", title: "Email Management", items: emailMenu },
-    ] : [];
-    // My Team (anyone HR assigned as a reporting manager) — approvals not already in their menus
-    const myTeamItems = (): NavItem[] => {
-        if (!role || HR_ROLES.includes(role)) return [];
-        const hasReportees = (allEmployees as any[]).some(e => e.id !== user?.id && e.isRemoved !== true && (Array.isArray(e.reportsTo) ? e.reportsTo : e.reportsTo ? [e.reportsTo] : []).includes(user?.id));
-        if (!hasReportees) return [];
-        return [
-            // Leave Approval is already in Manager Suite (HOI / AD / Founder) and Tech Support (TL)
-            ...(["HOI", "AD", "FOUNDER", "TL"].includes(role) ? [] : [{ label: "Leave Approval", icon: CalendarCheck, path: "/manager/leave-approval" }]),
-            // WFH approvals of HOI / AD / TL / OM are in Attendance → team view
-            ...(["HOI", "AD", "TL", "OM", "FOUNDER"].includes(role) ? [] : [{ label: "WFH Approvals", icon: Home, path: "/manager/wfh-approvals" }]),
-        ];
-    };
-    // HOI / OM / AD / CL / CH: the same items as before (Manager Suite, CL / CH Portal, My Team), grouped in two dropdowns
-    const mgrLayout = !!role && MGR_LAYOUT_ROLES.includes(role);
-    const mgrSections: { key: string; title: string; items: NavItem[] }[] = (() => {
-        if (!mgrLayout || !role) return [];
-        const pool: NavItem[] = [
-            ...(MANAGER_ROLES.includes(role) ? managerMenu.filter((i: any) => (!i.roles || i.roles.includes(role)) && !(i.hideFor || []).includes(role)) : []),
-            ...(CURRICULUM_ROLES.includes(role) ? curriculumMenu.filter(i => !i.roles || i.roles.includes(role)) : []),
-            ...myTeamItems(),
-        ].filter((i, idx, all) => all.findIndex(x => x.path === i.path) === idx);
-        return [
-            { key: "core", title: "Core", items: NO_REIMBURSEMENT(coreMenu, user) },
-            { key: "personal", title: "Personal", items: personalMenu.map(i => i.path === "/notifications" ? { ...i, badge: unreadNotifications } : i) },
-            { key: "academic", title: "Academic Management", items: pool.filter(i => ACADEMIC_PATHS.includes(i.path)) },
-            { key: "faculty", title: "Faculty Management", items: pool.filter(i => !ACADEMIC_PATHS.includes(i.path)) },
-        ].filter(sec => sec.items.length);
-    })();
-    // Founder: the same sections as before (same headings, same items), each one a dropdown
-    const founderLayout = role === "FOUNDER";
-    const founderSections: { key: string; title: string; items: NavItem[] }[] = founderLayout ? [
-        { key: "core", title: "Core", items: NO_REIMBURSEMENT(coreMenu, user) },
-        { key: "personal", title: "Personal", items: personalMenu.map(i => i.path === "/notifications" ? { ...i, badge: unreadNotifications } : i) },
-        { key: "manager", title: "Academic Suite", items: managerMenu.filter((i: any) => (!i.roles || i.roles.includes("FOUNDER")) && !(i.hideFor || []).includes("FOUNDER")) },
-        { key: "hradmin", title: (user as any)?.hrExecutive ? "HR Executive Portal" : "HR Administration", items: NO_REIMBURSEMENT(hrMenu.filter(i => i.path !== "/hr/attendance-override").map(i => i.path === "/hr/schedule-approval" ? { ...i, badge: unreadScheduleChanges } : i), user) },
-        { key: "email", title: "Email Management", items: emailMenu },
-        { key: "curriculum", title: "CL / CH & Academics", items: curriculumMenu.filter(i => !i.roles || i.roles.includes("FOUNDER")) },
-        { key: "founder", title: "Founder Console", items: founderMenu },
-        { key: "myteam", title: "My Team", items: myTeamItems() },
-        { key: "tech", title: "Tech Support", items: techLeadMenu.filter(i => !i.roles || i.roles.includes("FOUNDER")) },
-        { key: "access", title: "Access Control", items: [{ label: "Give Access", icon: KeySquare, path: "/access" }] },
-    ].filter(sec => sec.items.length) : [];
-    const collapsibleLayout = hrLayout || mgrLayout || founderLayout;
-    const layoutSections = hrLayout ? hrSections : founderLayout ? founderSections : mgrSections;
+    // Sections and items of this role (lib/sidebar-menu.ts — same as before), without what HR hid or blocked
+    // for the role in Admin → Role Management (nothing by default)
+    const restriction = useRoleRestriction(user);
+    const hasReportees = !!role && (allEmployees as any[]).some(e => e.id !== user?.id && e.isRemoved !== true && (Array.isArray(e.reportsTo) ? e.reportsTo : e.reportsTo ? [e.reportsTo] : []).includes(user?.id));
+    const built = buildSidebar({ role, hrExecutive: !!(user as any)?.hrExecutive, hasReportees, canManageAccess, unreadScheduleChanges, unreadNotifications });
+    const collapsibleLayout = built.collapsible;
+    // OM Given Access → Full Attire: only while an OM's grant is active (Professor / HOI); nothing changes otherwise
+    const omGiven = useTempAccess(user, pathname);
+    const layoutSections0 = applyRestriction(built.sections, [...restriction.hidden, ...restriction.blocked]);
+    const layoutSections = omGiven ? [...layoutSections0, omGivenAccessSection] : layoutSections0;
     const [openSec, setOpenSec] = useState<Record<string, boolean>>({});
+    // the OM Given Access dropdown starts open; every other section as before
+    const secOpen = (k: string) => (k === "omgiven" ? openSec[k] !== false : !!openSec[k]);
+    const toggleSec = (k: string) => setOpenSec(o => ({ ...o, [k]: !(k === "omgiven" ? o[k] !== false : o[k]) }));
     useEffect(() => {
         if (!collapsibleLayout || inHub) return;
         const sec = layoutSections.find(s => s.items.some(i => isActivePath(pathname, i.path)));
         if (sec) setOpenSec(o => (o[sec.key] ? o : { ...o, [sec.key]: true }));
     }, [pathname, collapsibleLayout, role, inHub]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const roleStyle = (user as any)?.hrExecutive ? ROLE_COLORS.HR_EXECUTIVE : role ? ROLE_COLORS[role] : { bg: "bg-zinc-800", text: "text-zinc-400", label: "Guest" };
+    const roleStyle0 = (user as any)?.hrExecutive ? ROLE_COLORS.HR_EXECUTIVE : role ? ROLE_COLORS[role] : { bg: "bg-zinc-800", text: "text-zinc-400", label: "Guest" };
+    // a role HR created in Role Management shows its own name (colours of its base role)
+    const roleStyle = (user as any)?.customRoleLabel ? { ...roleStyle0, label: String((user as any).customRoleLabel) } : roleStyle0;
     const RoleIcon = role === "FOUNDER" ? Crown : role === "HR" ? ShieldCheck : role === "AD" || role === "HOI" ? Briefcase : User;
 
     return (
@@ -338,56 +149,12 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
             <nav className={cn("flex-1 overflow-y-auto custom-scrollbar", collapsibleLayout ? "space-y-3" : "space-y-6")}>
                 {collapsibleLayout ? layoutSections.map(sec => (
                     <NavSection key={sec.key} title={sec.title} items={sec.items} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts}
-                        collapsible open={!!openSec[sec.key]} onToggle={() => setOpenSec(o => ({ ...o, [sec.key]: !o[sec.key] }))} />
-                )) : (<>
-                <NavSection title="Core" items={NO_REIMBURSEMENT(role === "PLACEMENT_INTERN_HEAD" ? coreMenu.map(i => (i.path === "/" ? { ...i, path: PIH_HOME } : i)) : coreMenu, user)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
-                <NavSection title="Personal" items={personalMenu.map(i => i.path === "/notifications" ? { ...i, badge: unreadNotifications } : i)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
-                </>)}
-
-                {/* Manager Suite: FOUNDER (HOI / OM / AD: in Academic / Faculty Management above) */}
-                {role && MANAGER_ROLES.includes(role) && !mgrLayout && !founderLayout && (
-                    <NavSection title="Manager Suite" items={managerMenu.filter((i: any) => (!i.roles || i.roles.includes(role)) && !(i.hideFor || []).includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
-                )}
-
-                {/* HR Administration: Visible to FOUNDER (HR / HR Executive: in the collapsible sections above) */}
-                {role && HR_ROLES.includes(role) && !hrLayout && !founderLayout && (
-                    <NavSection title={(user as any)?.hrExecutive ? "HR Executive Portal" : "HR Administration"} items={NO_REIMBURSEMENT(hrMenu.map(i => i.path === "/hr/schedule-approval" ? { ...i, badge: unreadScheduleChanges } : i), user)} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
-                )}
-
-                {/* Email Management: Founder (HR / HR Executive: above) */}
-                {role && HR_ROLES.includes(role) && !hrLayout && !founderLayout && (
-                    <NavSection title="Email Management" items={emailMenu} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
-                )}
-
-                {/* Faculty Suite: Visible to FACULTY, PROFESSOR */}
-                {role && FACULTY_ROLES.includes(role) && (
-                    <NavSection title="Faculty Suite" items={facultyMenu} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
-                )}
-
-                {/* CL / CH Portal: one common section for CURRICULUM_LEAD and CURRICULUM_HEAD (also FOUNDER, AD) */}
-                {role && CURRICULUM_ROLES.includes(role) && !mgrLayout && !founderLayout && (
-                    <NavSection title={role === "CURRICULUM_LEAD" || role === "CURRICULUM_HEAD" ? "CL / CH Portal" : "CL / CH & Academics"} items={curriculumMenu.filter(i => !i.roles || i.roles.includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
-                )}
-
-                {/* Founder Console: Visible to FOUNDER only */}
-                {role === "FOUNDER" && !founderLayout && (
-                    <NavSection title="Founder Console" items={founderMenu} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
-                )}
-
-                {/* My Team: anyone HR assigned as a reporting manager (Assign Manager) — approvals not already in their menus */}
-                {role && !mgrLayout && !founderLayout && (() => {
-                    const items = myTeamItems();
-                    return items.length ? <NavSection title="My Team" items={items} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} /> : null;
-                })()}
-
-                {/* Tech Support: Visible to TL, FOUNDER */}
-                {role && TECH_LEAD_ROLES.includes(role) && !founderLayout && (
-                    <NavSection title="Tech Support" items={techLeadMenu.filter(i => !i.roles || i.roles.includes(role))} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
-                )}
-                {/* Give Access: Founder, and Tech Leads the Founder authorised */}
-                {(role === "FOUNDER" || canManageAccess) && !founderLayout && (
-                    <NavSection title="Access Control" items={[{ label: "Give Access", icon: KeySquare, path: "/access" }]} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
-                )}
+                        collapsible open={secOpen(sec.key)} onToggle={() => toggleSec(sec.key)} />
+                )) : layoutSections.map(sec => (
+                    sec.key === "omgiven"
+                        ? <NavSection key={sec.key} title={sec.title} items={sec.items} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} collapsible open={secOpen(sec.key)} onToggle={() => toggleSec(sec.key)} />
+                        : <NavSection key={sec.key} title={sec.title} items={sec.items} pathname={pathname} onNavigate={leaveHub} inHub={inHub} counts={counts} />
+                ))}
 
                 {/* Delegated hubs (Give Access) — each hub once, with its source selection */}
                 {hubs.map(h => {

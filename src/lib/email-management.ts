@@ -102,7 +102,9 @@ ${afterRows.map(p => `<p>${esc(p)}</p>`).join('')}
 
 function dressMail(row: any): { subject: string; html: string; text: string; storedHtml?: string; attachments?: any[] } {
     const pol = row.details.warningLabel ? row.details : null;   // Dress Code policy (new): warning number + fine
-    const subject = pol ? `${pol.warningLabel} – Dress Code Non-Compliance — ${ORG}` : `Dress Code Non-Compliance Notification — ${ORG}`;
+    // employee + date in the subject: each employee's mail stays its own conversation (HR is copied on all of them)
+    const who = `${row.employeeName}${row.employeeId ? ` (${row.employeeId})` : ''} — ${longDate(row.date)}`;
+    const subject = pol ? `${pol.warningLabel} – Dress Code Non-Compliance — ${who} | ${ORG}` : `Dress Code Non-Compliance Notification — ${who} | ${ORG}`;
     const { html, text } = renderMail(row.employeeName,
         [`This is to inform you that your dress code submission for ${longDate(row.date)} has been reviewed and marked as non-compliant.`],
         [['Reason for Rejection', row.details.reasonText || '—'], ['Additional Remarks', row.details.remarks || '—'],
@@ -125,7 +127,7 @@ function dressMail(row: any): { subject: string; html: string; text: string; sto
 }
 function noClockInMail(row: any) {
     const w = row.details?.warningLabel;
-    const subject = `${w ? `${w} – ` : ''}No Clock-In Recorded — ${longDate(row.date)} | ${ORG}`;
+    const subject = `${w ? `${w} – ` : ''}No Clock-In Recorded — ${row.employeeName}${row.employeeId ? ` (${row.employeeId})` : ''} — ${longDate(row.date)} | ${ORG}`;
     const { html, text } = renderMail(row.employeeName, [
         `Our attendance records indicate that no clock-in has been recorded for you on ${longDate(row.date)}.`,
         'You are requested to review your attendance status in the GOG OMS portal.',
@@ -135,7 +137,7 @@ function noClockInMail(row: any) {
 }
 function noClockOutMail(row: any) {
     const w = row.details?.warningLabel;
-    const subject = `${w ? `${w} – ` : ''}Missing Clock-Out Notification — ${longDate(row.date)} | ${ORG}`;
+    const subject = `${w ? `${w} – ` : ''}Missing Clock-Out Notification — ${row.employeeName}${row.employeeId ? ` (${row.employeeId})` : ''} — ${longDate(row.date)} | ${ORG}`;
     const { html, text } = renderMail(row.employeeName, [
         `Our attendance records indicate that your clock-out for ${longDate(row.date)} has not been recorded in the GOG OMS portal.`,
         'You are requested to review your attendance and complete the necessary correction or clarification through the prescribed process.',

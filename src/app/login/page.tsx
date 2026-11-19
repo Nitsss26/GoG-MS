@@ -31,6 +31,13 @@ export default function LoginPage() {
     const [error, setError] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [mounted, setMounted] = useState(false);
+    // Roles HR created in Role Management (published) are added below the fixed list
+    const [customRoles, setCustomRoles] = useState<{ key: string; label: string }[]>([]);
+    useEffect(() => {
+        fetch("/api/auth/custom-roles", { cache: "no-store" }).then(r => (r.ok ? r.json() : null))
+            .then(d => { if (Array.isArray(d?.roles)) setCustomRoles(d.roles.map((x: any) => ({ key: String(x.roleId), label: String(x.label) }))); })
+            .catch(() => { });
+    }, []);
 
     // Mouse Parallax for subtle depth
     const mouseX = useMotionValue(0);
@@ -202,6 +209,9 @@ export default function LoginPage() {
                                         onChange={(e) => setSelectedRole(e.target.value)}
                                     >
                                         {ROLE_OPTIONS.map(opt => (
+                                            <option key={opt.key} value={opt.key} className="bg-[#1c1f26]">{opt.label}</option>
+                                        ))}
+                                        {customRoles.filter(c => !ROLE_OPTIONS.some(o => o.key === c.key)).map(opt => (
                                             <option key={opt.key} value={opt.key} className="bg-[#1c1f26]">{opt.label}</option>
                                         ))}
                                     </select>

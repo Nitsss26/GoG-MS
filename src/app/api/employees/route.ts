@@ -6,6 +6,7 @@ import { Employee } from '@/models/Schemas';
 import { verifySessionToken, COOKIE_NAME } from '@/lib/session';
 import { storedPasswordValue } from '@/lib/password';
 import { sendMailInternal } from '@/lib/mail-server';
+import { resolveCustomRole } from '@/lib/role-config-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -148,6 +149,8 @@ export async function PUT(request: Request) {
         delete updates.passwordChangedAt; delete updates.passwordResetAt; delete updates.passwordResetBy; delete updates.passwordResetByName;
         // Changed only through their own APIs (validation + audit): /api/onboarding/checklist and /api/hr/assign
         delete updates.postOnboardingChecklist; delete updates.attendanceLocations;
+        // HR-created role (Role Management): set only when the employee is onboarded (validated there)
+        delete updates.customRole;
 
         // Who may change what: HR / Founder any employee; everyone else only their own profile
         // (never role, college, reporting line or status), plus manager ratings of others.
@@ -284,6 +287,10 @@ export async function POST(request: Request) {
         if (!email || !role || !data.name || !data.id) {
             return NextResponse.json({ error: 'Name, email, designation (role) and employee id are required.' }, { status: 400 });
         }
+        // Role HR created in Role Management: stored on top of its base role (role stays the base role)
+        const custom = await resolveCustomRole(role, data.customRole);
+        if (!custom.ok) return NextResponse.json({ error: custom.error }, { status: 400 });
+        if (custom.customRole) data.customRole = custom.customRole; else delete data.customRole;
         data.email = email;
         if (await Employee.findOne({ id: data.id }).select('_id').lean()) {
             return NextResponse.json({ error: `Employee id ${data.id} is already in use.` }, { status: 409 });
@@ -320,7 +327,7 @@ export async function POST(request: Request) {
 
         // Designation-specific onboarding email (no password in the email)
         const appUrl = (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
-        const roleLabel = role.replace(/_/g, ' ');
+        const roleLabel = custom.label || role.replace(/_/g, ' ');
         let onboardingEmail: 'SENT' | 'FAILED' | 'NOT_CONFIGURED' = 'NOT_CONFIGURED';
         if (process.env.SMTP_USER && process.env.SMTP_PASS) {
             const result: any = await Promise.race([

@@ -164,13 +164,26 @@ export default function OnboardingHRPage() {
     const [emailValue, setEmailValue] = useState("");
     const sameEmailRecords = emailValue.trim() ? employees.filter(x => (x.email || "").toLowerCase() === emailValue.trim().toLowerCase()) : [];
 
+    // Roles HR created in Role Management (published): chosen here as "custom:<id>", saved as the base role + customRole
+    const [customRoles, setCustomRoles] = useState<{ roleId: string; label: string; baseRole: string }[]>([]);
+    useEffect(() => {
+        fetch("/api/auth/custom-roles", { cache: "no-store" }).then(r => (r.ok ? r.json() : null))
+            .then(d => { if (Array.isArray(d?.roles)) setCustomRoles(d.roles); }).catch(() => { });
+    }, []);
+    const roleChoice = (v: string) => {
+        const c = v.startsWith("custom:") ? customRoles.find(x => x.roleId === v.slice(7)) : null;
+        return c ? { role: c.baseRole, customRole: c.roleId } : { role: v, customRole: "" };
+    };
+
     const handleCreateEmployee = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         const formData = new FormData(e.currentTarget);
+        const choice = roleChoice(String(formData.get("role") || ""));
         const newEmp = {
             name: formData.get("name") as string,
             email: formData.get("email") as string,
-            role: formData.get("role") as Role,
+            role: choice.role as Role,
+            ...(choice.customRole ? { customRole: choice.customRole } : {}),
             password: formData.get("password") as string || "GoG@2026",
             dept: formData.get("dept") as string,
             designation: formData.get("designation") as string,
@@ -633,7 +646,7 @@ export default function OnboardingHRPage() {
                                     </p>
                                 )}
                                 <FormField label="Role" required icon={<Users size={17} className="text-sky-400" />} select>
-                                    <select name="role" required defaultValue="PROFESSOR" data-testid="emp-role" onChange={e => { setNewRole(e.target.value); if (["PROFESSOR", "FACULTY", "OM"].includes(e.target.value)) setNewManager(""); }} className={`${fieldInput} appearance-none pr-10 cursor-pointer`}>
+                                    <select name="role" required defaultValue="PROFESSOR" data-testid="emp-role" onChange={e => { const base = roleChoice(e.target.value).role; setNewRole(base); if (["PROFESSOR", "FACULTY", "OM"].includes(base)) setNewManager(""); }} className={`${fieldInput} appearance-none pr-10 cursor-pointer`}>
                                         <option value="PROFESSOR">Professor / Faculty</option>
                                         <option value="OM">OM</option>
                                         <option value="CURRICULUM_LEAD">Curriculum Lead (CL)</option>
@@ -650,6 +663,11 @@ export default function OnboardingHRPage() {
                                         <option value="HR_EXECUTIVE">HR Executive</option>
                                         {/* Only a Founder can onboard another Founder (enforced on the server too) */}
                                         {user?.role === "FOUNDER" && <option value="FOUNDER">Founder</option>}
+                                        {customRoles.length > 0 && (
+                                            <optgroup label="Roles created in Role Management">
+                                                {customRoles.map(c => <option key={c.roleId} value={`custom:${c.roleId}`}>{c.label}</option>)}
+                                            </optgroup>
+                                        )}
                                     </select>
                                 </FormField>
                                 <FormField label="Password" required icon={<Lock size={17} className="text-amber-400" />}>

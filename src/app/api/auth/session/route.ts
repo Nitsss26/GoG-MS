@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { verifySessionToken, COOKIE_NAME } from '@/lib/session';
 import dbConnect from '@/lib/mongodb';
-import { Employee } from '@/models/Schemas';
+import { Employee, RoleDefinition } from '@/models/Schemas';
 
 /**
  * GET /api/auth/session
@@ -34,6 +34,8 @@ export async function GET() {
             employee = await Employee.findOne({ email: { $regex: new RegExp(`^${escaped}$`, 'i') }, role: payload.actualRole || payload.role });
         }
         if (employee && employee.role !== (payload.actualRole || payload.role)) employee = null;
+        // HR-created role (Role Management) changed after this login → log in again (both empty for everyone else)
+        if (employee && String(employee.customRole || '') !== String(payload.customRole || '')) employee = null;
 
         if (!employee) {
             return NextResponse.json({ authenticated: false, error: 'Account not found' }, { status: 404 });
@@ -42,6 +44,11 @@ export async function GET() {
         // Return sanitized user data — NEVER include password
         const userData = employee.toObject();
         delete userData.password;
+        // Role Management: the name of the HR-created role (shown in the sidebar)
+        if (userData.customRole) {
+            const def: any = await RoleDefinition.findOne({ roleId: userData.customRole }).select('label').lean().catch(() => null);
+            if (def?.label) userData.customRoleLabel = def.label;
+        }
 
         return NextResponse.json({
             authenticated: true,

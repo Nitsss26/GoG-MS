@@ -851,8 +851,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .filter(emp => {
                 // Remove specific HOI duplicates if they exist without restricting to specific IDs
                 if (emp.id === "HOI" || emp.name === "HOI") return false;
-                // Exclude EMP001 and EMP251 from org hierarchy
-                if (emp.id === "EMP001" || emp.id === "EMP251") return false;
                 // Org Chart correction: the management entry for "Kalpana" is not shown in the chart.
                 // Display only — the employee record itself is untouched and keeps working everywhere else.
                 if (/kalpana/i.test(emp.name || "") && (emp.role === "AD" || emp.role === "HR" || emp.role === "TL")) return false;
@@ -868,14 +866,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 else if (emp.role === "OM" || emp.role === "MARKETING_TEAM" || emp.role === "TECH_TEAM" || emp.role === "PLACEMENT_INTERN_HEAD" || emp.role === "TECH_INTERN") level = "OM";
                 else if (emp.role === "FACULTY" || emp.role === "PROFESSOR") level = "Faculty";
 
-                // Designation for TL / AD roles in Org Chart
+                // Enforce "Tech Lead" designation for TL role (Failsafe)
                 let designation = emp.designation || emp.role;
-                if (emp.role === "TL" || designation.toLowerCase() === "tech lead" || designation.toLowerCase() === "tl") {
-                    designation = "Technology, Marketing & Curriculum Head";
-                }
-                if (emp.role === "AD" || designation.toLowerCase() === "ad" || designation.toLowerCase() === "associate director") {
-                    designation = "Associate Director Business & Operations";
-                }
+                if (emp.role === "TL") designation = "Tech Lead";
 
                 let parentId = Array.isArray(emp.reportsTo) ? emp.reportsTo[0] : emp.reportsTo;
 
