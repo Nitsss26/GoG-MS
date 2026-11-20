@@ -49,11 +49,11 @@ export const istDate = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: IS
 export const istHHMM = (d: Date) => d.toLocaleTimeString("en-GB", { timeZone: IST, hour: "2-digit", minute: "2-digit", hour12: false });
 /** HH:MM:SS (24 h) in IST */
 export const istHHMMSS = (d: Date) => d.toLocaleTimeString("en-GB", { timeZone: IST, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
-/** "Wednesday, 14 October 2026" (same on every browser) */
+/** "Wednesday, 14/10/2026" (same on every browser) */
 export const istLongDate = (d: Date) => {
-    const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: IST, weekday: "long", day: "numeric", month: "long", year: "numeric" })
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: IST, weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" })
         .formatToParts(d).map(x => [x.type, x.value]));
-    return `${p.weekday}, ${p.day} ${p.month} ${p.year}`;
+    return `${p.weekday}, ${p.day}/${p.month}/${p.year}`;
 };
 export const istClock = (d: Date, seconds = false) => d.toLocaleTimeString("en-US", { timeZone: IST, hour: "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}), hour12: true });
 

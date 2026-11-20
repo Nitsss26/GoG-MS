@@ -111,7 +111,7 @@ const HrMonetaryPenaltySchema = new Schema({
     employeeId: { type: String, required: true, index: true },
     employeeName: { type: String },
     month: { type: String, index: true },                         // YYYY-MM
-    date: { type: String, required: true },                       // YYYY-MM-DD
+    date: { type: String },                                       // YYYY-MM-DD — empty for a whole-month penalty (month only)
     amount: { type: Number, required: true },
     reasonCategory: { type: String, required: true },
     explanation: { type: String, required: true },

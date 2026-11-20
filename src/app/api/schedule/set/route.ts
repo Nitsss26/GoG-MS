@@ -1,3 +1,4 @@
+import { weekdayDmy as toWeekdayDmy } from "@/lib/date-display";
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { WorkSchedule, Employee } from '@/models/Schemas';
@@ -23,7 +24,7 @@ async function tellProfessorAboutDayChange(employeeId: string, date: string, old
     if (a && b && a.id === b.id) return;
     const isWfh = to.toLowerCase() === 'wfh';
     if (!b && !isWfh) return;   // not a college (nothing to plan)
-    const dayText = LONG_DAY[date] ? `every ${LONG_DAY[date]}` : new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+    const dayText = LONG_DAY[date] ? `every ${LONG_DAY[date]}` : toWeekdayDmy(date);
     const newName = isWfh ? 'Work From Home' : b!.name;
     await notifySafe({
         recipients: [prof],

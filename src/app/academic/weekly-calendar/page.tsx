@@ -1,5 +1,6 @@
 "use client";
 
+import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
@@ -36,9 +37,9 @@ const mondayStr = (ymd: string) => { const d = new Date(ymd + "T00:00:00Z"); con
 const toMin = (t?: string) => { if (!t || !/^\d{1,2}:\d{2}$/.test(t)) return 0; const [h, m] = t.split(":").map(Number); return (h >= 1 && h <= 6 ? h + 12 : h) * 60 + m; };
 const istToday = () => { const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const shiftWeek = (ymd: string, weeks: number) => { const d = new Date(ymd + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + weeks * 7); return d.toISOString().slice(0, 10); };
-const dmy = (s: string) => s.split("-").reverse().join("-");
+const dmy = (s: string) => toDmy(s);
 /** "2026-11-09" → "09 Nov 2026" */
-const shortDmy = (s: string) => (s ? new Date(s + "T00:00:00Z").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }) : "");
+const shortDmy = (s: string) => (s ? toDmy(s) : "");
 /** View modes (HOI / OM / AD / Founder / CL / CH): the selected college(s) as one timetable, one per year or one per semester */
 type ViewMode = "full" | "year" | "sem";
 /** roles that see the "Campus not assigned" group (professors whose college HR has not set) */
@@ -524,7 +525,7 @@ export default function WeeklyCalendarPage() {
         const extraLanes = lanes.reduce((n, l) => n + l.count - 1, 0);
         const baseWidth = 1600 + 230 * extraLanes;
         const shortDay = (ymd: string) => new Date(ymd + "T00:00:00Z").toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
-        const gen = new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }).replace(" am", " AM").replace(" pm", " PM");
+        const gen = toDmyTime(new Date());
         const line = (Icon: any, text: React.ReactNode, bold = false) => (
             <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 3, fontSize: 12, lineHeight: 1.3, color: bold ? "#18181b" : "#3f3f46", fontWeight: bold ? 800 : 600 }}>
                 <Icon size={13} style={{ flexShrink: 0, marginTop: 1, color: "#3f3f46" }} /><span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{text}</span>

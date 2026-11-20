@@ -1,5 +1,6 @@
 "use client";
 
+import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
 import React, { useEffect, useState } from "react";
 import { displayManager } from "@/lib/display-manager";
 import { useAssignedManagers } from "@/lib/use-assigned-managers";
@@ -94,7 +95,7 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
     const getLeaveLocation = (l: LeaveRequest) => getLocationLabel(getEmployee(l.employeeId)?.location || l.location);
     const getName = (id?: string) => (id ? (getEmployee(id)?.name || id) : "");
     const getDept = (l: LeaveRequest) => (getEmployee(l.employeeId) as any)?.dept || "";
-    const formatDate = (iso?: string) => (iso ? new Date(iso).toLocaleString() : "");
+    const formatDate = (iso?: string) => (iso ? toDmyTime(iso) : "");
 
     // Everyone else's requests. Own leave lives in the personal Leave page (Core → Leave).
     // For managers the list from the server already holds only their own + their reportees' requests.
@@ -181,7 +182,7 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
     const downloadReport = () => {
         const rows = displayed.map(l => ({
             "Employee": l.employeeName, "Employee ID": l.employeeId, "Department": getDept(l), "Campus": getLeaveLocation(l),
-            "HOI / Manager": getManagerName(l.employeeId), "Leave": l.type, "Kind": l.leaveType, "From": l.startDate, "To": l.endDate, "Days": l.days,
+            "HOI / Manager": getManagerName(l.employeeId), "Leave": l.type, "Kind": l.leaveType, "From": toDmy(l.startDate), "To": toDmy(l.endDate), "Days": l.days,
             "Status": l.status, "Reason": l.reason || "", "Applied At": formatDate(l.appliedAt), "Remarks": l.reasonForAction || "",
         }));
         if (!rows.length) return;
@@ -284,7 +285,7 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
                                             <span className={cn("text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border", l.leaveType === "Emergency" ? "text-red-400 bg-red-500/10 border-red-500/20" : "text-zinc-300 bg-zinc-800 border-zinc-700")}>{l.leaveType}</span>
                                         </div>
                                         <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[11px]">
-                                            <span className="flex items-center gap-1.5 text-zinc-300"><Calendar size={12} className="text-zinc-500 shrink-0" /> {l.startDate} → {l.endDate} <span className="text-zinc-500">({l.days} day{l.days === 1 ? "" : "s"})</span></span>
+                                            <span className="flex items-center gap-1.5 text-zinc-300"><Calendar size={12} className="text-zinc-500 shrink-0" /> {toDmy(l.startDate)} → {toDmy(l.endDate)} <span className="text-zinc-500">({l.days} day{l.days === 1 ? "" : "s"})</span></span>
                                             <span className="flex items-center gap-1.5 text-zinc-500 min-w-0"><User size={12} className="shrink-0" /> {managerLabel(l.employeeId)}: <span className="text-zinc-300 truncate" data-testid="leave-manager">{getManagerName(l.employeeId) || "Not Assigned"}</span></span>
                                             <span className="flex items-center gap-1.5 text-zinc-500 min-w-0"><MapPin size={12} className="shrink-0" /> <span className="text-zinc-300 truncate">{getLeaveLocation(l) || "Not Assigned"}</span></span>
                                         </div>
@@ -332,7 +333,7 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
                             <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800">
                                 <p className="text-sm text-white font-bold">{modalLeave.employeeName}</p>
                                 <p className="text-xs text-zinc-500">{modalLeave.employeeId} • {modalLeave.type} • {modalLeave.days} day(s)</p>
-                                <p className="text-xs text-zinc-400 mt-2">{modalLeave.startDate} → {modalLeave.endDate}</p>
+                                <p className="text-xs text-zinc-400 mt-2">{toDmy(modalLeave.startDate)} → {toDmy(modalLeave.endDate)}</p>
                                 {decidesFinally && modalLeave.status === "Pending HOI Approval" && (
                                     <p className="text-[10px] text-amber-500 mt-2">{managerLabel(modalLeave.employeeId)} has not acted on this request yet. Your decision will be final.</p>
                                 )}
@@ -389,8 +390,8 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
                                 [`Assigned ${managerLabel(modalLeave.employeeId)}`, getManagerName(modalLeave.employeeId) || "Not Assigned"],
                                 ["Location", getLeaveLocation(modalLeave) || "Not Assigned"],
                                 ["Leave Type", `${modalLeave.type} (${modalLeave.leaveType}, ${modalLeave.classification})`],
-                                ["From Date", modalLeave.startDate],
-                                ["To Date", modalLeave.endDate],
+                                ["From Date", toDmy(modalLeave.startDate)],
+                                ["To Date", toDmy(modalLeave.endDate)],
                                 ["Days", String(modalLeave.days)],
                                 ["Reason", modalLeave.reason],
                                 ["Applied At", formatDate(modalLeave.appliedAt)],

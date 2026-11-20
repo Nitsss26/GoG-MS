@@ -1,3 +1,4 @@
+import { dmy as toDmy } from "@/lib/date-display";
 import { NextResponse, after } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { Holiday, Notice, Employee, Location, Notification } from '@/models/Schemas';
@@ -22,7 +23,7 @@ export const dynamic = 'force-dynamic';
  * workflow uses, plus the HOI's assigned (attendance) locations.
  */
 const HOLIDAY_TYPES = ['Public Holiday', 'Institutional Holiday', 'Special Holiday', 'Emergency Closure', 'Other'];
-const fmtLong = (ymd: string) => new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' });
+const fmtLong = (ymd: string) => toDmy(ymd);
 const MAX_RANGE_DAYS = 31;
 /** "05 November 2026" or "05 November 2026 to 07 November 2026 (3 days)" */
 const fmtRange = (from: string, to?: string) => {

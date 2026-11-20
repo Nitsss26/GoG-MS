@@ -1,5 +1,6 @@
 "use client";
 
+import { dmy as toDmy } from "@/lib/date-display";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
 import { EmployeeSearchSelect } from "@/components/hr/AssignManagerTab";
@@ -217,7 +218,7 @@ export default function CurriculumTasksPage() {
                                         {t.deadline && (
                                             <div className="flex items-center justify-between">
                                                 <span>Deadline:</span>
-                                                <span className="text-amber-400 font-semibold">{t.deadline.split("-").reverse().join("-")}</span>
+                                                <span className="text-amber-400 font-semibold">{toDmy(t.deadline)}</span>
                                             </div>
                                         )}
                                         {t.assignedByName && (

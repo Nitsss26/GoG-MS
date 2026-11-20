@@ -3,6 +3,7 @@
  * Reads the existing OMS records (attendance, leave, holidays, attendance violations, dress code) — it never
  * writes to them. Calculation rules: src/lib/payable-days.ts.
  */
+import { dmy as toDmy } from "@/lib/date-display";
 import { Employee, Attendance, LeaveRequest, Holiday, AttendanceViolation, ExitRecord, Location, Notification } from '@/models/Schemas';
 import { holidayForEmployee, holidayExcludes } from '@/lib/holiday-scope';
 import { FlagRemoval, SalaryCounter, PayableCorrection, HrMonetaryPenalty } from '@/models/SalaryModule';
@@ -43,11 +44,11 @@ export function joiningYmd(v: any): string {
 }
 export const isYmd = (d: any) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
 export const monthLabel = (month: string) => { const [y, m] = month.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' }); };
-export const fmtDate = (ymd?: string) => (ymd && isYmd(ymd) ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }) : ymd || '');
+export const fmtDate = (ymd?: string) => (ymd && isYmd(ymd) ? toDmy(ymd) : ymd || '');
 export const istDateTime = (iso: string) => {
     const d = new Date(iso);
     return {
-        date: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }),
+        date: toDmy(d),
         time: d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }),
     };
 };
@@ -107,8 +108,8 @@ export async function payableForMany(emps: any[], month: string) {
         // a holiday HR assigned to particular employees counts only for them (holiday-scope)
         const holidays = (hol as any[]).filter(h => h.employeeIds?.length ? holidayForEmployee(h, emp.id) : !holidayExcludes(h, emp.id) && (h.forAll || !h.collegeIds?.length || (emp.location && h.collegeIds.includes(emp.location)))).map(h => h.date);
         const monetaryPenalties = [...(locPen.money.get(emp.id) || []),
-            ...hrPen.filter(p => p.employeeId === emp.id).map(p => ({ id: p.id, date: p.date, amount: Number(p.amount) || 0, reason: `${p.reasonCategory} — ${p.explanation}`, source: 'HR Monetary Penalty', reviewedByName: p.updatedByName || p.createdByName || '', reviewedByRole: p.updatedByRole || p.createdByRole || '', reviewedAt: p.updatedAt || p.createdAt || '' })),
-        ].sort((a, b) => a.date.localeCompare(b.date));
+            ...hrPen.filter(p => p.employeeId === emp.id).map(p => ({ id: p.id, date: p.date || '', ...(p.date ? {} : { wholeMonth: true }), amount: Number(p.amount) || 0, reason: `${p.reasonCategory} — ${p.explanation}`, source: 'HR Monetary Penalty', reviewedByName: p.updatedByName || p.createdByName || '', reviewedByRole: p.updatedByRole || p.createdByRole || '', reviewedAt: p.updatedAt || p.createdAt || '' })),
+        ].sort((a: any, b: any) => String(a.date || '').localeCompare(String(b.date || '')));
         out.set(emp.id, withMoney(monetaryPenalties, calculatePayableDays({
             month, asOf,
             joiningDate: joiningYmd(emp.joiningDate) || undefined,

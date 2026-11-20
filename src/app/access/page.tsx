@@ -1,5 +1,6 @@
 "use client";
 
+import { dmyTime as toDmyTime } from "@/lib/date-display";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -20,7 +21,7 @@ const CAT_LABEL: Record<string, string> = {
     TL: "Tech Lead", TECH_TEAM: "Tech Team", PLACEMENT_INTERN_HEAD: "Placement & Intern Head", MARKETING_TEAM: "Marketing Team",
 };
 const label = (c: string) => CAT_LABEL[c] || c.replace(/_/g, " ");
-const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+const fmt = (iso?: string) => (iso ? toDmyTime(iso) : "");
 
 export default function AccessManagementPage() {
     const { user, realUser, refreshHubs, canManageAccess } = useAuth();

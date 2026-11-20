@@ -1,4 +1,5 @@
 "use client";
+import { dmy as toDmy } from "@/lib/date-display";
 import { holidayForEmployee, holidayExcludes } from "@/lib/holiday-scope";
 import { clockInCutoff, cutoffLabel } from "@/lib/time-utils";
 import React, { useState, useEffect, useRef, useMemo } from "react";
@@ -56,6 +57,8 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
     const teamOn = hrLog || user?.role !== "HR";          // team sections (HR / HR Executive: only on the Attendance Log page)
     // Roster dress code Reject → reasons dialog (no automatic email; sent from Email Management)
     const [dressRejecting, setDressRejecting] = useState<any>(null);
+    // HR Mark Present / Mark Absent: the reason is asked for (required) and shown with the record
+    const [markDlg, setMarkDlg] = useState<{ id: string; name: string; date: string; status: "Present" | "Absent"; reason: string; busy: boolean; error: string } | null>(null);
     const searchParams = useSearchParams();
     const [currentTime, setCurrentTime] = useState<string | null>(null);
     const [currentDate, setCurrentDate] = useState<string | null>(null);
@@ -694,9 +697,18 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
     const markedBy = (log: any) => (isHrMarked(log) ? `${markerRole(log)}${log.markedByName ? ` · ${log.markedByName}` : ""}` : log.clockIn ? "Self Clock-In" : "System");
     // Flags shown in the tables: an HR-marked day shows "Present / Absent – Marked by …" instead of the "overridden" flag
     const shownFlags = (rec: any) => Object.entries(rec?.flags || {}).filter(([k, v]) => v && k !== "shortLeave" && !(k === "overridden" && isHrMarked(rec)));
-    const MarkedBadge = ({ rec }: { rec: any }) => (isHrMarked(rec) && (rec.status === "Present" || rec.status === "Absent") ? (
+    const MarkedBadge = ({ rec }: { rec: any }) => (isHrMarked(rec) && (rec.status === "Present" || rec.status === "Absent") ? (<>
         <span data-testid="att-marked-flag" className={cn("text-[8.5px] font-bold px-1.5 py-0.5 rounded-sm", rec.status === "Present" ? "text-emerald-300 bg-emerald-500/10" : "text-red-300 bg-red-500/10")}>{rec.status} – Marked by {markerRole(rec)}</span>
-    ) : null);
+        {rec.hrRemarks && <span data-testid="att-mark-reason" className="block w-full text-[10px] text-zinc-400 mt-0.5 whitespace-normal [overflow-wrap:anywhere]">Reason: {rec.hrRemarks}</span>}
+    </>) : null);
+    const saveMark = async () => {
+        if (!markDlg) return;
+        const reason = markDlg.reason.trim();
+        if (!reason) { setMarkDlg({ ...markDlg, error: `Write the reason for marking ${markDlg.name} ${markDlg.status}.` }); return; }
+        setMarkDlg({ ...markDlg, busy: true, error: "" });
+        const r = await overrideAttendance(markDlg.id, markDlg.date, markDlg.status, reason);
+        if (r?.ok) setMarkDlg(null); else setMarkDlg(d => d && { ...d, busy: false, error: r?.error || "Could not save." });
+    };
 
 
     return (
@@ -1247,7 +1259,7 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                             className={cn("h-8 px-3 rounded-lg border text-[11px] font-bold", logDate && logDate === currentDate ? "border-primary/40 bg-primary/10 text-primary" : "border-zinc-800 text-zinc-300 hover:text-white")}>Today</button>
                         {logDate && <button onClick={() => { setLogDate(""); setLogPage(0); }} data-testid="log-date-clear"
                             className="h-8 px-3 rounded-lg border border-zinc-800 text-[11px] font-bold text-zinc-400 hover:text-white flex items-center gap-1"><X size={12} /> Clear Filter</button>}
-                        {logDate && <span className="text-[11px] text-zinc-400" data-testid="log-date-label">Showing <b className="text-white">{logDate.split("-").reverse().join("-")}</b></span>}
+                        {logDate && <span className="text-[11px] text-zinc-400" data-testid="log-date-label">Showing <b className="text-white">{toDmy(logDate)}</b></span>}
                     </div>
                     <div className="flex gap-1 p-1 rounded-lg bg-zinc-950/60 border border-zinc-800" data-testid="log-tabs">
                         {([["office", "Attendance"], ["wfh", "WFH Attendance"], ["all", "All Attendance"]] as const).map(([k, l]) => (
@@ -1272,11 +1284,11 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-zinc-800/50">
-                                {logRows.length === 0 && <tr><td colSpan={8} className="px-3 py-8 text-center text-xs text-zinc-500">{logDate ? `No attendance record on ${logDate.split("-").reverse().join("-")}.` : logTab === "wfh" ? "No Work From Home attendance yet." : "No attendance records yet."}</td></tr>}
+                                {logRows.length === 0 && <tr><td colSpan={8} className="px-3 py-8 text-center text-xs text-zinc-500">{logDate ? `No attendance record on ${toDmy(logDate)}.` : logTab === "wfh" ? "No Work From Home attendance yet." : "No attendance records yet."}</td></tr>}
                                 {logRows.slice(logPage * LOG_PAGE, logPage * LOG_PAGE + LOG_PAGE).map((log, index) => (
                                     <tr key={log.id || (log as any)._id || index} data-testid="att-row" data-date={log.date} className="hover:bg-zinc-800/20 transition-colors text-xs">
                                         <td className="px-3 py-3 text-white font-medium whitespace-nowrap">
-                                            {log.date ? log.date.split("-").reverse().join("-") : "—"}
+                                            {log.date ? toDmy(log.date) : "—"}
                                         </td>
                                         <td className="px-3 py-3" data-testid="att-status">
                                             <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap",
@@ -1521,22 +1533,16 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                                                 <td className="px-4 py-3 text-center">
                                                     {status === "Absent" || status === "No Clock-in" ? (
                                                         <button 
-                                                            onClick={() => {
-                                                                if (confirm(`Mark ${employee.name} as Present for ${selectedGlobalDate}?`)) {
-                                                                    overrideAttendance(employee.id, selectedGlobalDate, "Present");
-                                                                }
-                                                            }}
+                                                            onClick={() => setMarkDlg({ id: employee.id, name: employee.name, date: selectedGlobalDate, status: "Present", reason: "", busy: false, error: "" })}
+                                                            data-testid="att-mark-present"
                                                             className="text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-1 rounded hover:bg-green-500/20 transition-all"
                                                         >
                                                             Mark Present
                                                         </button>
                                                     ) : (
                                                         <button 
-                                                            onClick={() => {
-                                                                if (confirm(`Mark ${employee.name} as Absent for ${selectedGlobalDate}?`)) {
-                                                                    overrideAttendance(employee.id, selectedGlobalDate, "Absent");
-                                                                }
-                                                            }}
+                                                            onClick={() => setMarkDlg({ id: employee.id, name: employee.name, date: selectedGlobalDate, status: "Absent", reason: "", busy: false, error: "" })}
+                                                            data-testid="att-mark-absent"
                                                             className="text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-1 rounded hover:bg-red-500/20 transition-all"
                                                         >
                                                             Mark Absent
@@ -1571,7 +1577,7 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                             <div key={idx} className="flex items-center justify-between p-3 bg-zinc-800/30 rounded-xl border border-zinc-700/50">
                                 <div className="space-y-0.5">
                                     <p className="text-xs font-bold text-white">{fine.reason}</p>
-                                    <p className="text-[10px] text-zinc-500">{fine.date}</p>
+                                    <p className="text-[10px] text-zinc-500">{toDmy(fine.date)}</p>
                                 </div>
                                 <span className="text-xs font-black text-red-400">₹{fine.amount}</span>
                             </div>
@@ -1586,6 +1592,26 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                 <p className="text-[9px] text-zinc-600 italic">Note: Fines are automatically deducted from the monthly payout. For disputes, please raise a ticket.</p>
             </div>
             </>)}
+            {markDlg && (
+                <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3" onClick={() => !markDlg.busy && setMarkDlg(null)}>
+                    <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3 text-xs" onClick={ev => ev.stopPropagation()} data-testid="att-mark-dialog" role="dialog" aria-modal="true">
+                        <h2 className="text-base font-black text-white">Mark {markDlg.status}</h2>
+                        <p className="text-zinc-300">Mark <b className="text-white">{markDlg.name}</b> as <b className={markDlg.status === "Present" ? "text-emerald-300" : "text-red-300"}>{markDlg.status}</b> for <b className="text-white">{toDmy(markDlg.date)}</b>?</p>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Reason *
+                            <textarea value={markDlg.reason} onChange={ev => setMarkDlg({ ...markDlg, reason: ev.target.value, error: "" })} rows={4} maxLength={500} autoFocus data-testid="att-mark-reason-input"
+                                placeholder={markDlg.status === "Present" ? "e.g. Was present at the college; the clock-in failed because of a network issue (verified with the HOI)." : "e.g. Was not present at the college on this date (verified with the HOI)."}
+                                className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white normal-case tracking-normal font-normal" />
+                        </label>
+                        <p className="text-zinc-500">The reason is saved with the attendance record and shown in the roster and the Attendance Log.</p>
+                        {markDlg.error && <p className="text-red-400" data-testid="att-mark-error">{markDlg.error}</p>}
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setMarkDlg(null)} disabled={markDlg.busy} className="px-4 py-2 rounded-lg font-bold text-zinc-400 hover:text-white">Cancel</button>
+                            <button onClick={saveMark} disabled={markDlg.busy || !markDlg.reason.trim()} data-testid="att-mark-save"
+                                className={cn("px-5 py-2 rounded-lg text-white font-black uppercase tracking-wider disabled:opacity-50", markDlg.status === "Present" ? "bg-emerald-600 hover:bg-emerald-500" : "bg-red-600 hover:bg-red-500")}>{markDlg.busy ? "Saving…" : `Mark ${markDlg.status}`}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {dressRejecting && <DressCodeRejectDialog employeeName={dressRejecting.name} date={dressRejecting.date} onCancel={() => setDressRejecting(null)}
                 onConfirm={async r => { const res = await resolveDressCodeCheck(dressRejecting.id, "Rejected", r); if (!res || res.ok) setDressRejecting(null); return res; }} />}
         </div>

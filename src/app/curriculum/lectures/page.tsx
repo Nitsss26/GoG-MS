@@ -1,5 +1,6 @@
 "use client";
 
+import { dmy as toDmy } from "@/lib/date-display";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -19,7 +20,7 @@ const todayIST = () => new Date(new Date().toLocaleString("en-US", { timeZone: "
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const daysAgo = (n: number) => { const d = todayIST(); d.setDate(d.getDate() - n); return ymd(d); };
 const endOfWeek = () => { const d = todayIST(); d.setDate(d.getDate() + (d.getDay() === 0 ? 0 : 6 - d.getDay())); return ymd(d); };
-const dmy = (s?: string) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s.split("-").reverse().join("-") : s || "");
+const dmy = (s?: string) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? toDmy(s) : s || "");
 const wd = (s?: string) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T00:00:00`).toLocaleDateString("en-US", { weekday: "short" }) : "");
 
 /** Stage groups shown as tiles; each one is also a filter */

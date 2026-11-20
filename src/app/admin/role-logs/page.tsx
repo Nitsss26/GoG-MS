@@ -1,12 +1,13 @@
 "use client";
 
+import { dmyTime as toDmyTime } from "@/lib/date-display";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { History, Loader2 } from "lucide-react";
 import { ROLE_COLORS } from "@/lib/sidebar-menu";
 
 /** Admin → Role Activity Logs (HR — not HR Executive — and Founder): every Role Management change, newest first */
-const dt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }) : "");
+const dt = (iso?: string) => (iso ? toDmyTime(iso) : "");
 const TEXT: Record<string, string> = { visible: "Visible", hidden: "Hidden", blocked: "Blocked" };
 const TONE: Record<string, string> = { visible: "text-emerald-300", hidden: "text-amber-300", blocked: "text-red-300" };
 const ACTION: Record<string, { t: string; c: string }> = {

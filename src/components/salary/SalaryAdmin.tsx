@@ -5,6 +5,7 @@
  * One module, two views: Employees | Correction Tickets.
  * Every figure comes from the same calculation the employee sees (src/lib/payable-days.ts + HR corrections).
  */
+import { dmy, dmyTime } from "@/lib/date-display";
 import { useCallback, useEffect, useState } from "react";
 import MonetaryPenalties from "@/components/salary/MonetaryPenalties";
 import {
@@ -46,10 +47,11 @@ const PAY: Record<string, string> = {
     "Payable": "bg-emerald-500/10 text-emerald-300 border-emerald-500/30", "Non-Payable": "bg-red-500/10 text-red-300 border-red-500/30",
     "Partly Payable": "bg-amber-500/10 text-amber-300 border-amber-500/30", "Upcoming": "bg-zinc-800 text-zinc-400 border-zinc-700", "Not Employed": "bg-zinc-900 text-zinc-500 border-zinc-800",
 };
-const dmy = (ymd?: string) => (ymd ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }) : "");
-const dt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }) : "");
+const dt = (iso?: string) => (iso ? dmyTime(iso) : "");
 const monthText = (m?: string) => { if (!m) return "—"; const [y, mm] = m.split("-").map(Number); return new Date(Date.UTC(y, mm - 1, 1)).toLocaleString("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }); };
 type AdjType = "FULL" | "HALF" | "PENALTY";
+/** a penalty's date — or "Whole month — November 2026" for a penalty added from the Monetary Penalties box */
+const penWhen = (p: any) => (p?.date ? dmy(p.date) : `Whole month — ${monthText(p?.month)}`);
 const inr = (v: number) => `₹${Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const n = (v: number | undefined | null) => { const x = Number(v); return !Number.isFinite(x) ? "0" : Number.isInteger(x) ? String(x) : x.toFixed(1); };
 const months = () => { const out: string[] = []; const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })); for (let i = 0; i < 18; i++) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); out.push(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`); } return out; };
@@ -315,6 +317,9 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
         );
     };
     const monthCorr = (data?.corrections || []).filter((x: any) => x.month === month);
+    // Monetary Penalty (separate from Mark Payable): any day that has happened while the person was employed
+    const penaltyOk = (d: any) => !!data?.canEdit && d.payableStatus !== "Upcoming" && d.payableStatus !== "Not Employed" && (data?.penaltyReasons || PENALTY_REASONS).length > 0;
+    const penaltyDays = (c?.days || []).filter(penaltyOk);
     const openTickets = (data?.tickets || []).filter((t: any) => !["Resolved", "Rejected"].includes(t.status));
     const dayReason = (d: any) => (<>
                                             {d.correction ? <span className={d.correction.direction === "TO_NON_PAYABLE" ? "text-red-200" : "text-violet-200"}>HR correction ({d.correction.value === 0.5 ? "half day payable 0.5" : d.correction.direction === "TO_NON_PAYABLE" ? "non-payable" : "payable"}): {d.correction.correctionCategory} — {d.correction.correctedByName} ({d.correction.correctedByRole}), {dt(d.correction.correctedAt)}<span className="block text-zinc-500">Records: {d.baseReason}</span></span> : d.reason}
@@ -323,6 +328,7 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
     const dayActions = (d: any) => (<>
                                             {d.correctable && data.canEdit && <button onClick={() => setDialog({ day: d, direction: "TO_PAYABLE" })} data-testid="sm-mark" className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase">Mark Payable</button>}
                                             {d.deductible && !d.correction && data.canEdit && d.payableStatus !== "Upcoming" && <button onClick={() => setDialog({ day: d, direction: "TO_NON_PAYABLE" })} data-testid="sm-mark-np" className="ml-1 px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 text-[10px] font-black uppercase">Mark Non-Payable</button>}
+                                            {penaltyOk(d) && <button onClick={() => setDialog({ day: d, penalty: true })} data-testid="sm-penalty" className="ml-1 px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 border border-rose-500/30 text-[10px] font-black uppercase">Monetary Penalty</button>}
                                             {d.correction && <>
                                                 <button onClick={() => setView(monthCorr.find((x: any) => x.id === d.correction.id) || d.correction)} className="px-2 py-1.5 rounded-lg bg-zinc-800 text-zinc-200 text-[10px] font-black uppercase mr-1">View</button>
                                                 {data.canEdit && <button onClick={() => setReverse({ correction: d.correction, date: d.date, reason: "", busy: false, error: "" })} data-testid="sm-reverse" className="px-2 py-1.5 rounded-lg bg-red-500/15 text-red-300 border border-red-500/30 text-[10px] font-black uppercase">Reverse</button>}
@@ -352,7 +358,7 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
                         </div>
                     ))}
                 </div>
-                <MonetaryPenalties list={c.monetaryPenalties} total={c.monetaryPenaltyTotal} monthLabel={data.monthLabel} testid="sm-money" />
+                <MonetaryPenalties list={c.monetaryPenalties} total={c.monetaryPenaltyTotal} monthLabel={data.monthLabel} testid="sm-money" onAdd={data.canEdit && penaltyDays.length ? () => setDialog({ penalty: true, wholeMonth: true }) : undefined} />
                 <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40">
                     <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-zinc-800">
                         <p className="text-sm font-bold text-white">Payable Day Breakdown</p>
@@ -406,7 +412,7 @@ function EmployeeDetail({ id, month, setMonth, ticketId, onBack, onMsg, onOpenTi
                     onViewCorrection={setView} onReverseCorrection={(x: any) => setReverse({ correction: x, date: x.date, reason: "", busy: false, error: "" })}
                     onViewPenalty={setPenView} onEditPenalty={(p: any) => setPenEdit({ mode: "edit", p })} onReversePenalty={(p: any) => setPenEdit({ mode: "reverse", p })} />
             </>)}
-            {dialog && <MarkPayableDialog employee={e} day={dialog.day} direction={dialog.direction} ticketId={ticketId} openTickets={openTickets} categories={dialog.direction === "TO_NON_PAYABLE" ? data.nonPayableCategories : data.categories} halfDayReasons={data.halfDayReasons || HALF_DAY_REASONS} penaltyReasons={data.penaltyReasons || PENALTY_REASONS} maxPenalty={data.maxPenalty || MAX_PENALTY_AMOUNT} serverReady={Array.isArray(data.halfDayReasons)} monthPayable={c?.payableDays} penaltyTotal={c?.monetaryPenaltyTotal} onClose={() => setDialog(null)} onDone={(m) => { setDialog(null); onMsg({ type: "success", text: m }); load(); }} />}
+            {dialog && <MarkPayableDialog employee={e} day={dialog.day} penaltyOnly={!!dialog.penalty} wholeMonth={dialog.wholeMonth ? { month, label: data.monthLabel || monthText(month) } : undefined} direction={dialog.direction} ticketId={ticketId} openTickets={openTickets} categories={dialog.direction === "TO_NON_PAYABLE" ? data.nonPayableCategories : data.categories} halfDayReasons={data.halfDayReasons || HALF_DAY_REASONS} penaltyReasons={data.penaltyReasons || PENALTY_REASONS} maxPenalty={data.maxPenalty || MAX_PENALTY_AMOUNT} serverReady={Array.isArray(data.halfDayReasons)} monthPayable={c?.payableDays} penaltyTotal={c?.monetaryPenaltyTotal} onClose={() => setDialog(null)} onDone={(m) => { setDialog(null); onMsg({ type: "success", text: m }); load(); }} />}
             {reverse && <ReverseDialog st={reverse} setSt={setReverse} onDone={(m) => { setReverse(null); onMsg({ type: "success", text: m }); load(); }} />}
             {view && <CorrectionView c={view} onClose={() => setView(null)} />}
             {penView && <PenaltyView p={penView} onClose={() => setPenView(null)} />}
@@ -422,20 +428,22 @@ const ADJ_TONE = {
     rose: { on: "border-rose-400 bg-rose-500/20 ring-1 ring-rose-400/40", off: "border-rose-500/25 bg-rose-500/[0.05] hover:bg-rose-500/10", text: "text-rose-200", offText: "text-rose-300/80", dot: "bg-rose-400", ring: "border-rose-400/60" },
 };
 
-function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, openTickets, categories, halfDayReasons = [], penaltyReasons = [], maxPenalty = 100000, monthPayable, penaltyTotal = 0, serverReady = true, onClose, onDone }: { employee: any; day: any; direction?: "TO_PAYABLE" | "TO_NON_PAYABLE"; ticketId?: string; openTickets: any[]; categories: string[]; halfDayReasons?: string[]; penaltyReasons?: string[]; maxPenalty?: number; monthPayable?: number; penaltyTotal?: number; serverReady?: boolean; onClose: () => void; onDone: (m: string) => void }) {
+function MarkPayableDialog({ employee, day, penaltyOnly = false, wholeMonth, direction = "TO_PAYABLE", ticketId, openTickets, categories, halfDayReasons = [], penaltyReasons = [], maxPenalty = 100000, monthPayable, penaltyTotal = 0, serverReady = true, onClose, onDone }: { employee: any; day: any; direction?: "TO_PAYABLE" | "TO_NON_PAYABLE"; ticketId?: string; openTickets: any[]; categories: string[]; halfDayReasons?: string[]; penaltyReasons?: string[]; maxPenalty?: number; monthPayable?: number; penaltyTotal?: number; serverReady?: boolean; onClose: () => void; onDone: (m: string) => void; penaltyOnly?: boolean; wholeMonth?: { month: string; label: string } }) {
+    // "Add Penalty" from the Monetary Penalties box: a penalty for the whole month (no particular day)
     const toPay = direction === "TO_PAYABLE";
-    // Payment Adjustment Type — Full Day keeps the existing correction; Half Day = 0.5 (only from a 0 or a 1 day); Monetary Penalty only from Mark Payable
-    const types: [AdjType, string][] = toPay
-        ? [["FULL", "Full Day Payable"], ...(day.payable === 0 && halfDayReasons.length ? [["HALF", "Half Day Payable"] as [AdjType, string]] : []), ...(penaltyReasons.length ? [["PENALTY", "Monetary Penalty"] as [AdjType, string]] : [])]
+    // Payment Adjustment Type — Full Day keeps the existing correction; Half Day = 0.5 (only from a 0 or a 1 day).
+    // Monetary Penalty has its own button (row / Monetary Penalties box) — it never changes the day's payable value.
+    const types: [AdjType, string][] = penaltyOnly ? [["PENALTY", "Monetary Penalty"]] : toPay
+        ? [["FULL", "Full Day Payable"], ...(day.payable === 0 && halfDayReasons.length ? [["HALF", "Half Day Payable"] as [AdjType, string]] : [])]
         : [["FULL", "Non-Payable"], ...(day.payable === 1 && halfDayReasons.length ? [["HALF", "Half Day Payable"] as [AdjType, string]] : [])];
-    const [type, setType] = useState<AdjType>("FULL");
+    const [type, setType] = useState<AdjType>(penaltyOnly ? "PENALTY" : "FULL");
     const [halfReason, setHalfReason] = useState("");
     const [explanation, setExplanation] = useState("");
     const [amount, setAmount] = useState("");
     const [category, setCategory] = useState(toPay ? (categories[1] || categories[0]) : categories[0]);
     const [reason, setReason] = useState("");
     const [categoryOther, setCategoryOther] = useState("");   // written by hand when "Other" is chosen
-    const [ticket, setTicket] = useState(ticketId || openTickets.find((t: any) => (t.affectedDates || []).includes(day.date))?.id || "");
+    const [ticket, setTicket] = useState(ticketId || (day ? openTickets.find((t: any) => (t.affectedDates || []).includes(day.date))?.id : "") || "");
     const [files, setFiles] = useState<string[]>([]);
     const [busy, setBusy] = useState(false); const [uploading, setUploading] = useState(false); const [error, setError] = useState("");
     const [confirm, setConfirm] = useState(false);
@@ -446,7 +454,7 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
     const blocked = type !== "FULL" && !serverReady;
     const okReason = blocked ? false : type === "FULL" ? (category !== "Other" || categoryOther.trim().length >= 2)
         : type === "HALF" ? !!halfReason && explanation.trim().length > 0
-        : !!halfReason && explanation.trim().length > 0 && amount.trim() !== "" && !amountErr;
+        : (!!day || !!wholeMonth) && !!halfReason && explanation.trim().length > 0 && amount.trim() !== "" && !amountErr;
     const categoryText = category === "Other" ? `Other — ${categoryOther.trim()}` : category;
     const upload = async (fl: FileList | null) => {
         if (!fl?.length) return; setUploading(true); setError("");
@@ -457,7 +465,7 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
         setBusy(true); setError("");
         try {
             const res = type === "PENALTY"
-                ? await fetch("/api/hr/salary-management/penalties", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeId: employee.id, date: day.date, amount: amount.trim(), reasonCategory: halfReason, explanation }) })
+                ? await fetch("/api/hr/salary-management/penalties", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeId: employee.id, ...(wholeMonth ? { month: wholeMonth.month, wholeMonth: true } : { date: day.date }), amount: amount.trim(), reasonCategory: halfReason, explanation }) })
                 : await fetch("/api/hr/salary-management/corrections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(type === "HALF"
                     ? { employeeId: employee.id, date: day.date, direction, payableType: "HALF", halfDayReason: halfReason, explanation, evidenceUrls: files, ticketId: ticket || undefined }
                     : { employeeId: employee.id, date: day.date, direction, category, categoryOther: category === "Other" ? categoryOther.trim() : undefined, reason, evidenceUrls: files, ticketId: ticket || undefined }) });
@@ -468,12 +476,14 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
     return (
         <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3" onClick={() => !busy && onClose()}>
             <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-4 text-xs" onClick={ev => ev.stopPropagation()} data-testid="sm-dialog">
-                <div className="flex items-center justify-between"><h2 className="text-lg font-black text-white">{toPay ? "Mark Day as Payable" : "Mark Day as Non-Payable"}</h2><button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={18} /></button></div>
+                <div className="flex items-center justify-between"><h2 className="text-lg font-black text-white">{penaltyOnly ? "Apply Monetary Penalty" : toPay ? "Mark Day as Payable" : "Mark Day as Non-Payable"}</h2><button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={18} /></button></div>
                 {!confirm ? (<>
-                    <div className="rounded-xl bg-zinc-950/60 border border-zinc-800 p-3 space-y-1.5">
+                    {wholeMonth ? <div className="rounded-xl bg-zinc-950/60 border border-zinc-800 p-3 space-y-1.5" data-testid="sm-pen-month-info">
+                        {line("Employee", `${employee.name} (${employee.id})`)}{line("Penalty For", `Whole month — ${wholeMonth.label}`)}{line("Payable Days", "Not changed (the penalty is a separate ₹ deduction)")}
+                    </div> : <div className="rounded-xl bg-zinc-950/60 border border-zinc-800 p-3 space-y-1.5">
                         {line("Employee", `${employee.name} (${employee.id})`)}{line("Date", `${dmy(day.date)} (${day.weekday})`)}{line("Attendance", `${day.attendance}${day.clockIn ? ` · in ${day.clockIn}` : ""}${day.clockOut ? ` · out ${day.clockOut}` : ""}`)}
                         {line("Current Payable", `${day.payableStatus} (${n(day.payable)})`)}{line("Leave", day.leave)}{line("Penalties", day.penalties.join(", "))}{line("Why", day.reason)}
-                    </div>
+                    </div>}
                     {types.length > 1 && (
                         <div role="radiogroup" aria-label="Payment Adjustment Type" data-testid="sm-adj-type">
                             <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5">Payment Adjustment Type *</p>
@@ -563,10 +573,10 @@ function MarkPayableDialog({ employee, day, direction = "TO_PAYABLE", ticketId, 
                 </>) : type !== "FULL" ? (<>
                     <p className="text-sm text-zinc-200 leading-relaxed" data-testid="sm-confirm-text">{type === "HALF"
                         ? <>You are marking <b>{employee.name}</b> as Half Day Payable for <b>{dmy(day.date)}</b>. This may affect the employee&apos;s salary. Do you want to continue?</>
-                        : <>You are applying a monetary deduction of <b>{inr(amt)}</b> to <b>{employee.name}</b> for <b>{dmy(day.date)}</b>. Do you want to continue?</>}</p>
+                        : <>You are applying a monetary deduction of <b>{inr(amt)}</b> to <b>{employee.name}</b> for <b>{wholeMonth ? `the month of ${wholeMonth.label}` : dmy(day.date)}</b>. Do you want to continue?</>}</p>
                     <div className="rounded-xl p-3 space-y-1.5 bg-amber-500/5 border border-amber-500/20" data-testid="sm-impact">
                         <p className="text-[10px] font-black uppercase tracking-widest text-amber-300">Expected Salary Impact</p>
-                        {line("Employee", `${employee.name} (${employee.id})`)}{line("Date", dmy(day.date))}
+                        {line("Employee", `${employee.name} (${employee.id})`)}{wholeMonth ? line("Month", `Whole month — ${wholeMonth.label}`) : line("Date", dmy(day.date))}
                         {type === "HALF" ? (<>
                             {line("Payable Value (date)", `${n(day.payable)} → 0.5`)}
                             {monthPayable !== undefined && line("Monthly Payable Days", `${n(monthPayable)} → ${n(Math.round((monthPayable + (toPay ? 0.5 : -0.5)) * 100) / 100)}`)}
@@ -656,13 +666,13 @@ function AdjustmentHistory({ corrections, penalties, canEdit, wide, onViewCorrec
             const label = adjLabel(c);
             const value = c.updatedPayableValue ?? (isNonPay(c) ? 0 : 1);
             return {
-                key: `c-${c.id}`, kind: "c" as const, rec: c, date: c.date, at: c.correctedAt || "", adjustment: label, active: c.status === "ACTIVE",
+                key: `c-${c.id}`, kind: "c" as const, rec: c, date: c.date, when: dmy(c.date), at: c.correctedAt || "", adjustment: label, active: c.status === "ACTIVE",
                 amount: `${n(value)} Day`, sub: c.adjustment !== undefined ? `${c.adjustment > 0 ? "+" : ""}${n(c.adjustment)} · was ${n(c.previousPayableValue)}` : "",
                 reason: c.correctionCategory || "—", by: `${c.correctedByName || "—"}${c.correctedByRole ? ` (${c.correctedByRole})` : ""}`,
             };
         }),
         ...penalties.map(p => ({
-            key: `p-${p.id}`, kind: "p" as const, rec: p, date: p.date, at: p.createdAt || "", adjustment: "Monetary Penalty", active: p.status === "ACTIVE",
+            key: `p-${p.id}`, kind: "p" as const, rec: p, date: p.date || `${p.month}-32`, when: penWhen(p), at: p.createdAt || "", adjustment: "Monetary Penalty", active: p.status === "ACTIVE",
             amount: inr(p.amount), sub: p.updatedAt ? "corrected" : "", reason: p.reasonCategory || "—",
             by: `${p.updatedByName || p.createdByName || "—"}${(p.updatedByRole || p.createdByRole) ? ` (${p.updatedByRole || p.createdByRole})` : ""}`,
         })),
@@ -689,7 +699,7 @@ function AdjustmentHistory({ corrections, penalties, canEdit, wide, onViewCorrec
                         <tbody className="divide-y divide-zinc-800/70">
                             {rows.map(r => (
                                 <tr key={r.key} className={`align-top ${r.active ? "" : "opacity-60"}`} data-testid="sm-adj-row" data-kind={r.adjustment}>
-                                    <td className="py-2 px-3 whitespace-nowrap font-semibold text-white">{dmy(r.date)}</td>
+                                    <td className="py-2 px-3 whitespace-nowrap font-semibold text-white">{r.when}</td>
                                     <td className="py-2 px-3"><span className={`font-bold ${tone(r.adjustment)}`}>{r.adjustment}</span> {status(r)}</td>
                                     <td className="py-2 px-3 tabular-nums text-zinc-200 whitespace-nowrap">{r.amount}{r.sub && <span className="block text-[10px] text-zinc-500">{r.sub}</span>}</td>
                                     <td className="py-2 px-3 text-zinc-300 max-w-[260px] [overflow-wrap:anywhere]">{r.reason}</td>
@@ -705,7 +715,7 @@ function AdjustmentHistory({ corrections, penalties, canEdit, wide, onViewCorrec
                     {rows.map(r => (
                         <div key={r.key} className={`p-3 text-xs space-y-1 ${r.active ? "" : "opacity-60"}`} data-testid="sm-adj-row" data-kind={r.adjustment}>
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                                <p><span className="font-semibold text-white">{dmy(r.date)}</span> · <span className={`font-bold ${tone(r.adjustment)}`}>{r.adjustment}</span> {status(r)}</p>
+                                <p><span className="font-semibold text-white">{r.when}</span> · <span className={`font-bold ${tone(r.adjustment)}`}>{r.adjustment}</span> {status(r)}</p>
                                 <p className="font-black tabular-nums text-zinc-100">{r.amount}</p>
                             </div>
                             <p className="text-zinc-300 [overflow-wrap:anywhere]"><span className="text-zinc-500">Reason:</span> {r.reason}</p>
@@ -726,7 +736,7 @@ function PenaltyView({ p, onClose }: { p: any; onClose: () => void }) {
         <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3" onClick={onClose}>
             <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900 p-5 text-xs" onClick={ev => ev.stopPropagation()} data-testid="sm-pen-view">
                 <div className="flex items-center justify-between mb-2"><h2 className="text-lg font-black text-white">Monetary Penalty {p.id}</h2><button onClick={onClose} className="text-zinc-500"><X size={18} /></button></div>
-                {row("Employee", `${p.employeeName || ""} (${p.employeeId})`)}{row("Penalty Date", dmy(p.date))}{row("Amount", inr(p.amount))}{row("Penalty Reason", p.reasonCategory)}{row("Explanation", p.explanation)}
+                {row("Employee", `${p.employeeName || ""} (${p.employeeId})`)}{row(p.date ? "Penalty Date" : "Penalty For", penWhen(p))}{row("Amount", inr(p.amount))}{row("Penalty Reason", p.reasonCategory)}{row("Explanation", p.explanation)}
                 {row("Applied By", `${p.createdByName} (${p.createdByRole})`)}{row("Applied At", dt(p.createdAt))}
                 {p.updatedAt && <>{row("Last Corrected By", `${p.updatedByName} (${p.updatedByRole})`)}{row("Last Corrected At", dt(p.updatedAt))}</>}
                 {row("Status", p.status)}
@@ -769,7 +779,7 @@ function PenaltyChangeDialog({ mode, p, reasons, maxPenalty, onClose, onDone }: 
         <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3" onClick={() => !busy && onClose()}>
             <div className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3 text-xs" onClick={ev => ev.stopPropagation()} data-testid="sm-pen-dialog">
                 <div className="flex items-center justify-between"><h2 className="text-lg font-black text-white">{mode === "reverse" ? "Reverse Monetary Penalty" : "Correct Monetary Penalty"}</h2><button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={18} /></button></div>
-                <p className="text-zinc-400">{p.employeeName} · {dmy(p.date)} · {inr(p.amount)} — {p.reasonCategory}</p>
+                <p className="text-zinc-400">{p.employeeName} · {penWhen(p)} · {inr(p.amount)} — {p.reasonCategory}</p>
                 {mode === "edit" && (<>
                     <label className={lbl}>Penalty Amount (₹) *
                         <input value={amount} onChange={ev => setAmount(ev.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" data-testid="sm-pen-edit-amount" className={field} />

@@ -1,5 +1,6 @@
 "use client";
 
+import { dmyTime as toDmyTime } from "@/lib/date-display";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
@@ -26,7 +27,7 @@ type Tab = "professors" | "hois" | "oms" | "clch";
 
 const addDays = (ymd: string, n: number) => { const d = new Date(`${ymd}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const fmtDay = (ymd: string) => new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
-const fmtAt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+const fmtAt = (iso?: string) => (iso ? toDmyTime(iso) : "");
 
 const PLAN_FILTERS: { v: string; l: string; test: (p: any) => boolean }[] = [
     { v: "All", l: "Sprint Plan: All", test: () => true },

@@ -1,10 +1,11 @@
+import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
 /**
  * CLIENT: PDF / Excel downloads for My Salary & Payable Days and Employee Salary Management.
  * Uses the libraries already in the project (xlsx, jspdf, jspdf-autotable). Figures are exactly what the page shows.
  */
 
 type Calc = any;
-const dmy = (ymd?: string) => (ymd ? ymd.split("-").reverse().join("-") : "");
+const dmy = (ymd?: string) => (ymd ? toDmy(ymd) : "");
 const n = (v: number) => (Number.isInteger(v) ? String(v) : (Math.round(v * 100) / 100).toString());
 /** the standard PDF font has no arrows / rupee glyphs */
 const pdfText = (v: any) => String(v ?? "").replace(/→/g, "->").replace(/−/g, "-").replace(/₹/g, "Rs. ").replace(/[^\x09\x0A\x0D\x20-\x7E -ÿ–—‘’“”•…]/g, "");
@@ -160,6 +161,6 @@ function stampPages(doc: any, W: number, M: number) {
     const pages = doc.getNumberOfPages();
     for (let i = 1; i <= pages; i++) {
         doc.setPage(i); doc.setFontSize(7); doc.setTextColor(150, 150, 150);
-        doc.text(`GOG OMS · Generated ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} · Page ${i} of ${pages}`, W - M, doc.internal.pageSize.getHeight() - 12, { align: "right" });
+        doc.text(`GOG OMS · Generated ${toDmyTime(new Date())} · Page ${i} of ${pages}`, W - M, doc.internal.pageSize.getHeight() - 12, { align: "right" });
     }
 }

@@ -10,7 +10,7 @@ const HM = /^([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 
 /**
  * HR / Founder marks an employee Present or Absent for a date (Attendance → Global Roster "Mark Present / Mark Absent").
- * Body: { employeeId, date, status: "Present" | "Absent", clockIn?, clockOut?, location?, remarks? }
+ * Body: { employeeId, date, status: "Present" | "Absent", remarks (the reason — required), clockIn?, clockOut?, location? }
  *
  * The record keeps the existing status values ("Present" / "Absent"); the source (HR_MANUAL), who marked it and when
  * (server time) are stored next to it, and every change is appended to attendanceAudit (never overwritten).
@@ -28,6 +28,8 @@ export async function POST(req: Request) {
         if (!employeeId || !YMD.test(String(date || ''))) return NextResponse.json({ error: 'Employee and date are required.' }, { status: 400 });
         if (status !== 'Present' && status !== 'Absent') return NextResponse.json({ error: 'Status must be Present or Absent.' }, { status: 400 });
         if (employeeId === actor.id) return NextResponse.json({ error: 'You cannot mark your own attendance.' }, { status: 403 });
+        const reason = String(remarks || '').trim().replace(/\s+/g, ' ').slice(0, 500);
+        if (!reason) return NextResponse.json({ error: `Write the reason for marking the employee ${status}.` }, { status: 400 });
         const emp: any = await Employee.findOne({ id: employeeId }).select('id location').lean();
         if (!emp) return NextResponse.json({ error: 'Employee not found.' }, { status: 404 });
 
@@ -37,7 +39,7 @@ export async function POST(req: Request) {
             fromStatus: existing ? (existing.attendanceSource === 'HR_MANUAL' ? `HR Marked ${existing.status}` : existing.status) : 'No record',
             toStatus: `HR Marked ${status}`,
             previousClockIn: existing?.clockIn || '', previousClockOut: existing?.clockOut || '',
-            by: actor.id, byName: actor.name, role: actor.session?.actualRole || actor.role, at: now, remarks: String(remarks || '').trim(),
+            by: actor.id, byName: actor.name, role: actor.session?.actualRole || actor.role, at: now, remarks: reason,
         };
         const set: any = {
             status, attendanceSource: 'HR_MANUAL', markedBy: actor.id, markedByName: actor.name,

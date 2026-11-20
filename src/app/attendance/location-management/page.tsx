@@ -1,5 +1,6 @@
 "use client";
 
+import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
 import { useCallback, useEffect, useState } from "react";
 import { MapPin, Loader2, Search, Trash2, Save, History, CalendarDays, X, Navigation } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -12,8 +13,8 @@ import { AUTO_FETCH_LABEL } from "@/lib/hoi-daily-locations";
  * The scheduled location decides whether a clock-in needs a location justification.
  */
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const dmy = (d?: string) => (d && /^\d{4}/.test(d) ? d.split("-").reverse().join("-") : d || "—");
-const dt = (v?: string) => (v ? new Date(v).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }) : "—");
+const dmy = (d?: string) => (d && /^\d{4}/.test(d) ? toDmy(d) : d || "—");
+const dt = (v?: string) => (v ? toDmyTime(v) : "—");
 const KIND: Record<string, string> = { assigned: "Assigned colleges changed", scheduled: "Scheduled location(s) set", schedule_removed: "Scheduled location removed" };
 
 export default function LocationManagementPage() {

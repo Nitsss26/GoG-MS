@@ -1,5 +1,6 @@
 "use client";
 
+import { dmy as toDmy } from "@/lib/date-display";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -301,7 +302,7 @@ export default function CurriculumDashboard() {
                                 <div key={idx} className="p-3.5 rounded-xl bg-zinc-800/40 border border-zinc-800 flex items-center justify-between">
                                     <div>
                                         <p className="text-xs font-bold text-white">{p.facultyName}</p>
-                                        <p className="text-[11px] text-zinc-400">{p.college || "Campus"} &bull; {p.weekStartDate} to {p.weekEndDate}</p>
+                                        <p className="text-[11px] text-zinc-400">{p.college || "Campus"} &bull; {toDmy(p.weekStartDate)} to {toDmy(p.weekEndDate)}</p>
                                     </div>
                                     <Link
                                         href={`/curriculum/sprint-plans?campus=${encodeURIComponent(p.college || "")}`}
@@ -348,7 +349,7 @@ export default function CurriculumDashboard() {
                                                 {l.clVerificationStatus || "PENDING"}
                                             </span>
                                         </div>
-                                        <p className="text-[11px] text-zinc-400">{l.subject} &bull; {l.date} ({l.timeSlot})</p>
+                                        <p className="text-[11px] text-zinc-400">{l.subject} &bull; {toDmy(l.date)} ({l.timeSlot})</p>
                                     </div>
                                     <Link
                                         href="/curriculum/lectures"

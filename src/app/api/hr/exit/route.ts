@@ -1,3 +1,4 @@
+import { dmy as toDmy } from "@/lib/date-display";
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { Employee, ExitRecord, ReimbursementClaim, Location } from '@/models/Schemas';
@@ -168,7 +169,7 @@ export async function POST(req: Request) {
         const deleteOn = autoDeleteDate();
         await Employee.updateOne({ id: employeeId, isRemoved: true } as any, { $set: { 'removalSnapshot.autoDeleteAt': deleteOn, 'removalSnapshot.exitRecordId': record.id, mailsStopped: true } }, { strict: false });
         refreshMailBlocklist();
-        const onDate = new Date(deleteOn).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+        const onDate = toDmy(new Date(deleteOn));
         return NextResponse.json({ success: true, message: `${employee.name} was removed from the portal. All details are kept in Workforce → Deleted Employees for ${AUTO_DELETE_DAYS} days and will be deleted automatically on ${onDate}.`, record, cleaned: removal.cleaned, autoDeleteAt: deleteOn });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });

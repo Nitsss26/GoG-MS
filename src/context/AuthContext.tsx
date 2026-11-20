@@ -750,7 +750,7 @@ interface AuthContextType {
     resolveDressCodeCheck: (recordId: string, status: "Approved" | "Rejected", rejection?: { reasons: string[]; other?: string; remarks?: string; photoUrl?: string }) => Promise<{ ok: boolean; error?: string } | void>;
     addMonthlyRating: (employeeId: string, score: number, period: string, screenshotUrl?: string, points?: number, comment?: string) => Promise<void>;
     updateMonthlyFeedback: (employeeId: string, period: string, score: number, points: number, comment: string, screenshotUrl: string) => Promise<{ success: boolean; unchanged?: boolean; msg?: string }>;
-    overrideAttendance: (employeeId: string, date: string, status: "Present" | "Absent") => Promise<void>;
+    overrideAttendance: (employeeId: string, date: string, status: "Present" | "Absent", reason?: string) => Promise<{ ok: boolean; error?: string }>;
     addMeetingRequest: (req: Omit<MeetingRequest, "id" | "status" | "employeeId" | "employeeName" | "createdAt">) => void;
     joinMeeting: (meetingId: string) => void;
     submitAbsenceReason: (meetingId: string, reason: string) => void;
@@ -1841,8 +1841,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch (err) { console.error(err); return { ok: false, error: "Could not reach GOG OMS. Please try again." }; }
     };
 
-    const overrideAttendance = async (employeeId: string, date: string, status: "Present" | "Absent") => {
-        if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return;
+    const overrideAttendance = async (employeeId: string, date: string, status: "Present" | "Absent", reason = "") => {
+        if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return { ok: false, error: "Only HR can mark attendance." };
 
         try {
             // HR-marked attendance: saved with source HR_MANUAL, who marked it and when (server), plus an audit entry.
@@ -1851,7 +1851,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const res = await fetch("/api/attendance/hr-mark", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ employeeId, date, status, clockIn: expected.in, clockOut: expected.out, location: expected.location })
+                body: JSON.stringify({ employeeId, date, status, clockIn: expected.in, clockOut: expected.out, location: expected.location, remarks: reason })
             });
             const data = await res.json();
             if (res.ok && data.record) {
@@ -1859,11 +1859,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     const filtered = prev.filter(r => !(r.employeeId === employeeId && r.date === date));
                     return [...filtered, { ...data.record, id: data.record.id || data.record._id }];
                 });
-            } else if (data?.error) {
-                alert(data.error);
+                return { ok: true };
             }
+            return { ok: false, error: data?.error || "Could not save the attendance." };
         } catch (err) {
             console.error("Override attendance failed:", err);
+            return { ok: false, error: "Could not save the attendance. Check the connection and try again." };
         }
     };
 

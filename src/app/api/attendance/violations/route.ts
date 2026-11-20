@@ -1,3 +1,4 @@
+import { dmy as toDmy } from "@/lib/date-display";
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { AttendanceViolation, Employee } from '@/models/Schemas';
@@ -32,7 +33,7 @@ export async function GET(req: Request) {
                 if (counted) s[v.type] = Math.max(s[v.type], v.instance || 0);
                 if (v.type === 'LATE_IN' && !s.lateLevel) s.lateLevel = v.level;
                 if (v.type === 'EARLY_OUT' && !s.earlyLevel) s.earlyLevel = v.level;
-                if (['Half-Day', 'Full-Day'].includes(v.proposedDeduction) && v.hrStatus !== 'Waived') s.proposed.push(`${v.proposedDeduction} (${v.date.split('-').reverse().join('-')})`);
+                if (['Half-Day', 'Full-Day'].includes(v.proposedDeduction) && v.hrStatus !== 'Waived') s.proposed.push(`${v.proposedDeduction} (${toDmy(v.date)})`);
                 if (['Pending HR Verification', 'Awaiting Explanation'].includes(v.hrStatus) || (v.type === 'MISSING_OUT' && v.hrStatus === 'Pending HR Verification')) s.pendingHr++;
                 if (v.emailStatus === 'Failed') s.emailFailed++;
                 if (!s.lastEmailStatus) s.lastEmailStatus = v.emailStatus;

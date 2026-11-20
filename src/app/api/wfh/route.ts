@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic';
 const actorRole = (a: any) => a.session?.actualRole || a.role;
 const isAdmin = (a: any) => WFH_POLICY.adminApproverRoles.includes(a.role);
 const LEAVE_BLOCKING = { $nin: ['Rejected', 'Cancelled', 'Withdrawn'] };
-const fmt = (ymd: string) => { const [y, m, d] = ymd.split('-'); return `${d}-${m}-${y}`; };
+const fmt = (ymd: string) => { const [y, m, d] = ymd.split('-'); return `${d}/${m}/${y}`; };
 const range = (a: any) => (a.startDate === a.endDate ? fmt(a.startDate) : `${fmt(a.startDate)} to ${fmt(a.endDate)}`);
 const historyItem = (actor: any, action: string, status: string, remarks = '') =>
     ({ action, status, by: actor.id, byName: actor.name, role: actorRole(actor), at: new Date().toISOString(), remarks });
@@ -27,8 +27,8 @@ const historyItem = (actor: any, action: string, status: string, remarks = '') =
 /** Ids whose applications this actor may decide (null = everyone) */
 async function decidableIds(actor: any): Promise<Set<string> | null> {
     if (isAdmin(actor)) return null;
-    if (WFH_POLICY.managerApproverRoles.includes(actor.role)) return managedEmployeeIds(actor);
-    return new Set();
+    // HOI / AD / TL / OM as before, and anyone assigned as a reporting manager (Assign Manager), whatever the role
+    return managedEmployeeIds(actor);
 }
 const canDecide = (actor: any, app: any, ids: Set<string> | null) =>
     app.status === 'Pending' && (WFH_POLICY.allowSelfApproval || app.employeeId !== actor.id) && (ids === null || ids.has(app.employeeId));
@@ -37,7 +37,7 @@ const canDecide = (actor: any, app: any, ids: Set<string> | null) =>
 async function approversFor(emp: any) {
     const managers = (Array.isArray(emp.reportsTo) ? emp.reportsTo : emp.reportsTo ? [emp.reportsTo] : []).filter(Boolean);
     const or: any[] = [{ role: { $in: ['HR', 'HR_EXECUTIVE'] } }];
-    if (managers.length) or.push({ id: { $in: managers }, role: { $in: WFH_POLICY.managerApproverRoles } });
+    if (managers.length) or.push({ id: { $in: managers } });   // the applicant's reporting manager(s), any role
     if (['HR', 'HR_EXECUTIVE', 'TL', 'AD', 'FOUNDER'].includes(emp.role)) or.push({ role: 'FOUNDER' });
     const list: any[] = await Employee.find({ $or: or, status: { $ne: 'Inactive' } }).select('id name email role').lean();
     return list.filter(e => e.id !== emp.id);

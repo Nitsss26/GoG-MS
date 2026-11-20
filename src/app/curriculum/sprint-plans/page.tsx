@@ -1,5 +1,6 @@
 "use client";
 
+import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useState, useMemo, useRef } from "react";
 import SprintPlanTimetableGrid from "@/components/academic/SprintPlanTimetableGrid";
@@ -55,9 +56,9 @@ const STATUS_ACCENT: Record<string, string> = {
 const fmtDT = (iso?: string) => {
     if (!iso) return "";
     const d = new Date(iso);
-    return isNaN(d.getTime()) ? iso : d.toLocaleString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }).replace(/ am$/, " AM").replace(/ pm$/, " PM");
+    return isNaN(d.getTime()) ? iso : toDmyTime(d);
 };
-const fmtD = (ymd?: string) => (ymd ? new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "");
+const fmtD = (ymd?: string) => (ymd ? toDmy(ymd) : "");
 
 /** Read tracking of a plan (current version): Read / Updated After Read / Awaiting Review / not locked yet */
 type ReadState = "READ" | "UPDATED" | "AWAITING" | "NOT_LOCKED";
@@ -151,7 +152,7 @@ export default function CurriculumSprintPlansPage() {
         setTimeout(() => document.querySelector('[data-testid="campus-timetable"]')?.scrollIntoView({ behavior: "smooth", block: "start" }), 400);
     };
     const collegeLabel = (v?: string) => colleges.find(c => c.id === v || c.name === v)?.name || v || "Not assigned";
-    const dmyDate = (ymd?: string) => (ymd ? ymd.split("-").reverse().join("-") : "");
+    const dmyDate = (ymd?: string) => (ymd ? toDmy(ymd) : "");
 
     // Only the latest request may update the page (week / date can change while a request is running)
     const latestRequest = useRef(0);
@@ -514,7 +515,7 @@ export default function CurriculumSprintPlansPage() {
                         <div className="p-5 border-b border-zinc-800 flex items-start justify-between gap-3">
                             <div className="min-w-0">
                                 <h3 className="text-base font-bold text-white">{viewPlan.facultyName} — Sprint Plan</h3>
-                                <p className="text-[11px] text-zinc-400 mt-0.5">{viewPlan.weekStartDate?.split("-").reverse().join("-")} to {viewPlan.weekEndDate?.split("-").reverse().join("-")} · {(viewPlan.entries || []).length} class(es) · Version {viewPlan.version || 1}</p>
+                                <p className="text-[11px] text-zinc-400 mt-0.5">{toDmy(viewPlan.weekStartDate)} to {toDmy(viewPlan.weekEndDate)} · {(viewPlan.entries || []).length} class(es) · Version {viewPlan.version || 1}</p>
                             </div>
                             <button onClick={() => setViewPlan(null)} className="text-zinc-500 hover:text-white"><X size={18} /></button>
                         </div>
@@ -526,7 +527,7 @@ export default function CurriculumSprintPlansPage() {
                                 return (
                                     <div key={day} className="rounded-xl border border-zinc-800 overflow-hidden">
                                         <div className="px-4 py-2 bg-zinc-800/50 text-[11px] font-black text-white tracking-widest">
-                                            {day} <span className="text-zinc-500 font-bold ml-2">{list[0]?.date?.split("-").reverse().join("-")}</span>
+                                            {day} <span className="text-zinc-500 font-bold ml-2">{toDmy(list[0]?.date)}</span>
                                         </div>
                                         <div className="divide-y divide-zinc-800">
                                             {list.map((e: any, i: number) => (

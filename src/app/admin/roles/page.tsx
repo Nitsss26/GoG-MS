@@ -1,5 +1,6 @@
 "use client";
 
+import { dmyTime as toDmyTime } from "@/lib/date-display";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
@@ -21,7 +22,7 @@ type RoleRow = {
     custom?: boolean; baseRole?: string; baseLabel?: string; status?: "DRAFT" | "PUBLISHED"; description?: string; org?: { mode: string; parent?: string };
 };
 
-const dt = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }) : "");
+const dt = (iso?: string | null) => (iso ? toDmyTime(iso) : "");
 const orgText = (o?: { mode: string; parent?: string }) => (o?.mode === "OWN" ? `Own box under ${ORG_PARENTS.find(p => p.key === o.parent)?.label.split(" (")[0] || o.parent}` : "Same place as the base role");
 
 export default function RoleManagementPage() {
