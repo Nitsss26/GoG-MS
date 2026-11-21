@@ -1,3 +1,4 @@
+import { dmyText } from "@/lib/date-display";
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import dbConnect from '@/lib/mongodb';
@@ -35,12 +36,16 @@ interface MailOptions {
 }
 
 /**
- * Every GOG OMS e-mail is copied (CC) to the main admin, all HR, all HR Executives and all ADs.
- * The list is read from the employee records (cached for 5 minutes). Addresses already on the mail are not
+ * Every GOG OMS e-mail is copied (CC) to the main admin, all HR, all HR Executives, all ADs and every active
+ * Tech Team member (role TECH_TEAM — custom roles built on Tech Team included; inactive / removed left out).
+ * The list is read from the employee records (cached for 5 minutes), so a new Tech Team member is copied from
+ * the next mail on, and one who leaves the Tech Team / becomes inactive is no longer copied — no code change. Addresses already on the mail are not
  * repeated, and the same mail sent to many people one by one (e.g. an announcement) is copied only once.
  */
 export const MAIN_ADMIN_EMAIL = 'tech@geeksofgurukul.com';
 const AUTO_CC_ROLES = ['HR', 'HR_EXECUTIVE', 'AD'];
+const TECH_TEAM_ROLE = 'TECH_TEAM';
+const INACTIVE_STATUS = /^(inactive|removed|terminated|resigned|exited|relieved)$/i;
 const EMAIL_RE = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
 const ccCache: { at: number; list: string[] } = ((globalThis as any).__gogAutoCc ||= { at: 0, list: [] });
 const copiedRecently: Map<string, number> = ((globalThis as any).__gogAutoCcSent ||= new Map<string, number>());
@@ -50,8 +55,11 @@ async function autoCcList(): Promise<string[]> {
     let list = [MAIN_ADMIN_EMAIL];
     try {
         await dbConnect();
-        const rows: any[] = await Employee.find({ role: { $in: AUTO_CC_ROLES }, isRemoved: { $ne: true } }).select('email').lean();
-        list = [MAIN_ADMIN_EMAIL, ...rows.map(r => String(r.email || '').trim().toLowerCase())];
+        const rows: any[] = await Employee.find({ role: { $in: [...AUTO_CC_ROLES, TECH_TEAM_ROLE] }, isRemoved: { $ne: true } }).select('email role status').lean();
+        // Tech Team: active members only (HR / HR Executive / AD keep the earlier rule)
+        const keep = rows.filter(r => r.role !== TECH_TEAM_ROLE || !INACTIVE_STATUS.test(String(r.status || '').trim()));
+        if (!keep.some(r => r.role === TECH_TEAM_ROLE)) console.warn('[mail] no active Tech Team member found for the CC list');
+        list = [MAIN_ADMIN_EMAIL, ...keep.map(r => String(r.email || '').trim().toLowerCase())];
     } catch (e: any) {
         console.error('[mail] could not load the CC list:', e?.message);
     }
@@ -132,7 +140,11 @@ async function withAutoCc(o: MailOptions) {
  * SERVER-ONLY: Sends an email using nodemailer.
  */
 export const sendMailInternal = async (options: MailOptions) => {
-    const { subject, text, html, attachments, inReplyTo, references } = options;
+    const { attachments, inReplyTo, references } = options;
+    // every date written as YYYY-MM-DD in a mail shows as dd/mm/yyyy (only the visible text — links / attributes are not changed)
+    const subject = dmyText(options.subject);
+    const text = options.text ? dmyText(options.text) : options.text;
+    const html = options.html ? String(options.html).replace(/(<[^>]*>)|([^<]+)/g, (m, tag) => (tag ? m : dmyText(m))) : options.html;
     try {
         const withCc = await withAutoCc(options);
         // never to employees whose mails are stopped / who were removed

@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmy as toDmy } from "@/lib/date-display";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Home, Loader2, Search, X, ExternalLink, MapPin, AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -10,13 +12,13 @@ import { WFH_STATUS_STYLE, WFH_TYPE_LABEL } from "@/lib/wfh-policy";
  * Data: GET /api/wfh/attendance (HR / Founder: everyone; a reporting manager: own hierarchy — decided on the server).
  * Approve / Reject use the existing PUT /api/wfh (the server checks who may decide).
  */
-const fmtDate = (ymd: string) => (ymd ? ymd.split("-").reverse().join("-") : "—");
+const fmtDate = (ymd: string) => (ymd ? toDmy(ymd) : "—");
 const PAGE_SIZE = 10;
 /** Same roles and names as the login page's role dropdown */
 const ROLE_OPTIONS: [string, string][] = [
     ["FOUNDER", "Founder"], ["HR", "Human Resources (HR)"], ["HR_EXECUTIVE", "HR Executive"], ["AD", "Associate Director (AD)"],
     ["TL", "Tech Lead (TL)"], ["HOI", "Head of Institute (HOI)"], ["OM", "Operations Manager / Growth Manager"], ["MARKETING_TEAM", "Marketing Team"],
-    ["TECH_TEAM", "Tech Team"], ["CURRICULUM_HEAD", "Curriculum Head"], ["CURRICULUM_LEAD", "Curriculum Lead"], ["PROFESSOR", "Academic Faculty / Professor"],
+    ["TECH_TEAM", "Tech Team"], ["PLACEMENT_INTERN_HEAD", "Placement & Intern Head"], ["CURRICULUM_HEAD", "Curriculum Head"], ["CURRICULUM_LEAD", "Curriculum Lead"], ["PROFESSOR", "Academic Faculty / Professor"],
 ];
 const ROLE_LABEL: Record<string, string> = { ...Object.fromEntries(ROLE_OPTIONS), FACULTY: "Academic Faculty / Professor" };
 /** FACULTY is listed under "Academic Faculty / Professor" */
@@ -62,6 +64,7 @@ export default function WfhAttendanceLog() {
             remarks = window.prompt("Reason for rejecting this Work From Home application:") || "";
             if (remarks.trim().length < 3) return;
         }
+        if (!(await confirmAction({ action, what: "this Work From Home application" }))) return;
         setBusy(appId + action); setMsg("");
         try {
             const r = await fetch("/api/wfh", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: appId, action, remarks }) });

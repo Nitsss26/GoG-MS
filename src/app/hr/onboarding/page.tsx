@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
 import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -40,8 +42,8 @@ const fmtDate = (v?: any, withTime = false) => {
     if (!v) return "";
     const d = new Date(v);
     if (isNaN(d.getTime())) return String(v);
-    return withTime ? d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
-        : d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
+    return withTime ? toDmyTime(d)
+        : toDmy(d);
 };
 /** Date the record was created (from the MongoDB id) */
 const createdOn = (e: any) => { const h = String(e?._id || "").slice(0, 8); return /^[0-9a-f]{8}$/i.test(h) ? new Date(parseInt(h, 16) * 1000).toISOString() : ""; };
@@ -274,6 +276,7 @@ export default function OnboardingHRPage() {
             setNotice({ ok: false, text: "Please complete mandatory checks (Aadhar, Qualification, HR Meeting) before approval." });
             return;
         }
+        if (!(await confirmAction({ action: "approve", what: `${emp.name}'s onboarding` }))) return;
         await save("approve", emp, {
             isOnboarded: true,
             onboardingStatus: "Approved",

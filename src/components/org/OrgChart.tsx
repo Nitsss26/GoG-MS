@@ -223,6 +223,18 @@ export default function OrgChart({ data, highlightId }: { data: OrgChartData; hi
     );
 
     const customOf = (parent: string) => (data.customGroups || []).filter(g => g.parent === parent);
+    /** an HR-created role's box, with the boxes of roles placed under it hanging below (joined by lines) */
+    const customNode = (g: { key: string; label: string; people: OrgPerson[] }, tone: string, seen: string[] = []): ReactNode => {
+        const kids = seen.includes(g.key) ? [] : customOf(`ROLE:${g.key}`);
+        const box = group(`custom-${g.key}`, g.label, <Users size={12} />, tone, g.people, CUSTOM_EMPTY);
+        if (!kids.length) return box;
+        return (
+            <div className="flex flex-col items-center" data-testid={`org-custom-branch-${g.key}`}>
+                {box}
+                <Branches items={kids.map(k => ({ key: `custom-${k.key}`, node: customNode(k, tone, [...seen, g.key]) }))} />
+            </div>
+        );
+    };
     const hoiNodes = data.hois.map(h => ({
         key: `hoi-${h.person.id}`,
         node: (
@@ -259,7 +271,7 @@ export default function OrgChart({ data, highlightId }: { data: OrgChartData; hi
     const adChildren = [
         ...hoiNodes.slice(0, clchAt), clchNode, ...hoiNodes.slice(clchAt),
         // Role Management: HR-created roles placed under the AD
-        ...customOf("AD").map(g => ({ key: `custom-${g.key}`, node: group(`custom-${g.key}`, g.label, <Users size={12} />, "ad", g.people, CUSTOM_EMPTY) })),
+        ...customOf("AD").map(g => ({ key: `custom-${g.key}`, node: customNode(g, "ad") })),
         ...(data.noHoi.length ? [{ key: "nohoi", node: group("nohoi", "No HOI Assigned", <UserX size={12} />, "muted", data.noHoi, "") }] : []),
     ];
 
@@ -275,15 +287,50 @@ export default function OrgChart({ data, highlightId }: { data: OrgChartData; hi
     // Placement & Intern Head: one box immediately LEFT of the Tech Lead, same level, joined to the executives only
     const pih = data.placementHeads || [];
     const hasPih = pih.length > 0;
-    // with that box in the row, the Tech Lead → Tech Team / Marketing line runs just below the cards (through the Tech Lead's
-    // tail) so it passes under the Placement & Intern Head box instead of through it
-    const SIDE_Y = hasPih ? GAP_Y / 2 + CARD_H + TAIL / 2 : MID;
-    const second = [
-        ...(hasPih ? [{ key: "pih", people: pih, label: "Placement & Intern Head" }] : []),
-        { key: "tl", people: data.techLeads, label: "Tech Lead" },
-        { key: "ad", people: data.ads, label: "AD" },
-        { key: "hr", people: data.hrHeads, label: "HR" },
+    // Role Management: boxes of HR-created roles on this level, left / right of the Tech Lead, AD or HR (leaves of the
+    // executives' bus, like the Placement & Intern Head box; roles placed under them hang below)
+    type Col = { key: string; kind: "main" | "pih" | "beside"; people: OrgPerson[]; label: string; tone?: string; group?: { key: string; label: string; people: OrgPerson[] } };
+    const beside = (side: "LEFT" | "RIGHT", anchor: string, tone: string): Col[] =>
+        customOf(`${side}:${anchor}`).map(g => ({ key: `beside-${g.key}`, kind: "beside", people: g.people, label: g.label, tone, group: g }));
+    const second: Col[] = [
+        ...beside("LEFT", "TL", "tl"),
+        ...(hasPih ? [{ key: "pih", kind: "pih" as const, people: pih, label: "Placement & Intern Head" }] : []),
+        { key: "tl", kind: "main", people: data.techLeads, label: "Tech Lead" },
+        ...beside("RIGHT", "TL", "tl"), ...beside("LEFT", "AD", "ad"),
+        { key: "ad", kind: "main", people: data.ads, label: "AD" },
+        ...beside("RIGHT", "AD", "ad"), ...beside("LEFT", "HR", "hr"),
+        { key: "hr", kind: "main", people: data.hrHeads, label: "HR" },
+        ...beside("RIGHT", "HR", "hr"),
     ];
+    const tlIdx = second.findIndex(c => c.key === "tl"), hrIdx = second.findIndex(c => c.key === "hr");
+    // a box left of the Tech Lead / right of HR: the side line to Tech Team / HR Team runs just below the cards (through
+    // the tail) so it passes under those boxes instead of through them
+    const LOW_Y = GAP_Y / 2 + CARD_H + TAIL / 2;
+    const SIDE_Y = tlIdx > 0 ? LOW_Y : MID;
+    const RSIDE_Y = hrIdx < second.length - 1 ? LOW_Y : MID;
+    // shared bus under Tech Lead · AD · HR → HOIs and CL / CH: drawn from the measured columns so it always reaches the
+    // line down to the HOIs, also when boxes beside them make the row uneven (or a box below one of them makes it taller)
+    const rowRef = useRef<HTMLDivElement>(null);
+    const [bus, setBus] = useState<{ x1: number; x2: number; cx: number; h: number; hops: number[] } | null>(null);
+    useLayoutEffect(() => {
+        const measure = () => {
+            const row = rowRef.current; if (!row) return;
+            const centre = (k: string) => { const el = row.querySelector<HTMLElement>(`[data-col="${k}"]`); return el ? el.offsetLeft + el.offsetWidth / 2 : null; };
+            const a = centre("tl"), b = centre("hr"); if (a == null || b == null) return;
+            const cx = row.offsetWidth / 2;
+            const x1 = Math.min(a, cx), x2 = Math.max(b, cx);
+            // lines going down from a box beside them (to the boxes under it) cross the bus: the bus hops over them
+            const hops = Array.from(row.querySelectorAll<HTMLElement>('[data-col][data-kids="1"]')).map(el => el.offsetLeft + el.offsetWidth / 2).filter(x => x > x1 + 8 && x < x2 - 8).sort((m, n) => m - n);
+            const next = { x1, x2, cx, h: row.offsetHeight, hops };
+            setBus(o => (o && o.x1 === next.x1 && o.x2 === next.x2 && o.cx === next.cx && o.h === next.h && o.hops.join() === hops.join() ? o : next));
+        };
+        measure();
+        const row = rowRef.current;
+        const ro = typeof ResizeObserver !== "undefined" && row ? new ResizeObserver(measure) : null;
+        if (ro && row) ro.observe(row);
+        const tm = window.setTimeout(measure, 800);
+        return () => { ro?.disconnect(); window.clearTimeout(tm); };
+    }, [data]);
     const sideColumn = (side: "left" | "right", items: { key: string; node: ReactNode; drop?: number }[], testId: string, lineY = MID) => (
         <div className="flex flex-col items-center" data-testid={testId}
             style={side === "left" ? { paddingLeft: GAP_X / 2 } : { paddingRight: GAP_X / 2 }}>
@@ -317,45 +364,60 @@ export default function OrgChart({ data, highlightId }: { data: OrgChartData; hi
                 },
                 { key: "marketing", drop: skipDepth, node: group("marketing", "Marketing Team", <Megaphone size={12} />, "marketing", data.marketingTeam, "No Marketing Team employees yet.") },
                 // Role Management: HR-created roles placed under the Tech Lead
-                ...customOf("TL").map(g => ({ key: `custom-${g.key}`, drop: skipDepth, node: group(`custom-${g.key}`, g.label, <Users size={12} />, "tl", g.people, CUSTOM_EMPTY) })),
+                ...customOf("TL").map(g => ({ key: `custom-${g.key}`, drop: skipDepth, node: customNode(g, "tl") })),
             ], "org-col-techlead", SIDE_Y)}
 
             <div className="flex flex-col items-center" data-testid="org-col-main">
                 <SectionRow people={data.executives} placeholder="CEO" highlightId={highlightId} />
                 <VLine h={GAP_Y / 2} />
-                <div className="flex w-full items-start">
+                <div ref={rowRef} className="relative flex w-full items-start" data-testid="org-row2">
                     <div className="flex-1 self-stretch relative"><div className={cn("absolute left-0 right-0 h-[2px]", LINE)} style={{ top: SIDE_Y }} /></div>
                     <div className="flex items-start">
                         {second.map((c, i) => {
-                            const isPih = c.key === "pih";
-                            const busFrom = hasPih ? 1 : 0;   // the shared bus to HOIs / CL / CH starts at the Tech Lead
+                            const leaf = c.kind !== "main";
+                            const kids = c.kind === "beside" ? customOf(`ROLE:${c.group!.key}`) : [];
                             return (
-                            <div key={c.key} className="relative flex flex-col items-center" style={{ paddingLeft: GAP_X / 2, paddingRight: GAP_X / 2 }} data-testid={isPih ? "org-col-pih" : undefined}>
+                            <div key={c.key} className="relative flex flex-col items-center" style={{ paddingLeft: GAP_X / 2, paddingRight: GAP_X / 2 }} data-col={c.key} data-kids={kids.length ? "1" : undefined}
+                                data-testid={c.kind === "pih" ? "org-col-pih" : c.kind === "beside" ? `org-col-${c.key}` : undefined}>
                                 {/* top bus from the executives */}
                                 {i > 0 && <div className={cn("absolute top-0 left-0 w-1/2 h-[2px]", LINE)} />}
                                 {i < second.length - 1 && <div className={cn("absolute top-0 right-0 w-1/2 h-[2px]", LINE)} />}
-                                {/* side lines: Tech Lead → left column (under the Placement & Intern Head box when it is there), HR → right column */}
-                                {isPih && <div className={cn("absolute left-0 right-0 h-[2px]", LINE)} style={{ top: SIDE_Y }} data-testid="org-pih-pass" />}
+                                {/* side lines: Tech Lead → left column, HR → right column (passing under the boxes beside them) */}
+                                {leaf && i < tlIdx && <div className={cn("absolute left-0 right-0 h-[2px]", LINE)} style={{ top: SIDE_Y }} data-testid={c.kind === "pih" ? "org-pih-pass" : "org-side-pass"} />}
+                                {leaf && i > hrIdx && <div className={cn("absolute left-0 right-0 h-[2px]", LINE)} style={{ top: RSIDE_Y }} data-testid="org-side-pass" />}
                                 {c.key === "tl" && <div className={cn("absolute left-0 w-1/2 h-[2px]", LINE)} style={{ top: SIDE_Y }} />}
-                                {i === second.length - 1 && <div className={cn("absolute right-0 w-1/2 h-[2px]", LINE)} style={{ top: MID }} />}
+                                {c.key === "hr" && <div className={cn("absolute right-0 w-1/2 h-[2px]", LINE)} style={{ top: RSIDE_Y }} />}
                                 <VLine h={GAP_Y / 2} />
-                                {isPih ? (
+                                {c.kind === "pih" ? (
                                     // a leaf at this level: no line down to the HOI bus (keeps the same row height)
                                     <div className="relative flex" style={{ gap: 18, paddingBottom: TAIL + GAP_Y / 2 }} data-testid="org-section-pih">
                                         {c.people.map(p => <PersonCard key={p.id} p={p} highlight={highlightId === p.id} />)}
+                                    </div>
+                                ) : c.kind === "beside" ? (
+                                    <div className="relative flex flex-col items-center" data-testid={`org-beside-${c.group!.key}`} data-label={c.label}>
+                                        <span className="absolute z-20 left-0 -top-5 max-w-[45%] truncate text-[9px] font-black uppercase tracking-widest text-zinc-400" title={c.label}>{c.label}</span>
+                                        <div className="relative flex" style={{ gap: 18, paddingBottom: kids.length ? 0 : TAIL + GAP_Y / 2 }}>
+                                            {c.people.length ? c.people.map(p => <PersonCard key={p.id} p={p} highlight={highlightId === p.id} />) : <PlaceholderCard label={c.label} />}
+                                        </div>
+                                        {kids.length > 0 && <Branches items={kids.map(k => ({ key: `custom-${k.key}`, node: customNode(k, c.tone || "ad") }))} />}
                                     </div>
                                 ) : (<>
                                     <SectionRow people={c.people} placeholder={c.label} highlightId={highlightId} />
                                     <VLine h={GAP_Y / 2} />
                                 </>)}
-                                {/* shared bus under Tech Lead · AD · HR → HOIs and CL / CH */}
-                                {!isPih && i > busFrom && <div className={cn("absolute bottom-0 left-0 w-1/2 h-[2px]", LINE)} />}
-                                {!isPih && i < second.length - 1 && <div className={cn("absolute bottom-0 right-0 w-1/2 h-[2px]", LINE)} />}
                             </div>
                             );
                         })}
                     </div>
-                    <div className="flex-1 self-stretch relative"><div className={cn("absolute left-0 right-0 h-[2px]", LINE)} style={{ top: MID }} /></div>
+                    <div className="flex-1 self-stretch relative"><div className={cn("absolute left-0 right-0 h-[2px]", LINE)} style={{ top: RSIDE_Y }} /></div>
+                    {/* shared bus under Tech Lead · AD · HR (and on to the centre line down to the HOIs / CL / CH) */}
+                    {bus && (
+                        <svg className="absolute left-0 top-0 pointer-events-none overflow-visible" width={1} height={1} aria-hidden style={{ zIndex: 5 }}>
+                            <path data-testid="org-bus" fill="none" stroke={CLCH_LINE} strokeWidth={2}
+                                d={`M ${bus.x1 - 1} ${BAND - 1} ${bus.hops.map(x => `H ${x - 7} A 7 7 0 0 1 ${x + 7} ${BAND - 1}`).join(" ")} H ${bus.x2 + 1}`} />
+                        </svg>
+                    )}
+                    {bus && bus.h > BAND && <div className={cn("absolute w-[2px] -translate-x-1/2 pointer-events-none", LINE)} style={{ top: BAND - 2, left: bus.cx, height: bus.h - BAND + 2 }} data-testid="org-bus-drop" />}
                 </div>
                 <Branches items={adChildren} />
             </div>
@@ -363,8 +425,8 @@ export default function OrgChart({ data, highlightId }: { data: OrgChartData; hi
             {sideColumn("right", [
                 { key: "hrexec", node: group("hrexec", "HR Team", <UserCog size={12} />, "hrexec", data.hrExecutives, "No HR Team members onboarded yet.") },
                 // Role Management: HR-created roles placed under HR
-                ...customOf("HR").map(g => ({ key: `custom-${g.key}`, node: group(`custom-${g.key}`, g.label, <Users size={12} />, "hr", g.people, CUSTOM_EMPTY) })),
-            ], "org-col-hr")}
+                ...customOf("HR").map(g => ({ key: `custom-${g.key}`, node: customNode(g, "hr") })),
+            ], "org-col-hr", RSIDE_Y)}
         </div>
     );
 }

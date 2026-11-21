@@ -9,7 +9,8 @@
  * a rejection needs reason(s) (the existing Dress Code reasons) + an explanation, optional evidence image.
  * Saving a decision never sends an email — the per-professor email is sent from Email Management ("Full Attire").
  */
-import { Employee, Location } from '@/models/Schemas';
+import { Employee, Location, LeaveRequest, Holiday, WorkSchedule } from '@/models/Schemas';
+import { holidayAppliesTo } from '@/lib/holiday-scope';
 import { FullAttireSubmission, FullAttireReview } from '@/models/FullAttire';
 import { ManualEmail } from '@/models/ManualEmail';
 import { getAcademicScope, professorsInScope, hoisAbove } from '@/lib/academic';
@@ -187,9 +188,15 @@ export async function createSubmission(actor: any, body: any) {
 }
 
 /** Submissions with their per-professor reviews */
-export async function listSubmissions(actor: any, opts: { mine?: boolean; status?: string; q?: string }) {
+/** IST calendar day of an ISO time */
+const istYmd = (iso: string) => new Date(Date.parse(iso) + 5.5 * 3600000).toISOString().slice(0, 10);
+const dayRange = (ymd: string) => ({ $gte: new Date(`${ymd}T00:00:00+05:30`).toISOString(), $lt: new Date(Date.parse(`${ymd}T00:00:00+05:30`) + 86400000).toISOString() });
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export async function listSubmissions(actor: any, opts: { mine?: boolean; status?: string; q?: string; date?: string }) {
     const q: any = {};
     if (opts.mine) q.omId = actor.id;
+    if (opts.date && YMD_RE.test(opts.date)) q.submittedAt = dayRange(opts.date);   // HR: one day (IST)
     const subs: any[] = await FullAttireSubmission.find(q).sort({ submittedAt: -1 }).limit(500).lean();
     const reviews: any[] = subs.length ? await FullAttireReview.find({ submissionId: { $in: subs.map(s => s.id) } }).select('-history').lean() : [];
     // email state of each decided review (same record as Email Management → Full Attire)
@@ -210,6 +217,51 @@ export async function listSubmissions(actor: any, opts: { mine?: boolean; status
     const s = (opts.q || '').trim().toLowerCase();
     if (s) out = out.filter(x => `${x.id} ${x.collegeName} ${x.omName} ${x.reviews.map((r: any) => `${r.professorName} ${r.professorId}`).join(' ')}`.toLowerCase().includes(s));
     return out;
+}
+
+/**
+ * HR: who has NOT uploaded Full Attire on a date (IST) — every active OM and the professors of every active OM's
+ * academic scope (same list the OM sees), minus anyone with a photo that day (any submitter), on approved leave,
+ * on a holiday that applies to them, on a weekly off / scheduled off, or not yet joined. Today: "not uploaded yet".
+ */
+export async function notUploaded(date: string) {
+    const today = istYmd(new Date().toISOString());
+    if (!YMD_RE.test(date) || date > today) return [];
+    const oms: any[] = await Employee.find({ role: 'OM', isRemoved: { $ne: true } }).select('id name location status').lean();
+    const people = new Map<string, any>();
+    for (const om of oms.filter(o => !/inactive|removed|terminated|resigned/i.test(String(o.status || 'Active')))) {
+        const { professors } = await omProfessors({ id: om.id, name: om.name, role: 'OM', employee: om });
+        professors.forEach((p: any) => {
+            const cur = people.get(p.id) || { id: p.id, name: p.name, designation: p.designation, college: p.college, location: p.location, role: p.id === om.id ? 'OM' : 'Professor', oms: [] as string[] };
+            if (p.id === om.id) cur.role = 'OM';
+            if (p.id !== om.id && !cur.oms.includes(om.name)) cur.oms.push(om.name);
+            people.set(p.id, cur);
+        });
+    }
+    const ids = Array.from(people.keys());
+    if (!ids.length) return [];
+    const dn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${date}T12:00:00Z`).getUTCDay()];
+    const [uploaded, emps, leaves, holidays, scheds, colleges]: any[] = await Promise.all([
+        FullAttireReview.find({ professorId: { $in: ids }, createdAt: dayRange(date) }).select('professorId').lean(),
+        Employee.find({ id: { $in: ids } }).select('id joiningDate').lean(),
+        LeaveRequest.find({ employeeId: { $in: ids }, status: 'Approved', startDate: { $lte: date }, endDate: { $gte: date } }).select('employeeId').lean(),
+        Holiday.find({ date, status: 'Approved' }).lean(),
+        WorkSchedule.find({ employeeId: { $in: ids }, date: { $in: [date, dn] } }).select('employeeId date location').lean(),
+        Location.find({}).select('id name shortName').lean(),
+    ]);
+    const done = new Set(uploaded.map((u: any) => u.professorId));
+    const joined = new Map<string, string>(emps.map((e: any) => [String(e.id), String(e.joiningDate || "")]));
+    const onLeave = new Set(leaves.map((l: any) => l.employeeId));
+    const sched = (id: string) => scheds.find((s: any) => s.employeeId === id && s.date === date) || scheds.find((s: any) => s.employeeId === id && s.date === dn);
+    return Array.from(people.values()).filter(p => {
+        if (done.has(p.id) || onLeave.has(p.id)) return false;
+        const j = joined.get(p.id); if (j && YMD_RE.test(j) && j > date) return false;
+        const s = sched(p.id);
+        if (s && /^(holiday|off|week ?off|weekly ?off|leave)$/i.test(String(s.location || ''))) return false;
+        if (!s && dn === 'Sun') return false;
+        if (holidays.some((h: any) => holidayAppliesTo(h, { id: p.id, location: p.location }, colleges))) return false;
+        return true;
+    }).map(({ location, ...p }) => p).sort((a, b) => (a.role === b.role ? a.name.localeCompare(b.name) : a.role === 'OM' ? -1 : 1));
 }
 
 export async function reviewHistory(professorId: string) {

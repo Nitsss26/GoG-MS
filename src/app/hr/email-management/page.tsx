@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmy as toDmy } from "@/lib/date-display";
 import { Fragment, useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Mail, Shirt, Clock, UserX, LogOut, History, Search, Loader2, AlertTriangle, CheckCircle2, XCircle, Eye, ChevronDown, ChevronLeft, ChevronRight, X, FileText, RefreshCw, Inbox, Image as ImageIcon } from "lucide-react";
@@ -39,8 +41,8 @@ const PAGE_SIZE = 20;
 const TZ = "Asia/Kolkata";
 const istToday = () => new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
 const addDays = (ymd: string, n: number) => new Date(Date.parse(`${ymd}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
-const shortDate = (ymd?: string) => (ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }) : ymd || "—");
-const tsDate = (iso?: string) => (iso ? new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: TZ }) : "—");
+const shortDate = (ymd?: string) => (ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? toDmy(ymd) : ymd || "—");
+const tsDate = (iso?: string) => (iso ? toDmy(iso, TZ) : "—");
 const tsTime = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: TZ }) : "—");
 const t12 = (t?: string) => {
     if (!t) return "—";
@@ -107,6 +109,7 @@ export default function EmailManagementPage() {
     const [rejectReason, setRejectReason] = useState("");
     const [deciding, setDeciding] = useState("");
     const decideLate = async (r: any, action: "approve" | "reject", reason = "") => {
+        if (!(await confirmAction({ action, what: `${r.employeeName}'s late clock-in justification (${toDmy(r.date)})` }))) return;
         setDeciding(`${r.key}:${action}`); setNotice(null);
         try {
             const res = await fetch("/api/hr/attendance/late-justifications", {
@@ -126,6 +129,7 @@ export default function EmailManagementPage() {
 
     // Missing Clock-Out: Approve / Reject right here (same decision as Attendance Log → Attendance Violations)
     const decideMissing = async (r: any, action: "approve" | "reject", reason = "") => {
+        if (!(await confirmAction({ action, what: `${r.employeeName}'s missing clock-out explanation (${toDmy(r.date)})` }))) return;
         setDeciding(`${r.key}:${action}`); setNotice(null);
         try {
             const res = await fetch(`/api/attendance/violations/${encodeURIComponent(r.relatedRecordId)}`, {

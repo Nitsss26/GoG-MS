@@ -1,4 +1,5 @@
 "use client";
+import { confirmAction } from "@/lib/confirm-action";
 import { dmy as toDmy } from "@/lib/date-display";
 import { holidayForEmployee, holidayExcludes } from "@/lib/holiday-scope";
 import { clockInCutoff, cutoffLabel } from "@/lib/time-utils";
@@ -1514,7 +1515,7 @@ export default function AttendanceScreen({ view = "default" }: { view?: "default
                                                     {isHRorFounder && record?.dressCodeImageUrl && record.dressCodeStatus === "Pending" && (
                                                         <div className="flex gap-1 mt-1">
                                                             <button
-                                                                onClick={() => resolveDressCodeCheck(record.id || (record as any)._id, "Approved")}
+                                                                onClick={async () => { if (await confirmAction({ action: "approve", what: `${employee.name}'s dress code` })) resolveDressCodeCheck(record.id || (record as any)._id, "Approved"); }}
                                                                 className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded-sm hover:bg-emerald-500/30 font-bold"
                                                             >
                                                                 ✓ Approve Dress

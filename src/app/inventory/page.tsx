@@ -1,6 +1,8 @@
 // @ts-nocheck
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmy as toDmy } from "@/lib/date-display";
 import { useState } from "react";
 import { useAuth, Asset, AssetRequest } from "@/context/AuthContext";
 import {
@@ -107,7 +109,7 @@ export default function InventoryPage() {
                                                 <div className="flex items-center gap-2 mt-0.5">
                                                     <span className="text-[9px] text-muted font-mono uppercase font-bold tracking-widest">{asset.serialNumber}</span>
                                                     <span className="w-1 h-1 rounded-full bg-zinc-700" />
-                                                    <span className="text-[9px] text-muted uppercase font-bold tracking-widest">Procured: {asset.procurementDate}</span>
+                                                    <span className="text-[9px] text-muted uppercase font-bold tracking-widest">Procured: {toDmy(asset.procurementDate)}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -214,12 +216,12 @@ export default function InventoryPage() {
                                         </td>
                                         <td className="px-5 py-4 font-bold text-white">{req.assetType}</td>
                                         <td className="px-5 py-4 text-muted text-[10px] leading-relaxed max-w-xs">{req.reason}</td>
-                                        <td className="px-5 py-4 text-zinc-500 font-bold uppercase tracking-tight">{req.requestDate}</td>
+                                        <td className="px-5 py-4 text-zinc-500 font-bold uppercase tracking-tight">{toDmy(req.requestDate)}</td>
                                         <td className="px-5 py-4 text-right">
                                             {req.status === "Pending" ? (
                                                 <div className="flex justify-end gap-2">
-                                                    <button onClick={() => updateAssetRequestStatus(req.id, "Approved")} className="badge badge-green hover:brightness-125 transition-all">Approve</button>
-                                                    <button onClick={() => updateAssetRequestStatus(req.id, "Rejected")} className="badge badge-zinc opacity-50 hover:opacity-100 transition-all">Reject</button>
+                                                    <button onClick={async () => { if (await confirmAction({ action: "approve", what: "this asset request" })) updateAssetRequestStatus(req.id, "Approved"); }} className="badge badge-green hover:brightness-125 transition-all">Approve</button>
+                                                    <button onClick={async () => { if (await confirmAction({ action: "reject", what: "this asset request" })) updateAssetRequestStatus(req.id, "Rejected"); }} className="badge badge-zinc opacity-50 hover:opacity-100 transition-all">Reject</button>
                                                 </div>
                                             ) : (
                                                 <span className={cn("badge", req.status === "Approved" ? "badge-green" : "badge-zinc opacity-50")}>{req.status}</span>
@@ -255,7 +257,7 @@ export default function InventoryPage() {
                                         </div>
                                         <p className="text-[10px] text-muted italic">Reason: {req.reason}</p>
                                     </div>
-                                    <p className="text-[10px] text-zinc-600 font-bold tracking-widest italic">{req.requestDate}</p>
+                                    <p className="text-[10px] text-zinc-600 font-bold tracking-widest italic">{toDmy(req.requestDate)}</p>
                                 </div>
                             ))
                         )}

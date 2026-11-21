@@ -10,6 +10,7 @@
  *  - Shared college timings card: any professor of the college can set / change them; they apply to every week.
  *  - Refreshes every 30 seconds and whenever `refreshKey` changes (after a save / lock / unlock).
  */
+import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clock, Users, Layers, RefreshCw, Save, AlertTriangle, Check, Lock, Pencil, Building2, Download, FileImage, BookOpen, FlaskConical, Coffee, CalendarDays, History } from "lucide-react";
 import { FACULTY_CARD_THEMES } from "@/components/academic/SprintPlanTimetableGrid";
@@ -35,7 +36,7 @@ const classKey = (e: Entry) => classLabel(e).toLowerCase();
 const when = (iso?: string) => {
     if (!iso) return "";
     const d = new Date(iso);
-    return isNaN(d.getTime()) ? iso : d.toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+    return isNaN(d.getTime()) ? iso : toDmyTime(d);
 };
 /** Plan state shown on a class card: only two simple states — Locked (final) or Draft (can still change) */
 const isLockedStatus = (s?: string) => ["LOCKED", "LOCKED_AGAIN", "UNLOCK_REQUESTED"].includes(s || "");
@@ -54,7 +55,7 @@ const SHEET_THEMES = [
     { bg: "#e7e2c4", border: "#cfc79a", text: "#18181b", sub: "#3f3f46" },
 ];
 
-export default function DynamicCollegeTimetable({ weekStart, weekDates, currentUserId, refreshKey = 0, mineOnly = false, statusLabel = "Draft", statusTone = "text-amber-300", lastUpdated, editSignal = 0, onEditOpened, onTimingSaved }: {
+export default function DynamicCollegeTimetable({ weekStart, weekDates, currentUserId, refreshKey = 0, mineOnly = false, statusLabel = "Draft", statusTone = "text-amber-300", lastUpdated, editSignal = 0, onEditOpened, onTimingSaved, college: collegePick, collegeKeys, lockedDays, onLockedDay }: {
     weekStart: string; weekDates: { day: string; date: string }[]; currentUserId?: string; refreshKey?: number;
     /** Sprint Plan page: only the viewer's own classes (the college-wide view is in the Weekly Calendar) */
     mineOnly?: boolean;
@@ -64,6 +65,10 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
     editSignal?: number; onEditOpened?: () => void;
     /** Called after the college timings were saved (the page refreshes its own copy) */
     onTimingSaved?: () => void;
+    /** Multi-college professor: the selected college (its timings; only its classes of the viewer) … */
+    college?: string; collegeKeys?: string[];
+    /** … and the days HR assigned to another college (date → that college's name): muted, locked, click explains */
+    lockedDays?: Record<string, string>; onLockedDay?: (date: string) => void;
 }) {
     const [entries, setEntries] = useState<Entry[]>([]);
     const [college, setCollege] = useState<{ id: string; name: string } | null>(null);
@@ -91,7 +96,7 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
         try {
             const [a, b] = await Promise.all([
                 fetch(`/api/curriculum/sprint-plan?weekStartDate=${weekStart}`, { cache: "no-store" }).then(r => r.json()).catch(() => ({})),
-                fetch(`/api/academic/college-timings`, { cache: "no-store" })
+                fetch(`/api/academic/college-timings${collegePick ? `?college=${encodeURIComponent(collegePick)}&weekStart=${weekStart}` : ""}`, { cache: "no-store" })
                     .then(async r => { const d = await r.json().catch(() => null); return d && r.ok ? d : { __error: d?.error || `College timings could not be loaded (server error ${r.status}).` }; })
                     .catch(() => ({ __error: "College timings could not be loaded (network error)." })),
             ]);
@@ -102,7 +107,7 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
             }
             setLastLoaded(new Date());
         } finally { setLoading(false); }
-    }, [weekStart]);
+    }, [weekStart, collegePick]);
 
     useEffect(() => { setLoading(true); load(); }, [load, refreshKey]);
     // "Update Timings" from the slot editor: open the form once the permission is known
@@ -133,8 +138,10 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
         const dates = new Set(weekDates.map(d => d.date));
         return entries.filter(e =>
             dates.has(e.date) && (prof === "ALL" || e.facultyId === prof) && (cls === "ALL" || classKey(e) === cls)
+            // multi-college professor: own classes of the selected college only
+            && (!collegeKeys || e.facultyId !== currentUserId || collegeKeys.includes(String((e as any).college || "")))
             && !isNaN(toMin(e.timeStart)) && toMin(e.timeStop) > toMin(e.timeStart));
-    }, [entries, weekDates, prof, cls]);
+    }, [entries, weekDates, prof, cls, collegeKeys, currentUserId]);
 
     // Dynamic rows for the whole week: college start / end + every class start / stop
     const bounds = useMemo(() => {
@@ -197,7 +204,7 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
         try {
             const res = await fetch("/api/academic/college-timings", {
                 method: "PUT", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ startTime: start, endTime: end, version: timing?.version }),
+                body: JSON.stringify({ startTime: start, endTime: end, version: timing?.version, ...(collegePick ? { college: collegePick, weekStart } : {}) }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
@@ -214,7 +221,7 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
     const rows = bounds.length > 1 ? bounds.slice(0, -1) : [];
 
     const sheetTheme = (fid: string) => SHEET_THEMES[Math.max(0, professors.findIndex(p => p.id === fid)) % SHEET_THEMES.length];
-    const ddmmyyyy = (ymd?: string) => (ymd ? ymd.split("-").reverse().join("-") : "");
+    const ddmmyyyy = (ymd?: string) => (ymd ? toDmy(ymd) : "");
     const weekText = `${ddmmyyyy(weekDates[0]?.date)} to ${ddmmyyyy(weekDates[weekDates.length - 1]?.date)}`;
     const filterText = [prof !== "ALL" ? professors.find(p => p.id === prof)?.name : "", cls !== "ALL" ? classes.find(c => c.key === cls)?.label : ""].filter(Boolean).join(" · ");
 
@@ -307,7 +314,7 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
     // ───────── Sprint Plan page (mineOnly): info bar + weekly grid in the Sprint Management design ─────────
     if (mineOnly) {
         const todayYmd = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-        const dmy = (ymd?: string) => ymd ? new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "";
+        const dmy = (ymd?: string) => ymd ? toDmy(ymd) : "";
         const dayLong = (ymd: string) => new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long" });
         const inHours = (m: number) => !timing || (m >= toMin(timing.startTime) && m < toMin(timing.endTime));
         // Distinct colour per subject of this week (first come, first coloured)
@@ -447,9 +454,10 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
                                             {weekDates.map(d => {
                                                 const today = d.date === todayYmd;
                                                 return (
-                                                    <th key={d.date} className={`text-center px-2 py-2.5 border-b border-r border-zinc-800 last:border-r-0 ${today ? "bg-indigo-500/15" : "bg-zinc-900/80"}`} data-testid={`tt-day-${d.day}`}>
-                                                        <span className={`block text-[12px] font-bold ${today ? "text-indigo-200" : "text-white"}`}>{dayLong(d.date)}</span>
-                                                        <span className={`block text-[10.5px] font-medium ${today ? "text-indigo-300" : "text-zinc-500"}`}>{dmy(d.date).slice(0, 6)}</span>
+                                                    <th key={d.date} className={`text-center px-2 py-2.5 border-b border-r border-zinc-800 last:border-r-0 ${today ? "bg-indigo-500/15" : "bg-zinc-900/80"} ${lockedDays?.[d.date] ? "opacity-60 cursor-pointer" : ""}`} data-testid={`tt-day-${d.day}`}
+                                                        data-locked={lockedDays?.[d.date] ? "1" : undefined} onClick={lockedDays?.[d.date] ? () => onLockedDay?.(d.date) : undefined}>
+                                                        <span className={`flex items-center justify-center gap-1 text-[12px] font-bold ${today ? "text-indigo-200" : "text-white"}`}>{lockedDays?.[d.date] && <Lock size={10} className="shrink-0" />}{dayLong(d.date)}</span>
+                                                        <span className={`block text-[10.5px] font-medium ${today ? "text-indigo-300" : "text-zinc-500"}`}>{lockedDays?.[d.date] ? `Locked — ${lockedDays[d.date]}` : dmy(d.date).slice(0, 6)}</span>
                                                     </th>
                                                 );
                                             })}
@@ -468,6 +476,15 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
                                                         const cell = layout.get(d.date)?.get(r);
                                                         const today = d.date === todayYmd;
                                                         if (cell === "covered") return null;
+                                                        if (!cell && lockedDays?.[d.date]) return (
+                                                            <td key={d.date} className="border-b border-r border-zinc-800/70 last:border-r-0 p-1.5 align-middle bg-zinc-950/60" data-testid="tt-locked">
+                                                                {outside ? <span className="block text-center text-[10px] text-zinc-700">—</span> : (
+                                                                    <button onClick={() => onLockedDay?.(d.date)} className="w-full h-full min-h-[52px] rounded-xl border border-dashed border-zinc-800 flex flex-col items-center justify-center gap-1 text-zinc-600 hover:text-zinc-400">
+                                                                        <Lock size={12} /><span className="text-[10px] font-medium">{lockedDays[d.date]}</span>
+                                                                    </button>
+                                                                )}
+                                                            </td>
+                                                        );
                                                         if (!cell) return (
                                                             <td key={d.date} className={`border-b border-r border-zinc-800/70 last:border-r-0 p-1.5 align-middle ${today ? "bg-indigo-500/[0.04]" : ""}`} data-testid="tt-free">
                                                                 {outside ? <span className="block text-center text-[10px] text-zinc-700">—</span> : (
@@ -478,7 +495,7 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
                                                             </td>
                                                         );
                                                         return (
-                                                            <td key={d.date} rowSpan={cell.span} className={`border-b border-r border-zinc-800/70 last:border-r-0 p-1.5 align-top ${today ? "bg-indigo-500/[0.04]" : ""}`}>
+                                                            <td key={d.date} rowSpan={cell.span} className={`border-b border-r border-zinc-800/70 last:border-r-0 p-1.5 align-top ${today ? "bg-indigo-500/[0.04]" : ""} ${lockedDays?.[d.date] ? "opacity-50" : ""}`}>
                                                                 <div className="space-y-1.5 h-full">{cell.items.map((x, i) => <Card key={(x._id || "") + i} x={x} />)}</div>
                                                             </td>
                                                         );
@@ -497,7 +514,12 @@ export default function DynamicCollegeTimetable({ weekStart, weekDates, currentU
                                     return (
                                         <div key={d.date} className={`p-3 space-y-2 ${today ? "bg-indigo-500/[0.06]" : ""}`}>
                                             <p className="flex items-baseline gap-2"><span className={`text-sm font-bold ${today ? "text-indigo-200" : "text-white"}`}>{dayLong(d.date)}</span><span className="text-[11px] text-zinc-500">{dmy(d.date)}</span><span className="ml-auto text-[10.5px] text-zinc-500">{list.length} class{list.length === 1 ? "" : "es"}</span></p>
-                                            {list.length === 0
+                                            {lockedDays?.[d.date] && (
+                                                <button onClick={() => onLockedDay?.(d.date)} data-testid="tt-locked-day" className="w-full rounded-xl border border-dashed border-zinc-800 py-2 flex items-center justify-center gap-1.5 text-[11px] text-zinc-500">
+                                                    <Lock size={12} /> Locked — assigned to {lockedDays[d.date]}
+                                                </button>
+                                            )}
+                                            {lockedDays?.[d.date] && list.length === 0 ? null : list.length === 0
                                                 ? <div className="rounded-xl border border-dashed border-zinc-800 py-3 flex items-center justify-center gap-1.5 text-[11px] text-zinc-500"><Coffee size={13} /> Free day</div>
                                                 : <div className="grid grid-cols-1 min-[480px]:grid-cols-2 gap-2">{list.map((x, i) => <Card key={(x._id || "") + i} x={x} />)}</div>}
                                         </div>

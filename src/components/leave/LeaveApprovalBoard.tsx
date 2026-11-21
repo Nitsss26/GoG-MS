@@ -1,5 +1,6 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
 import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
 import React, { useEffect, useState } from "react";
 import { displayManager } from "@/lib/display-manager";
@@ -141,6 +142,7 @@ export default function LeaveApprovalBoard({ mode }: { mode: "HR" | "MANAGER" })
     const handleAction = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!modal || modal.type === "details") return;
+        if (!(await confirmAction({ action: modal.type, what: `${modal.leave.employeeName}'s leave (${toDmy(modal.leave.startDate)} → ${toDmy(modal.leave.endDate)})` }))) return;
         setIsSaving(true);
         setError("");
         const note = remarks.trim() || undefined;

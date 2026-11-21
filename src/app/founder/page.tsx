@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmyTime as toDmyTime, dmy as toDmy } from "@/lib/date-display";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -168,7 +170,7 @@ export default function FounderConsolePage() {
                                                 log.type === "flag" ? <AlertTriangle size={10} className="text-orange-400" /> :
                                                     <Bell size={10} className="text-blue-400" />}
                                         <span className="text-[10px] font-bold text-zinc-400 uppercase">{log.type}</span>
-                                        <span className="text-[9px] text-zinc-600 ml-auto">{new Date(log.createdAt).toLocaleString()}</span>
+                                        <span className="text-[9px] text-zinc-600 ml-auto">{toDmyTime(log.createdAt)}</span>
                                     </div>
                                     <p className="text-[11px] text-zinc-300">{log.message}</p>
                                     <p className="text-[9px] text-zinc-500 mt-0.5">From: {log.fromName} → To: {log.toName}</p>
@@ -204,13 +206,13 @@ export default function FounderConsolePage() {
                                         </div>
                                         <div className="flex gap-1">
                                             <button 
-                                                onClick={() => approveAdditionalResponsibility(resp.id, "Approved")}
+                                                onClick={async () => { if (await confirmAction({ action: "approve", what: "this additional responsibility" })) approveAdditionalResponsibility(resp.id, "Approved"); }}
                                                 className="w-7 h-7 rounded-lg bg-primary/20 text-primary flex items-center justify-center hover:bg-primary hover:text-white transition-all shadow-lg"
                                             >
                                                 <CheckCircle size={14} />
                                             </button>
                                             <button 
-                                                onClick={() => approveAdditionalResponsibility(resp.id, "Rejected")}
+                                                onClick={async () => { if (await confirmAction({ action: "reject", what: "this additional responsibility" })) approveAdditionalResponsibility(resp.id, "Rejected"); }}
                                                 className="w-7 h-7 rounded-lg bg-red-500/20 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all shadow-lg"
                                             >
                                                 <XCircle size={14} />
@@ -219,7 +221,7 @@ export default function FounderConsolePage() {
                                     </div>
                                     <div className="flex items-center justify-between pt-2 border-t border-white/5">
                                         <span className="text-[8px] text-zinc-500 font-black uppercase">Assigned By: {resp.addedBy}</span>
-                                        <span className="text-[8px] text-zinc-600 italic">{resp.date}</span>
+                                        <span className="text-[8px] text-zinc-600 italic">{toDmy(resp.date)}</span>
                                     </div>
                                 </div>
                             ))

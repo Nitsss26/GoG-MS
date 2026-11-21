@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { ShieldHalf, Lock, Users, Search, Loader2, RotateCcw, Save, X, CheckCircle2, AlertTriangle, ChevronLeft, Plus, Pencil, Rocket, Undo2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { stateOf, ORG_PARENTS, type AccessState, type RoleRestriction } from "@/lib/role-modules";
+import { stateOf, orgPlacementText, cleanOrgPlacement, type AccessState, type RoleRestriction } from "@/lib/role-modules";
 import { RoleAccessList, STATE_TEXT, type RoleItem } from "@/components/admin/RoleAccessList";
 
 /**
@@ -23,7 +23,7 @@ type RoleRow = {
 };
 
 const dt = (iso?: string | null) => (iso ? toDmyTime(iso) : "");
-const orgText = (o?: { mode: string; parent?: string }) => (o?.mode === "OWN" ? `Own box under ${ORG_PARENTS.find(p => p.key === o.parent)?.label.split(" (")[0] || o.parent}` : "Same place as the base role");
+const orgText = (o?: { mode: string; parent?: string }, labelOf: (id: string) => string = id => id) => orgPlacementText(cleanOrgPlacement(o), labelOf);
 
 export default function RoleManagementPage() {
     const { user } = useAuth();
@@ -112,14 +112,14 @@ export default function RoleManagementPage() {
                 </div>
             </>)}
 
-            {current && <RoleEditor key={current.role} row={current} onBack={() => setSel(null)} onSaved={async () => { await load(); }} onGone={async () => { setSel(null); await load(); }} />}
+            {current && <RoleEditor key={current.role} row={current} roleLabel={id => (roles || []).find(r => r.role === id)?.label || id} onBack={() => setSel(null)} onSaved={async () => { await load(); }} onGone={async () => { setSel(null); await load(); }} />}
         </div>
     );
 }
 
 type Confirm = null | "save" | "reset" | "publish" | "unpublish" | "delete";
 
-function RoleEditor({ row, onBack, onSaved, onGone }: { row: RoleRow; onBack: () => void; onSaved: () => Promise<void>; onGone: () => Promise<void> }) {
+function RoleEditor({ row, onBack, onSaved, onGone, roleLabel }: { row: RoleRow; onBack: () => void; onSaved: () => Promise<void>; onGone: () => Promise<void>; roleLabel?: (id: string) => string }) {
     const initial = () => Object.fromEntries(row.items.map(i => [i.path, stateOf(row.restriction, i.path)])) as Record<string, AccessState>;
     const [draft, setDraft] = useState<Record<string, AccessState>>(initial);
     const [confirm, setConfirm] = useState<Confirm>(null);
@@ -182,7 +182,7 @@ function RoleEditor({ row, onBack, onSaved, onGone }: { row: RoleRow; onBack: ()
                     <div className="w-full flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-zinc-400 border-t border-zinc-800 pt-2" data-testid="rm-custom-info">
                         <span className={cn("px-2 py-0.5 rounded-md border text-[10px] font-bold", row.status === "PUBLISHED" ? "border-sky-500/30 bg-sky-500/10 text-sky-300" : "border-zinc-600 bg-zinc-800 text-zinc-300")}>{row.status === "PUBLISHED" ? "Published" : "Draft"}</span>
                         <span>Based on <b className="text-zinc-200">{row.baseLabel}</b></span>
-                        <span>Org Chart: {orgText(row.org)}</span>
+                        <span data-testid="role-org-text">Org Chart: {orgText(row.org, roleLabel)}</span>
                         <div className="flex flex-wrap gap-2 sm:ml-auto">
                             <Link href={`/admin/roles/new?id=${encodeURIComponent(row.role)}`} data-testid="rm-edit-details" className="px-3 py-1.5 rounded-lg border border-zinc-700 text-[11px] font-bold text-zinc-200 hover:bg-zinc-800 inline-flex items-center gap-1"><Pencil size={12} /> Edit details</Link>
                             {row.status !== "PUBLISHED" && <button type="button" onClick={() => setConfirm("publish")} data-testid="rm-publish" className="px-3 py-1.5 rounded-lg bg-sky-500/15 border border-sky-500/30 text-[11px] font-bold text-sky-200 inline-flex items-center gap-1"><Rocket size={12} /> Publish</button>}

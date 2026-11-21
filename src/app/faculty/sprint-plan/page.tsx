@@ -1,5 +1,6 @@
 "use client";
 
+import { dmy as toDmy, dmyTime as toDmyTime, weekdayDmy as toWeekdayDmy } from "@/lib/date-display";
 import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect, useMemo, useRef } from "react";
 import DynamicCollegeTimetable from "@/components/academic/DynamicCollegeTimetable";
@@ -120,7 +121,7 @@ const SUBJECTS: Record<string, string> = {
 function formatDateDMY(dateStr: string) {
     if (!dateStr) return "";
     const [y, m, d] = dateStr.split("-");
-    return `${d}-${m}-${y}`;
+    return `${d}/${m}/${y}`;
 }
 
 function getWeekDates(offset = 0): { start: string; end: string; dates: { day: string; date: string }[] } {
@@ -614,7 +615,7 @@ export default function SprintPlanPage() {
         doc.text(`${fullWeekRange}`, 45, 68);
         doc.text(`${plan?.college || "Global HQ"}`, 45, 74);
         doc.text(`${isFrozen ? "FINALIZED & LOCKED" : "ACTIVE DRAFT"}`, 140, 62);
-        doc.text(`${new Date().toLocaleString()}`, 140, 68);
+        doc.text(`${toDmyTime(new Date())}`, 140, 68);
 
         const tableData: any[] = [];
         weekInfo.dates.forEach(({ day, date }) => {
@@ -711,10 +712,10 @@ export default function SprintPlanPage() {
     const [collegeInfo, setCollegeInfo] = useState<{ name?: string; start?: string; end?: string; canEdit?: boolean } | null>(null);
     useEffect(() => {
         if (!user?.id) return;
-        fetch(`/api/academic/college-timings${multi && selCollege ? `?college=${encodeURIComponent(selCollege)}` : ""}`, { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(d => {
+        fetch(`/api/academic/college-timings${multi && selCollege ? `?college=${encodeURIComponent(selCollege)}&weekStart=${weekInfo.start}` : ""}`, { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(d => {
             if (d) setCollegeInfo({ name: d.college?.name, start: d.timing?.startTime, end: d.timing?.endTime, canEdit: !!d.canEdit });
         }).catch(() => { });
-    }, [user?.id, ttRefresh, timingRev, multi, selCollege]);
+    }, [user?.id, ttRefresh, timingRev, multi, selCollege, weekInfo.start]);
     // Selected day: today when it is in the week, otherwise Monday
     useEffect(() => {
         const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -800,7 +801,7 @@ export default function SprintPlanPage() {
         UNLOCK_REQUESTED: { label: "Locked · Unlock Requested", tone: "text-orange-300", chip: "bg-orange-500/10 text-orange-300 border-orange-500/30" },
     };
     const st = statusInfo[planStatus] || statusInfo.DRAFT;
-    const fmtDMon = (ymd: string) => new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    const fmtDMon = (ymd: string) => toDmy(ymd);
     const weekText = `${fmtDMon(weekInfo.start)} – ${fmtDMon(weekInfo.end)}`;
     const to12 = (t?: string) => { if (!t || !isValidTimeFormat(t)) return t || "—"; const [h, m] = t.split(":").map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`; };
     const mins = (t?: string) => (t && isValidTimeFormat(t) ? Number(t.split(":")[0]) * 60 + Number(t.split(":")[1]) : NaN);
@@ -812,7 +813,7 @@ export default function SprintPlanPage() {
     const dayMinutes = dayList.reduce((s, { e }) => s + dur(e), 0);
     const collegeMinutes = collegeInfo?.start && collegeInfo?.end ? mins(collegeInfo.end) - mins(collegeInfo.start) : NaN;
     const freeText = isNaN(collegeMinutes) ? "—" : hm(Math.max(0, collegeMinutes - dayMinutes));
-    const dayLongName = (ymd: string) => new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "short", year: "numeric" });
+    const dayLongName = (ymd: string) => toWeekdayDmy(ymd);
     const yrShort = (y?: string) => (String(y || "").match(/\d+(st|nd|rd|th)?/i) || [y || "—"])[0];
     const semShort = (s?: string) => { const n = Number((String(s || "").match(/\d+/) || [""])[0]); return n ? ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII"][n] || String(n) : (s || "—"); };
     const fieldCls = "w-full h-9 px-2.5 bg-zinc-950/70 border border-zinc-800 rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500/50 disabled:opacity-50 [color-scheme:dark]";
@@ -824,7 +825,7 @@ export default function SprintPlanPage() {
         const time = d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true }).toUpperCase();
         const day = d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
         const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-        return day === today ? `today at ${time}` : `on ${d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" })} at ${time}`;
+        return day === today ? `today at ${time}` : `on ${toDmy(d)} at ${time}`;
     })();
     // Status hint (text only; follows the existing lifecycle)
     const statusHintText = ({
@@ -897,35 +898,15 @@ export default function SprintPlanPage() {
             {/* Multi-college professor: one Sprint Plan per college — only the days HR assigned to that college are editable */}
             {multi && (
                 <div className="flex flex-wrap items-center gap-2" data-testid="college-picker">
-                    <span className="text-[11px] font-bold text-zinc-400 flex items-center gap-1.5"><Building2 size={13} /> College:</span>
-                    {routine!.colleges.map(c => {
-                        const on = c.id === selCollege;
-                        const days = routine!.days.filter(d => !lockedAssignment(routine!, d.date, c.id)).map(d => d.day.charAt(0) + d.day.slice(1, 3).toLowerCase());
-                        return (
-                            <button key={c.id} onClick={() => { if (!on) { setSlotForm(null); setSelCollege(c.id); } }} aria-pressed={on} data-testid={`college-chip-${c.id}`}
-                                className={`h-8 px-3 inline-flex items-center gap-2 rounded-lg border text-xs font-bold transition-colors ${on ? "border-emerald-500/60 bg-emerald-500/10 text-white" : "border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800"}`}>
-                                <span className="[overflow-wrap:anywhere]">{c.name}</span>
-                                <span className={`text-[10px] font-semibold ${on ? "text-emerald-300" : "text-zinc-500"}`} data-testid="college-days">{days.length ? days.join(" · ") : "no day this week"}</span>
-                            </button>
-                        );
-                    })}
-                </div>
-            )}
-
-            {/* the week's HR routine for the selected college: editable days (green) and days of another college (locked) */}
-            {multi && curCollege && (
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5" data-testid="routine-strip">
-                    {weekInfo.dates.map(d => {
-                        const lk = lockedFor(d.date);
-                        const a = routine!.days.find(x => x.date === d.date);
-                        return (
-                            <button key={d.date} onClick={() => (lk ? setLockInfo(d.date) : (setSelDate(d.date), setViewMode("EDITOR")))} data-testid={`routine-${d.day}`} data-locked={lk ? "1" : undefined}
-                                className={`min-w-0 rounded-lg border px-2 py-1.5 text-left ${lk ? "border-zinc-800 bg-zinc-950/60 text-zinc-500" : "border-emerald-500/30 bg-emerald-500/[0.07] text-emerald-200"}`}>
-                                <span className="flex items-center gap-1 text-[11px] font-bold">{lk ? <Lock size={10} /> : <Check size={10} />}{d.day.charAt(0) + d.day.slice(1).toLowerCase()} · {new Date(d.date + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span>
-                                <span className="block text-[10px] font-medium truncate" title={a?.assignedName}>{lk ? lk.assignedName : a?.assigned === "WFH" ? "Work From Home" : (a?.assignedName || curCollege.name)}</span>
-                            </button>
-                        );
-                    })}
+                    <label htmlFor="college-select" className="text-[11px] font-bold text-zinc-400 flex items-center gap-1.5"><Building2 size={13} /> College:</label>
+                    <select id="college-select" value={selCollege} data-testid="college-select"
+                        onChange={e => { if (e.target.value !== selCollege) { setSlotForm(null); setSelCollege(e.target.value); } }}
+                        className="h-9 min-w-0 w-full sm:w-auto sm:max-w-xl rounded-lg border border-zinc-700 bg-zinc-900 px-3 text-xs font-bold text-white focus:outline-none focus:border-emerald-500/60">
+                        {routine!.colleges.map(c => {
+                            const days = routine!.days.filter(d => !lockedAssignment(routine!, d.date, c.id)).map(d => d.day.charAt(0) + d.day.slice(1, 3).toLowerCase());
+                            return <option key={c.id} value={c.id}>{c.name} — {days.length ? days.join(" · ") : "no day this week"}</option>;
+                        })}
+                    </select>
                 </div>
             )}
 
@@ -941,7 +922,7 @@ export default function SprintPlanPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 bg-sky-500/10 border border-sky-500/25 text-sky-200" data-testid="draft-restored">
                     <span className="flex items-center gap-2 text-xs font-medium">
                         <Save size={14} className="shrink-0" />
-                        Your unsaved changes{draftInfo.savedAt ? ` from ${new Date(draftInfo.savedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}` : ""} were brought back from this device. Press Save Draft or Finalize &amp; Lock to keep them.
+                        Your unsaved changes{draftInfo.savedAt ? ` from ${toDmyTime(draftInfo.savedAt)}` : ""} were brought back from this device. Press Save Draft or Finalize &amp; Lock to keep them.
                     </span>
                     <button onClick={discardDraft} data-testid="discard-draft" className="text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg bg-zinc-900/60 hover:bg-zinc-800 text-zinc-300 border border-zinc-700">
                         Discard &amp; show saved plan
@@ -1399,7 +1380,7 @@ export default function SprintPlanPage() {
             {lockInfo && curCollege && (() => {
                 const lk = lockedFor(lockInfo);
                 if (!lk) return null;
-                const when = new Date(lockInfo + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "short", year: "numeric" });
+                const when = toWeekdayDmy(lockInfo);
                 const target = routine!.colleges.find(c => c.id === lk.assigned);
                 return (
                     <div className="fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4" onClick={() => setLockInfo(null)}>

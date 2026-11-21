@@ -1,6 +1,8 @@
 // @ts-nocheck
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmy as toDmy } from "@/lib/date-display";
 import { useState } from "react";
 import { useAuth, ReimbursementClaim } from "@/context/AuthContext";
 import { Receipt, Plus, Search, Filter, Wallet, CheckCircle2, XCircle, Clock, Check, MoreVertical, IndianRupee, AlertCircle } from "lucide-react";
@@ -93,7 +95,7 @@ export default function FinancialsPage() {
                                                         <div className="w-8 h-8 rounded bg-surface-light border border-border flex items-center justify-center text-primary text-[10px] font-bold">{claim.employeeName[0]}</div>
                                                         <div>
                                                             <p className="font-bold text-white">{claim.employeeName}</p>
-                                                            <p className="text-[9px] text-muted uppercase tracking-widest">{claim.date}</p>
+                                                            <p className="text-[9px] text-muted uppercase tracking-widest">{toDmy(claim.date)}</p>
                                                         </div>
                                                     </div>
                                                 </td>
@@ -118,10 +120,10 @@ export default function FinancialsPage() {
                                                 <td className="px-5 py-4 text-right">
                                                     {(user.role === "HR" || user.role === "FOUNDER") && claim.status === "Pending" ? (
                                                         <div className="flex justify-end gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
-                                                            <button onClick={() => updateReimbursementStatus(claim.id, "Approved")} className="h-7 w-7 flex items-center justify-center bg-primary/10 text-primary border border-primary/20 rounded hover:bg-primary transition-colors hover:text-white">
+                                                            <button onClick={async () => { if (await confirmAction({ action: "approve", what: "this reimbursement claim" })) updateReimbursementStatus(claim.id, "Approved"); }} className="h-7 w-7 flex items-center justify-center bg-primary/10 text-primary border border-primary/20 rounded hover:bg-primary transition-colors hover:text-white">
                                                                 <Check size={14} />
                                                             </button>
-                                                            <button onClick={() => updateReimbursementStatus(claim.id, "Rejected")} className="h-7 w-7 flex items-center justify-center bg-zinc-800 text-muted border border-border rounded hover:bg-zinc-700 transition-colors hover:text-white">
+                                                            <button onClick={async () => { if (await confirmAction({ action: "reject", what: "this reimbursement claim" })) updateReimbursementStatus(claim.id, "Rejected"); }} className="h-7 w-7 flex items-center justify-center bg-zinc-800 text-muted border border-border rounded hover:bg-zinc-700 transition-colors hover:text-white">
                                                                 <XCircle size={14} />
                                                             </button>
                                                         </div>

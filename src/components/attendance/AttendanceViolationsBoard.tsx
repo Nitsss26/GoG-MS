@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmyTime, dmy } from "@/lib/date-display";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, Search, X, ExternalLink, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -13,7 +15,7 @@ import { STATUS_STYLE } from "./MyAttendanceAlerts";
 const TYPE: Record<string, string> = { LATE_IN: "Late Clock-In", EARLY_OUT: "Early Clock-Out", MISSING_OUT: "Missing Clock-Out" };
 const LEVEL: Record<string, string> = { FIRST_WARNING: "First Warning", SECOND_WARNING: "Second Warning", FINAL_WARNING: "Final Warning", HALF_DAY: "Half-Day", FULL_DAY: "Full-Day", MISSING_ALERT: "Alert" };
 const EMAIL_STYLE: Record<string, string> = { Sent: "text-emerald-300", Failed: "text-red-400", Pending: "text-amber-300", Sending: "text-amber-300" };
-const fmtDate = (d: string) => d.split("-").reverse().join("-");
+const fmtDate = (d: string) => dmy(d);
 const t12 = (t?: string) => { if (!t) return "—"; const [h, m] = t.split(":").map(Number); return isNaN(h) ? t : `${String(((h + 11) % 12) + 1).padStart(2, "0")}:${String(m || 0).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`; };
 const dur = (m?: number) => (m == null ? "—" : m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`);
 
@@ -51,6 +53,7 @@ export default function AttendanceViolationsBoard() {
             remarks = p.trim();
             if (action === "reject" && remarks.length < 3) { setMsg("Please give the reason."); return; }
         }
+        if ((action === "approve" || action === "reject") && !(await confirmAction({ action, what: `${v.employeeName}'s explanation` }))) return;
         setBusy(v.id + action); setMsg("");
         try {
             const r = await fetch(`/api/attendance/violations/${v.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, remarks }) });
@@ -164,7 +167,7 @@ export default function AttendanceViolationsBoard() {
                             ["Employee", `${open.employeeName} (${open.employeeId})`], ["Email", open.email || "—"],
                             ["Scheduled", t12(open.scheduledTime)], [open.type === "MISSING_OUT" ? "Clock-In" : "Actual", t12(open.actualTime)],
                             ["Instance", open.instance == null ? (open.type === "MISSING_OUT" ? "— (numbered only after HR rejects it)" : "—") : String(open.instance)], ["Level", LEVEL[open.level] || open.level], ["Proposed deduction", open.proposedDeduction],
-                            ["Email status", `${open.emailStatus}${open.emailSentAt ? ` · ${new Date(open.emailSentAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}` : ""}${open.emailError ? ` · ${open.emailError}` : ""}`],
+                            ["Email status", `${open.emailStatus}${open.emailSentAt ? ` · ${dmyTime(open.emailSentAt)}` : ""}${open.emailError ? ` · ${open.emailError}` : ""}`],
                             ["HR status", open.hrStatus + (open.hrDecisionByName ? ` by ${open.hrDecisionByName}` : "")], ["HR remarks", open.hrRemarks || "—"],
                             ...(open.type === "MISSING_OUT" ? [["Explanation", open.explanation || "Not submitted yet"], ["Later clock-out", open.laterClockOut ? t12(open.laterClockOut) : "—"]] : []),
                         ] as [string, string][]).map(([k, val]) => <div key={k} className="grid grid-cols-[8rem_1fr] gap-2"><span className="text-zinc-500">{k}</span><span className="text-zinc-200 break-words">{val}</span></div>)}

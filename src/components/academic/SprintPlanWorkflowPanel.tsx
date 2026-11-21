@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmyTime as toDmyTime, dmy as toDmy } from "@/lib/date-display";
 import { useState } from "react";
 import { Lock, Unlock, Send, History, X, AlertTriangle, Check, CheckCheck, RefreshCw, MessageSquare, RotateCcw, Eye, FileEdit } from "lucide-react";
 import { PLAN_STATUS_LABEL, PLAN_STATUS_STYLE, getPlanStatus, roleShort, planApproval, APPROVAL_STYLE } from "@/lib/academic-status";
@@ -34,7 +36,7 @@ export function PlanApprovalBadge({ plan, className = "" }: { plan: any; classNa
 const fmt = (iso?: string) => {
     if (!iso) return "";
     const d = new Date(iso);
-    return isNaN(d.getTime()) ? iso : d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    return isNaN(d.getTime()) ? iso : toDmyTime(d);
 };
 
 /** HOI "Mark as Read" acknowledgements for the plan's current version */
@@ -99,7 +101,7 @@ export function PlanHistoryModal({ plan, onClose }: { plan: any; onClose: () => 
                 <div className="p-5 border-b border-zinc-800 flex items-center justify-between">
                     <div>
                         <h3 className="text-base font-bold text-white flex items-center gap-2"><History size={16} className="text-indigo-400" /> Sprint Plan History</h3>
-                        <p className="text-[11px] text-zinc-500 mt-0.5">{plan.facultyName} · {plan.weekStartDate} to {plan.weekEndDate} · Version {plan.version || 1}</p>
+                        <p className="text-[11px] text-zinc-500 mt-0.5">{plan.facultyName} · {toDmy(plan.weekStartDate)} to {toDmy(plan.weekEndDate)} · Version {plan.version || 1}</p>
                     </div>
                     <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={18} /></button>
                 </div>
@@ -177,6 +179,9 @@ export default function SprintPlanWorkflowPanel({ plan, mode, onChanged, compact
     const pending = (plan.changeRequests || []).filter((c: any) => c.status === "Pending").slice(-1)[0];
 
     const act = async (action: string, extra: any = {}) => {
+        // approve (lock) / unlock / reject an unlock request / return: "Do you want to …?" first
+        const ask: Record<string, string> = { lock: "approve and lock", unlock: "unlock", reject_unlock: "reject", return: "return" };
+        if (ask[action] && !(await confirmAction({ action: ask[action], what: action === "reject_unlock" ? `${plan.facultyName}'s unlock request` : `${plan.facultyName}'s sprint plan (${toDmy(plan.weekStartDate)} to ${toDmy(plan.weekEndDate)})` }))) return;
         setBusy(true);
         setError("");
         try {

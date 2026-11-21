@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Home, X, Loader2, CheckCircle2, XCircle, AlertTriangle, Search, ListChecks, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -10,9 +12,9 @@ import { useAuth } from "@/context/AuthContext";
  * Work From Home applications for approvers (HR Leave Management → "Work From Home Applications",
  * Manager Suite → Leave Approval). The server returns only what this user may see and decides who may act.
  */
-const fmt = (ymd: string) => new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
-const fmtTs = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
-const ROLE_LABEL: Record<string, string> = { HR_EXECUTIVE: "HR Executive", TECH_TEAM: "Tech Team", MARKETING_TEAM: "Marketing Team", TL: "Tech Lead", CURRICULUM_LEAD: "CL", CURRICULUM_HEAD: "CH", FACULTY: "Professor", PROFESSOR: "Professor" };
+const fmt = (ymd: string) => toDmy(ymd);
+const fmtTs = (iso?: string) => (iso ? toDmyTime(iso) : "");
+const ROLE_LABEL: Record<string, string> = { HR_EXECUTIVE: "HR Executive", TECH_TEAM: "Tech Team", PLACEMENT_INTERN_HEAD: "Placement & Intern Head", MARKETING_TEAM: "Marketing Team", TL: "Tech Lead", CURRICULUM_LEAD: "CL", CURRICULUM_HEAD: "CH", FACULTY: "Professor", PROFESSOR: "Professor" };
 
 export default function WfhApprovalBoard() {
     const { refreshApprovedWfh } = useAuth();
@@ -47,6 +49,7 @@ export default function WfhApprovalBoard() {
 
     const decide = async (action: "approve" | "reject") => {
         if (!review) return;
+        if (!(await confirmAction({ action, what: `${review.employeeName}'s Work From Home application` }))) return;
         setBusy(true); setError("");
         try {
             const r = await fetch("/api/wfh", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: review.id, action, remarks }) });

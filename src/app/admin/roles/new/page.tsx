@@ -7,7 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import type { Role } from "@/context/AuthContext";
 import { ShieldPlus, ChevronLeft, ChevronRight, Loader2, AlertTriangle, Check, Save, Rocket, Network, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { BASE_ROLE_CHOICES, ROLE_ID_RE, ORG_PARENTS, roleIdFromLabel, stateOf, type AccessState } from "@/lib/role-modules";
+import { BASE_ROLE_CHOICES, ROLE_ID_RE, ORG_PARENTS, ORG_BESIDE, ORG_ROLE_PREFIX, cleanOrgPlacement, orgPlacementText, roleIdFromLabel, stateOf, type AccessState, type OrgPlacement } from "@/lib/role-modules";
 import { buildSidebar, applyRestriction, ROLE_COLORS } from "@/lib/sidebar-menu";
 import { RoleAccessList, STATE_TEXT, type RoleItem } from "@/components/admin/RoleAccessList";
 import OrgChart, { OrgCanvas } from "@/components/org/OrgChart";
@@ -36,7 +36,7 @@ function Wizard() {
     const [description, setDescription] = useState("");
     const [baseRole, setBaseRole] = useState("");
     const [draft, setDraft] = useState<Record<string, AccessState>>({});
-    const [org, setOrg] = useState<{ mode: "SAME" | "OWN"; parent?: string }>({ mode: "SAME" });
+    const [org, setOrg] = useState<OrgPlacement>({ mode: "SAME" });
     const [busy, setBusy] = useState(false);
     const [saveErr, setSaveErr] = useState("");
     const [loadedEdit, setLoadedEdit] = useState(false);
@@ -54,7 +54,7 @@ function Wizard() {
     useEffect(() => {
         if (!editing || loadedEdit) return;
         setLabel(editing.label); setRoleId(editing.role); setIdTouched(true); setDescription(editing.description || "");
-        setBaseRole(editing.baseRole); setOrg(editing.org?.mode === "OWN" ? { mode: "OWN", parent: editing.org.parent } : { mode: "SAME" });
+        setBaseRole(editing.baseRole); setOrg(cleanOrgPlacement(editing.org));
         setDraft(Object.fromEntries(editing.items.map((i: RoleItem) => [i.path, stateOf(editing.restriction, i.path)])));
         setLoadedEdit(true);
     }, [editing, loadedEdit]);
@@ -70,7 +70,7 @@ function Wizard() {
     const idErr = !ROLE_ID_RE.test(roleId) ? "Capital letters, digits and _ only (3–40 characters, starting with a letter)." :
         !editId && (roles || []).some(r => r.role === roleId) ? `Role ID ${roleId} already exists.` : "";
     const nameTaken = (roles || []).some(r => r.role !== editId && String(r.label).toLowerCase() === label.trim().toLowerCase());
-    const stepErr = [labelErr || idErr || (nameTaken ? `A role named "${label.trim()}" already exists.` : ""), baseRole ? "" : "Choose a base role.", "", org.mode === "OWN" && !org.parent ? "Choose where the box goes." : "", ""];
+    const stepErr = [labelErr || idErr || (nameTaken ? `A role named "${label.trim()}" already exists.` : ""), baseRole ? "" : "Choose a base role.", "", org.mode !== "SAME" && !org.parent ? "Choose where the box goes." : "", ""];
 
     if (!user) return null;
     if (!allowed) return <div className="p-8 text-center text-sm text-zinc-500" data-testid="rw-denied">Only HR and the Founder can create roles.</div>;
@@ -173,7 +173,7 @@ function Wizard() {
                                     <dt className="text-zinc-500">Base role</dt><dd className="text-zinc-200" data-testid="rw-sum-base">{labelOf(baseRole)}</dd>
                                     <dt className="text-zinc-500">Hidden</dt><dd className="text-amber-300">{hidden.length ? items.filter(i => hidden.includes(i.path)).map(i => i.label).join(", ") : "—"}</dd>
                                     <dt className="text-zinc-500">Blocked</dt><dd className="text-red-300" data-testid="rw-sum-blocked">{blocked.length ? items.filter(i => blocked.includes(i.path)).map(i => i.label).join(", ") : "—"}</dd>
-                                    <dt className="text-zinc-500">Org Chart</dt><dd className="text-zinc-200">{org.mode === "OWN" ? `Own box under ${ORG_PARENTS.find(p => p.key === org.parent)?.label}` : `Same place as ${labelOf(baseRole)}`}</dd>
+                                    <dt className="text-zinc-500">Org Chart</dt><dd className="text-zinc-200" data-testid="rw-sum-org">{org.mode === "SAME" ? `Same place as ${labelOf(baseRole)}` : orgPlacementText(org, id => (roles || []).find(r => r.role === id)?.label || id)}</dd>
                                     {description.trim() && <><dt className="text-zinc-500">Description</dt><dd className="text-zinc-300 [overflow-wrap:anywhere]">{description.trim()}</dd></>}
                                 </dl>
                                 <p className="text-[11px] text-zinc-500 pt-2">Draft: saved here only. Publish: appears in Onboarding (Role list) and in the login list. Every change is written to Role Activity Logs.</p>
@@ -224,45 +224,83 @@ function SidebarPreview({ baseRole, removed, title }: { baseRole: string; remove
     );
 }
 
-/** Org Chart place: same as the base role, or an own box — previewed on the real chart (no employee is created) */
-function OrgStep({ label, roleId, baseRole, org, setOrg }: { label: string; roleId: string; baseRole: string; org: { mode: "SAME" | "OWN"; parent?: string }; setOrg: (o: { mode: "SAME" | "OWN"; parent?: string }) => void }) {
+/** Org Chart place: same as the base role, an own box under someone, or an own box on the Tech Lead · AD · HR level
+ *  (left / right of one of them) — previewed on the real chart (no employee is created, nothing else moves) */
+function OrgStep({ label, roleId, baseRole, org, setOrg }: { label: string; roleId: string; baseRole: string; org: OrgPlacement; setOrg: (o: OrgPlacement) => void }) {
     const [emps, setEmps] = useState<any[] | null>(null);
     const [published, setPublished] = useState<any[]>([]);
     useEffect(() => {
         fetch("/api/employees", { cache: "no-store" }).then(r => (r.ok ? r.json() : [])).then(d => setEmps(Array.isArray(d) ? d : [])).catch(() => setEmps([]));
         fetch("/api/auth/custom-roles", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(d => setPublished(Array.isArray(d?.roles) ? d.roles : [])).catch(() => { });
     }, []);
+    // published roles that have their own box (not "same place", not drawn under each HOI) and are not this role or under it
+    const parentRoles = useMemo(() => {
+        const byId = new Map(published.map(r => [r.roleId, r]));
+        const underThis = (r: any, seen: string[] = []): boolean => {
+            const p = String(r?.org?.parent || "");
+            if (r?.org?.mode !== "OWN" || !p.startsWith(ORG_ROLE_PREFIX) || seen.includes(r.roleId)) return false;
+            const pid = p.slice(ORG_ROLE_PREFIX.length);
+            return pid === roleId || underThis(byId.get(pid), [...seen, r.roleId]);
+        };
+        return published.filter(r => r.roleId !== roleId && r.org?.mode !== "SAME" && !(r.org?.mode === "OWN" && r.org?.parent === "HOI") && !underThis(r));
+    }, [published, roleId]);
     const data = useMemo(() => {
         if (!emps) return null;
         const people = emps.filter(e => e?.id && e.id !== "HOI").map(e => toOrgPerson(e));
         const status = new Map(emps.map(e => [String(e.id), String(e.status || "Active")]));
         const roles = [...published.filter(r => r.roleId !== roleId), { roleId, label: label || roleId, org }];
-        return buildOrgChart(people, id => status.get(id) || "Active", { roles, showEmpty: org.mode === "OWN" ? [roleId] : [] });
+        return buildOrgChart(people, id => status.get(id) || "Active", { roles, showEmpty: org.mode !== "SAME" ? [roleId] : [] });
     }, [emps, published, roleId, label, org]);
+    const radio = (on: boolean) => cn("text-left rounded-xl border p-3", on ? "border-primary/50 bg-primary/10" : "border-zinc-800 hover:border-zinc-600");
+    const besideMode = org.mode === "LEFT" || org.mode === "RIGHT";
+    const sel = "mt-1 w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-white font-normal outline-none";
     return (
         <div className="space-y-3" data-testid="rw-org">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2" role="radiogroup">
-                <button type="button" role="radio" aria-checked={org.mode === "SAME"} onClick={() => setOrg({ mode: "SAME" })} data-testid="rw-org-same"
-                    className={cn("text-left rounded-xl border p-3", org.mode === "SAME" ? "border-primary/50 bg-primary/10" : "border-zinc-800 hover:border-zinc-600")}>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2" role="radiogroup">
+                <button type="button" role="radio" aria-checked={org.mode === "SAME"} onClick={() => setOrg({ mode: "SAME" })} data-testid="rw-org-same" className={radio(org.mode === "SAME")}>
                     <p className="text-sm font-bold text-white">Same place as {labelOf(baseRole)}</p>
                     <p className="text-[11px] text-zinc-500">Employees appear exactly where {labelOf(baseRole)} employees appear.</p>
                 </button>
-                <button type="button" role="radio" aria-checked={org.mode === "OWN"} onClick={() => setOrg({ mode: "OWN", parent: org.parent || ORG_PARENTS[0].key })} data-testid="rw-org-own"
-                    className={cn("text-left rounded-xl border p-3", org.mode === "OWN" ? "border-primary/50 bg-primary/10" : "border-zinc-800 hover:border-zinc-600")}>
-                    <p className="text-sm font-bold text-white">Own box “{label || "New role"}”</p>
-                    <p className="text-[11px] text-zinc-500">A separate box for this role, under the place you choose.</p>
+                <button type="button" role="radio" aria-checked={org.mode === "OWN"} onClick={() => org.mode !== "OWN" && setOrg({ mode: "OWN", parent: ORG_PARENTS[0].key })} data-testid="rw-org-own" className={radio(org.mode === "OWN")}>
+                    <p className="text-sm font-bold text-white">Own box under someone</p>
+                    <p className="text-[11px] text-zinc-500">A box “{label || "New role"}” below the Tech Lead, AD, HR, each HOI or another role.</p>
+                </button>
+                <button type="button" role="radio" aria-checked={besideMode} onClick={() => !besideMode && setOrg({ mode: "RIGHT", parent: "AD" })} data-testid="rw-org-beside" className={radio(besideMode)}>
+                    <p className="text-sm font-bold text-white">Same level as Tech Lead / AD / HR</p>
+                    <p className="text-[11px] text-zinc-500">A box on their level, on the left or right of one of them, joined to the CEO · COO · CTO line.</p>
                 </button>
             </div>
             {org.mode === "OWN" && (
                 <label className="block text-xs font-bold text-zinc-300 max-w-md">Box goes under
-                    <select value={org.parent || ""} onChange={e => setOrg({ mode: "OWN", parent: e.target.value })} data-testid="rw-org-parent"
-                        className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-white font-normal outline-none">
+                    <select value={org.parent || ""} onChange={e => setOrg({ mode: "OWN", parent: e.target.value })} data-testid="rw-org-parent" className={sel}>
                         {ORG_PARENTS.map(p => <option key={p.key} value={p.key} className="bg-zinc-900 text-white">{p.label}</option>)}
+                        {parentRoles.length > 0 && (
+                            <optgroup label="Under another role's box" className="bg-zinc-900 text-zinc-400">
+                                {parentRoles.map(r => <option key={r.roleId} value={`${ORG_ROLE_PREFIX}${r.roleId}`} className="bg-zinc-900 text-white">{r.label}</option>)}
+                            </optgroup>
+                        )}
                     </select>
                 </label>
             )}
-            <p className="text-[11px] text-zinc-500 inline-flex items-center gap-1.5"><Network size={12} /> Preview on the current Org Chart{org.mode === "OWN" ? " — the new box is empty until employees are onboarded with this role" : ""}. Nothing is saved until you save the role.</p>
-            <div className="rounded-2xl border border-zinc-800 overflow-hidden h-[420px]" data-testid="rw-org-preview">
+            {besideMode && (
+                <div className="flex flex-wrap items-end gap-3">
+                    <label className="block text-xs font-bold text-zinc-300 w-full sm:w-56">Next to
+                        <select value={org.parent || ""} onChange={e => setOrg({ mode: org.mode, parent: e.target.value })} data-testid="rw-org-anchor" className={sel}>
+                            {ORG_BESIDE.map(p => <option key={p.key} value={p.key} className="bg-zinc-900 text-white">{p.label}</option>)}
+                        </select>
+                    </label>
+                    <div className="inline-flex rounded-lg border border-zinc-800 overflow-hidden" role="radiogroup" aria-label="Side">
+                        {(["LEFT", "RIGHT"] as const).map(s => (
+                            <button key={s} type="button" role="radio" aria-checked={org.mode === s} onClick={() => setOrg({ mode: s, parent: org.parent })} data-testid={`rw-org-side-${s.toLowerCase()}`}
+                                className={cn("px-4 h-9 text-xs font-bold", org.mode === s ? "bg-primary text-primary-foreground" : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800")}>
+                                {s === "LEFT" ? "Left side" : "Right side"}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+            <p className="text-[11px] text-zinc-500 inline-flex items-center gap-1.5"><Network size={12} /> Preview on the current Org Chart{org.mode !== "SAME" ? " — the new box is empty until employees are onboarded with this role; nobody else moves" : ""}. Nothing is saved until you save the role.</p>
+            <div className="rounded-2xl border border-zinc-800 overflow-hidden h-[420px] sm:h-[520px]" data-testid="rw-org-preview">
                 {!data ? <p className="p-4 text-xs text-zinc-500 flex items-center gap-2"><Loader2 size={13} className="animate-spin" /> Loading the Org Chart…</p>
                     : <OrgCanvas><OrgChart data={data} /></OrgCanvas>}
             </div>

@@ -6,7 +6,7 @@ import { getSessionUser } from '@/lib/session-user';
 import { getAcademicScope, resolveCollege, nowISO, zonedNow, mondayOf } from '@/lib/academic';
 import { PROFESSOR_ROLES } from '@/lib/academic-status';
 import { HM_RE, toMin, fmt12, fmtDate, collegeOfEmployee, collegeProfessorIds } from '@/lib/sprint-plan-rules';
-import { professorRoutine, routineCollege } from '@/lib/professor-routine';
+import { professorRoutine, routineCollege, weekDates } from '@/lib/professor-routine';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,14 +14,16 @@ export const dynamic = 'force-dynamic';
  * Shared college timings for the Sprint Plan timetable (one start / end time per college).
  *  GET  → the viewer's college + its timing. Professors always get their own college (Employee.location);
  *         org-wide roles / HOI may pass ?college=<location id or name> inside their scope.
- *  PUT  { startTime, endTime, version } → a professor of that college sets / updates it for every week.
+ *  PUT  { startTime, endTime, version, college?, weekStart? } → a professor of that college sets / updates it for every week.
+ *       A multi-college professor may also set it for any college of their HR work-location routine (college + weekStart).
  *         Blocked (409) when today's or future classes of that college would fall outside the new hours,
  *         or when someone else changed the timing meanwhile (version mismatch).
  */
-async function targetCollege(actor: any, requested: string | null) {
+async function targetCollege(actor: any, requested: string | null, weekStart?: string | null) {
     if (PROFESSOR_ROLES.includes(actor.role) && requested) {
         // multi-college professor (HR work-location routine): may read the timing of any of their colleges
-        const r = await professorRoutine(actor.employee || { id: actor.id }, []);
+        // (the week shown on the page is passed so a date-wise HR change of that week counts too)
+        const r = await professorRoutine(actor.employee || { id: actor.id }, weekStart && /^\d{4}-\d{2}-\d{2}$/.test(weekStart) ? weekDates(weekStart) : []);
         const c = routineCollege(r, requested);
         if (c) return { id: c.id, name: c.name, keys: c.keys };
     }
@@ -31,6 +33,14 @@ async function targetCollege(actor: any, requested: string | null) {
     const scope = await getAcademicScope(actor);
     if (!scope.orgWide && !scope.colleges.some(x => x.id === c.id)) return 'forbidden' as const;
     return { id: c.id, name: c.name, keys: c.keys };
+}
+
+const ymdOk = (v: any) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+/** One of the professor's colleges from the HR work-location routine (the week shown counts for date-wise changes) */
+async function routineCollegeOf(actor: any, value: string, weekStart?: string | null) {
+    const r = await professorRoutine(actor.employee || { id: actor.id }, ymdOk(weekStart) ? weekDates(String(weekStart)) : []);
+    const c = routineCollege(r, value);
+    return c ? { id: c.id, name: c.name, keys: c.keys } : null;
 }
 
 const view = (t: any) => t ? {
@@ -45,11 +55,14 @@ export async function GET(req: Request) {
         await dbConnect();
         const actor = await getSessionUser();
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        const college = await targetCollege(actor, new URL(req.url).searchParams.get('college'));
+        const sp = new URL(req.url).searchParams;
+        const college = await targetCollege(actor, sp.get('college'), sp.get('weekStart'));
         if (college === 'forbidden') return NextResponse.json({ error: 'This college is outside your access.' }, { status: 403 });
         if (!college) return NextResponse.json({ success: true, college: null, timing: null, canEdit: false });
         const timing = await CollegeTiming.findOne({ collegeId: college.id }).lean();
-        const mine = PROFESSOR_ROLES.includes(actor.role) && (await collegeOfEmployee(actor.employee))?.id === college.id;
+        // a professor may set the timing of their own college and of every college HR assigned them (work-location routine)
+        const mine = PROFESSOR_ROLES.includes(actor.role) && ((await collegeOfEmployee(actor.employee))?.id === college.id
+            || (!!sp.get('college') && !!(await routineCollegeOf(actor, college.id, sp.get('weekStart')))));
         return NextResponse.json({ success: true, college: { id: college.id, name: college.name }, timing: view(timing), canEdit: mine });
     } catch (e: any) {
         console.error('college-timings GET', e);
@@ -64,12 +77,14 @@ export async function PUT(req: Request) {
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         if (!PROFESSOR_ROLES.includes(actor.role)) return NextResponse.json({ error: 'Only professors of the college can set its timings.' }, { status: 403 });
         const body = await req.json().catch(() => ({}));
-        const college = await collegeOfEmployee(actor.employee);
-        if (!college) return NextResponse.json({ error: 'Your college is not set in your profile. Ask HR to set your location.' }, { status: 400 });
-        // A professor can only change their own college — a college sent by the browser is ignored unless it is theirs
-        if (body.college && body.college !== college.id && body.college !== college.name) {
-            return NextResponse.json({ error: 'You can only set the timings of your own college.' }, { status: 403 });
+        let college: any = await collegeOfEmployee(actor.employee);
+        // A professor can change their own college, or a college HR assigned them in the work-location routine — never another one
+        if (body.college && body.college !== college?.id && body.college !== college?.name) {
+            const assigned = await routineCollegeOf(actor, String(body.college), body.weekStart);
+            if (!assigned) return NextResponse.json({ error: 'You can only set the timings of your own college or a college HR assigned you.' }, { status: 403 });
+            college = assigned;
         }
+        if (!college) return NextResponse.json({ error: 'Your college is not set in your profile. Ask HR to set your location.' }, { status: 400 });
         const startTime = String(body.startTime || '').trim(), endTime = String(body.endTime || '').trim();
         if (!HM_RE.test(startTime) || !HM_RE.test(endTime)) return NextResponse.json({ error: 'Enter a valid start and end time.' }, { status: 400 });
         if (toMin(startTime) >= toMin(endTime)) return NextResponse.json({ error: 'The college start time must be before the end time.' }, { status: 400 });

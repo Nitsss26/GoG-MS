@@ -16,6 +16,7 @@
  * → sends with the existing mail service → saves the status, sender and role (history).
  * All other automatic emails are unchanged.
  */
+import { dmy as toDmy } from "@/lib/date-display";
 import { clockInCutoff } from '@/lib/time-utils';
 import { holidayForEmployee, holidayExcludes } from '@/lib/holiday-scope';
 import { isNewPolicy, lateLadder, dressLadder, ordinalWord as policyOrdinal } from '@/lib/attendance-policy';
@@ -25,7 +26,7 @@ import { LateJustification } from '@/models/LateJustification';
 import { ManualEmail, ManualEmailLock } from '@/models/ManualEmail';
 import { sendMailInternal } from '@/lib/mail-server';
 import { composeViolationMail, escalation, fmtDuration, istNow, NOT_COUNTED, missingOutNumbers } from '@/lib/attendance-violations';
-import { FlagRemoval } from '@/models/SalaryModule';
+import { FlagRemoval, PayableCorrection } from '@/models/SalaryModule';
 import { FullAttireReview, FullAttireSubmission } from '@/models/FullAttire';
 import { fullAttireCc, fullAttireRejectCc } from '@/lib/full-attire';
 
@@ -71,7 +72,7 @@ const isYmd = (s: any) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s)
 const addDays = (ymd: string, n: number) => new Date(Date.parse(`${ymd}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[c]);
 /** 2026-10-28 → 28 October 2026 */
-export const longDate = (ymd: string) => (isYmd(ymd) ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }) : ymd);
+export const longDate = (ymd: string) => (isYmd(ymd) ? toDmy(ymd) : ymd);
 const ordinalWord = (n: number) => ['', 'First', 'Second', 'Third'][n] || `${n}th`;
 export const lateCategoryLabel = (n: number) => (n <= 3 ? `${ordinalWord(n)} Late Clock-In` : n === 4 ? 'Late Clock-In (4th — Half-Day)' : `Late Clock-In (${n}th — Full-Day)`);
 
@@ -125,14 +126,44 @@ function dressMail(row: any): { subject: string; html: string; text: string; sto
         attachments: [{ filename: `dress-code-photo-${row.date}.${ext}`, path: photo, cid: PHOTO_CID }],
     };
 }
+/**
+ * No Clock-In — the approved "Attendance Warning — Failure to Clock In" mail: same wording for every warning number,
+ * no warning level in the mail (the number stays only on the OMS row). Employee + date are added to the subject so each mail is its own
+ * conversation in the HR / CC inboxes.
+ */
 function noClockInMail(row: any) {
-    const w = row.details?.warningLabel;
-    const subject = `${w ? `${w} – ` : ''}No Clock-In Recorded — ${row.employeeName}${row.employeeId ? ` (${row.employeeId})` : ''} — ${longDate(row.date)} | ${ORG}`;
-    const { html, text } = renderMail(row.employeeName, [
-        `Our attendance records indicate that no clock-in has been recorded for you on ${longDate(row.date)}.`,
-        'You are requested to review your attendance status in the GOG OMS portal.',
-        'If you have already reported to work or are experiencing a technical issue, please inform the HR Team and submit the necessary attendance clarification.',
-    ], warnRow(row.details));
+    const date = longDate(row.date);
+    const subject = `Attendance Warning — Failure to Clock In — ${row.employeeName}${row.employeeId ? ` (${row.employeeId})` : ''} — ${date}`;
+    const P = (s: string) => `<p>${s}</p>`;
+    const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#18181b;line-height:1.55;max-width:620px">
+${P(`Dear ${esc(row.employeeName)},`)}
+${P(`This email serves as a formal warning regarding your failure to clock in through the GoG OMS attendance system on <b>${esc(date)}</b>.`)}
+${P(`<b>If you were present on campus but failed to clock in</b>, you must immediately inform your respective Head of Institution (HOI) and request them to verify your presence.`)}
+${P(`Once your HOI confirms that you were present on campus, they must send an official email to the Associate Director (AD), confirming your attendance and requesting approval.`)}
+${P(`<b>Attendance Approval Process:</b>`)}
+${P(`<b>1. HOI Verification:</b> Inform your HOI about your campus presence. Your HOI must verify your attendance and email the AD for approval.`)}
+${P(`<b>2. AD Approval:</b> The AD will review the HOI's confirmation and approve or reject the request.`)}
+${P(`<b>3. HR Final Approval:</b> Only after AD approval will the request be forwarded to the HR Team for final review and approval.`)}
+${P(`<b>Your attendance will be considered a payable day only after receiving final approval from the HR Team.</b> Until then, the attendance discrepancy will remain unresolved.`)}
+${P(`<b>Unauthorized Absence:</b>`)}
+${P(`If you were absent without prior intimation or approved leave, the day will be treated as unauthorized absence, resulting in applicable pay deduction and an additional ₹500 penalty, subject to company policy and applicable law.`)}
+${P(`Please ensure timely clock-in and clock-out to avoid further attendance discrepancies and disciplinary warnings.`)}
+<p>Regards,<br/>HR Team<br/>${ORG}</p></div>`;
+    const text = [
+        `Dear ${row.employeeName},`, '',
+        `This email serves as a formal warning regarding your failure to clock in through the GoG OMS attendance system on ${date}.`, '',
+        'If you were present on campus but failed to clock in, you must immediately inform your respective Head of Institution (HOI) and request them to verify your presence.', '',
+        'Once your HOI confirms that you were present on campus, they must send an official email to the Associate Director (AD), confirming your attendance and requesting approval.', '',
+        'Attendance Approval Process:', '',
+        '1. HOI Verification: Inform your HOI about your campus presence. Your HOI must verify your attendance and email the AD for approval.', '',
+        "2. AD Approval: The AD will review the HOI's confirmation and approve or reject the request.", '',
+        '3. HR Final Approval: Only after AD approval will the request be forwarded to the HR Team for final review and approval.', '',
+        'Your attendance will be considered a payable day only after receiving final approval from the HR Team. Until then, the attendance discrepancy will remain unresolved.', '',
+        'Unauthorized Absence:', '',
+        'If you were absent without prior intimation or approved leave, the day will be treated as unauthorized absence, resulting in applicable pay deduction and an additional ₹500 penalty, subject to company policy and applicable law.', '',
+        'Please ensure timely clock-in and clock-out to avoid further attendance discrepancies and disciplinary warnings.', '',
+        'Regards,', 'HR Team', ORG,
+    ].join('\n');
     return { subject, html, text };
 }
 function noClockOutMail(row: any) {
@@ -384,12 +415,15 @@ async function noClockInRows(f: Filters, locs: Map<string, string>, numbered = t
     if (!list.length) return [];
     const ids = list.map(e => e.id);
     const first = dates[0], last = dates[dates.length - 1];
-    const [recs, leaves, holidays, schedules] = await Promise.all([
+    const [recs, leaves, holidays, schedules, approvals] = await Promise.all([
         Attendance.find({ employeeId: { $in: ids }, date: { $gte: first, $lte: last } }).select('employeeId date clockIn status').lean() as Promise<any[]>,
         LeaveRequest.find({ employeeId: { $in: ids }, startDate: { $lte: last }, endDate: { $gte: first }, status: { $ne: 'Rejected' } }).select('employeeId startDate endDate status').lean() as Promise<any[]>,
         Holiday.find({ date: { $in: dates }, status: 'Approved' }).select('date forAll collegeIds employeeIds excludedEmployeeIds').lean() as Promise<any[]>,
         WorkSchedule.find({ employeeId: { $in: ids }, date: { $in: [...dates, ...DAY] } }).select('employeeId date location clockInTime clockOutTime').lean() as Promise<any[]>,
+        // HR final approval of the missed clock-in (Salary Management → Mark Payable, Full or Half Day)
+        PayableCorrection.find({ employeeId: { $in: ids }, date: { $gte: first, $lte: last }, status: 'ACTIVE', direction: { $ne: 'TO_NON_PAYABLE' } }).select('employeeId date').lean() as Promise<any[]>,
     ]);
+    const approved = new Set(approvals.map(a => `${a.employeeId}:${a.date}`));
     const recBy = new Map<string, any[]>();
     recs.forEach(r => { const k = `${r.employeeId}:${r.date}`; recBy.set(k, [...(recBy.get(k) || []), r]); });
     const schedBy = new Map(schedules.map(s => [`${s.employeeId}:${s.date}`, s]));
@@ -415,7 +449,7 @@ async function noClockInRows(f: Filters, locs: Map<string, string>, numbered = t
         }
     }
     const docs = await manualDocs(keys);
-    const rows = candidates.map(c => withEmail(baseRow('no_clock_in', c.relatedRecordId, c.emp, c.d, locs), emailState(docs.get(`no_clock_in:${c.relatedRecordId}`)), docs.get(`no_clock_in:${c.relatedRecordId}`), {
+    const rows = candidates.filter(c => !approved.has(c.relatedRecordId) || docs.get(`no_clock_in:${c.relatedRecordId}`)?.emailStatus === 'sent').map(c => withEmail(baseRow('no_clock_in', c.relatedRecordId, c.emp, c.d, locs), emailState(docs.get(`no_clock_in:${c.relatedRecordId}`)), docs.get(`no_clock_in:${c.relatedRecordId}`), {
         details: { scheduled: c.scheduled, scheduledLocation: locs.get(c.location) || c.location || '', attendanceStatus: c.markedAbsent ? 'Absent (marked by HR)' : 'No Clock-In', wfh: c.location === 'WFH' },
     }));
     return numbered ? withMonthNumbers(rows, rows => monthNumbers(rows, (m, ids, last) => noClockInRows({ from: `${m}-01`, to: last, employeeIds: ids }, locs, false))) : rows;
@@ -537,7 +571,9 @@ async function fullAttireRows(f: Filters, locs: Map<string, string>) {
             reviewedBy: r.reviewedByName || '', reviewedByRole: r.reviewedByRole || '', reviewedAt: r.reviewedAt || '',
             ...(pol ? { instance: n, warningLabel: pol.warning, finePercent: pol.finePercent } : {}),
         };
-        out.push(withEmail(baseRow('full_attire', r.id, emp, date, locs), emailState(doc), doc, { details, ...(pol ? { warningLabel: pol.finePercent ? `${pol.warning} · ${pol.finePercent}% fine` : pol.warning } : {}) }));
+        // a mail only for a REJECTED professor (an accepted one needs none — an older sent mail stays in history)
+        const st = r.status === 'accepted' && emailState(doc) !== 'sent' ? 'not_required' : emailState(doc);
+        out.push(withEmail(baseRow('full_attire', r.id, emp, date, locs), st, doc, { details, ...(pol ? { warningLabel: pol.finePercent ? `${pol.warning} · ${pol.finePercent}% fine` : pol.warning } : {}) }));
     }
     return out;
 }

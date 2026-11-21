@@ -3,7 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import { Employee, RoleConfig, RoleDefinition } from '@/models/Schemas';
 import { getSessionUser } from '@/lib/session-user';
 import { ALL_ROLES, canManageRoles, saveRoleRestriction } from '@/lib/role-config-server';
-import { LOCKED_ROLES, LOCKED_PATHS, MODULE_APIS, EXACT_ONLY, normalizeRestriction } from '@/lib/role-modules';
+import { LOCKED_ROLES, LOCKED_PATHS, MODULE_APIS, EXACT_ONLY, normalizeRestriction, cleanOrgPlacement } from '@/lib/role-modules';
 import { sidebarItemsOfRole, ROLE_COLORS } from '@/lib/sidebar-menu';
 
 export const dynamic = 'force-dynamic';
@@ -43,7 +43,7 @@ export async function GET() {
             return {
                 role: d.roleId, label: d.label, employees: count.get(d.roleId) || 0, locked: false,
                 custom: true, baseRole: d.baseRole, baseLabel: (ROLE_COLORS as any)[d.baseRole]?.label || d.baseRole,
-                status: d.status, description: d.description || '', org: d.org?.mode === 'OWN' ? { mode: 'OWN', parent: d.org.parent } : { mode: 'SAME' },
+                status: d.status, description: d.description || '', org: cleanOrgPlacement(d.org),
                 items: sidebarItemsOfRole(d.baseRole).map(i => ({ ...i, locked: LOCKED_PATHS.includes(i.path), apis: MODULE_APIS[i.path] || [], exact: EXACT_ONLY.includes(i.path) })),
                 restriction: normalizeRestriction(doc),
                 updatedAt: d.updatedAt || null, updatedByName: d.updatedByName || null, createdByName: d.createdByName || null,

@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmyTime, dmy as toDmy } from "@/lib/date-display";
 import { useCallback, useEffect, useState } from "react";
 import { MapPin, Loader2, X, CheckCircle2, XCircle, Mail, RefreshCw, Search, Eye } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -13,9 +15,9 @@ import { useMinWidth } from "@/lib/use-min-width";
  */
 const TABS = [["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"], ["", "All"]] as const;
 const ACTIONS = [["warning", "Warning Only"], ["custom", "Custom Action"], ["penalty", "Monetary Penalty (₹)"], ["half_day", "Half-Day Deduction"], ["full_day", "Full-Day Deduction"]] as const;
-const dmy = (d?: string) => (d ? d.split("-").reverse().join("-") : "—");
+const dmy = (d?: string) => (d ? toDmy(d) : "—");
 const t12 = (t?: string) => { if (!t) return "—"; const [h, m] = t.split(":").map(Number); if (isNaN(h)) return t; return `${((h + 11) % 12) + 1}:${String(m || 0).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`; };
-const dt = (v?: string) => (v ? new Date(v).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }) : "—");
+const dt = (v?: string) => (v ? dmyTime(v) : "—");
 const STATUS_STYLE: Record<string, string> = { pending: "text-amber-300 bg-amber-500/10 border-amber-500/25", approved: "text-emerald-300 bg-emerald-500/10 border-emerald-500/25", rejected: "text-red-300 bg-red-500/10 border-red-500/25" };
 const EMAIL_LABEL: Record<string, string> = { not_sent: "Not Sent", sending: "Sending…", sent: "Sent", failed: "Failed" };
 const EMAIL_STYLE: Record<string, string> = { not_sent: "text-zinc-400 bg-zinc-800", sending: "text-sky-300 bg-sky-500/10", sent: "text-emerald-300 bg-emerald-500/10", failed: "text-red-300 bg-red-500/10" };
@@ -68,6 +70,7 @@ export default function LocationJustificationsBoard() {
             if (form.rejectAction === "penalty" && !(Number(form.penaltyAmount) > 0)) { setError("Enter a valid positive penalty amount (₹)."); return; }
             if (!form.reason.trim()) { setError("The rejection reason is mandatory."); return; }
         }
+        if (!(await confirmAction({ action, what: `${open.employeeName}'s location justification` }))) return;
         setBusy(action); setError("");
         try {
             const r = await fetch("/api/attendance/location-justifications", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: open.id, action, ...(action === "reject" ? { ...form, reason: form.reason.trim(), remarks: form.remarks.trim(), customAction: form.customAction.trim() } : {}) }) });

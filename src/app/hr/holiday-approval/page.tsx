@@ -1,4 +1,6 @@
 "use client";
+import { confirmAction } from "@/lib/confirm-action";
+import { dmyTime as toDmyTime, dmy as toDmy } from "@/lib/date-display";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Calendar, CheckCircle2, Clock, Building2, Globe, MessageSquare, Plus, XCircle, Mail, Users, BellOff } from "lucide-react";
@@ -37,7 +39,7 @@ export default function HolidayApprovalPage() {
     };
     const getCollegeFullNames = (h: { collegeIds?: string[]; forAll?: boolean }) =>
         h.forAll ? "All Colleges" : ((h.collegeIds || []).map(id => colleges.find(c => c.id === id)?.name || id).join(", ") || "—");
-    const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
+    const fmt = (iso?: string) => (iso ? toDmyTime(iso) : "—");
     // Result of the college-wise email that goes out once, when HR approves
     const emailLine = (h: any) => {
         if (!h.emailStatus) return null;
@@ -48,6 +50,7 @@ export default function HolidayApprovalPage() {
 
     const handleApprove = async (id: string) => {
         if (busyId) return;
+        if (!(await confirmAction({ action: "approve", what: "this holiday" }))) return;
         setBusyId(id);
         await approveHoliday(id, approveMessages[id] || undefined);
         setApproveMessages(prev => { const next = { ...prev }; delete next[id]; return next; });
@@ -58,6 +61,7 @@ export default function HolidayApprovalPage() {
         if (busyId) return;
         const reason = window.prompt("Reason for rejection (optional):");
         if (reason === null) return;
+        if (!(await confirmAction({ action: "reject", what: "this holiday" }))) return;
         setBusyId(id);
         await rejectHoliday(id, reason || undefined);
         setBusyId(null);
@@ -98,7 +102,7 @@ export default function HolidayApprovalPage() {
                                     <div className="flex-1">
                                         <h4 className="text-xs font-bold text-white">{h.name}</h4>
                                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                            <span className="text-[10px] text-zinc-500">{h.date} · by {h.proposedByName}</span>
+                                            <span className="text-[10px] text-zinc-500">{toDmy(h.date)} · by {h.proposedByName}</span>
                                             {h.collegeIds && h.collegeIds.length > 0 && (
                                                 <span className="text-[8px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-full border border-blue-500/20 flex items-center gap-0.5">
                                                     <Building2 size={8} /> {getCollegeNames(h.collegeIds)}
@@ -118,7 +122,7 @@ export default function HolidayApprovalPage() {
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">
                                     <div className="bg-zinc-800/40 border border-zinc-800 rounded-lg p-2"><p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">College / Campus</p><p className="text-zinc-200 mt-0.5 break-words">{getCollegeFullNames(h)}</p></div>
                                     <div className="bg-zinc-800/40 border border-zinc-800 rounded-lg p-2"><p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Requested By</p><p className="text-zinc-200 mt-0.5 break-words">{h.proposedByName || h.proposedBy}</p></div>
-                                    <div className="bg-zinc-800/40 border border-zinc-800 rounded-lg p-2"><p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Holiday Date</p><p className="text-zinc-200 mt-0.5">{h.date}</p></div>
+                                    <div className="bg-zinc-800/40 border border-zinc-800 rounded-lg p-2"><p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Holiday Date</p><p className="text-zinc-200 mt-0.5">{toDmy(h.date)}</p></div>
                                     <div className="bg-zinc-800/40 border border-zinc-800 rounded-lg p-2"><p className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Request Date</p><p className="text-zinc-200 mt-0.5">{fmt(h.proposedAt)}</p></div>
                                 </div>
                                 {/* Custom message input */}
@@ -151,7 +155,7 @@ export default function HolidayApprovalPage() {
                                 <div className="flex-1">
                                     <p className="text-xs font-bold text-white">{h.name}</p>
                                     <div className="flex items-center gap-2 mt-0.5">
-                                        <span className="text-[10px] text-zinc-500" data-testid="hol-approved-date">{h.dayCount > 1 ? `${h.date} to ${h.endDate} (${h.dayCount} days)` : h.date}</span>
+                                        <span className="text-[10px] text-zinc-500" data-testid="hol-approved-date">{h.dayCount > 1 ? `${toDmy(h.date)} to ${toDmy(h.endDate)} (${h.dayCount} days)` : h.date}</span>
                                         {h.collegeIds && h.collegeIds.length > 0 && <span className="text-[8px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-full border border-blue-500/20"><Building2 size={8} className="inline" /> {getCollegeNames(h.collegeIds)}</span>}
                                         {h.forAll && <span className="text-[8px] font-bold text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full border border-green-500/20"><Globe size={8} className="inline" /> All</span>}
                                         {(h.employeeIds || []).length > 0 && <span className="text-[8px] font-bold text-violet-300 bg-violet-500/10 px-1.5 py-0.5 rounded-full border border-violet-500/20" data-testid="hol-emp-chip"><Users size={8} className="inline" /> {(h.employeeNames || h.employeeIds || []).join(", ")}</span>}
@@ -175,7 +179,7 @@ export default function HolidayApprovalPage() {
                                 <Calendar size={14} className="text-red-400" />
                                 <div className="flex-1 min-w-0">
                                     <p className="text-xs font-bold text-white">{h.name}</p>
-                                    <p className="text-[10px] text-zinc-500 break-words">{h.date} · {getCollegeFullNames(h)} · by {h.proposedByName || h.proposedBy}{h.rejectionReason ? ` · Reason: ${h.rejectionReason}` : ""}</p>
+                                    <p className="text-[10px] text-zinc-500 break-words">{toDmy(h.date)} · {getCollegeFullNames(h)} · by {h.proposedByName || h.proposedBy}{h.rejectionReason ? ` · Reason: ${h.rejectionReason}` : ""}</p>
                                 </div>
                                 <XCircle size={14} className="text-red-500" />
                             </div>

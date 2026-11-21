@@ -61,7 +61,36 @@ export const ORG_PARENTS: { key: string; label: string }[] = [
     { key: "HR", label: "HR (next to HR Team)" },
     { key: "HOI", label: "Each employee's HOI (own box under that HOI)" },
 ];
-export type OrgPlacement = { mode: "SAME" | "OWN"; parent?: string };
+/** Same level as one of these (row of Tech Lead · AD · HR), on its left or right — joined to the executives above */
+export const ORG_BESIDE: { key: string; label: string }[] = [
+    { key: "TL", label: "Tech Lead" },
+    { key: "AD", label: "AD" },
+    { key: "HR", label: "HR" },
+];
+/** parent "ROLE:<roleId>" = own box under another HR-created role's box */
+export const ORG_ROLE_PREFIX = "ROLE:";
+/**
+ * SAME  — where the base role is
+ * OWN   — own box under `parent` (TL / AD / HR / HOI, or ROLE:<roleId>)
+ * LEFT / RIGHT — own box on the Tech Lead · AD · HR level, left / right of `parent` (TL / AD / HR)
+ */
+export type OrgPlacement = { mode: "SAME" | "OWN" | "LEFT" | "RIGHT"; parent?: string };
+/** Keep only a valid placement (anything else = SAME). Another role as parent is checked against the saved roles separately. */
+export function cleanOrgPlacement(o: any): OrgPlacement {
+    const mode = String(o?.mode || ""), parent = String(o?.parent || "");
+    if (mode === "OWN" && ORG_PARENTS.some(p => p.key === parent)) return { mode: "OWN", parent };
+    if (mode === "OWN" && parent.startsWith(ORG_ROLE_PREFIX) && ROLE_ID_RE.test(parent.slice(ORG_ROLE_PREFIX.length))) return { mode: "OWN", parent };
+    if ((mode === "LEFT" || mode === "RIGHT") && ORG_BESIDE.some(p => p.key === parent)) return { mode, parent };
+    return { mode: "SAME" };
+}
+/** "Own box under AD" / "Same level as HR, on its left" / "Own box under Operations Head" / "Same place as the base role" */
+export function orgPlacementText(o: OrgPlacement | undefined, roleLabel: (roleId: string) => string = r => r): string {
+    if (!o || o.mode === "SAME") return "Same place as the base role";
+    const p = String(o.parent || "");
+    if (o.mode === "LEFT" || o.mode === "RIGHT") return `Same level as ${ORG_BESIDE.find(b => b.key === p)?.label || p}, on its ${o.mode === "LEFT" ? "left" : "right"}`;
+    if (p.startsWith(ORG_ROLE_PREFIX)) return `Own box under ${roleLabel(p.slice(ORG_ROLE_PREFIX.length))}`;
+    return `Own box under ${ORG_PARENTS.find(x => x.key === p)?.label.split(" (")[0] || p}`;
+}
 export type CustomRoleInfo = { roleId: string; label: string; baseRole: string; org: OrgPlacement };
 
 const under = (path: string, p: string) => path === p || path.startsWith(p.endsWith("/") ? p : p + "/");

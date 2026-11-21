@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmy as toDmy } from "@/lib/date-display";
 import { useState } from "react";
 import { X, XCircle, Loader2, AlertTriangle, ImagePlus, Trash2 } from "lucide-react";
 import { uploadToCloudinary } from "@/lib/cloudinary";
@@ -39,6 +41,7 @@ export default function DressCodeRejectDialog({ employeeName, date, onCancel, on
         if (!reasons.length) return setError("Select at least one rejection reason.");
         if (reasons.includes("Other") && other.trim().length < 2) return setError('Please write the reason for "Other".');
         if (uploading) return setError("Please wait — the photo is still uploading.");
+        if (!(await confirmAction({ action: "reject", what: `${employeeName || "this employee"}'s dress code${date ? ` (${toDmy(date)})` : ""}` }))) return;
         setSaving(true); setError("");
         const r = await onConfirm({ reasons, other: reasons.includes("Other") ? other.trim() : "", remarks: remarks.trim(), ...(photo ? { photoUrl: photo.url } : {}) });
         setSaving(false);
@@ -54,7 +57,7 @@ export default function DressCodeRejectDialog({ employeeName, date, onCancel, on
                     <button onClick={onCancel} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close"><X size={18} /></button>
                 </div>
                 <div className="p-5 space-y-4">
-                    {(employeeName || date) && <p className="text-xs text-zinc-400">{employeeName}{date ? ` · ${date.split("-").reverse().join("-")}` : ""}</p>}
+                    {(employeeName || date) && <p className="text-xs text-zinc-400">{employeeName}{date ? ` · ${toDmy(date)}` : ""}</p>}
                     <div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Reason for rejection (one or more)</p>
                         <div className="grid grid-cols-2 gap-2">

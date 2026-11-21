@@ -1,12 +1,13 @@
 "use client";
 
+import { dmy as toDmy, weekdayDmy as toWeekdayDmy } from "@/lib/date-display";
 import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
     Play, Square, Clock, Timer, AlertTriangle, CheckCircle2,
     BookOpen, Upload, Camera, FileText, Mic, Users, X, Loader2,
     Calendar, Download, GraduationCap, Building2, ChevronDown, Search, RotateCcw,
-    CalendarDays, Eye, MoreVertical, Info, ClipboardList, ExternalLink, Plus
+    CalendarDays, Eye, MoreVertical, Info, ClipboardList, ExternalLink, Plus, Pencil
 } from "lucide-react";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import * as XLSX from "xlsx";
@@ -157,7 +158,7 @@ export default function LecturesPage() {
         // wait until the lectures of the requested date are loaded
         if (!lectures.some(l => l.date === selectedDate)) return;
         const lec = lectures.find(l => l.lectureNumber === openLectureParam && l.date === selectedDate);
-        if (lec && lec.classEnded && PROFESSOR_EDITABLE_CLASS_STATUSES.includes(lec.pipelineStatus || "PENDING_PROFESSOR")) openReport(lec);
+        if (lec && lec.classEnded && (PROFESSOR_EDITABLE_CLASS_STATUSES.includes(lec.pipelineStatus || "PENDING_PROFESSOR") || lec.pipelineStatus === "PENDING_OM")) openReport(lec);
         else if (lec) openDrawer(lec);
         setOpenLectureParam(null);
     }, [lectures, loading, openLectureParam]);
@@ -212,7 +213,7 @@ export default function LecturesPage() {
 
             const worksheetData = data.lectures.map((l: any) => ({
                 "Lecture #": l.lectureNumber,
-                "Date": format(new Date(l.date || Date.now()), "dd-MM-yyyy"),
+                "Date": format(new Date(l.date || Date.now()), "dd/MM/yyyy"),
                 "Subject": l.courseName,
                 "Topics": l.topicsCovered,
                 "Stream": l.stream,
@@ -254,8 +255,8 @@ export default function LecturesPage() {
     }
 
     const todayStr = todayYmd();
-    const fmtLong = (ymd: string) => new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "short", year: "numeric" }).replace(/^(\w+) /, "$1, ");
-    const fmtShort = (ymd?: string) => ymd ? new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "";
+    const fmtLong = (ymd: string) => toWeekdayDmy(ymd);
+    const fmtShort = (ymd?: string) => ymd ? toDmy(ymd) : "";
     const isRecorded = (l: Lecture) => !!l.report && (l.status === "Completed" || (l.pipelineStatus && l.pipelineStatus !== "PENDING_PROFESSOR"));
     const completedCount = lectures.filter(isRecorded).length;
     const pendingCount = lectures.length - completedCount;
@@ -382,6 +383,8 @@ export default function LecturesPage() {
                 // Same rules as before: report once after the class ends, re-submit only when reverted
                 const canSubmit = (lec: Lecture) => (lec.pipelineStatus || "PENDING_PROFESSOR") === "PENDING_PROFESSOR" && !!lec.sprintEntryId && !!lec.classEnded;
                 const isReverted = (lec: Lecture) => ["OM_REVERTED", "CL_CH_REVERTED"].includes(lec.pipelineStatus || "") && !!lec.sprintEntryId;
+                // submitted, OM has not verified yet → can still be edited
+                const canEditPending = (lec: Lecture) => lec.pipelineStatus === "PENDING_OM" && !!lec.sprintEntryId && !!lec.report;
                 const open = rows.find(r => r.key === menuFor)?.raw as Lecture | undefined;
                 return (
                     <>
@@ -399,6 +402,7 @@ export default function LecturesPage() {
                                     <>
                                         {isReverted(lec) ? <RowButton tone="warn" icon={RotateCcw} onClick={() => openReport(lec)} title="Reverted to you — correct and re-submit" testId="resubmit-report">Re-submit</RowButton>
                                             : canSubmit(lec) ? <RowButton tone="primary" icon={Upload} onClick={() => openReport(lec)} testId="submit-report">Submit Report</RowButton>
+                                            : canEditPending(lec) ? <RowButton tone="primary" icon={Pencil} onClick={() => openReport(lec)} title="Not verified by the OM yet — you can still edit it" testId="edit-report">Edit Report</RowButton>
                                                 : r.recorded ? <RowButton icon={Eye} onClick={() => openDrawer(lec)} testId="view-record">View Report</RowButton>
                                                     : <RowButton icon={Info} onClick={() => openDrawer(lec)} title={lec.sprintEntryId ? `Report opens after the class ends (${lec.timeStop})` : "Not linked to a sprint plan entry"} testId="lecture-details">View Plan</RowButton>}
                                         <RowButton tone="ghost" icon={MoreVertical} title="More actions" testId="row-menu" onClick={(e) => {
@@ -424,6 +428,7 @@ export default function LecturesPage() {
                                 style={{ top: menuPos.top, right: menuPos.right, transform: menuPos.up ? "translateY(-100%)" : undefined }} onClick={e => e.stopPropagation()}>
                                 {canSubmit(open) && <MenuItem icon={Upload} label="Submit report" onClick={() => { openReport(open); setMenuFor(null); }} />}
                                 {isReverted(open) && <MenuItem icon={RotateCcw} label="Correct & re-submit report" onClick={() => { openReport(open); setMenuFor(null); }} />}
+                                {canEditPending(open) && <MenuItem icon={Pencil} label="Edit report (before OM verification)" onClick={() => { openReport(open); setMenuFor(null); }} />}
                                 {isRecorded(open) && open.report && <MenuItem icon={FileText} label="View class record" onClick={() => { openDrawer(open); setMenuFor(null); }} />}
                                 {open.date <= todayStr && <MenuItem icon={ClipboardList} label={open.report?.assignment?.hasAssignment ? "Update assignment" : "Add assignment"} onClick={() => { setAsgFor(open); setMenuFor(null); }} />}
                                 {open.report?.notesMissing && isRecorded(open) && <MenuItem icon={FileText} label="Upload missing notes" onClick={() => { openDrawer(open); setMenuFor(null); }} />}
@@ -441,6 +446,7 @@ export default function LecturesPage() {
                                 return (<>
                                     {isReverted(lec) && <RowButton tone="warn" icon={RotateCcw} onClick={() => { closeDrawer(); openReport(lec); }} testId="drawer-resubmit">Correct & Re-submit</RowButton>}
                                     {canSubmit(lec) && <RowButton tone="primary" icon={Upload} onClick={() => { closeDrawer(); openReport(lec); }} testId="drawer-submit">Submit Report</RowButton>}
+                                    {lec.pipelineStatus === "PENDING_OM" && !!lec.sprintEntryId && !!lec.report && <RowButton tone="primary" icon={Pencil} onClick={() => { closeDrawer(); openReport(lec); }} testId="drawer-edit">Edit Report</RowButton>}
                                     {lec.date <= todayStr && <RowButton icon={ClipboardList} onClick={() => setAsgFor(lec)} testId="drawer-assignment">{lec.report?.assignment?.hasAssignment ? "Update Assignment" : "Upload Assignment"}</RowButton>}
                                     {lec.report?.lectureNotes?.notesUrl && <RowButton icon={ExternalLink} onClick={() => window.open(lec.report!.lectureNotes!.notesUrl, "_blank", "noopener")}>Open Notes</RowButton>}
                                     {lec.report?.assignment?.assignmentUrl && <RowButton icon={ExternalLink} onClick={() => window.open(lec.report!.assignment!.assignmentUrl, "_blank", "noopener")}>Open Assignment</RowButton>}

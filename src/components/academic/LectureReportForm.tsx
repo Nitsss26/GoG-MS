@@ -348,17 +348,17 @@ export default function LectureReportForm({ lecture, facultyId, fallbackDate, on
                 <div className="fixed inset-0 z-[100] flex justify-end bg-black/70 backdrop-blur-[2px] animate-in fade-in duration-200" data-testid="report-panel">
                     <div className="w-full sm:max-w-2xl h-full flex flex-col bg-zinc-900 border-l border-zinc-800 shadow-2xl shadow-black/60 overflow-hidden animate-in slide-in-from-right duration-200"
                         onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="lecture-report-title">
-                        <div className="shrink-0 h-1 w-full bg-gradient-to-r from-amber-500 via-teal-500 to-violet-500" />
 
                         {/* Header */}
-                        <div className="shrink-0 px-5 sm:px-6 py-4 border-b border-zinc-800 bg-gradient-to-r from-amber-500/[0.07] via-zinc-900 to-emerald-500/[0.06]">
+                        <div className="shrink-0 px-5 sm:px-6 py-4 border-b border-zinc-800 bg-zinc-900">
                             <div className="flex items-start justify-between gap-4">
                                 <div className="flex items-start gap-3 min-w-0">
-                                    <div className="shrink-0 w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-                                        <FileText size={18} className="text-amber-400" />
+                                    <div className="shrink-0 w-10 h-10 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center">
+                                        <FileText size={18} className="text-emerald-400" />
                                     </div>
                                     <div className="min-w-0">
-                                        <h2 id="lecture-report-title" className="text-base font-semibold text-white leading-tight">Lecture Report</h2>
+                                        <h2 id="lecture-report-title" className="text-base font-semibold text-white leading-tight">{lecture.pipelineStatus === "PENDING_OM" ? "Edit Lecture Report" : "Lecture Report"}</h2>
+                                        {lecture.pipelineStatus === "PENDING_OM" && <p className="text-[11px] text-sky-300 mt-0.5" data-testid="edit-before-om">Not verified by the OM yet — you can edit it. It stays with the OM.</p>}
                                         <p className="text-xs text-zinc-400 mt-0.5 truncate" title={reportLec?.courseName}>
                                             {reportLec?.courseName || "—"} <span className="text-zinc-600">· Lecture #{showReport}</span>
                                         </p>
@@ -370,7 +370,7 @@ export default function LectureReportForm({ lecture, facultyId, fallbackDate, on
                                 </button>
                             </div>
                             <div className="flex flex-wrap gap-2 mt-3">
-                                {([["Stream", reportLec?.stream, "border-indigo-500/25 bg-indigo-500/10 text-indigo-300"], ["Year", reportLec?.year, "border-emerald-500/25 bg-emerald-500/10 text-emerald-300"], ["Semester", reportLec?.semester, "border-violet-500/25 bg-violet-500/10 text-violet-300"]] as [string, string | undefined, string][]).map(([k, v, tone]) => (
+                                {([["Stream", reportLec?.stream, "border-zinc-700 bg-zinc-800/60 text-zinc-300"], ["Year", reportLec?.year, "border-zinc-700 bg-zinc-800/60 text-zinc-300"], ["Semester", reportLec?.semester, "border-zinc-700 bg-zinc-800/60 text-zinc-300"]] as [string, string | undefined, string][]).map(([k, v, tone]) => (
                                     <span key={k} className={cnReport("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px]", tone)}>
                                         <span className="opacity-70">{k}</span>
                                         <span className="font-semibold capitalize">{v || "—"}</span>
@@ -382,13 +382,13 @@ export default function LectureReportForm({ lecture, facultyId, fallbackDate, on
                         {/* Body */}
                         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-5 sm:px-6 py-5 space-y-4" style={{ scrollbarGutter: "stable" }}>
 
-                            <ReportSection step={1} accent="indigo" icon={<BookOpen size={14} className="text-indigo-400" />} title="Topics Covered" tag="From lecture plan">
+                            <ReportSection step={1} accent="indigo" icon={<BookOpen size={14} className="text-indigo-400/80" />} title="Topics Covered" tag="From lecture plan">
                                 <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap break-words">
                                     {reportData.topicsCovered || <span className="text-zinc-600">No topics recorded</span>}
                                 </p>
                             </ReportSection>
 
-                            <ReportSection step={2} accent="amber" title="Attendance" icon={<Users size={14} className="text-amber-400" />} tag="Required" required>
+                            <ReportSection step={2} accent="amber" title="Attendance" icon={<Users size={14} className="text-amber-400/80" />} tag="Required" required>
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
                                         <FieldLabel htmlFor="rep-present">Students present</FieldLabel>
@@ -429,7 +429,7 @@ export default function LectureReportForm({ lecture, facultyId, fallbackDate, on
                                 )}
                             </ReportSection>
 
-                            <ReportSection step={3} accent="sky" title="Class Evidence" icon={<Camera size={14} className="text-sky-400" />} tag="Snapshots required" required>
+                            <ReportSection step={3} accent="sky" title="Class Evidence" icon={<Camera size={14} className="text-sky-400/80" />} tag="Snapshots required" required>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
                                         <FieldLabel>Class snapshots <span className="text-rose-400">*</span>{reportLec?.report?.classPhotoUrl || (reportLec?.report?.snapshotUrls || []).length ? " · already uploaded" : ""}</FieldLabel>
@@ -456,7 +456,7 @@ export default function LectureReportForm({ lecture, facultyId, fallbackDate, on
                                 </div>
                             </ReportSection>
 
-                            <ReportSection step={4} accent="teal" title="Lecture Notes" icon={<BookOpen size={14} className="text-teal-400" />} tag="Required" required>
+                            <ReportSection step={4} accent="teal" title="Lecture Notes" icon={<BookOpen size={14} className="text-teal-400/80" />} tag="Required" required>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
                                         <FieldLabel>Notes file</FieldLabel>
@@ -525,7 +525,7 @@ export default function LectureReportForm({ lecture, facultyId, fallbackDate, on
 
                             </ReportSection>
 
-                            <ReportSection step={5} accent="violet" title="Assignment" icon={<ClipboardList size={14} className="text-violet-400" />} tag="Optional · Verified by CL">
+                            <ReportSection step={5} accent="violet" title="Assignment" icon={<ClipboardList size={14} className="text-violet-400/80" />} tag="Optional · Verified by CL">
                                 <CheckRow checked={reportData.hasAssignment} id="has-assignment-toggle"
                                     onChange={v => setReportData(p => ({ ...p, hasAssignment: v }))}
                                     label="Add an assignment for this lecture"
@@ -614,8 +614,8 @@ export default function LectureReportForm({ lecture, facultyId, fallbackDate, on
                                 <button onClick={() => { const lec = reportLec; if (lec) submitReport(lec); }}
                                     data-testid="final-submit"
                                     disabled={uploading}
-                                    className="flex-1 h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-lg shadow-emerald-900/30 text-sm font-semibold text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
-                                    {uploading ? <><Loader2 size={16} className="animate-spin" /> Submitting…</> : <><Upload size={16} /> Submit Report</>}
+                                    className="flex-1 h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                                    {uploading ? <><Loader2 size={16} className="animate-spin" /> {lecture.pipelineStatus === "PENDING_OM" ? "Saving…" : "Submitting…"}</> : <><Upload size={16} /> {lecture.pipelineStatus === "PENDING_OM" ? "Save Changes" : "Submit Report"}</>}
                                 </button>
                             </div>
                         </div>
@@ -629,18 +629,20 @@ const REPORT_INPUT = "w-full h-10 px-3 rounded-lg bg-zinc-950/60 border border-z
 const REPORT_TEXTAREA = "w-full min-h-[76px] px-3 py-2.5 rounded-lg bg-zinc-950/60 border border-zinc-800 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 resize-y transition-colors";
 const cnReport = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
+// neutral, professional sections with only a light touch of colour (step number + icon)
+const softAccent = (step: string) => ({ box: "border-zinc-800", head: "bg-zinc-900/80 border-zinc-800", step });
 const REPORT_ACCENT: Record<string, { box: string; head: string; step: string }> = {
-    indigo: { box: "border-indigo-500/20 border-l-indigo-500", head: "bg-indigo-500/[0.07] border-indigo-500/15", step: "bg-indigo-500/20 text-indigo-300" },
-    amber: { box: "border-amber-500/20 border-l-amber-500", head: "bg-amber-500/[0.07] border-amber-500/15", step: "bg-amber-500/20 text-amber-300" },
-    sky: { box: "border-sky-500/20 border-l-sky-500", head: "bg-sky-500/[0.07] border-sky-500/15", step: "bg-sky-500/20 text-sky-300" },
-    teal: { box: "border-teal-500/20 border-l-teal-500", head: "bg-teal-500/[0.07] border-teal-500/15", step: "bg-teal-500/20 text-teal-300" },
-    violet: { box: "border-violet-500/20 border-l-violet-500", head: "bg-violet-500/[0.07] border-violet-500/15", step: "bg-violet-500/20 text-violet-300" },
+    indigo: softAccent("bg-indigo-500/10 text-indigo-300 border border-indigo-500/25"),
+    amber: softAccent("bg-amber-500/10 text-amber-300 border border-amber-500/25"),
+    sky: softAccent("bg-sky-500/10 text-sky-300 border border-sky-500/25"),
+    teal: softAccent("bg-teal-500/10 text-teal-300 border border-teal-500/25"),
+    violet: softAccent("bg-violet-500/10 text-violet-300 border border-violet-500/25"),
 };
 
 function ReportSection({ step, title, icon, tag, required, accent = "indigo", children }: { step: number; title: string; icon?: React.ReactNode; tag?: string; required?: boolean; accent?: string; children: React.ReactNode }) {
     const a = REPORT_ACCENT[accent] || REPORT_ACCENT.indigo;
     return (
-        <section className={cnReport("rounded-xl border border-l-[3px] bg-zinc-950/30 overflow-hidden", a.box)}>
+        <section className={cnReport("rounded-xl border bg-zinc-950/30 overflow-hidden", a.box)}>
             <div className={cnReport("flex items-center justify-between gap-3 px-4 py-3 border-b", a.head)}>
                 <div className="flex items-center gap-2.5 min-w-0">
                     <span className={cnReport("shrink-0 w-5 h-5 rounded-full text-[10px] font-semibold flex items-center justify-center", a.step)}>{step}</span>
@@ -649,7 +651,7 @@ function ReportSection({ step, title, icon, tag, required, accent = "indigo", ch
                 </div>
                 {tag && (
                     <span className={cnReport("shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-md border",
-                        required ? "text-rose-300 border-rose-500/25 bg-rose-500/10" : "text-emerald-300 border-emerald-500/25 bg-emerald-500/10")}>{tag}</span>
+                        required ? "text-zinc-200 border-zinc-600 bg-zinc-800" : "text-zinc-400 border-zinc-700 bg-transparent")}>{tag}</span>
                 )}
             </div>
             <div className="p-4">{children}</div>
@@ -666,8 +668,8 @@ function UploadTile({ htmlFor, done, icon, title, hint, compact }: { htmlFor: st
         <label htmlFor={htmlFor}
             className={cnReport("flex items-center gap-3 px-3 rounded-lg border border-dashed cursor-pointer transition-colors",
                 compact ? "h-10" : "h-[60px]",
-                done ? "border-emerald-500/40 bg-emerald-500/[0.06]" : "border-zinc-700 bg-zinc-950/40 hover:border-sky-500/50 hover:bg-sky-500/[0.05]")}>
-            <span className={cnReport("shrink-0", done ? "text-emerald-400" : "text-sky-400/80")}>{done ? <CheckCircle2 size={16} /> : icon}</span>
+                done ? "border-emerald-500/40 bg-emerald-500/[0.06]" : "border-zinc-700 bg-zinc-950/40 hover:border-zinc-500 hover:bg-zinc-800/40")}>
+            <span className={cnReport("shrink-0", done ? "text-emerald-400" : "text-zinc-400")}>{done ? <CheckCircle2 size={16} /> : icon}</span>
             <span className="min-w-0 flex-1">
                 <span className={cnReport("block text-xs font-medium truncate", done ? "text-emerald-200" : "text-zinc-300")} title={title}>{title}</span>
                 {!compact && <span className="block text-[11px] text-zinc-500 truncate">{hint}</span>}

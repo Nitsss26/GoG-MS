@@ -1,18 +1,22 @@
 "use client";
 
+import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
+import { confirmAction } from "@/lib/confirm-action";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { cn } from "@/lib/utils";
 import SendEmailButton from "@/components/email-management/SendEmailButton";
-import { Shirt, Search, Loader2, CheckCircle2, XCircle, Clock, X, History, AlertTriangle, ImagePlus, Trash2, Maximize2, RefreshCw } from "lucide-react";
+import { Shirt, Search, Loader2, CheckCircle2, XCircle, Clock, X, History, AlertTriangle, ImagePlus, Trash2, Maximize2, RefreshCw, CalendarDays, UserX } from "lucide-react";
 
 /**
  * HR / HR Executive / Founder → Full Attire. One card per submission: the photo once (group or single), then every
  * professor with their own Accept / Reject. Rejection: Dress Code reason(s) + explanation (required) + optional
- * evidence image. Saving never emails — the email is sent from Email Management → Full Attire.
+ * evidence image. Saving never emails — the email (rejections only) is sent here or from Email Management → Full Attire.
+ * Cards like Dress Code (tap the photo to see it big), date filter, and the "Not uploaded" list for the chosen date.
+ * Accept / Reject ask "Do you want to …?" first.
  */
-const dt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
+const dt = (iso?: string) => (iso ? toDmyTime(iso) : "—");
 const ST: Record<string, { l: string; c: string; I: any }> = {
     pending: { l: "Pending", c: "text-amber-300 bg-amber-500/10 border-amber-500/25", I: Clock },
     accepted: { l: "Accepted", c: "text-emerald-300 bg-emerald-500/10 border-emerald-500/25", I: CheckCircle2 },
@@ -31,16 +35,31 @@ export default function HrFullAttirePage() {
     const [reject, setReject] = useState<{ sub: any; r: any } | null>(null);
     const [hist, setHist] = useState<{ name: string; rows: any[] | null } | null>(null);
     const [zoom, setZoom] = useState("");
+    // date filter (IST) — empty = every date; the "not uploaded" list is for the chosen date (or today)
+    const todayYmd = () => new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
+    const [date, setDate] = useState("");
+    const [missing, setMissing] = useState<{ date: string; people: any[] | null; error?: string } | null>(null);
+    const [showMissing, setShowMissing] = useState(true);
 
     const load = useCallback(async () => {
         try {
-            const p = new URLSearchParams({ view: "review", status }); if (q.trim()) p.set("q", q.trim());
+            const p = new URLSearchParams({ view: "review", status }); if (q.trim()) p.set("q", q.trim()); if (date) p.set("date", date);
             const r = await fetch(`/api/full-attire?${p}`, { cache: "no-store" });
             const d = await r.json(); if (!r.ok) throw new Error(d.error || "Could not load");
             setData(d); setError("");
         } catch (e: any) { setError(e.message); }
-    }, [status, q]);
+    }, [status, q, date]);
     useEffect(() => { const t = setTimeout(load, q ? 300 : 0); return () => clearTimeout(t); }, [load, q]);
+    const loadMissing = useCallback(async () => {
+        const d = date || todayYmd();
+        setMissing({ date: d, people: null });
+        try {
+            const r = await fetch(`/api/full-attire?view=not-uploaded&date=${d}`, { cache: "no-store" });
+            const j = await r.json(); if (!r.ok) throw new Error(j.error || "Could not load");
+            setMissing({ date: d, people: j.people || [] });
+        } catch (e: any) { setMissing({ date: d, people: [], error: e.message }); }
+    }, [date]);
+    useEffect(() => { loadMissing(); }, [loadMissing]);
 
     const decide = async (reviewId: string, body: any) => {
         setBusy(reviewId); setNotice(null);
@@ -49,8 +68,12 @@ export default function HrFullAttirePage() {
             const d = await r.json().catch(() => ({}));
             if (!r.ok) { await load(); return { ok: false, error: d.error || "Could not save" }; }
             // the decided review leaves the Pending list → its Send Email button is shown in this message too
-            setNotice({ ok: true, text: d.message, reviewId, name: d.review?.professorName || "" }); await load(); return { ok: true };
+            setNotice({ ok: true, text: d.message, ...(body.action === "reject" ? { reviewId } : {}), name: d.review?.professorName || "" }); await load(); loadMissing(); return { ok: true };
         } finally { setBusy(""); }
+    };
+    const accept = async (s: any, r: any) => {
+        if (!(await confirmAction({ action: "accept", what: `${r.professorName}'s Full Attire (${s.id})` }))) return;
+        await decide(r.id, { action: "accept" });
     };
     const openHistory = async (r: any) => {
         setHist({ name: r.professorName, rows: null });
@@ -67,7 +90,7 @@ export default function HrFullAttirePage() {
             <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
                 <div>
                     <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2"><Shirt size={20} className="text-primary" /> Full Attire Management</h1>
-                    <p className="text-xs text-zinc-500 mt-0.5">Accept or reject every professor separately, then use Send Email (here or in Email Management → Full Attire).</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">Accept or reject every professor separately. For a rejection, use Send Email (here or in Email Management → Full Attire).</p>
                 </div>
                 <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-4 py-2 text-amber-200 text-xs"><b className="text-lg text-white tabular-nums mr-1" data-testid="fa-pending-count">{c?.pendingProfessors ?? "—"}</b> professor review(s) pending</div>
             </header>
@@ -80,68 +103,101 @@ export default function HrFullAttirePage() {
                 </div>
                 <div className="relative flex-1"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
                     <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search professor, submission, college or OM" className="w-full h-12 sm:h-full min-h-[44px] bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-3 text-sm text-white focus:outline-none focus:border-primary" /></div>
-                <button onClick={load} className="h-11 px-3 rounded-xl border border-zinc-800 text-zinc-300 text-xs font-bold flex items-center justify-center gap-1.5"><RefreshCw size={13} /> Refresh</button>
+                <label className="relative flex items-center" title="Show one date">
+                    <CalendarDays size={14} className="absolute left-3 text-zinc-500 pointer-events-none" />
+                    <input type="date" value={date} max={todayYmd()} onChange={e => setDate(e.target.value)} data-testid="fa-date" aria-label="Date"
+                        className="h-11 sm:h-full min-h-[44px] w-full sm:w-auto bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-3 text-sm text-white focus:outline-none focus:border-primary [color-scheme:dark]" />
+                </label>
+                {date && <button onClick={() => setDate("")} data-testid="fa-date-clear" className="h-11 px-3 rounded-xl border border-zinc-800 text-zinc-300 text-xs font-bold">All dates</button>}
+                <button onClick={() => { load(); loadMissing(); }} className="h-11 px-3 rounded-xl border border-zinc-800 text-zinc-300 text-xs font-bold flex items-center justify-center gap-1.5"><RefreshCw size={13} /> Refresh</button>
             </div>
+
+            {/* who has not uploaded Full Attire on the chosen date (today while the day runs) */}
+            {missing && (
+                <section className="rounded-2xl border border-red-500/25 bg-red-500/[0.04]" data-testid="fa-missing">
+                    <button onClick={() => setShowMissing(v => !v)} className="w-full px-4 py-3 flex flex-wrap items-center gap-2 text-left">
+                        <UserX size={16} className="text-red-300 shrink-0" />
+                        <span className="text-sm font-bold text-white">{missing.date === todayYmd() ? "Not uploaded yet today" : "Not uploaded"} · {toDmy(missing.date)}</span>
+                        <span className="text-xs text-red-200 font-black tabular-nums" data-testid="fa-missing-count">{missing.people ? missing.people.length : "…"}</span>
+                        <span className="ml-auto text-[11px] text-zinc-500">{showMissing ? "Hide" : "Show"}</span>
+                    </button>
+                    {showMissing && <div className="px-4 pb-4">
+                        {!missing.people ? <Loader2 className="animate-spin text-primary" size={16} />
+                            : missing.error ? <p className="text-xs text-red-300">{missing.error}</p>
+                                : !missing.people.length ? <p className="text-xs text-emerald-300" data-testid="fa-missing-none">Everyone has uploaded their Full Attire for this date.</p>
+                                    : <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2" data-testid="fa-missing-list">
+                                        {missing.people.map((m: any) => (
+                                            <li key={m.id} className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs min-w-0" data-testid="fa-missing-person" data-id={m.id}>
+                                                <p className="font-bold text-white [overflow-wrap:anywhere]">{m.name} <span className="text-zinc-500 font-mono font-normal">({m.id})</span> {m.role === "OM" && <span className="ml-1 px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 text-[9px] font-black">OM</span>}</p>
+                                                <p className="text-[10px] text-zinc-500 [overflow-wrap:anywhere]">{m.designation}{m.college ? ` · ${m.college}` : ""}{m.oms?.length ? ` · OM: ${m.oms.join(", ")}` : ""}</p>
+                                            </li>
+                                        ))}
+                                    </ul>}
+                        <p className="text-[10px] text-zinc-500 mt-2">OMs and the professors of every OM's colleges. Approved leave, holidays, weekly offs and staff not yet joined are left out.</p>
+                    </div>}
+                </section>
+            )}
 
             {notice && <div data-testid="fa-hr-notice" className={cn("rounded-xl border px-4 py-3 text-xs flex items-start gap-2", notice.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-red-500/30 bg-red-500/10 text-red-200")}>{notice.ok ? <CheckCircle2 size={15} className="shrink-0" /> : <AlertTriangle size={15} className="shrink-0" />}<span className="min-w-0 [overflow-wrap:anywhere]">{notice.text}</span>{notice.ok && notice.reviewId && <span className="shrink-0" data-testid="fa-notice-send"><SendEmailButton small category="full_attire" relatedRecordId={notice.reviewId} status="not_sent" label="Send Email" onDone={res => setNotice({ ok: res.ok, text: res.ok ? `${notice.name || "Professor"}: email sent.` : (res.error || "Email could not be sent.") })} /></span>}<button onClick={() => setNotice(null)} className="ml-auto shrink-0" aria-label="Close"><X size={14} /></button></div>}
             {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 text-red-200 px-4 py-3 text-xs">{error}</div>}
 
             {!data ? <div className="py-16 flex justify-center"><Loader2 className="animate-spin text-primary" /></div>
-                : !data.submissions.length ? <p className="py-16 text-center text-sm text-zinc-500">No {status === "all" ? "" : status} Full Attire submissions.</p> : (
-                    <div className="space-y-4">
+                : !data.submissions.length ? <p className="py-16 text-center text-sm text-zinc-500">No {status === "all" ? "" : status} Full Attire submissions{date ? ` on ${toDmy(date)}` : ""}.</p> : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" data-testid="fa-cards">
                         {data.submissions.map((s: any) => (
-                            <article key={s.id} className="rounded-2xl border border-zinc-800 bg-zinc-900/50 overflow-hidden" data-testid="fa-sub" data-id={s.id}>
-                                <div className="px-4 py-3 border-b border-zinc-800 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                                    <span className="font-mono font-bold text-white">{s.id}</span>
-                                    <span className="text-zinc-400">College: <span className="text-zinc-200">{s.collegeName || "—"}</span></span>
-                                    <span className="text-zinc-400">Submitted by: <span className="text-zinc-200">{s.omName}</span></span>
-                                    {s.submittedVia === "OM_GIVEN_ACCESS" && <span className="text-sky-300" data-testid="fa-via">{s.submitterRole === "HOI" ? "HOI" : "Professor"} · via OM Given Access · granted by {(s.grantedByNames || []).join(", ") || "—"}</span>}
-                                    <span className="text-zinc-400">{dt(s.submittedAt)}</span>
-                                    <span className="ml-auto text-[10px] font-black uppercase tracking-widest text-zinc-500">{s.type === "group" ? `Group · ${s.reviews.length} professors` : "Single"}</span>
+                            <article key={s.id} className="rounded-2xl border border-zinc-800 bg-zinc-900 overflow-hidden flex flex-col min-w-0" data-testid="fa-sub" data-id={s.id}>
+                                <div className="p-3 border-b border-zinc-800/60 bg-zinc-800/20 flex items-start gap-2">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-black text-white truncate">{s.type === "group" ? `Group · ${s.reviews.length} people` : (s.reviews[0]?.professorName || "—")}</p>
+                                        <p className="text-[10px] text-zinc-500 [overflow-wrap:anywhere]"><span className="font-mono">{s.id}</span> · {s.collegeName || "—"}</p>
+                                    </div>
+                                    <span className="shrink-0 text-[9px] font-black uppercase tracking-widest text-zinc-400 border border-zinc-700 rounded px-1.5 py-0.5">{s.type === "group" ? "Group" : "Single"}</span>
                                 </div>
-                                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-                                    {/* the photo — once per submission */}
-                                    <div className="p-3 bg-black/40 relative" data-testid="fa-photo-wrap">
-                                        <img src={s.imageUrl} alt={`Full attire ${s.id}`} data-testid="fa-photo" className="w-full max-h-[60vh] object-contain rounded-xl bg-black" />
-                                        <button onClick={() => setZoom(s.imageUrl)} className="absolute top-5 right-5 w-9 h-9 rounded-lg bg-black/60 text-white flex items-center justify-center" aria-label="Full screen"><Maximize2 size={15} /></button>
-                                        {s.type === "group" && <p className="text-[10px] text-zinc-400 mt-2 px-1">Standing order, left → right: {s.standingOrder.map((o: any) => `${o.position}. ${o.professorName}`).join(" · ")}</p>}
-                                        <p className="text-[10px] text-zinc-500 mt-1 px-1">Captured {dt(s.capturedAt)}</p>
-                                    </div>
-                                    {/* every professor — own decision */}
-                                    <div className="divide-y divide-zinc-800/70" data-testid="fa-profs">
-                                        {s.reviews.map((r: any) => {
-                                            const st = ST[r.status] || ST.pending;
-                                            return (
-                                                <div key={r.id} className="p-3 sm:p-4 space-y-2" data-testid="fa-review" data-id={r.id} data-prof={r.professorId}>
-                                                    <div className="flex items-start gap-2">
-                                                        {s.type === "group" && <span className="w-7 h-7 shrink-0 rounded-lg bg-zinc-800 text-zinc-200 text-xs font-black flex items-center justify-center">{r.position}</span>}
-                                                        <div className="min-w-0 flex-1"><p className="text-sm font-bold text-white [overflow-wrap:anywhere]">{r.professorName}</p><p className="text-[10px] text-zinc-500">{r.professorId}{r.collegeName ? ` · ${r.collegeName}` : ""}</p></div>
-                                                        <span className={cn("shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-black", st.c)} data-testid="fa-status"><st.I size={11} /> {st.l}</span>
-                                                    </div>
-                                                    {r.status === "pending" ? (
-                                                        <div className="grid grid-cols-2 gap-2">
-                                                            <button onClick={() => decide(r.id, { action: "accept" })} disabled={!!busy} data-testid="fa-accept" className="h-11 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 disabled:opacity-50">{busy === r.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Accept</button>
-                                                            <button onClick={() => setReject({ sub: s, r })} disabled={!!busy} data-testid="fa-reject" className="h-11 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 disabled:opacity-50"><XCircle size={14} /> Reject</button>
-                                                        </div>
-                                                    ) : r.status === "replaced" ? (
-                                                        <p className="text-[11px] text-zinc-500" data-testid="fa-replaced">The OM re-uploaded a new photo today — review the new submission instead.</p>
-                                                    ) : (
-                                                        <div className="text-[11px] text-zinc-400 space-y-0.5">
-                                                            <p>By {r.reviewedByName} ({r.reviewedByRole}) · {dt(r.reviewedAt)}</p>
-                                                            {/* email to the professor — same as Email Management → Full Attire */}
-                                                            <div className="pt-1" data-testid="fa-send-mail">
-                                                                <SendEmailButton key={`${r.id}:${r.emailStatus || "not_sent"}`} small category="full_attire" relatedRecordId={r.id} status={r.emailStatus || "not_sent"} label="Send Email"
-                                                                    onDone={res => setNotice({ ok: res.ok, text: res.ok ? `${r.professorName}: email sent.` : (res.error || "Email could not be sent.") })} />
-                                                            </div>
-                                                            {r.status === "rejected" && <p className="text-red-200 [overflow-wrap:anywhere]"><b>{r.reasonText}</b>{r.explanation ? ` — ${r.explanation}` : ""}</p>}
-                                                            {r.evidenceUrl && <a href={r.evidenceUrl} target="_blank" rel="noreferrer" className="text-emerald-300 underline">Supporting evidence</a>}
-                                                        </div>
-                                                    )}
-                                                    <button onClick={() => openHistory(r)} className="text-[11px] text-zinc-400 hover:text-white inline-flex items-center gap-1" data-testid="fa-history"><History size={12} /> View history</button>
+                                {/* the photo — tap to see it big */}
+                                <button type="button" onClick={() => setZoom(s.imageUrl)} className="relative aspect-[3/4] bg-black block w-full group" data-testid="fa-photo-wrap" aria-label="View photo full size">
+                                    <img src={s.imageUrl} alt={`Full attire ${s.id}`} data-testid="fa-photo" className="w-full h-full object-contain" />
+                                    <span className="absolute top-2 right-2 w-9 h-9 rounded-lg bg-black/60 text-white flex items-center justify-center"><Maximize2 size={15} /></span>
+                                    <span className="absolute bottom-2 left-2 text-[10px] font-bold text-white bg-black/60 px-2 py-1 rounded">{dt(s.submittedAt)}</span>
+                                </button>
+                                <div className="px-3 py-2 border-b border-zinc-800 text-[11px] space-y-0.5">
+                                    <p className="text-zinc-400">Submitted by: <span className="text-zinc-200">{s.omName}</span></p>
+                                    {s.submittedVia === "OM_GIVEN_ACCESS" && <p className="text-sky-300" data-testid="fa-via">{s.submitterRole === "HOI" ? "HOI" : "Professor"} · via OM Given Access · granted by {(s.grantedByNames || []).join(", ") || "—"}</p>}
+                                    {s.type === "group" && <p className="text-zinc-500">Left → right: {s.standingOrder.map((o: any) => `${o.position}. ${o.professorName}`).join(" · ")}</p>}
+                                </div>
+                                {/* every person — own decision */}
+                                <div className="divide-y divide-zinc-800/70 flex-1" data-testid="fa-profs">
+                                    {s.reviews.map((r: any) => {
+                                        const st = ST[r.status] || ST.pending;
+                                        return (
+                                            <div key={r.id} className="p-3 space-y-2" data-testid="fa-review" data-id={r.id} data-prof={r.professorId}>
+                                                <div className="flex items-start gap-2">
+                                                    {s.type === "group" && <span className="w-6 h-6 shrink-0 rounded-md bg-zinc-800 text-zinc-200 text-[11px] font-black flex items-center justify-center">{r.position}</span>}
+                                                    <div className="min-w-0 flex-1"><p className="text-sm font-bold text-white [overflow-wrap:anywhere]">{r.professorName}</p><p className="text-[10px] text-zinc-500">{r.professorId}{r.collegeName ? ` · ${r.collegeName}` : ""}</p></div>
+                                                    <span className={cn("shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-black", st.c)} data-testid="fa-status"><st.I size={11} /> {st.l}</span>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
+                                                {r.status === "pending" ? (
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <button onClick={() => setReject({ sub: s, r })} disabled={!!busy} data-testid="fa-reject" className="h-10 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 disabled:opacity-50"><XCircle size={14} /> Reject</button>
+                                                        <button onClick={() => accept(s, r)} disabled={!!busy} data-testid="fa-accept" className="h-10 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 disabled:opacity-50">{busy === r.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Accept</button>
+                                                    </div>
+                                                ) : r.status === "replaced" ? (
+                                                    <p className="text-[11px] text-zinc-500" data-testid="fa-replaced">The OM re-uploaded a new photo today — review the new submission instead.</p>
+                                                ) : (
+                                                    <div className="text-[11px] text-zinc-400 space-y-0.5">
+                                                        <p>By {r.reviewedByName} ({r.reviewedByRole}) · {dt(r.reviewedAt)}</p>
+                                                        {r.status === "rejected" && <p className="text-red-200 [overflow-wrap:anywhere]"><b>{r.reasonText}</b>{r.explanation ? ` — ${r.explanation}` : ""}</p>}
+                                                        {r.evidenceUrl && <a href={r.evidenceUrl} target="_blank" rel="noreferrer" className="text-emerald-300 underline">Supporting evidence</a>}
+                                                        {/* email only for a rejection (same as Email Management → Full Attire) */}
+                                                        {r.status === "rejected" && <div className="pt-1" data-testid="fa-send-mail">
+                                                            <SendEmailButton key={`${r.id}:${r.emailStatus || "not_sent"}`} small category="full_attire" relatedRecordId={r.id} status={r.emailStatus || "not_sent"} label="Send Email"
+                                                                onDone={res => setNotice({ ok: res.ok, text: res.ok ? `${r.professorName}: email sent.` : (res.error || "Email could not be sent.") })} />
+                                                        </div>}
+                                                    </div>
+                                                )}
+                                                <button onClick={() => openHistory(r)} className="text-[11px] text-zinc-400 hover:text-white inline-flex items-center gap-1" data-testid="fa-history"><History size={12} /> View history</button>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </article>
                         ))}
@@ -172,7 +228,7 @@ export default function HrFullAttirePage() {
                 </div>
             )}
 
-            {zoom && <div className="fixed inset-0 z-[140] bg-black flex items-center justify-center p-2" onClick={() => setZoom("")}><img src={zoom} alt="" className="max-w-full max-h-full object-contain" /><button className="absolute top-3 right-3 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center" aria-label="Close"><X size={18} /></button></div>}
+            {zoom && <div className="fixed inset-0 z-[140] bg-black flex items-center justify-center p-2" onClick={() => setZoom("")} data-testid="fa-zoom"><img src={zoom} alt="" className="max-w-full max-h-full object-contain" /><button className="absolute top-3 right-3 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center" aria-label="Close"><X size={18} /></button></div>}
         </div>
     );
 }
@@ -197,6 +253,7 @@ function RejectDialog({ sub, r, reasons, onCancel, onConfirm }: { sub: any; r: a
         if (sel.includes("Other") && other.trim().length < 2) return setErr('Please write the reason for "Other".');
         if (explanation.trim().length < 5) return setErr("Write a detailed explanation (at least 5 characters).");
         if (uploading) return setErr("Please wait — the image is still uploading.");
+        if (!(await confirmAction({ action: "reject", what: `${r.professorName}'s Full Attire (${sub.id})` }))) return;
         setSaving(true); setErr("");
         const res = await onConfirm({ reasons: sel, other: other.trim(), explanation: explanation.trim(), ...(evidence ? { evidenceUrl: evidence.url } : {}) });
         setSaving(false);

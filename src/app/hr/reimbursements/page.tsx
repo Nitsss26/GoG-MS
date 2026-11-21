@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmy as toDmy } from "@/lib/date-display";
 import { useAuth, ReimbursementClaim } from "@/context/AuthContext";
 import { Receipt, Clock, CheckCircle2, XCircle, Eye, X, Filter, User, Mail, Phone, FileText, Calendar, ExternalLink, Download, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -99,7 +101,9 @@ function HRReimbursementsPageInner() {
     const rejectedAmount = monthAll.filter(r => r.status === "Rejected").reduce((a, r) => a + r.amount, 0);
     const rejectedCount = monthAll.filter(r => r.status === "Rejected").length;
 
-    const handleAction = (id: string, status: ReimbursementClaim["status"], reasonVal?: string, remarksVal?: string, amountVal?: number) => {
+    const handleAction = async (id: string, status: ReimbursementClaim["status"], reasonVal?: string, remarksVal?: string, amountVal?: number) => {
+        const act = /^Rejected/.test(String(status)) ? "reject" : /Payment Done/.test(String(status)) ? "mark as paid" : "approve";
+        if (!(await confirmAction({ action: act, what: "this reimbursement claim" }))) return;
         updateReimbursementStatus(id, status, reasonVal, remarksVal, amountVal);
         setActionModal(null);
         setReason("");
@@ -200,7 +204,7 @@ function HRReimbursementsPageInner() {
                                 r.amount,
                                 `"${(r.type || '').replace(/"/g, '""')}"`,
                                 `"${(r.status || '').replace(/"/g, '""')}"`,
-                                `"${(r.date || '').replace(/"/g, '""')}"`,
+                                `"${toDmy(r.date || '').replace(/"/g, '""')}"`,
                                 `"${(r.monthYear || '').replace(/"/g, '""')}"`,
                                 `"${(r.description || '').replace(/"/g, '""')}"`,
                                 `"${(r.hrRemarks || '').replace(/"/g, '""')}"`,
@@ -272,7 +276,7 @@ function HRReimbursementsPageInner() {
                                                 <span className="text-sm font-bold text-white">₹{r.amount.toLocaleString()}</span>
                                             </div>
                                             <p className="text-[10px] text-zinc-400 line-clamp-2 leading-relaxed">{r.description}</p>
-                                            <p className="text-[9px] text-zinc-600">{r.monthYear} · Submitted {r.date}</p>
+                                            <p className="text-[9px] text-zinc-600">{r.monthYear} · Submitted {toDmy(r.date)}</p>
                                         </div>
 
                                         {/* Remarks */}
@@ -352,7 +356,7 @@ function HRReimbursementsPageInner() {
                                     <div className="flex items-center gap-2"><User size={12} className="text-zinc-500" /><span className="text-white font-bold">{reviewClaim.employeeName}</span></div>
                                     <div className="flex items-center gap-2"><Mail size={12} className="text-zinc-500" /><span className="text-zinc-400">{reviewClaim.email}</span></div>
                                     <div className="flex items-center gap-2"><Phone size={12} className="text-zinc-500" /><span className="text-zinc-400">{reviewClaim.phone}</span></div>
-                                    <div className="flex items-center gap-2"><Calendar size={12} className="text-zinc-500" /><span className="text-zinc-400">{reviewClaim.date}</span></div>
+                                    <div className="flex items-center gap-2"><Calendar size={12} className="text-zinc-500" /><span className="text-zinc-400">{toDmy(reviewClaim.date)}</span></div>
                                 </div>
                             </div>
 

@@ -1,3 +1,4 @@
+import { dmy as toDmy } from "@/lib/date-display";
 /**
  * Academic workflow statuses, labels and role groups.
  * Shared by the API (server) and the pages (client) — keep this file free of server-only imports.
@@ -99,19 +100,21 @@ export const FINAL_PENDING_CLASS_STATUSES: string[] = ["PENDING_CL_CH", "PENDING
 /** Roles that can do the final verification */
 export const FINAL_VERIFIER_ROLES = ["CURRICULUM_LEAD", "CURRICULUM_HEAD", "HOI", "AD"];
 
-/** "Final Verification Done by CL (Rahul Sharma) on 09 Oct 2026 at 11:30 AM" — from the stored audit fields */
+/** "Final Verification Done by CL (Rahul Sharma) on 09/10/2026 at 11:30 AM" — from the stored audit fields */
 export function finalVerificationText(record: any, timeZone = "Asia/Kolkata"): string {
     const f = record?.finalVerification?.status === "VERIFIED" ? record.finalVerification
         : record?.hoiVerification?.status === "VERIFIED" ? record.hoiVerification : null; // older records: HOI did the final step
     if (!f?.at) return "";
     const d = new Date(f.at);
-    const date = d.toLocaleDateString("en-GB", { timeZone, day: "2-digit", month: "short", year: "numeric" });
+    const date = toDmy(d, timeZone);
     const time = d.toLocaleTimeString("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true });
     return `Final Verification Done by ${roleShort(f.role)}${f.byName ? ` (${f.byName})` : ""} on ${date} at ${time}`;
 }
 
 /** Record states in which the professor may (re)submit the class record */
 export const PROFESSOR_EDITABLE_CLASS_STATUSES: string[] = ["PENDING_PROFESSOR", "OM_REVERTED", "CL_CH_REVERTED"];
+/** Submitted, not yet verified by the OM → the professor may still edit the report (it stays with the OM) */
+export const PROFESSOR_EDIT_BEFORE_OM_STATUS = "PENDING_OM";
 
 /**
  * Status of a class record, including records submitted before the pipeline existed.

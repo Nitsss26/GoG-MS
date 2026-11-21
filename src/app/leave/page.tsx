@@ -1,5 +1,6 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
 import { useState, useRef } from "react";
 import { useAuth, Employee } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
@@ -11,7 +12,7 @@ const formatDate = (dateStr: string) => {
     if (!dateStr) return "";
     const [year, month, day] = dateStr.split("-");
     if (!year || !month || !day) return dateStr;
-    return `${day}-${month}-${year}`;
+    return `${day}/${month}/${year}`;
 };
 
 export default function LeavePage() {
@@ -233,7 +234,7 @@ export default function LeavePage() {
                                                 </span>
                                                 {(user.role === "HR" || user.role === "FOUNDER") && req.status === "Pending HOI Approval" && (
                                                     <button 
-                                                        onClick={() => approveLeave(req.id, undefined, true)}
+                                                        onClick={async () => { if (await confirmAction({ action: "approve", what: `${req.employeeName}'s leave as HOI` })) approveLeave(req.id, undefined, true); }}
                                                         className="p-1 rounded bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500 hover:text-white transition-all border border-indigo-500/20 group/btn"
                                                         title="Approve as HOI"
                                                     >
@@ -464,6 +465,7 @@ export default function LeavePage() {
                                 <button 
                                     disabled={isSubmittingDecision || (decisionModal.type === 'reject' && !remarks.trim())}
                                     onClick={async () => {
+                                        if (!(await confirmAction({ action: decisionModal.type, what: `${decisionModal.leaveName}'s leave` }))) return;
                                         setIsSubmittingDecision(true);
                                         try {
                                             if (decisionModal.type === 'approve') {

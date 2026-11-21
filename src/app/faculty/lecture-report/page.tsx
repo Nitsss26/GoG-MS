@@ -1,5 +1,6 @@
 "use client";
 
+import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
 import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
@@ -7,7 +8,7 @@ import {
     FileText, Calendar, Users, Camera, Mic, AlertTriangle, CheckCircle2, BookOpen, Clock, X,
     Search, RotateCcw, Download, Loader2, ChevronDown, BarChart3, XCircle, Link2, Image as ImageIcon,
     Eye, Upload, ClipboardList, MoreVertical, Sparkles, CalendarDays, Info, ExternalLink, Plus,
-    Building2,
+    Building2, Pencil,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { ClassRecordDetails, ClassRecordActions } from "@/components/academic/ClassRecordDetails";
@@ -71,8 +72,8 @@ type Row = ReportEntry & { [key: string]: any };
 
 const todayYmd = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 const shiftDays = (ymd: string, n: number) => { const d = new Date(ymd + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-const fmtShort = (ymd?: string) => ymd ? new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "";
-const dmy = (ymd: string) => ymd.split("-").reverse().join("-");
+const fmtShort = (ymd?: string) => ymd ? toDmy(ymd) : "";
+const dmy = (ymd: string) => toDmy(ymd);
 
 export default function LectureReportPage() {
     const { user } = useAuth();
@@ -123,7 +124,7 @@ export default function LectureReportPage() {
         if (!r) return;
         deepLink.current = null;
         const st = r.pipelineStatus || "PENDING_PROFESSOR";
-        if (r.sprintEntryId && (st === "PENDING_PROFESSOR" || st === "OM_REVERTED" || st === "CL_CH_REVERTED")) setReportFor(r);
+        if (r.sprintEntryId && (st === "PENDING_PROFESSOR" || st === "OM_REVERTED" || st === "CL_CH_REVERTED" || st === "PENDING_OM")) setReportFor(r);
     }, [reports, loading]);
 
     useEffect(() => { if (user?.id) fetchReports(); }, [user, range, pollingCount]);
@@ -241,6 +242,8 @@ export default function LectureReportPage() {
     const submitHref = (r: Row) => `/faculty/lecture-report?date=${r.date}&lecture=${r.lectureNumber}`;
     const openForm = (r: Row) => { setMenuFor(null); setDrawerKey(null); setReportFor(r); };
     const isReverted = (r: Row) => ["OM_REVERTED", "CL_CH_REVERTED"].includes(r.pipelineStatus || "") && !!r.sprintEntryId;
+    // submitted, OM has not verified yet → can still be edited
+    const canEditPending = (r: Row) => r.pipelineStatus === "PENDING_OM" && !!r.sprintEntryId && !!r.report;
     const canSubmit = (r: Row) => (r.pipelineStatus || "PENDING_PROFESSOR") === "PENDING_PROFESSOR" && !!r.sprintEntryId && (r.classEnded ?? true) && !isRecorded(r);
     // "+ Add Report": the oldest class still waiting for its report, otherwise My Lectures
     const firstPending = [...reports].sort((a, b) => (a.date + (a.timeStart || "")).localeCompare(b.date + (b.timeStart || ""))).find(r => canSubmit(r) || isReverted(r));
@@ -282,9 +285,10 @@ export default function LectureReportPage() {
                             <span className="min-w-0">
                                 <span className="block text-[9.5px] font-bold uppercase tracking-wider text-zinc-500 leading-3">College</span>
                                 <select value={colFilter} onChange={e => setColFilter(e.target.value)} data-testid="college-filter"
-                                    className="block max-w-[200px] bg-transparent text-xs font-bold text-white focus:outline-none [color-scheme:dark] cursor-pointer">
-                                    <option value="ALL">All colleges</option>
-                                    {colleges.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    className="block max-w-[200px] bg-zinc-900 text-xs font-bold text-white focus:outline-none [color-scheme:dark] cursor-pointer">
+                                    {/* the open list uses these colours (Windows shows a white list otherwise) */}
+                                    <option value="ALL" className="bg-zinc-900 text-white">All colleges</option>
+                                    {colleges.map(c => <option key={c.id} value={c.id} className="bg-zinc-900 text-white">{c.name}</option>)}
                                 </select>
                             </span>
                         </label>
@@ -372,6 +376,7 @@ export default function LectureReportPage() {
                         <>
                             {isReverted(r) ? <button type="button" onClick={() => openForm(r)} data-testid="resubmit-report" title="Reverted to you — correct and re-submit" className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500 hover:bg-amber-400 text-zinc-950 text-[11px] font-bold whitespace-nowrap"><RotateCcw size={13} /> Fix &amp; Re-submit</button>
                                 : canSubmit(r) ? <button type="button" onClick={() => openForm(r)} data-testid="submit-report" className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold whitespace-nowrap"><Upload size={13} /> Upload Report</button>
+                                    : canEditPending(r) ? <button type="button" onClick={() => openForm(r)} data-testid="edit-report" title="Not verified by the OM yet — you can still edit it" className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-sky-500/40 bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold whitespace-nowrap"><Pencil size={13} /> Edit Report</button>
                                     : row.recorded ? <RowButton icon={Eye} onClick={() => setDrawerKey(row.key)} testId="view-record">View Report</RowButton>
                                         : <RowButton icon={Info} onClick={() => setDrawerKey(row.key)} testId="view-plan">View Plan</RowButton>}
                             <RowButton tone="ghost" icon={MoreVertical} title="More actions" testId="row-menu" onClick={(e) => openMenu(e, row.key)} />
@@ -407,6 +412,7 @@ export default function LectureReportPage() {
                             {item(Info, isRecorded(open) ? "View class record" : "Lecture details", () => setDrawerKey(keyOf(open)))}
                             {canSubmit(open) && item(Upload, "Upload report", () => openForm(open))}
                             {isReverted(open) && item(RotateCcw, "Fix & re-submit report", () => openForm(open))}
+                            {canEditPending(open) && item(Pencil, "Edit report (before OM verification)", () => openForm(open))}
                             {open.date <= today && item(ClipboardList, x.assignment?.hasAssignment ? "Update assignment" : "Add assignment", () => setAsgFor(open))}
                             {x.recordingUrl && item(Sparkles, x.aiAnalysisAt ? "AI insights" : "AI insights (processing…)", () => setAiInsightReport({ ...x, lectureNumber: open.lectureNumber, courseName: open.courseName }), !x.aiAnalysisAt)}
                             {x.lectureNotes?.notesUrl && item(ExternalLink, "Open notes", () => window.open(x.lectureNotes.notesUrl, "_blank", "noopener"))}
@@ -426,6 +432,7 @@ export default function LectureReportPage() {
                     return (<>
                         {isReverted(r) && <button type="button" onClick={() => openForm(r)} className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500 hover:bg-amber-400 text-zinc-950 text-[11px] font-bold" data-testid="drawer-resubmit"><RotateCcw size={13} /> Fix &amp; Re-submit</button>}
                         {canSubmit(r) && <button type="button" onClick={() => openForm(r)} className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold" data-testid="drawer-submit"><Upload size={13} /> Upload Report</button>}
+                        {canEditPending(r) && <button type="button" onClick={() => openForm(r)} className="h-7 px-2.5 inline-flex items-center gap-1 rounded-lg border border-sky-500/40 bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold" data-testid="drawer-edit"><Pencil size={13} /> Edit Report</button>}
                         {r.date <= today && <RowButton icon={ClipboardList} onClick={() => setAsgFor(r)} testId="drawer-assignment">{x.assignment?.hasAssignment ? "Update Assignment" : "Upload Assignment"}</RowButton>}
                         {x.recordingUrl && <RowButton icon={Sparkles} disabled={!x.aiAnalysisAt} onClick={() => setAiInsightReport({ ...x, lectureNumber: r.lectureNumber, courseName: r.courseName })}>{x.aiAnalysisAt ? "AI Insights" : "AI processing…"}</RowButton>}
                         <RowButton icon={CalendarDays} onClick={() => { window.location.href = `/academic/weekly-calendar?week=${r.date}`; }}>Weekly Calendar</RowButton>
@@ -641,7 +648,7 @@ export default function LectureReportPage() {
                             {/* Metadata */}
                             <div className="pt-6 border-t border-zinc-800 flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-zinc-600">
                                 <span>Engine: Gemini 1.5 Flash</span>
-                                <span>Analyzed: {aiInsightReport.aiAnalysisAt ? new Date(aiInsightReport.aiAnalysisAt).toLocaleString() : "N/A"}</span>
+                                <span>Analyzed: {aiInsightReport.aiAnalysisAt ? toDmyTime(aiInsightReport.aiAnalysisAt) : "N/A"}</span>
                             </div>
                         </div>
                     </div>

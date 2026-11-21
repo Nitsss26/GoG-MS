@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
+import { createContext, useContext, useState } from "react";
 import {
     CheckCircle2, RotateCcw, Users, FileText, Link2, Image as ImageIcon, ClipboardList, Clock, Flag,
     History, ShieldCheck, Send, AlertTriangle, RefreshCw, ExternalLink,
@@ -12,18 +13,18 @@ import { CLASS_STATUS_LABEL, CLASS_STATUS_STYLE, roleShort, PROFESSOR_ROLES, CL_
 const fmt = (iso?: string) => {
     if (!iso) return "";
     const d = new Date(iso);
-    return isNaN(d.getTime()) ? iso : d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+    return isNaN(d.getTime()) ? iso : toDmyTime(d);
 };
 /** Display only: "02 Oct 2026 · 01:40 PM" */
 const fmtLong = (iso?: string) => {
     if (!iso) return "";
     const d = new Date(iso);
     if (isNaN(d.getTime())) return iso;
-    const date = d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
+    const date = toDmy(d);
     const time = d.toLocaleTimeString("en-US", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true });
     return `${date} · ${time}`;
 };
-const dmy = (s?: string) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s.split("-").reverse().join("-") : s || "");
+const dmy = (s?: string) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? toDmy(s) : s || "");
 /** Display only: "13:05" -> "01:05 PM" */
 export const to12h = (t?: string) => {
     if (!t || !/^\d{1,2}:\d{2}/.test(t)) return t || "";
@@ -57,8 +58,16 @@ const TONES: Record<string, string> = {
     blue: "bg-blue-500/15 border-blue-500/30 text-blue-300",
     zinc: "bg-zinc-800 border-zinc-700 text-zinc-300",
 };
+/** plain look: grey tile, only the icon keeps a soft colour */
+const SOFT_TONES: Record<string, string> = {
+    violet: "text-violet-300/90", emerald: "text-emerald-300/90", teal: "text-teal-300/90", amber: "text-amber-300/90",
+    sky: "text-sky-300/90", rose: "text-rose-300/90", blue: "text-blue-300/90", zinc: "text-zinc-300",
+};
+/** "plain" look (OM / HOI / CL / CH / AD): neutral grey icons and cards instead of the coloured ones */
+const PlainCtx = createContext(false);
 function IconTile({ tone, children, size = "md" }: { tone: string; children: React.ReactNode; size?: "md" | "lg" }) {
-    return <span className={`shrink-0 rounded-xl border flex items-center justify-center ${size === "lg" ? "w-10 h-10" : "w-9 h-9"} ${TONES[tone] || TONES.zinc}`}>{children}</span>;
+    const plain = useContext(PlainCtx);
+    return <span className={`shrink-0 rounded-xl border flex items-center justify-center ${size === "lg" ? "w-10 h-10" : "w-9 h-9"} ${plain ? `bg-zinc-800 border-zinc-700 ${SOFT_TONES[tone] || SOFT_TONES.zinc}` : (TONES[tone] || TONES.zinc)}`}>{children}</span>;
 }
 
 function Field({ label, icon, tone, children }: { label: string; icon: React.ReactNode; tone: string; children: React.ReactNode }) {
@@ -74,12 +83,14 @@ function Field({ label, icon, tone, children }: { label: string; icon: React.Rea
 }
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-    return <div className={`relative overflow-hidden rounded-2xl border border-emerald-500/10 bg-gradient-to-b from-[#0d1714] to-[#0a100e] p-4 sm:p-5 min-w-0 ${className}`}>{children}</div>;
+    const plain = useContext(PlainCtx);
+    return <div className={`relative overflow-hidden rounded-2xl border p-4 sm:p-5 min-w-0 ${plain ? "border-zinc-800 bg-zinc-900/60" : "border-emerald-500/10 bg-gradient-to-b from-[#0d1714] to-[#0a100e]"} ${className}`}>{children}</div>;
 }
 
 function CardHead({ icon, title, tone, right }: { icon: React.ReactNode; title: string; tone: string; right?: React.ReactNode }) {
+    const plain = useContext(PlainCtx);
     return (
-        <div className="relative flex items-center justify-between gap-2 mb-4">
+        <div className={`relative flex items-center justify-between gap-2 mb-4 ${plain ? "-mx-4 -mt-4 sm:-mx-5 sm:-mt-5 px-4 sm:px-5 py-3 border-b border-zinc-800 bg-zinc-800/20" : ""}`}>
             <div className="flex items-center gap-3 min-w-0">
                 <IconTile tone={tone}>{icon}</IconTile>
                 <h3 className="text-[15px] font-bold text-white truncate">{title}</h3>
@@ -94,13 +105,14 @@ function Pill({ tone, children }: { tone: string; children: React.ReactNode }) {
 }
 
 function AttendanceRing({ present, total }: { present: number; total: number }) {
+    const plain = useContext(PlainCtx);
     const r = 40, c = 2 * Math.PI * r;
     const pct = total ? Math.min(100, (present / total) * 100) : 0;
     return (
         <div className="relative w-[104px] h-[104px] shrink-0">
             <svg viewBox="0 0 104 104" className="w-full h-full -rotate-90">
                 <circle cx="52" cy="52" r={r} fill="none" strokeWidth="8" className="stroke-zinc-800" />
-                <circle cx="52" cy="52" r={r} fill="none" strokeWidth="8" strokeLinecap="round" className="stroke-emerald-400 drop-shadow-[0_0_6px_rgba(52,211,153,0.6)]" strokeDasharray={c} strokeDashoffset={c - (c * pct) / 100} />
+                <circle cx="52" cy="52" r={r} fill="none" strokeWidth="8" strokeLinecap="round" className={plain ? "stroke-emerald-500" : "stroke-emerald-400 drop-shadow-[0_0_6px_rgba(52,211,153,0.6)]"} strokeDasharray={c} strokeDashoffset={c - (c * pct) / 100} />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
                 <span className="text-2xl font-black text-white">{total ? present : "—"}</span>
@@ -170,8 +182,16 @@ function finalStage(record: any) {
 const DOT_COLORS = ["bg-emerald-400", "bg-violet-400", "bg-amber-400", "bg-sky-400", "bg-fuchsia-400"];
 const AUDIT_PREVIEW = 3; // shown on small screens before "View All"; on wide screens the card is cut to the height of Verification Status
 
-/** Complete class record: details, notes, assignment, verification stages, flags and history */
-export function ClassRecordDetails({ record }: { record: any }) {
+/**
+ * Complete class record: details, notes, assignment, verification stages, flags and history.
+ * plain — neutral (less colourful) look; hideOverview — leave out the title block and the details grid
+ * (when the page around it already shows the lecture information), only "Submitted at" is kept.
+ */
+export function ClassRecordDetails({ record, plain = false, hideOverview = false }: { record: any; plain?: boolean; hideOverview?: boolean }) {
+    return <PlainCtx.Provider value={plain}><ClassRecordBody record={record} plain={plain} hideOverview={hideOverview} /></PlainCtx.Provider>;
+}
+
+function ClassRecordBody({ record, plain, hideOverview }: { record: any; plain: boolean; hideOverview: boolean }) {
     const [showAllSnaps, setShowAllSnaps] = useState(false);
     const [showAllAudit, setShowAllAudit] = useState(false);
     const notesLink = record.lectureNotes?.notesUrl;
@@ -195,19 +215,22 @@ export function ClassRecordDetails({ record }: { record: any }) {
 
     return (
         <div className="@container space-y-4" data-testid="class-record-details">
+            {hideOverview ? (
+                <p className="text-xs text-zinc-400" data-testid="crd-submitted">Submitted at: <span className="text-zinc-200 font-semibold">{record.submittedAt ? `${fmtLong(record.submittedAt)}${record.submissionCount > 1 ? ` (submission ${record.submissionCount})` : ""}` : "Not yet"}</span></p>
+            ) : <>
             {/* Header */}
-            <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-gradient-to-r from-emerald-950/70 via-[#0b1713] to-[#0a100e] p-4 sm:p-5">
-                <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_45%_120%_at_90%_50%,rgba(16,185,129,0.18),transparent_70%)]" aria-hidden />
-                <BookOpen aria-hidden size={120} strokeWidth={1} className="absolute -right-4 -bottom-8 text-emerald-500/10 hidden @xl:block" />
+            <div className={`relative overflow-hidden rounded-2xl border p-4 sm:p-5 ${plain ? "border-zinc-800 bg-zinc-900/60" : "border-emerald-500/20 bg-gradient-to-r from-emerald-950/70 via-[#0b1713] to-[#0a100e]"}`}>
+                {!plain && <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_45%_120%_at_90%_50%,rgba(16,185,129,0.18),transparent_70%)]" aria-hidden />}
+                {!plain && <BookOpen aria-hidden size={120} strokeWidth={1} className="absolute -right-4 -bottom-8 text-emerald-500/10 hidden @xl:block" />}
                 <div className="relative flex items-center gap-4 min-w-0">
-                    <span className="w-12 h-12 @md:w-14 @md:h-14 shrink-0 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 flex items-center justify-center shadow-[0_0_24px_-6px_rgba(16,185,129,0.7)]"><BookOpen size={26} /></span>
+                    <span className={`w-12 h-12 @md:w-14 @md:h-14 shrink-0 rounded-2xl border flex items-center justify-center ${plain ? "border-zinc-700 bg-zinc-800 text-emerald-300/90" : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 shadow-[0_0_24px_-6px_rgba(16,185,129,0.7)]"}`}><BookOpen size={26} /></span>
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2.5">
                             <h2 className="text-lg sm:text-xl font-black text-white leading-tight [overflow-wrap:anywhere]">{record.courseName || "Class"}{record.subjectCode ? ` (${record.subjectCode})` : ""}</h2>
                             <span className="max-w-full [&_[data-testid=class-status]]:whitespace-normal"><ClassStatusBadge status={record.pipelineStatus} /></span>
                         </div>
                         {subLine.length > 0 && (
-                            <p className="mt-1.5 text-sm text-emerald-300/90 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+                            <p className={`mt-1.5 text-sm flex flex-wrap items-center gap-x-2.5 gap-y-0.5 ${plain ? "text-zinc-400" : "text-emerald-300/90"}`}>
                                 {subLine.map((s, i) => <span key={i} className="inline-flex items-center gap-2.5">{i > 0 && <span className="w-px h-3.5 bg-emerald-500/30" />}{s}</span>)}
                             </p>
                         )}
@@ -216,7 +239,7 @@ export function ClassRecordDetails({ record }: { record: any }) {
             </div>
 
             {/* Details */}
-            <div className="rounded-2xl border border-emerald-500/10 bg-[#0b1210] overflow-hidden">
+            <div className={`rounded-2xl border overflow-hidden ${plain ? "border-zinc-800 bg-zinc-900/60" : "border-emerald-500/10 bg-[#0b1210]"}`}>
                 <div className="grid grid-cols-1 @md:grid-cols-2 @3xl:grid-cols-4 divide-white/[0.05] [&>*]:border-white/[0.05] [&>*]:border-b @3xl:[&>*:nth-last-child(-n+4)]:border-b-0">
                     <Field label="Professor" tone="violet" icon={<Users size={16} />}>{record.facultyName}</Field>
                     <Field label="College" tone="emerald" icon={<Building2 size={16} />}>{record.collegeName || record.college}</Field>
@@ -232,11 +255,32 @@ export function ClassRecordDetails({ record }: { record: any }) {
                     <Field label="Submitted At" tone="emerald" icon={<CalendarCheck size={16} />}>{record.submittedAt ? `${fmtLong(record.submittedAt)}${record.submissionCount > 1 ? ` (submission ${record.submissionCount})` : ""}` : "Not yet"}</Field>
                 </div>
             </div>
+            </>}
 
+            {/* plain look: every card (Attendance … Checklist) in one grid of narrow cards */}
+            <div className={plain ? "grid grid-cols-1 @md:grid-cols-2 @5xl:grid-cols-3 gap-4" : "space-y-4"} data-testid="crd-cards">
             {/* Attendance / Notes / Snapshots */}
-            <div className="grid grid-cols-1 @2xl:grid-cols-2 @4xl:grid-cols-[1fr_1fr_1.15fr] gap-4">
+            <div className={plain ? "contents" : "grid grid-cols-1 gap-4 @2xl:grid-cols-2 @4xl:grid-cols-[1fr_1fr_1.15fr]"}>
                 <Card>
                     <CardHead icon={<Users size={16} />} title="Attendance" tone="emerald" />
+                    {plain ? (
+                        <div data-testid="att-cards">
+                            <div className="flex flex-col items-center text-center gap-2">
+                                <AttendanceRing present={present} total={total} />
+                                <div className="min-w-0">
+                                    <p className="text-sm font-bold text-white leading-snug">{total ? <>{present} present <span className="whitespace-nowrap">out of {total}</span></> : "Not entered"}</p>
+                                    {pct && <p className="text-xs text-zinc-400 mt-0.5">{pct}% Attendance</p>}
+                                </div>
+                            </div>
+                            <div className="mt-4 -mx-4 sm:-mx-5 px-4 sm:px-5 pt-3 border-t border-zinc-800 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[12px]" data-testid="att-details">
+                                <span className="text-zinc-500">Present</span><span className="text-zinc-200 font-semibold tabular-nums">{total ? present : "—"}</span>
+                                <span className="text-zinc-500">Total Students</span><span className="text-zinc-200 font-semibold tabular-nums">{total || "—"}</span>
+                                <span className="text-zinc-500">Entry (OM)</span><span className={record.actualInTime ? "text-zinc-200 font-semibold tabular-nums" : "text-zinc-500"} data-testid="time-entry">{to12h(record.actualInTime) || "Not marked"}</span>
+                                <span className="text-zinc-500">Exit (OM)</span><span className={record.actualOutTime ? "text-zinc-200 font-semibold tabular-nums" : "text-zinc-500"} data-testid="time-exit">{to12h(record.actualOutTime) || "Not marked"}</span>
+                                {record.profClockIn && <><span className="text-zinc-500">Clock-in / out</span><span className="text-zinc-300 tabular-nums">{to12h(record.profClockIn)} – {to12h(record.profClockOut) || "—"}</span></>}
+                            </div>
+                        </div>
+                    ) : <>
                     <div className="flex items-center gap-4">
                         <AttendanceRing present={present} total={total} />
                         <div className="min-w-0">
@@ -251,12 +295,13 @@ export function ClassRecordDetails({ record }: { record: any }) {
                             <TimeTile kind="Exit" value={record.actualOutTime} />
                         </div>
                     </div>
+                    </>}
                     <div className="mt-3 space-y-1">
                         {record.reasonForLessAttendance && <p className="text-[11px] text-zinc-400">Low attendance reason: {record.reasonForLessAttendance}</p>}
                         {(record.omCheck?.actualStart || record.omCheck?.actualEnd) && (
                             <p className="text-[11px] text-zinc-300" data-testid="om-actual">Actual class: <span className="font-bold tabular-nums">{to12h(record.omCheck.actualStart) || "—"} – {to12h(record.omCheck.actualEnd) || "—"}</span></p>
                         )}
-                        {record.profClockIn && <p className="text-[11px] text-zinc-400">Professor clock-in / out: <span className="tabular-nums">{to12h(record.profClockIn)} – {to12h(record.profClockOut) || "—"}</span></p>}
+                        {record.profClockIn && !plain && <p className="text-[11px] text-zinc-400">Professor clock-in / out: <span className="tabular-nums">{to12h(record.profClockIn)} – {to12h(record.profClockOut) || "—"}</span></p>}
                         {record.isLate && <p className="text-[11px] text-amber-400" data-testid="om-delay-info">{record.omCheck?.delayMinutes ? `Late entry ${record.omCheck.delayMinutes} min` : "Late"}{record.remarksWhyLate ? `: ${record.remarksWhyLate}` : ""}</p>}
                         {record.omCheck?.isEarlyExit && <p className="text-[11px] text-amber-400" data-testid="om-early-info">Early exit {record.omCheck.earlyExitMinutes} min{record.omCheck.earlyExitReason ? `: ${record.omCheck.earlyExitReason}` : ""}</p>}
                         {record.omCheck?.remarks && <p className="text-[11px] text-zinc-300">OM remarks: {record.omCheck.remarks}</p>}
@@ -306,7 +351,7 @@ export function ClassRecordDetails({ record }: { record: any }) {
                     )}
                 </Card>
 
-                <Card className="@2xl:col-span-2 @4xl:col-span-1">
+                <Card className={plain ? "" : "@2xl:col-span-2 @4xl:col-span-1"}>
                     <CardHead icon={<ImageIcon size={16} />} title="Class Snapshots" tone="emerald"
                         right={snapshots.length > 0 ? <Pill tone="bg-zinc-800/80 border-zinc-700 text-zinc-300">{snapshots.length} {snapshots.length === 1 ? "image" : "images"}</Pill> : undefined} />
                     {snapshots.length ? (
@@ -331,7 +376,7 @@ export function ClassRecordDetails({ record }: { record: any }) {
             </div>
 
             {/* Assignment / Checklist */}
-            <div className="grid grid-cols-1 @2xl:grid-cols-2 gap-4">
+            <div className={plain ? "contents" : "grid grid-cols-1 gap-4 @2xl:grid-cols-2"}>
                 <Card>
                     <ClipboardList aria-hidden size={110} strokeWidth={1} className="absolute -right-3 -bottom-6 text-amber-500/[0.07]" />
                     <CardHead icon={<ClipboardList size={16} />} title="Assignment" tone="amber"
@@ -363,7 +408,7 @@ export function ClassRecordDetails({ record }: { record: any }) {
                 <Card>
                     <ClipboardList aria-hidden size={110} strokeWidth={1} className="absolute -right-3 -bottom-6 text-emerald-500/[0.08]" />
                     <CardHead icon={<ShieldCheck size={16} />} title="Verification Checklist" tone="emerald" />
-                    <div className="relative grid grid-cols-1 @md:grid-cols-2 @md:grid-flow-col @md:grid-rows-3 gap-x-8 gap-y-3.5" data-testid="verification-checklist">
+                    <div className={`relative grid grid-cols-1 gap-x-8 gap-y-3.5 ${plain ? "" : "@md:grid-cols-2 @md:grid-flow-col @md:grid-rows-3"}`} data-testid="verification-checklist">
                         <CheckItem ok={total > 0}>Attendance marked</CheckItem>
                         <CheckItem ok={!!record.actualInTime}>Entry time marked <span className="text-emerald-400">(OM)</span></CheckItem>
                         <CheckItem ok={!!record.actualOutTime}>Exit time marked <span className="text-emerald-400">(OM)</span></CheckItem>
@@ -375,7 +420,7 @@ export function ClassRecordDetails({ record }: { record: any }) {
             </div>
 
             {/* Verification status / Audit trail */}
-            <div className="grid grid-cols-1 @3xl:grid-cols-[1.25fr_1fr] gap-4">
+            <div className={plain ? "contents" : "grid grid-cols-1 @3xl:grid-cols-[1.25fr_1fr] gap-4"}>
                 <Card>
                     <CardHead icon={<ShieldCheck size={16} />} title="Verification Status" tone="blue" />
                     {finalVerificationText(record) && (
@@ -383,13 +428,13 @@ export function ClassRecordDetails({ record }: { record: any }) {
                             <ShieldCheck size={16} className="shrink-0" /> {finalVerificationText(record)}
                         </div>
                     )}
-                    <div className="flex flex-col @lg:flex-row @lg:items-start gap-4">
+                    <div className={`flex flex-col gap-4 ${plain ? "" : "@lg:flex-row @lg:items-start"}`}>
                         <StepNode name="OM" v={record.omVerification} pendingTitle="OM Verification" doneTitle="OM Verified" revertedTitle="OM Reverted" />
-                        <div className="hidden @lg:block h-px flex-1 min-w-6 bg-gradient-to-r from-emerald-500/50 to-zinc-700 mt-5" />
+                        <div className={`hidden h-px flex-1 min-w-6 bg-gradient-to-r ${plain ? "" : "@lg:block"} from-emerald-500/50 to-zinc-700 mt-5`} />
                         {showClChStep && (
                             <>
                                 <StepNode name="CL-CH" v={clCh} pendingTitle="CL/CH Verification" doneTitle="CL/CH Verified" revertedTitle="CL/CH Reverted" />
-                                <div className="hidden @lg:block h-px flex-1 min-w-6 bg-zinc-700 mt-5" />
+                                <div className={`hidden h-px flex-1 min-w-6 bg-zinc-700 mt-5 ${plain ? "" : "@lg:block"}`} />
                             </>
                         )}
                         <StepNode name="Final" v={fin}
@@ -399,8 +444,8 @@ export function ClassRecordDetails({ record }: { record: any }) {
                 </Card>
 
                 {/* Collapsed: same height as the Verification Status card (wide screens) / first entries (small screens). View All shows every entry. */}
-                <div className={`relative ${showAllAudit ? "" : "@3xl:min-h-[15rem]"}`} data-testid="audit-card">
-                    <Card className={showAllAudit ? "" : "@3xl:absolute @3xl:inset-0 flex flex-col"}>
+                <div className={plain ? "relative col-span-full" : `relative ${showAllAudit ? "" : "@3xl:min-h-[15rem]"}`} data-testid="audit-card">
+                    <Card className={plain || showAllAudit ? "" : "@3xl:absolute @3xl:inset-0 flex flex-col"}>
                         <History aria-hidden size={110} strokeWidth={1} className="absolute -right-3 -bottom-6 text-emerald-500/[0.07]" />
                         <CardHead icon={<History size={16} />} title={`Audit Trail (${history.length})`} tone="blue"
                             right={history.length > 2 ? (
@@ -414,7 +459,7 @@ export function ClassRecordDetails({ record }: { record: any }) {
                         <ol className="relative space-y-3.5 pl-1">
                             <span className="absolute left-[9px] top-2 bottom-2 w-px bg-white/10" aria-hidden />
                             {audit.map((h: any, i: number) => (
-                                <li key={i} className={`relative flex gap-3 ${!showAllAudit && i >= AUDIT_PREVIEW ? "@max-3xl:hidden" : ""}`}>
+                                <li key={i} className={`relative flex gap-3 ${!showAllAudit && i >= AUDIT_PREVIEW ? (plain ? "hidden" : "@max-3xl:hidden") : ""}`}>
                                     <span className={`relative z-10 mt-1 w-3.5 h-3.5 rounded-full shrink-0 ring-4 ring-[#0b1210] ${DOT_COLORS[i % DOT_COLORS.length]}`} />
                                     <div className="min-w-0">
                                         <p className="text-[12px] font-semibold text-white">{h.action} {h.toStatus && h.toStatus !== h.fromStatus && <span className="text-zinc-400 font-normal">→ {CLASS_STATUS_LABEL[h.toStatus] || h.toStatus}</span>}</p>
@@ -424,10 +469,11 @@ export function ClassRecordDetails({ record }: { record: any }) {
                                 </li>
                             ))}
                         </ol>
-                        {!showAllAudit && history.length > 2 && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-[#0a100e] to-transparent" aria-hidden />}
+                        {!plain && !showAllAudit && history.length > 2 && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-[#0a100e] to-transparent" aria-hidden />}
                         </div>}
                     </Card>
                 </div>
+            </div>
             </div>
 
             {flags.length > 0 && (

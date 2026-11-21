@@ -9,7 +9,7 @@
 import crypto from 'crypto';
 import { RoleConfig, RoleAuditLog, RoleDefinition, Employee } from '@/models/Schemas';
 import {
-    LOCKED_ROLES, LOCKED_PATHS, normalizeRestriction, stateOf, configRoleOf, BASE_ROLE_CHOICES, ROLE_ID_RE, ORG_PARENTS,
+    LOCKED_ROLES, LOCKED_PATHS, normalizeRestriction, stateOf, configRoleOf, BASE_ROLE_CHOICES, ROLE_ID_RE, ORG_PARENTS, cleanOrgPlacement, orgPlacementText, ORG_ROLE_PREFIX,
     type RoleRestriction, type OrgPlacement, type CustomRoleInfo,
 } from '@/lib/role-modules';
 import { sidebarItemsOfRole, ROLE_COLORS } from '@/lib/sidebar-menu';
@@ -24,7 +24,34 @@ export const canManageRoles = (actor: any) => !!actor && ((actor.role === 'HR' &
 
 const newLogId = () => `RAL-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`;
 const actorRoleOf = (actor: any) => (actor.hrExecutive ? 'HR_EXECUTIVE' : actor.role);
-const cleanOrg = (o: any): OrgPlacement => (o?.mode === 'OWN' && ORG_PARENTS.some(p => p.key === o?.parent) ? { mode: 'OWN', parent: String(o.parent) } : { mode: 'SAME' });
+const cleanOrg = (o: any): OrgPlacement => cleanOrgPlacement(o);
+
+/**
+ * A box under another HR-created role: that role must exist, have its own box (not "same place", not under each HOI)
+ * and must not be this role or sit under it (no loop).
+ */
+async function checkOrgParent(roleId: string, org: OrgPlacement): Promise<string> {
+    if (org.mode !== 'OWN' || !String(org.parent).startsWith(ORG_ROLE_PREFIX)) return '';
+    const all: any[] = await RoleDefinition.find({}).select('roleId label org').lean();
+    const byId = new Map(all.map(d => [String(d.roleId), { label: String(d.label), org: cleanOrg(d.org) }]));
+    const pid = String(org.parent).slice(ORG_ROLE_PREFIX.length);
+    const parent = byId.get(pid);
+    if (!parent) return 'The role chosen for "Box goes under" no longer exists. Choose another place.';
+    if (pid === roleId) return 'A role cannot be placed under itself.';
+    // walk up from the parent: it must reach TL / AD / HR or a left / right box — never this role, never HOI / SAME
+    let cur = { id: pid, org: parent.org }; const seen = new Set<string>();
+    for (;;) {
+        if (cur.id === roleId || seen.has(cur.id)) return `"${parent.label}" is placed under this role, so this role cannot go under it.`;
+        seen.add(cur.id);
+        const o = cur.org;
+        if (o.mode === 'SAME') return `"${byId.get(cur.id)?.label}" has no box of its own on the Org Chart. Choose another place.`;
+        if (o.mode === 'OWN' && o.parent === 'HOI') return `"${byId.get(cur.id)?.label}" is drawn under each HOI; a box cannot go under it. Choose another place.`;
+        if (o.mode !== 'OWN' || !String(o.parent).startsWith(ORG_ROLE_PREFIX)) return '';
+        const nid = String(o.parent).slice(ORG_ROLE_PREFIX.length), next = byId.get(nid);
+        if (!next) return `"${byId.get(cur.id)?.label}" is under a role that no longer exists. Choose another place.`;
+        cur = { id: nid, org: next.org };
+    }
+}
 
 export async function definitionOf(roleId: string): Promise<any | null> {
     if (!roleId || ALL_ROLES.includes(roleId)) return null;
@@ -109,7 +136,7 @@ export async function publishedRoles(): Promise<CustomRoleInfo[]> {
 export type DefResult = { ok: true; definition: any } | { ok: false; status: number; error: string };
 
 const labelOfRole = (r: string) => (ROLE_COLORS as any)[r]?.label || r;
-const orgText = (o: OrgPlacement) => (o.mode === 'OWN' ? `own box under ${o.parent}` : 'same place as the base role');
+const orgText = (o: OrgPlacement) => orgPlacementText(o, r => r).replace(/^./, c => c.toLowerCase());
 
 /**
  * Create a draft (no roleId match) or edit an existing role. Base role and role ID are fixed once published.
@@ -125,6 +152,8 @@ export async function saveDefinition(actor: any, input: any, mode: 'create' | 'u
     if (!ROLE_ID_RE.test(roleId)) return { ok: false, status: 400, error: 'Role ID: capital letters, digits and _ only (3–40 characters, starting with a letter).' };
     const existing: any = await RoleDefinition.findOne({ roleId }).lean();
     const now = new Date().toISOString();
+    const orgErr = await checkOrgParent(roleId, org);
+    if (orgErr) return { ok: false, status: 400, error: orgErr };
 
     if (mode === 'create') {
         if (RESERVED.includes(roleId) || existing) return { ok: false, status: 409, error: `Role ID ${roleId} already exists.` };

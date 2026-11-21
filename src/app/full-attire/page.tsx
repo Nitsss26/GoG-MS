@@ -1,351 +1,309 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
+import { confirmAction } from "@/lib/confirm-action";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { cn } from "@/lib/utils";
-import {
-    Shirt, Search, Camera, RefreshCw, Check, X, Loader2, ChevronUp, ChevronDown, Users, User, AlertTriangle,
-    CheckCircle2, XCircle, Clock, SwitchCamera, Send, Trash2, KeySquare,
-} from "lucide-react";
+import SendEmailButton from "@/components/email-management/SendEmailButton";
+import { Shirt, Search, Loader2, CheckCircle2, XCircle, Clock, X, History, AlertTriangle, ImagePlus, Trash2, Maximize2, RefreshCw, CalendarDays, UserX } from "lucide-react";
 
 /**
- * OM → Full Attire. Live camera only (no gallery / file picker): pick one professor (Single) or several (Select
- * Multiple), confirm the left → right standing order, capture ONE photo and submit it for HR review.
- * Professors come from the server (the OM's own college scope); the server checks the scope again on submit.
+ * HR / HR Executive / Founder → Full Attire. One card per submission: the photo once (group or single), then every
+ * professor with their own Accept / Reject. Rejection: Dress Code reason(s) + explanation (required) + optional
+ * evidence image. Saving never emails — the email (rejections only) is sent here or from Email Management → Full Attire.
+ * Cards like Dress Code (tap the photo to see it big), date filter, and the "Not uploaded" list for the chosen date.
+ * Accept / Reject ask "Do you want to …?" first.
  */
-type Today = { reviewId: string; submissionId: string; status: string; at: string } | null;
-type Prof = { id: string; name: string; dept: string; designation: string; college: string; today?: Today; self?: boolean };
-const MAX_GROUP = 20;
-const MAX_BYTES = 5 * 1024 * 1024;
-const dt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
-const newKey = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+const dt = (iso?: string) => (iso ? toDmyTime(iso) : "—");
 const ST: Record<string, { l: string; c: string; I: any }> = {
     pending: { l: "Pending", c: "text-amber-300 bg-amber-500/10 border-amber-500/25", I: Clock },
     accepted: { l: "Accepted", c: "text-emerald-300 bg-emerald-500/10 border-emerald-500/25", I: CheckCircle2 },
     rejected: { l: "Rejected", c: "text-red-300 bg-red-500/10 border-red-500/25", I: XCircle },
     replaced: { l: "Replaced (re-uploaded)", c: "text-zinc-400 bg-zinc-800/60 border-zinc-700", I: RefreshCw },
 };
-const tm = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true }) : "");
 
-export default function FullAttirePage() {
+export default function HrFullAttirePage() {
     const { user } = useAuth();
-    const [data, setData] = useState<{ colleges: any[]; professors: Prof[]; submissions: any[]; delegated?: { grants: { id: string; grantedByName: string; startDate: string; endDate: string }[] } } | null>(null);
-    const [error, setError] = useState("");
+    const [status, setStatus] = useState<"pending" | "reviewed" | "all">("pending");
     const [q, setQ] = useState("");
-    const [mode, setMode] = useState<"single" | "multiple">("single");
-    const [order, setOrder] = useState<string[]>([]);            // selection order = standing order (left → right)
-    const [camOpen, setCamOpen] = useState(false);
-    const [photo, setPhoto] = useState<{ blob: Blob; url: string; capturedAt: string } | null>(null);
-    const [submitting, setSubmitting] = useState(false);
-    const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
-    const [denied, setDenied] = useState("");
-    const keyRef = useRef(newKey());
+    const [data, setData] = useState<any>(null);
+    const [error, setError] = useState("");
+    const [busy, setBusy] = useState("");
+    const [notice, setNotice] = useState<{ ok: boolean; text: string; reviewId?: string; name?: string } | null>(null);
+    const [reject, setReject] = useState<{ sub: any; r: any } | null>(null);
+    const [hist, setHist] = useState<{ name: string; rows: any[] | null } | null>(null);
+    const [zoom, setZoom] = useState("");
+    // date filter (IST) — opens on today; HR can pick another date or "All dates" (empty)
+    const todayYmd = () => new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
+    const [date, setDate] = useState(() => todayYmd());
+    const [missing, setMissing] = useState<{ date: string; people: any[] | null; error?: string } | null>(null);
+    const [showMissing, setShowMissing] = useState(true);
 
     const load = useCallback(async () => {
         try {
-            const r = await fetch("/api/full-attire?view=om", { cache: "no-store" });
-            const d = await r.json();
-            // no access (not an OM, and no active OM Given Access) → nothing of the page is shown
-            if (r.status === 403) { setData(null); setDenied(d.error || "Full Attire capture is for Operations Managers."); return; }
-            if (!r.ok) throw new Error(d.error || "Could not load professors");
-            setData(d); setError(""); setDenied("");
+            const p = new URLSearchParams({ view: "review", status }); if (q.trim()) p.set("q", q.trim()); if (date) p.set("date", date);
+            const r = await fetch(`/api/full-attire?${p}`, { cache: "no-store" });
+            const d = await r.json(); if (!r.ok) throw new Error(d.error || "Could not load");
+            setData(d); setError("");
         } catch (e: any) { setError(e.message); }
-    }, []);
-    useEffect(() => { load(); }, [load]);
-
-    const profs = data?.professors || [];
-    const byId = useMemo(() => new Map(profs.map(p => [p.id, p])), [profs]);
-    const shown = profs.filter(p => !q.trim() || `${p.name} ${p.id}`.toLowerCase().includes(q.trim().toLowerCase()));
-
-    const resetCapture = () => { if (photo) URL.revokeObjectURL(photo.url); setPhoto(null); keyRef.current = newKey(); };
-    const toggle = (id: string) => {
-        setNotice(null);
-        if (photo) resetCapture();
-        if (mode === "single") { setOrder(o => (o[0] === id ? [] : [id])); return; }
-        setOrder(o => (o.includes(id) ? o.filter(x => x !== id) : o.length >= MAX_GROUP ? o : [...o, id]));
-    };
-    const move = (i: number, d: -1 | 1) => setOrder(o => { const n = [...o]; const j = i + d; if (j < 0 || j >= n.length) return o; [n[i], n[j]] = [n[j], n[i]]; return n; });
-    const switchMode = (m: "single" | "multiple") => { setMode(m); setOrder(o => (m === "single" ? o.slice(0, 1) : o)); if (photo) resetCapture(); };
-
-    const submit = async () => {
-        if (!photo || !order.length) return;
-        setSubmitting(true); setNotice(null);
+    }, [status, q, date]);
+    useEffect(() => { const t = setTimeout(load, q ? 300 : 0); return () => clearTimeout(t); }, [load, q]);
+    const loadMissing = useCallback(async () => {
+        const d = date || todayYmd();
+        setMissing({ date: d, people: null });
         try {
-            const file = new File([photo.blob], `full-attire-${Date.now()}.jpg`, { type: "image/jpeg" });
-            const up = await uploadToCloudinary(file);
-            const r = await fetch("/api/full-attire", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ clientKey: keyRef.current, imageUrl: up.secure_url, capturedAt: photo.capturedAt, order, reupload: reupIds.length > 0 }),
-            });
+            const r = await fetch(`/api/full-attire?view=not-uploaded&date=${d}`, { cache: "no-store" });
+            const j = await r.json(); if (!r.ok) throw new Error(j.error || "Could not load");
+            setMissing({ date: d, people: j.people || [] });
+        } catch (e: any) { setMissing({ date: d, people: [], error: e.message }); }
+    }, [date]);
+    useEffect(() => { loadMissing(); }, [loadMissing]);
+
+    const decide = async (reviewId: string, body: any) => {
+        setBusy(reviewId); setNotice(null);
+        try {
+            const r = await fetch("/api/full-attire/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reviewId, ...body }) });
             const d = await r.json().catch(() => ({}));
-            if (!r.ok) throw new Error(d.error || "Could not submit");
-            setNotice({ ok: true, text: `${d.message} Submission ${d.id}.` });
-            resetCapture(); setOrder([]); await load();
-        } catch (e: any) { setNotice({ ok: false, text: e.message || "Could not submit" }); }
-        finally { setSubmitting(false); }
+            if (!r.ok) { await load(); return { ok: false, error: d.error || "Could not save" }; }
+            // the decided review leaves the Pending list → its Send Email button is shown in this message too
+            setNotice({ ok: true, text: d.message, ...(body.action === "reject" ? { reviewId } : {}), name: d.review?.professorName || "" }); await load(); loadMissing(); return { ok: true };
+        } finally { setBusy(""); }
+    };
+    const accept = async (s: any, r: any) => {
+        if (!(await confirmAction({ action: "accept", what: `${r.professorName}'s Full Attire (${s.id})` }))) return;
+        await decide(r.id, { action: "accept" });
+    };
+    const openHistory = async (r: any) => {
+        setHist({ name: r.professorName, rows: null });
+        const res = await fetch(`/api/full-attire?history=${encodeURIComponent(r.professorId)}`, { cache: "no-store" });
+        const d = await res.json().catch(() => ({}));
+        setHist({ name: r.professorName, rows: res.ok ? d.history || [] : [] });
     };
 
     if (!user) return null;
-    // OM as before; a Professor / HOI only while the server confirms an active OM Given Access grant
-    if (denied) return <div className="p-8 text-center text-sm text-zinc-500" data-testid="fa-denied">{denied}</div>;
-    if (user.role !== "OM" && !data) return null;
-
-    const group = order.length > 1;
-    /** selected professors whose Full Attire was already uploaded today (any OM) */
-    const reupIds = order.filter(id => byId.get(id)?.today);
+    if (user.role !== "HR" && user.role !== "FOUNDER") return <div className="p-8 text-center text-sm text-zinc-500">Only HR, HR Executive or Founders can review Full Attire.</div>;
+    const c = data?.counts;
     return (
-        <div className="p-3 sm:p-6 space-y-4 max-w-5xl mx-auto w-full" data-testid="full-attire-om">
-            <header className="space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2 mr-auto"><Shirt size={20} className="text-primary" /> Full Attire</h1>
-                    {/* OM Given Access: only the OM (not a Professor / HOI using a grant) can give access */}
-                    {user.role === "OM" && (
-                        <Link href="/full-attire/give-access" data-testid="fa-give-access" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/40 bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20">
-                            <KeySquare size={13} /> Give Access
-                        </Link>
-                    )}
+        <div className="p-3 sm:p-6 space-y-4 max-w-6xl mx-auto w-full" data-testid="full-attire-hr">
+            <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+                <div>
+                    <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2"><Shirt size={20} className="text-primary" /> Full Attire Management</h1>
+                    <p className="text-xs text-zinc-500 mt-0.5">Accept or reject every professor separately. For a rejection, use Send Email (here or in Email Management → Full Attire).</p>
                 </div>
-                <p className="text-xs text-zinc-400">College: <span className="text-zinc-200 font-semibold" data-testid="fa-colleges">{(data?.colleges || []).map(c => c.name).join(", ") || "—"}</span></p>
-                <p className="text-[11px] text-zinc-500">Live camera only — select the professor(s), then capture one photo and submit it for HR review.</p>
-                {data?.delegated && data.delegated.grants.length > 0 && (
-                    <p className="text-[11px] rounded-lg border border-sky-500/25 bg-sky-500/10 text-sky-200 px-3 py-2 [overflow-wrap:anywhere]" data-testid="fa-delegated">
-                        OM Given Access — granted by {data.delegated.grants.map(g => `${g.grantedByName} (till ${new Date(`${g.endDate}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" })})`).join(", ")}. Your submissions go to HR exactly like an OM's.
-                    </p>
-                )}
+                <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-4 py-2 text-amber-200 text-xs"><b className="text-lg text-white tabular-nums mr-1" data-testid="fa-pending-count">{c?.pendingProfessors ?? "—"}</b> professor review(s) pending</div>
             </header>
 
-            {notice && <div data-testid="fa-notice" className={cn("rounded-xl border px-4 py-3 text-xs flex items-start gap-2", notice.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-red-500/30 bg-red-500/10 text-red-200")}>{notice.ok ? <CheckCircle2 size={15} className="shrink-0" /> : <AlertTriangle size={15} className="shrink-0" />}<span className="min-w-0 [overflow-wrap:anywhere]">{notice.text}</span><button onClick={() => setNotice(null)} className="ml-auto shrink-0 opacity-70" aria-label="Close"><X size={14} /></button></div>}
+            <div className="flex flex-col sm:flex-row gap-2">
+                <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-zinc-900 border border-zinc-800 sm:w-[360px]">
+                    {([["pending", "Pending", c?.pending], ["reviewed", "Reviewed", c?.reviewed], ["all", "All", c?.all]] as const).map(([k, l, n]) => (
+                        <button key={k} onClick={() => setStatus(k)} data-testid={`fa-tab-${k}`} className={cn("h-10 rounded-lg text-xs font-bold", status === k ? "bg-primary text-white" : "text-zinc-400")}>{l}{n !== undefined ? ` (${n})` : ""}</button>
+                    ))}
+                </div>
+                <div className="relative flex-1"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                    <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search professor, submission, college or OM" className="w-full h-12 sm:h-full min-h-[44px] bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-3 text-sm text-white focus:outline-none focus:border-primary" /></div>
+                <label className="relative flex items-center" title="Show one date">
+                    <CalendarDays size={14} className="absolute left-3 text-zinc-500 pointer-events-none" />
+                    <input type="date" value={date} max={todayYmd()} onChange={e => setDate(e.target.value)} data-testid="fa-date" aria-label="Date"
+                        className="h-11 sm:h-full min-h-[44px] w-full sm:w-auto bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-3 text-sm text-white focus:outline-none focus:border-primary [color-scheme:dark]" />
+                </label>
+                {date && <button onClick={() => setDate("")} data-testid="fa-date-clear" className="h-11 px-3 rounded-xl border border-zinc-800 text-zinc-300 text-xs font-bold">All dates</button>}
+                <button onClick={() => { load(); loadMissing(); }} className="h-11 px-3 rounded-xl border border-zinc-800 text-zinc-300 text-xs font-bold flex items-center justify-center gap-1.5"><RefreshCw size={13} /> Refresh</button>
+            </div>
+
+            {/* who has not uploaded Full Attire on the chosen date (today while the day runs) */}
+            {missing && (
+                <section className="rounded-2xl border border-red-500/25 bg-red-500/[0.04]" data-testid="fa-missing">
+                    <button onClick={() => setShowMissing(v => !v)} className="w-full px-4 py-3 flex flex-wrap items-center gap-2 text-left">
+                        <UserX size={16} className="text-red-300 shrink-0" />
+                        <span className="text-sm font-bold text-white">{missing.date === todayYmd() ? "Not uploaded yet today" : "Not uploaded"} · {toDmy(missing.date)}</span>
+                        <span className="text-xs text-red-200 font-black tabular-nums" data-testid="fa-missing-count">{missing.people ? missing.people.length : "…"}</span>
+                        <span className="ml-auto text-[11px] text-zinc-500">{showMissing ? "Hide" : "Show"}</span>
+                    </button>
+                    {showMissing && <div className="px-4 pb-4">
+                        {!missing.people ? <Loader2 className="animate-spin text-primary" size={16} />
+                            : missing.error ? <p className="text-xs text-red-300">{missing.error}</p>
+                                : !missing.people.length ? <p className="text-xs text-emerald-300" data-testid="fa-missing-none">Everyone has uploaded their Full Attire for this date.</p>
+                                    : <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2" data-testid="fa-missing-list">
+                                        {missing.people.map((m: any) => (
+                                            <li key={m.id} className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs min-w-0" data-testid="fa-missing-person" data-id={m.id}>
+                                                <p className="font-bold text-white [overflow-wrap:anywhere]">{m.name} <span className="text-zinc-500 font-mono font-normal">({m.id})</span> {m.role === "OM" && <span className="ml-1 px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 text-[9px] font-black">OM</span>}</p>
+                                                <p className="text-[10px] text-zinc-500 [overflow-wrap:anywhere]">{m.designation}{m.college ? ` · ${m.college}` : ""}{m.oms?.length ? ` · OM: ${m.oms.join(", ")}` : ""}</p>
+                                            </li>
+                                        ))}
+                                    </ul>}
+                        <p className="text-[10px] text-zinc-500 mt-2">OMs and the professors of every OM's colleges. Approved leave, holidays, weekly offs and staff not yet joined are left out.</p>
+                    </div>}
+                </section>
+            )}
+
+            {notice && <div data-testid="fa-hr-notice" className={cn("rounded-xl border px-4 py-3 text-xs flex items-start gap-2", notice.ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-red-500/30 bg-red-500/10 text-red-200")}>{notice.ok ? <CheckCircle2 size={15} className="shrink-0" /> : <AlertTriangle size={15} className="shrink-0" />}<span className="min-w-0 [overflow-wrap:anywhere]">{notice.text}</span>{notice.ok && notice.reviewId && <span className="shrink-0" data-testid="fa-notice-send"><SendEmailButton small category="full_attire" relatedRecordId={notice.reviewId} status="not_sent" label="Send Email" onDone={res => setNotice({ ok: res.ok, text: res.ok ? `${notice.name || "Professor"}: email sent.` : (res.error || "Email could not be sent.") })} /></span>}<button onClick={() => setNotice(null)} className="ml-auto shrink-0" aria-label="Close"><X size={14} /></button></div>}
             {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 text-red-200 px-4 py-3 text-xs">{error}</div>}
 
-            <div className="flex flex-col sm:flex-row gap-2">
-                <div className="relative flex-1"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-                    <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search professor name or ID" data-testid="fa-search" className="w-full h-11 bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-3 text-sm text-white focus:outline-none focus:border-primary" /></div>
-                <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-zinc-900 border border-zinc-800 sm:w-80">
-                    <button onClick={() => switchMode("single")} data-testid="fa-mode-single" className={cn("h-10 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5", mode === "single" ? "bg-primary text-white" : "text-zinc-400")}><User size={14} /> Single Capture</button>
-                    <button onClick={() => switchMode("multiple")} data-testid="fa-mode-multiple" className={cn("h-10 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5", mode === "multiple" ? "bg-primary text-white" : "text-zinc-400")}><Users size={14} /> Select Multiple</button>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 items-start">
-                {/* professor list — big touch targets */}
-                <section className="rounded-2xl border border-zinc-800 bg-zinc-900/50 overflow-hidden" data-testid="fa-list">
-                    <p className="px-4 py-2.5 border-b border-zinc-800 text-[10px] font-black uppercase tracking-widest text-zinc-500">Professors & You ({shown.length})</p>
-                    {!data ? <div className="py-12 flex justify-center"><Loader2 className="animate-spin text-primary" /></div>
-                        : !shown.length ? <p className="py-10 text-center text-xs text-zinc-500">No professors found.</p> : (
-                            <div className="divide-y divide-zinc-800/70 max-h-[60vh] overflow-y-auto">
-                                {shown.map(p => {
-                                    const idx = order.indexOf(p.id);
-                                    const on = idx >= 0;
-                                    return (
-                                        <button key={p.id} type="button" onClick={() => toggle(p.id)} data-testid="fa-prof" data-id={p.id} aria-pressed={on}
-                                            className={cn("w-full min-h-[56px] px-4 py-3 flex items-center gap-3 text-left active:bg-zinc-800/60", on ? "bg-primary/10" : "hover:bg-zinc-800/30")}>
-                                            <span className={cn("w-7 h-7 shrink-0 border-2 flex items-center justify-center text-xs font-black", mode === "single" ? "rounded-full" : "rounded-lg", on ? "border-primary bg-primary text-white" : "border-zinc-600")}>
-                                                {on ? (mode === "multiple" ? idx + 1 : <Check size={14} />) : null}
-                                            </span>
-                                            <span className="min-w-0 flex-1">
-                                                <span className="block text-sm font-bold text-white [overflow-wrap:anywhere]">{p.name}{p.self && <span className="ml-1.5 align-middle text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/30" data-testid="fa-self">You</span>}</span>
-                                                <span className="block text-[11px] text-zinc-500 [overflow-wrap:anywhere]">{p.id} · {p.dept || p.designation}{p.college ? ` · ${p.college}` : ""}</span>
-                                                {p.today && (() => { const st = ST[p.today.status] || ST.pending; return (
-                                                    <span className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] font-black border-sky-500/30 bg-sky-500/10 text-sky-200" data-testid="fa-today">
-                                                        <Check size={10} /> Uploaded today {tm(p.today.at)} · <span className={cn("px-1 rounded", st.c)}>{st.l}</span>
-                                                    </span>
-                                                ); })()}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        )}
-                </section>
-
-                {/* selection + standing order + capture */}
-                <section className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4 space-y-3 lg:sticky lg:top-4" data-testid="fa-selection">
-                    {!order.length ? <p className="text-xs text-zinc-500 py-6 text-center">{mode === "single" ? "Tap a professor to capture their Full Attire." : "Tap professors in the order they will stand (left → right)."}</p> : <>
-                        {!group ? (
-                            <div className="space-y-1 text-xs" data-testid="fa-single">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Selected Professor</p>
-                                <p className="text-base font-bold text-white">{byId.get(order[0])?.name}</p>
-                                <p className="text-zinc-400">Employee ID: {order[0]} · College: {byId.get(order[0])?.college || "—"}</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-2" data-testid="fa-order">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500" data-testid="fa-count">{order.length} Professors Selected — Standing Order</p>
-                                <ol className="space-y-1.5">
-                                    {order.map((id, i) => (
-                                        <li key={id} className="flex items-center gap-2 rounded-xl bg-zinc-950/70 border border-zinc-800 px-2.5 py-1.5" data-testid="fa-order-item" data-id={id}>
-                                            <span className="w-7 h-7 shrink-0 rounded-lg bg-primary/15 text-primary text-xs font-black flex items-center justify-center">{i + 1}</span>
-                                            <span className="min-w-0 flex-1 text-sm text-white font-semibold [overflow-wrap:anywhere]">{byId.get(id)?.name}<span className="block text-[10px] font-normal text-zinc-500">{id}</span></span>
-                                            <button onClick={() => move(i, -1)} disabled={i === 0 || !!photo} aria-label="Move left" data-testid="fa-up" className="w-9 h-9 shrink-0 rounded-lg border border-zinc-700 text-zinc-300 flex items-center justify-center disabled:opacity-30"><ChevronUp size={16} /></button>
-                                            <button onClick={() => move(i, 1)} disabled={i === order.length - 1 || !!photo} aria-label="Move right" data-testid="fa-down" className="w-9 h-9 shrink-0 rounded-lg border border-zinc-700 text-zinc-300 flex items-center justify-center disabled:opacity-30"><ChevronDown size={16} /></button>
-                                            <button onClick={() => toggle(id)} disabled={!!photo} aria-label="Remove" className="w-9 h-9 shrink-0 rounded-lg border border-zinc-800 text-zinc-500 flex items-center justify-center disabled:opacity-30"><Trash2 size={14} /></button>
-                                        </li>
-                                    ))}
-                                </ol>
-                                <p className="text-[11px] text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">Please arrange the professors from <b>left to right</b> in this order before capturing the photograph.</p>
-                            </div>
-                        )}
-
-                        {reupIds.length > 0 && (
-                            <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2.5 text-[11px] text-sky-100 space-y-1" data-testid="fa-already">
-                                <p className="font-bold flex items-center gap-1.5"><AlertTriangle size={13} /> Already uploaded today{group ? ` (${reupIds.length} of ${order.length})` : ""}</p>
-                                {reupIds.map(id => { const t = byId.get(id)!.today!; const st = ST[t.status] || ST.pending; return (
-                                    <p key={id} className="text-sky-200/90 [overflow-wrap:anywhere]">{group ? `${byId.get(id)?.name}: ` : ""}{tm(t.at)} · {t.submissionId} · <b>{st.l}</b></p>
-                                ); })}
-                                <p className="text-sky-200/70">Re-upload sends a new photo to HR. A photo still pending review is replaced; one HR already reviewed stays as it is.</p>
-                            </div>
-                        )}
-
-                        {photo ? (
-                            <div className="space-y-2" data-testid="fa-preview">
-                                <img src={photo.url} alt="Captured full attire" className="w-full max-h-[55vh] object-contain rounded-xl border border-zinc-700 bg-black" />
-                                <p className="text-[10px] text-zinc-500">Captured {dt(photo.capturedAt)}</p>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button onClick={() => { resetCapture(); setCamOpen(true); }} disabled={submitting} data-testid="fa-retake" className="h-12 rounded-xl border border-zinc-700 text-sm font-bold text-zinc-200 flex items-center justify-center gap-2"><RefreshCw size={15} /> Retake</button>
-                                    <button onClick={submit} disabled={submitting} data-testid="fa-submit" className="h-12 rounded-xl bg-primary text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50">{submitting ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Submit for Review</button>
+            {!data ? <div className="py-16 flex justify-center"><Loader2 className="animate-spin text-primary" /></div>
+                : !data.submissions.length ? <p className="py-16 text-center text-sm text-zinc-500">No {status === "all" ? "" : status} Full Attire submissions{date ? ` on ${toDmy(date)}` : ""}.</p> : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" data-testid="fa-cards">
+                        {data.submissions.map((s: any) => (
+                            <article key={s.id} className="rounded-2xl border border-zinc-800 bg-zinc-900 overflow-hidden flex flex-col min-w-0" data-testid="fa-sub" data-id={s.id}>
+                                <div className="p-3 border-b border-zinc-800/60 bg-zinc-800/20 flex items-start gap-2">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-black text-white truncate">{s.type === "group" ? `Group · ${s.reviews.length} people` : (s.reviews[0]?.professorName || "—")}</p>
+                                        <p className="text-[10px] text-zinc-500 [overflow-wrap:anywhere]"><span className="font-mono">{s.id}</span> · {s.collegeName || "—"}</p>
+                                    </div>
+                                    <span className="shrink-0 text-[9px] font-black uppercase tracking-widest text-zinc-400 border border-zinc-700 rounded px-1.5 py-0.5">{s.type === "group" ? "Group" : "Single"}</span>
                                 </div>
-                            </div>
-                        ) : (
-                            <button onClick={() => setCamOpen(true)} data-testid="fa-open-camera" className="w-full h-14 rounded-xl bg-primary text-white text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-primary/20">
-                                <Camera size={18} /> {reupIds.length ? (group ? "Re-upload Group Photo" : "Re-upload Photo") : group ? "Capture Group Photo" : "Capture Image"}
-                            </button>
-                        )}
-                    </>}
-                </section>
-            </div>
-
-            {/* my submissions */}
-            <section className="space-y-2" data-testid="fa-mine">
-                <h2 className="text-sm font-bold text-white">My Submissions</h2>
-                {!(data?.submissions || []).length ? <p className="text-xs text-zinc-500">No submissions yet.</p> : (() => {
-                    const subs: any[] = data?.submissions || [];
-                    // in this list "accepted" reads "Approved"
-                    const stOf = (r: any) => { const st = ST[r.status] || ST.pending; return r.status === "accepted" ? { ...st, l: "Approved" } : st; };
-                    const all = subs.flatMap(x => x.reviews || []);
-                    const count = (k: string) => all.filter((r: any) => (r.status || "pending") === k).length;
-                    const pill = (r: any) => { const st = stOf(r); return <span className={cn("inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] font-black whitespace-nowrap", st.c)} data-testid="fa-mine-status"><st.I size={10} /> {st.l}</span>; };
-                    const reason = (r: any) => r.status === "rejected" ? `${r.reasonText || ""}${r.explanation ? ` — ${r.explanation}` : ""}` : "—";
-                    const who = (x: any, r: any) => `${x.type === "group" ? `${r.position}. ` : ""}${r.professorName}`;
-                    const typeText = (x: any) => x.type === "group" ? `Group (${x.reviews.length})` : "Single";
-                    return (<>
-                        <div className="flex flex-wrap gap-2 text-[11px] font-bold" data-testid="fa-mine-counts">
-                            <span className="px-2.5 py-1 rounded-lg border text-emerald-300 bg-emerald-500/10 border-emerald-500/25">Approved {count("accepted")}</span>
-                            <span className="px-2.5 py-1 rounded-lg border text-red-300 bg-red-500/10 border-red-500/25">Rejected {count("rejected")}</span>
-                            <span className="px-2.5 py-1 rounded-lg border text-amber-300 bg-amber-500/10 border-amber-500/25">Pending {count("pending")}</span>
-                        </div>
-                        {/* tablet / desktop: one line per professor */}
-                        <div className="hidden md:block rounded-2xl border border-zinc-800 bg-zinc-900/50 overflow-x-auto [contain:inline-size]" data-testid="fa-mine-table">
-                            <table className="w-full min-w-[720px] text-xs text-left">
-                                <thead><tr className="text-[10px] uppercase tracking-wider text-zinc-500 border-b border-zinc-800">
-                                    {["Photo", "Submission ID", "Date & Time", "Type", "Professor", "Status", "Reason"].map(h => <th key={h} className="px-3 py-2.5 font-bold whitespace-nowrap">{h}</th>)}
-                                </tr></thead>
-                                <tbody>
-                                    {subs.map((x: any) => (x.reviews || []).map((r: any, i: number) => (
-                                        <tr key={r.id} className={cn("align-top", i === x.reviews.length - 1 && "border-b border-zinc-800/70")} data-testid="fa-mine-row">
-                                            {i === 0 && <>
-                                                <td rowSpan={x.reviews.length} className="px-3 py-2.5" data-testid="fa-mine-item"><a href={x.imageUrl} target="_blank" rel="noreferrer"><img src={x.imageUrl} alt="" className="w-14 h-14 rounded-lg object-cover bg-black border border-zinc-800" /></a></td>
-                                                <td rowSpan={x.reviews.length} className="px-3 py-2.5 font-bold text-white whitespace-nowrap">{x.id}</td>
-                                                <td rowSpan={x.reviews.length} className="px-3 py-2.5 text-zinc-400 whitespace-nowrap">{dt(x.submittedAt)}</td>
-                                                <td rowSpan={x.reviews.length} className="px-3 py-2.5 text-zinc-400 whitespace-nowrap">{typeText(x)}</td>
-                                            </>}
-                                            <td className="px-3 py-2.5 text-zinc-200">{who(x, r)}</td>
-                                            <td className="px-3 py-2.5">{pill(r)}</td>
-                                            <td className={cn("px-3 py-2.5 [overflow-wrap:anywhere] max-w-[320px]", r.status === "rejected" ? "text-red-300/90" : "text-zinc-600")}>{reason(r)}</td>
-                                        </tr>
-                                    )))}
-                                </tbody>
-                            </table>
-                        </div>
-                        {/* phone: one line per professor, the photo once per submission */}
-                        <div className="md:hidden rounded-2xl border border-zinc-800 bg-zinc-900/50 divide-y divide-zinc-800" data-testid="fa-mine-list">
-                            {subs.map((x: any) => (
-                                <div key={x.id} className="p-3 flex gap-3" data-testid="fa-mine-item-m">
-                                    <a href={x.imageUrl} target="_blank" rel="noreferrer" className="shrink-0"><img src={x.imageUrl} alt="" className="w-14 h-14 rounded-lg object-cover bg-black border border-zinc-800" /></a>
-                                    <div className="min-w-0 flex-1 space-y-1.5">
-                                        <p className="text-xs font-bold text-white [overflow-wrap:anywhere]">{x.id} <span className="font-normal text-zinc-500">· {typeText(x)}</span></p>
-                                        <p className="text-[10px] text-zinc-500">{dt(x.submittedAt)}</p>
-                                        {(x.reviews || []).map((r: any) => (
-                                            <div key={r.id} className="text-[11px] flex flex-wrap items-center gap-x-2 gap-y-0.5" data-testid="fa-mine-row-m">
-                                                <span className="text-zinc-200">{who(x, r)}</span>{pill(r)}
-                                                {r.status === "rejected" && <span className="basis-full text-red-300/90 [overflow-wrap:anywhere]">{reason(r)}</span>}
+                                {/* the photo — tap to see it big */}
+                                <button type="button" onClick={() => setZoom(s.imageUrl)} className="relative aspect-[3/4] bg-black block w-full group" data-testid="fa-photo-wrap" aria-label="View photo full size">
+                                    <img src={s.imageUrl} alt={`Full attire ${s.id}`} data-testid="fa-photo" className="w-full h-full object-contain" />
+                                    <span className="absolute top-2 right-2 w-9 h-9 rounded-lg bg-black/60 text-white flex items-center justify-center"><Maximize2 size={15} /></span>
+                                    <span className="absolute bottom-2 left-2 text-[10px] font-bold text-white bg-black/60 px-2 py-1 rounded">{dt(s.submittedAt)}</span>
+                                </button>
+                                <div className="px-3 py-2 border-b border-zinc-800 text-[11px] space-y-0.5">
+                                    <p className="text-zinc-400">Submitted by: <span className="text-zinc-200">{s.omName}</span></p>
+                                    {s.submittedVia === "OM_GIVEN_ACCESS" && <p className="text-sky-300" data-testid="fa-via">{s.submitterRole === "HOI" ? "HOI" : "Professor"} · via OM Given Access · granted by {(s.grantedByNames || []).join(", ") || "—"}</p>}
+                                    {s.type === "group" && <p className="text-zinc-500">Left → right: {s.standingOrder.map((o: any) => `${o.position}. ${o.professorName}`).join(" · ")}</p>}
+                                </div>
+                                {/* every person — own decision */}
+                                <div className="divide-y divide-zinc-800/70 flex-1" data-testid="fa-profs">
+                                    {s.reviews.map((r: any) => {
+                                        const st = ST[r.status] || ST.pending;
+                                        return (
+                                            <div key={r.id} className="p-3 space-y-2" data-testid="fa-review" data-id={r.id} data-prof={r.professorId}>
+                                                <div className="flex items-start gap-2">
+                                                    {s.type === "group" && <span className="w-6 h-6 shrink-0 rounded-md bg-zinc-800 text-zinc-200 text-[11px] font-black flex items-center justify-center">{r.position}</span>}
+                                                    <div className="min-w-0 flex-1"><p className="text-sm font-bold text-white [overflow-wrap:anywhere]">{r.professorName}</p><p className="text-[10px] text-zinc-500">{r.professorId}{r.collegeName ? ` · ${r.collegeName}` : ""}</p></div>
+                                                    <span className={cn("shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-black", st.c)} data-testid="fa-status"><st.I size={11} /> {st.l}</span>
+                                                </div>
+                                                {r.status === "pending" ? (
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <button onClick={() => setReject({ sub: s, r })} disabled={!!busy} data-testid="fa-reject" className="h-10 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 disabled:opacity-50"><XCircle size={14} /> Reject</button>
+                                                        <button onClick={() => accept(s, r)} disabled={!!busy} data-testid="fa-accept" className="h-10 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 disabled:opacity-50">{busy === r.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Accept</button>
+                                                    </div>
+                                                ) : r.status === "replaced" ? (
+                                                    <p className="text-[11px] text-zinc-500" data-testid="fa-replaced">The OM re-uploaded a new photo today — review the new submission instead.</p>
+                                                ) : (
+                                                    <div className="text-[11px] text-zinc-400 space-y-0.5">
+                                                        <p>By {r.reviewedByName} ({r.reviewedByRole}) · {dt(r.reviewedAt)}</p>
+                                                        {r.status === "rejected" && <p className="text-red-200 [overflow-wrap:anywhere]"><b>{r.reasonText}</b>{r.explanation ? ` — ${r.explanation}` : ""}</p>}
+                                                        {r.evidenceUrl && <a href={r.evidenceUrl} target="_blank" rel="noreferrer" className="text-emerald-300 underline">Supporting evidence</a>}
+                                                        {/* email only for a rejection (same as Email Management → Full Attire) */}
+                                                        {r.status === "rejected" && <div className="pt-1" data-testid="fa-send-mail">
+                                                            <SendEmailButton key={`${r.id}:${r.emailStatus || "not_sent"}`} small category="full_attire" relatedRecordId={r.id} status={r.emailStatus || "not_sent"} label="Send Email"
+                                                                onDone={res => setNotice({ ok: res.ok, text: res.ok ? `${r.professorName}: email sent.` : (res.error || "Email could not be sent.") })} />
+                                                        </div>}
+                                                    </div>
+                                                )}
+                                                <button onClick={() => openHistory(r)} className="text-[11px] text-zinc-400 hover:text-white inline-flex items-center gap-1" data-testid="fa-history"><History size={12} /> View history</button>
                                             </div>
-                                        ))}
+                                        );
+                                    })}
+                                </div>
+                            </article>
+                        ))}
+                    </div>
+                )}
+
+            {reject && <RejectDialog sub={reject.sub} r={reject.r} reasons={data?.reasons || []} onCancel={() => setReject(null)}
+                onConfirm={async (body) => { const res = await decide(reject.r.id, { action: "reject", ...body }); if (res.ok) setReject(null); return res; }} />}
+
+            {hist && (
+                <div className="fixed inset-0 z-[120] bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4" onClick={() => setHist(null)}>
+                    <div className="w-full sm:max-w-xl max-h-[90vh] flex flex-col bg-zinc-900 border border-zinc-800 rounded-t-2xl sm:rounded-2xl" onClick={e => e.stopPropagation()} data-testid="fa-history-modal">
+                        <div className="px-4 py-3 border-b border-zinc-800 flex items-center gap-2"><History size={16} className="text-primary" /><p className="text-sm font-bold text-white min-w-0 truncate">Full Attire History · {hist.name}</p><button onClick={() => setHist(null)} className="ml-auto text-zinc-500" aria-label="Close"><X size={18} /></button></div>
+                        <div className="overflow-y-auto p-3 space-y-2">
+                            {!hist.rows ? <Loader2 className="animate-spin text-primary mx-auto my-8" /> : !hist.rows.length ? <p className="text-xs text-zinc-500 py-6 text-center">No history.</p> : hist.rows.map((h: any) => { const st = ST[h.status] || ST.pending; return (
+                                <div key={h.id} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3 flex gap-3 text-[11px]">
+                                    {h.submission?.imageUrl && <img src={h.submission.imageUrl} alt="" className="w-16 h-16 rounded-lg object-cover shrink-0" />}
+                                    <div className="min-w-0 space-y-0.5">
+                                        <p className="text-white font-bold">{h.submissionId} <span className={cn("ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] font-black", st.c)}>{st.l}</span></p>
+                                        <p className="text-zinc-500">Submitted by {h.submission?.omName || "—"}{h.submission?.submittedVia === "OM_GIVEN_ACCESS" ? ` (${h.submission.submitterRole === "HOI" ? "HOI" : "Professor"}, via OM Given Access · granted by ${(h.submission.grantedByNames || []).join(", ")})` : ""} · {dt(h.submission?.submittedAt)}</p>
+                                        {h.reviewedAt && <p className="text-zinc-400">Reviewed by {h.reviewedByName} ({h.reviewedByRole}) · {dt(h.reviewedAt)}</p>}
+                                        {h.status === "rejected" && <p className="text-red-200 [overflow-wrap:anywhere]">{h.reasonText}{h.explanation ? ` — ${h.explanation}` : ""}</p>}
                                     </div>
                                 </div>
-                            ))}
+                            ); })}
                         </div>
-                    </>);
-                })()}
-            </section>
+                    </div>
+                </div>
+            )}
 
-            {camOpen && <CameraCapture onClose={() => setCamOpen(false)} onCaptured={(blob, capturedAt) => { setPhoto({ blob, url: URL.createObjectURL(blob), capturedAt }); setCamOpen(false); }} title={group ? `Group photo · ${order.length} professors` : byId.get(order[0])?.name || ""} names={order.map(id => byId.get(id)?.name || id)} />}
+            {zoom && <div className="fixed inset-0 z-[140] bg-black flex items-center justify-center p-2" onClick={() => setZoom("")} data-testid="fa-zoom"><img src={zoom} alt="" className="max-w-full max-h-full object-contain" /><button className="absolute top-3 right-3 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center" aria-label="Close"><X size={18} /></button></div>}
         </div>
     );
 }
 
-/** Live camera (getUserMedia) — no gallery, no file picker. Full-screen on phones. */
-function CameraCapture({ onClose, onCaptured, title, names }: { onClose: () => void; onCaptured: (b: Blob, at: string) => void; title: string; names: string[] }) {
-    const video = useRef<HTMLVideoElement>(null);
-    const stream = useRef<MediaStream | null>(null);
-    const [facing, setFacing] = useState<"environment" | "user">("environment");
+function RejectDialog({ sub, r, reasons, onCancel, onConfirm }: { sub: any; r: any; reasons: string[]; onCancel: () => void; onConfirm: (b: any) => Promise<{ ok: boolean; error?: string }> }) {
+    const [sel, setSel] = useState<string[]>([]);
+    const [other, setOther] = useState("");
+    const [explanation, setExplanation] = useState("");
+    const [evidence, setEvidence] = useState<{ url: string; name: string } | null>(null);
+    const [uploading, setUploading] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [err, setErr] = useState("");
-    const [ready, setReady] = useState(false);
-    const [busy, setBusy] = useState(false);
-
-    useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            setReady(false); setErr("");
-            stream.current?.getTracks().forEach(t => t.stop());
-            if (!navigator.mediaDevices?.getUserMedia) { setErr("This browser cannot open the camera. Use Chrome (Android) or Safari (iPhone) over HTTPS."); return; }
-            try {
-                const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
-                if (cancelled) { s.getTracks().forEach(t => t.stop()); return; }
-                stream.current = s;
-                if (video.current) { video.current.srcObject = s; await video.current.play().catch(() => {}); setReady(true); }
-            } catch (e: any) {
-                setErr(e?.name === "NotAllowedError" || e?.name === "SecurityError"
-                    ? "Camera permission was denied. Allow camera access for this site in the browser settings, then try again. (Photos cannot be chosen from the gallery.)"
-                    : e?.name === "NotFoundError" ? "No camera was found on this device." : `Could not open the camera: ${e?.message || e}`);
-            }
-        })();
-        return () => { cancelled = true; stream.current?.getTracks().forEach(t => t.stop()); };
-    }, [facing]);
-
-    const capture = async () => {
-        const v = video.current; if (!v || !v.videoWidth) return;
-        setBusy(true);
-        const scale = Math.min(1, 1600 / Math.max(v.videoWidth, v.videoHeight));
-        const c = document.createElement("canvas");
-        c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
-        c.getContext("2d")!.drawImage(v, 0, 0, c.width, c.height);
-        let q = 0.85; let blob: Blob | null = null;
-        while (q >= 0.5) { blob = await new Promise(r => c.toBlob(r, "image/jpeg", q)); if (blob && blob.size <= MAX_BYTES) break; q -= 0.1; }
-        setBusy(false);
-        if (!blob || blob.size > MAX_BYTES) { setErr("The photo is too large. Please retake."); return; }
-        stream.current?.getTracks().forEach(t => t.stop());
-        onCaptured(blob, new Date().toISOString());
+    const pick = async (f?: File) => {
+        if (!f) return;
+        if (!/^image\/(jpeg|png|webp)$/i.test(f.type)) return setErr("Choose a JPG, PNG or WEBP image.");
+        if (f.size > 5 * 1024 * 1024) return setErr("The image must be smaller than 5 MB.");
+        setUploading(true); setErr("");
+        try { const up = await uploadToCloudinary(f); setEvidence({ url: up.secure_url, name: f.name }); } catch { setErr("Could not upload the image."); } finally { setUploading(false); }
     };
-
+    const confirm = async () => {
+        if (!sel.length) return setErr("Select at least one rejection reason.");
+        if (sel.includes("Other") && other.trim().length < 2) return setErr('Please write the reason for "Other".');
+        if (explanation.trim().length < 5) return setErr("Write a detailed explanation (at least 5 characters).");
+        if (uploading) return setErr("Please wait — the image is still uploading.");
+        if (!(await confirmAction({ action: "reject", what: `${r.professorName}'s Full Attire (${sub.id})` }))) return;
+        setSaving(true); setErr("");
+        const res = await onConfirm({ reasons: sel, other: other.trim(), explanation: explanation.trim(), ...(evidence ? { evidenceUrl: evidence.url } : {}) });
+        setSaving(false);
+        if (!res.ok) setErr(res.error || "Could not save.");
+    };
+    const row = (k: string, v: any) => <div className="flex gap-2 text-[11px]"><span className="w-28 shrink-0 text-zinc-500">{k}</span><span className="text-zinc-200 min-w-0 [overflow-wrap:anywhere]">{v || "—"}</span></div>;
     return (
-        <div className="fixed inset-0 z-[130] bg-black flex flex-col" data-testid="fa-camera">
-            <div className="flex items-center gap-2 px-3 py-2 text-white shrink-0" style={{ paddingTop: "max(env(safe-area-inset-top), 0.5rem)" }}>
-                <p className="text-sm font-bold min-w-0 flex-1 truncate">{title}</p>
-                <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center" aria-label="Close camera"><X size={18} /></button>
-            </div>
-            {names.length > 1 && <p className="px-3 pb-2 text-[11px] text-amber-200 shrink-0 [overflow-wrap:anywhere]">Left → right: {names.map((n, i) => `${i + 1}. ${n}`).join("  ·  ")}</p>}
-            <div className="relative flex-1 min-h-0 flex items-center justify-center bg-black">
-                <video ref={video} playsInline muted autoPlay data-testid="fa-video" className="max-w-full max-h-full w-full h-full object-contain" />
-                {!ready && !err && <Loader2 className="absolute animate-spin text-white/70" />}
-                {err && <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 rounded-xl bg-red-500/15 border border-red-500/30 text-red-100 text-sm p-4 text-center" data-testid="fa-camera-error">{err}</div>}
-            </div>
-            <div className="shrink-0 flex items-center justify-center gap-6 py-4" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 1rem)" }}>
-                <button onClick={() => setFacing(f => (f === "environment" ? "user" : "environment"))} className="w-12 h-12 rounded-full bg-white/10 text-white flex items-center justify-center" aria-label="Switch camera"><SwitchCamera size={20} /></button>
-                <button onClick={capture} disabled={!ready || busy} data-testid="fa-capture" aria-label="Capture" className="w-[72px] h-[72px] rounded-full border-4 border-white bg-white/20 active:bg-white/50 flex items-center justify-center disabled:opacity-40">
-                    {busy ? <Loader2 className="animate-spin text-white" /> : <Camera size={26} className="text-white" />}
-                </button>
-                <span className="w-12 h-12" />
+        <div className="fixed inset-0 z-[125] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4" data-testid="fa-reject-dialog">
+            <div className="w-full sm:max-w-lg max-h-[92vh] flex flex-col bg-zinc-900 border border-zinc-800 rounded-t-2xl sm:rounded-2xl shadow-2xl">
+                <div className="px-5 py-3 border-b border-zinc-800 flex items-center gap-2 shrink-0"><XCircle size={18} className="text-red-400" /><h2 className="text-base font-bold text-white">Reject Full Attire</h2><button onClick={onCancel} className="ml-auto text-zinc-500" aria-label="Close"><X size={18} /></button></div>
+                <div className="overflow-y-auto p-5 space-y-4">
+                    <div className="flex gap-3">
+                        <img src={sub.imageUrl} alt="" className="w-20 h-20 rounded-xl object-cover bg-black shrink-0" />
+                        <div className="space-y-0.5 min-w-0">
+                            {row("Professor", `${r.professorName}${sub.type === "group" ? ` (position ${r.position})` : ""}`)}{row("Employee ID", r.professorId)}{row("College", r.collegeName || sub.collegeName)}
+                            {row("Submission", sub.id)}{row("Submitted By", sub.omName)}{sub.submittedVia === "OM_GIVEN_ACCESS" && <>{row("Submitter Role", sub.submitterRole === "HOI" ? "HOI" : "Professor")}{row("Submitted Via", "OM Given Access")}{row("Granted By", (sub.grantedByNames || []).join(", "))}</>}{row("Capture Date", dt(sub.capturedAt))}{row("Review Date", dt(new Date().toISOString()))}
+                        </div>
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Rejection Reason (one or more) *</p>
+                        <div className="grid grid-cols-2 gap-2">
+                            {reasons.map(x => (
+                                <label key={x} className={cn("min-h-[44px] flex items-center gap-2 px-3 rounded-xl border text-xs cursor-pointer", sel.includes(x) ? "border-red-500/50 bg-red-500/10 text-white" : "border-zinc-800 text-zinc-300")}>
+                                    <input type="checkbox" checked={sel.includes(x)} onChange={() => setSel(p => (p.includes(x) ? p.filter(y => y !== x) : [...p, x]))} className="accent-red-500 w-4 h-4" data-testid="fa-reason" value={x} /> {x}
+                                </label>
+                            ))}
+                        </div>
+                        {sel.includes("Other") && <input value={other} onChange={e => setOther(e.target.value)} placeholder="Write the other reason" data-testid="fa-other" className="mt-2 w-full h-11 bg-zinc-950 border border-zinc-800 rounded-xl px-3 text-sm text-white" />}
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Detailed Explanation *</p>
+                        <textarea value={explanation} onChange={e => setExplanation(e.target.value)} data-testid="fa-explanation" placeholder="e.g. Professor was not wearing the required formal waistcoat during verification." className="w-full h-24 resize-none bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500/50" />
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Supporting Evidence (optional)</p>
+                        {evidence ? (
+                            <div className="flex items-center gap-2 rounded-xl border border-zinc-800 px-3 py-2"><img src={evidence.url} alt="" className="w-10 h-10 rounded object-cover" /><span className="text-xs text-zinc-300 truncate flex-1">{evidence.name}</span><button onClick={() => setEvidence(null)} className="text-zinc-500" aria-label="Remove"><Trash2 size={14} /></button></div>
+                        ) : (
+                            <label className="min-h-[44px] flex items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-700 text-xs text-zinc-400 cursor-pointer">
+                                {uploading ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />} {uploading ? "Uploading…" : "Attach an image"}
+                                <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" data-testid="fa-evidence" onChange={e => pick(e.target.files?.[0])} />
+                            </label>
+                        )}
+                    </div>
+                    {err && <p className="text-xs text-red-400 flex items-center gap-1.5" data-testid="fa-reject-error"><AlertTriangle size={13} /> {err}</p>}
+                </div>
+                <div className="p-4 border-t border-zinc-800 grid grid-cols-2 gap-2 shrink-0" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 1rem)" }}>
+                    <button onClick={onCancel} className="h-12 rounded-xl border border-zinc-700 text-sm font-bold text-zinc-300">Cancel</button>
+                    <button onClick={confirm} disabled={saving || uploading} data-testid="fa-confirm-reject" className="h-12 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50">{saving && <Loader2 size={14} className="animate-spin" />} Confirm Rejection</button>
+                </div>
             </div>
         </div>
     );

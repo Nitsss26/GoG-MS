@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { getSessionUser } from '@/lib/session-user';
-import { canCapture, canReview, captureList, createSubmission, listSubmissions, reviewHistory } from '@/lib/full-attire';
+import { canCapture, canReview, captureList, createSubmission, listSubmissions, reviewHistory, notUploaded } from '@/lib/full-attire';
 import { DRESS_CODE_REASONS } from '@/lib/dress-code-reasons';
 
 export const dynamic = 'force-dynamic';
@@ -13,6 +13,8 @@ export const dynamic = 'force-dynamic';
  *                                          OM's professors + themselves; `delegated` lists the grants)
  *   GET  ?view=review&status=pending|reviewed|all&q=   HR / HR Executive / Founder: submissions to review
  *   GET  ?history=<professorId>           HR / HR Executive / Founder: one professor's review history
+ *   GET  ?view=review&...&date=YYYY-MM-DD  the same, only submissions of that day (IST)
+ *   GET  ?view=not-uploaded&date=YYYY-MM-DD   HR: OMs + their professors with no Full Attire photo that day
  *   POST { clientKey, imageUrl, capturedAt, order: [professorId…], reupload? }   OM: submit a live capture
  *        (a professor already uploaded today needs reupload: true — today's pending photo is then replaced)
  */
@@ -35,9 +37,14 @@ export async function GET(req: Request) {
         if (!canReview(actor)) return NextResponse.json({ error: 'Only HR, HR Executive or Founders can review Full Attire.' }, { status: 403 });
         const hist = sp.get('history');
         if (hist) return NextResponse.json({ history: await reviewHistory(hist.slice(0, 60)) });
+        if (sp.get('view') === 'not-uploaded') {
+            const date = String(sp.get('date') || '');
+            return NextResponse.json({ date, people: await notUploaded(date) });
+        }
         const status = sp.get('status') || 'pending';
-        const subs = await listSubmissions(actor, { status, q: (sp.get('q') || '').slice(0, 100) });
-        const all = status === 'all' ? subs : await listSubmissions(actor, { status: 'all' });
+        const date = String(sp.get('date') || '');
+        const subs = await listSubmissions(actor, { status, q: (sp.get('q') || '').slice(0, 100), date });
+        const all = status === 'all' ? await listSubmissions(actor, { status: 'all', date }) : await listSubmissions(actor, { status: 'all', date });
         return NextResponse.json({
             submissions: subs, reasons: DRESS_CODE_REASONS,
             counts: { pending: all.filter(s => s.pending > 0).length, reviewed: all.filter(s => s.pending === 0).length, all: all.length, pendingProfessors: all.reduce((a, s) => a + s.pending, 0) },

@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmy as toDmy } from "@/lib/date-display";
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, XCircle, Loader2, AlertTriangle, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -11,15 +13,15 @@ import { cn } from "@/lib/utils";
  */
 const dmy = (s?: string) => {
     if (!s) return "—";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s.split("-").reverse().join("-");
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return toDmy(s);
     const d = new Date(s);
-    return isNaN(d.getTime()) ? s : d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Asia/Kolkata" }).replace(/\//g, "-");
+    return isNaN(d.getTime()) ? s : toDmy(d);
 };
 const statusLabel = (s: string) => (s === "Pending HOI Approval" ? "Awaiting HOI" : s === "Pending" ? "Awaiting HR" : s);
 
 export default function LeaveActionPage() {
     const [action, setAction] = useState<"approve" | "reject">("approve");
-    const [state, setState] = useState<"loading" | "saving" | "done" | "blocked" | "error">("loading");
+    const [state, setState] = useState<"loading" | "saving" | "done" | "blocked" | "error" | "cancelled">("loading");
     const [leave, setLeave] = useState<any>(null);
     const [message, setMessage] = useState("");
     const [by, setBy] = useState("");
@@ -33,6 +35,12 @@ export default function LeaveActionPage() {
     };
     const ran = useRef(false);
 
+    // the e-mail button opens this page; the decision is saved only after "Yes"
+    const askAndDecide = async (t: string, a: "approve" | "reject", lv: any) => {
+        const who = lv?.employeeName ? `${lv.employeeName}'s leave${lv.startDate ? ` (${toDmy(lv.startDate)} → ${toDmy(lv.endDate)})` : ""}` : "this leave request";
+        if (await confirmAction({ action: a, what: who })) decide(t, a);
+        else { setMessage("No decision was saved."); setState("cancelled"); }
+    };
     const decide = async (t: string, a: "approve" | "reject") => {
         setState("saving");
         try {
@@ -58,7 +66,7 @@ export default function LeaveActionPage() {
                 if (r.status === 401) { switchAccount(); return; }
                 if (!r.ok) { setMessage(d.error || "Could not open this leave request."); setWrongUser(d.code === "wrong-user"); setState("blocked"); return; }
                 setLeave(d.leave);
-                if (d.canDecide) decide(t, a);   // one click: the button in the e-mail is the decision
+                if (d.canDecide) askAndDecide(t, a, d.leave);   // the button in the e-mail + "Yes" is the decision
                 else { setMessage(d.message); setBy(d.processedBy || ""); setState("blocked"); }
             })
             .catch(() => { setMessage("Could not reach GOG OMS. Please try again."); setState("error"); });
@@ -87,6 +95,7 @@ export default function LeaveActionPage() {
                             {by && <p className="text-xs text-zinc-300">Decided by {by}.</p>}
                             {wrongUser && <button onClick={switchAccount} data-testid="leave-action-switch" className="mt-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold">Switch account</button>}
                             {state === "error" && link?.t && <button onClick={() => decide(link.t, link.a)} className="mt-2 px-4 py-2 rounded-lg bg-zinc-800 text-white text-xs font-bold">Try again</button>}
+                            {state === "cancelled" && link?.t && <button onClick={() => askAndDecide(link.t, link.a, leave)} data-testid="leave-action-again" className="mt-2 px-4 py-2 rounded-lg bg-zinc-800 text-white text-xs font-bold">{link.a === "reject" ? "Reject leave" : "Approve leave"}</button>}
                         </>}
                 </div>
 

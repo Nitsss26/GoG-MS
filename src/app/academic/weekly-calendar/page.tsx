@@ -560,33 +560,33 @@ export default function WeeklyCalendarPage() {
                 <div ref={sheetRef} data-sheet-id={sheet.id} data-base-width={baseWidth} data-testid="image-sheet" style={{ width: baseWidth, background: "#ffffff", padding: 26, fontFamily: "Inter, 'Segoe UI', Arial, Helvetica, sans-serif", color: "#18181b", boxSizing: "border-box" }}>
                     {/* header: logo · Weekly Calendar | college (green band) · dates · classes */}
                     <div style={{ display: "flex", alignItems: "stretch", border: `1px solid ${LINE}`, borderRadius: 14, overflow: "hidden", marginBottom: 14 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "12px 22px", background: "#ffffff" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "12px 22px", background: "#ffffff", flex: "1 1 50%", minWidth: 0 }}>
                             {sheet.logo
                                 ? <img src={sheet.logo} alt="Geeks of Gurukul" data-testid="sheet-logo" style={{ height: 50, width: "auto", objectFit: "contain" }} />
                                 : <div data-testid="sheet-logo-text" style={{ lineHeight: 1 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#15803d", letterSpacing: 1 }}>— Geeks of —</div><div style={{ fontSize: 30, fontWeight: 900, color: "#166534" }}>Gurukul</div></div>}
                             <div style={{ width: 1, alignSelf: "stretch", background: LINE }} />
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                <CalendarDays size={28} style={{ color: "#27272a" }} />
-                                <div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                                <CalendarDays size={28} style={{ color: "#27272a", flexShrink: 0 }} />
+                                <div style={{ minWidth: 0 }}>
                                     <div style={{ fontSize: 24, fontWeight: 900, color: "#18181b", lineHeight: 1.1 }}>Weekly Calendar</div>
                                     {sheet.tags?.length
                                         // year / semester / branch of this timetable → coloured pills
                                         ? <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 5 }} data-testid="sheet-sub" data-text={sheet.sub}>
                                             <span style={{ fontSize: 13, fontWeight: 600, color: "#52525b" }}>{sheet.sub.split(" • ")[0]}</span>
                                             {sheet.tags.map((t, i) => (
-                                                <span key={i} data-testid={`sheet-tag-${t.kind}`} style={{ display: "inline-flex", alignItems: "center", padding: "3px 11px", borderRadius: 999, background: TAG_STYLE[t.kind].bg, border: `1.5px solid ${TAG_STYLE[t.kind].line}`, color: TAG_STYLE[t.kind].color, fontSize: 14, fontWeight: 900, lineHeight: 1.3 }}>{sup(t.text)}</span>
+                                                <span key={i} data-testid={`sheet-tag-${t.kind}`} style={{ display: "inline-flex", alignItems: "center", padding: "3px 11px", borderRadius: 999, background: TAG_STYLE[t.kind].bg, border: `1.5px solid ${TAG_STYLE[t.kind].line}`, color: TAG_STYLE[t.kind].color, fontSize: 14, fontWeight: 900, lineHeight: 1.3, maxWidth: "100%", whiteSpace: "normal", overflowWrap: "anywhere" }}>{sup(t.text)}</span>
                                             ))}
                                         </div>
                                         : <div style={{ fontSize: 13, fontWeight: 600, color: "#52525b", marginTop: 3 }} data-testid="sheet-sub" data-text={sheet.sub}>{sheet.sub}</div>}
                                 </div>
                             </div>
                         </div>
-                        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, background: GREEN, padding: "12px 22px 12px 48px", clipPath: "polygon(28px 0, 100% 0, 100% 100%, 0 100%)" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                        <div style={{ flex: "1 1 50%", minWidth: 0, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "10px 16px", background: GREEN, padding: "12px 22px 12px 48px", clipPath: "polygon(28px 0, 100% 0, 100% 100%, 0 100%)" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: "1 1 320px" }}>
                                 <Building2 size={28} style={{ color: "#ffffff", flexShrink: 0 }} />
-                                <div style={{ fontSize: 26, fontWeight: 900, color: "#ffffff", lineHeight: 1.15 }} data-testid="sheet-college">{sheet.college}</div>
+                                <div style={{ fontSize: 26, fontWeight: 900, color: "#ffffff", lineHeight: 1.15, minWidth: 0, overflowWrap: "anywhere" }} data-testid="sheet-college">{sheet.college}</div>
                             </div>
-                            <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, flexShrink: 0, maxWidth: "100%" }} data-testid="sheet-chips">
                                 <div style={{ display: "flex", alignItems: "center", gap: 7, border: "1px solid rgba(255,255,255,.45)", borderRadius: 999, padding: "7px 14px", color: "#ffffff", fontSize: 13, fontWeight: 800 }}><CalendarDays size={15} /> {shortDmy(data.weekStart)} – {shortDmy(data.weekEnd)}</div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 7, border: "1px solid rgba(255,255,255,.45)", borderRadius: 999, padding: "7px 14px", color: "#ffffff", fontSize: 13, fontWeight: 800 }}><Layers size={15} /> {list.length} Class{list.length === 1 ? "" : "es"}</div>
                             </div>
@@ -1125,10 +1125,10 @@ export default function WeeklyCalendarPage() {
                                 <div className="space-y-3 pt-2 border-t border-zinc-800">
                                     {!selected.classEnded ? (
                                         <p className="text-xs text-zinc-500">You can complete the class record after the class ends ({selected.timeStop}).</p>
-                                    ) : PROFESSOR_EDITABLE_CLASS_STATUSES.includes(selected.recordStatus) && (
+                                    ) : (PROFESSOR_EDITABLE_CLASS_STATUSES.includes(selected.recordStatus) || selected.recordStatus === "PENDING_OM") && (
                                         <Link href={`/faculty/lecture-report?date=${selected.date}&lecture=${selected.lectureNumber}`} data-testid="complete-class"
                                             className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider rounded-xl">
-                                            Complete Class / Upload Notes <ExternalLink size={12} />
+                                            {selected.recordStatus === "PENDING_OM" ? "Edit Class Record (not verified yet)" : "Complete Class / Upload Notes"} <ExternalLink size={12} />
                                         </Link>
                                     )}
                                     {selected.classEnded && (

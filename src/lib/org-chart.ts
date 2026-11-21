@@ -27,7 +27,8 @@ export type OrgPerson = {
     customRole?: string;
 };
 
-/** Role Management: an HR-created role drawn in its own box (empty only when previewing a role that has no one yet) */
+/** Role Management: an HR-created role drawn in its own box (empty only when previewing a role that has no one yet).
+ *  parent: "TL" | "AD" | "HR" (box under them) · "ROLE:<roleId>" (under another role's box) · "LEFT:AD" / "RIGHT:HR" … (same level, beside) */
 export type OrgCustomGroup = { key: string; label: string; parent: string; people: OrgPerson[] };
 export type OrgHoi = { person: OrgPerson; members: OrgPerson[]; custom?: OrgCustomGroup[] };
 /** HR-created roles for the chart: roles with org.mode OWN get their own box; showEmpty = draw it even with nobody (preview) */
@@ -99,7 +100,19 @@ export function buildOrgChart(people: OrgPerson[], statusOf: (id: string) => str
     const activeAll = people.filter(p => p.id && p.name && !INACTIVE.test(statusOf(p.id) || ""));
     // Role Management: employees of an HR-created role with its own box leave their base role's place
     // (no such roles → everyone stays exactly where they were)
-    const own = (custom?.roles || []).filter(r => r.org?.mode === "OWN" && ["TL", "AD", "HR", "HOI"].includes(String(r.org.parent)));
+    // valid own boxes: under TL / AD / HR / HOI, beside TL / AD / HR, or under another valid box (not one drawn per HOI)
+    const all = new Map((custom?.roles || []).map(r => [r.roleId, r]));
+    const valid = (r: { roleId: string; org: { mode: string; parent?: string } }, seen = new Set<string>()): boolean => {
+        const { mode } = r.org || { mode: "" }, parent = String(r.org?.parent || "");
+        if (mode === "LEFT" || mode === "RIGHT") return ["TL", "AD", "HR"].includes(parent);
+        if (mode !== "OWN") return false;
+        if (["TL", "AD", "HR", "HOI"].includes(parent)) return true;
+        if (!parent.startsWith("ROLE:") || seen.has(r.roleId)) return false;
+        const p = all.get(parent.slice(5));
+        if (!p || (p.org?.mode === "OWN" && p.org.parent === "HOI")) return false;
+        return valid(p, new Set([...seen, r.roleId]));
+    };
+    const own = (custom?.roles || []).filter(r => valid(r));
     const ownOf = new Map(own.map(r => [r.roleId, r]));
     const placed = activeAll.filter(p => p.customRole && ownOf.has(p.customRole));
     const placedIds = new Set(placed.map(p => p.id));
@@ -142,9 +155,16 @@ export function buildOrgChart(people: OrgPerson[], statusOf: (id: string) => str
                 .filter(g => g.people.length || (custom?.showEmpty || []).includes(g.key)),
         } : {}),
     }));
-    const customGroups: OrgCustomGroup[] = own.filter(r => r.org.parent !== "HOI")
-        .map(r => ({ key: r.roleId, label: r.label, parent: String(r.org.parent), people: placed.filter(p => p.customRole === r.roleId).sort(byName) }))
-        .filter(g => g.people.length || (custom?.showEmpty || []).includes(g.key));
+    const allGroups: OrgCustomGroup[] = own.filter(r => !(r.org.mode === "OWN" && r.org.parent === "HOI"))
+        .map(r => ({
+            key: r.roleId, label: r.label,
+            parent: r.org.mode === "LEFT" || r.org.mode === "RIGHT" ? `${r.org.mode}:${r.org.parent}` : String(r.org.parent),
+            people: placed.filter(p => p.customRole === r.roleId).sort(byName),
+        }));
+    // a box is drawn when it has people, is being previewed, or a box under it is drawn
+    const shown = (g: OrgCustomGroup, seen = new Set<string>()): boolean => !seen.has(g.key) && (g.people.length > 0 || (custom?.showEmpty || []).includes(g.key)
+        || allGroups.some(c => c.parent === `ROLE:${g.key}` && shown(c, new Set([...seen, g.key]))));
+    const customGroups = allGroups.filter(g => shown(g));
     const clch = active.filter(p => p.role === "CURRICULUM_HEAD" || p.role === "CURRICULUM_LEAD")
         .sort((a, b) => (a.role === b.role ? 0 : a.role === "CURRICULUM_HEAD" ? -1 : 1) || byName(a, b));
     // Professors / OMs not assigned to any (active) HOI — shown so HR can spot them

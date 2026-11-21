@@ -1,4 +1,6 @@
 "use client";
+import { confirmAction } from "@/lib/confirm-action";
+import { dmyTime as toDmyTime, dmy as toDmy } from "@/lib/date-display";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import type { AdditionalResponsibility } from "@/context/AuthContext";
@@ -42,7 +44,7 @@ export default function ResponsibilityApprovalsPage() {
     const getEmployee = (id?: string) => employees.find(e => e.id === id);
     const submittedBy = (r: AdditionalResponsibility) => r.addedByName || getEmployee(r.addedBy)?.name || r.addedBy || "—";
     const submitterRole = (r: AdditionalResponsibility) => r.addedByRole || getEmployee(r.addedBy)?.role || "";
-    const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+    const fmt = (iso?: string) => (iso ? toDmyTime(iso) : "");
 
     const counts = {
         Pending: items.filter(r => r.status === "Pending").length,
@@ -62,6 +64,7 @@ export default function ResponsibilityApprovalsPage() {
     const handleDecision = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!modal || modal.type === "details") return;
+        if (!(await confirmAction({ action: modal.type, what: "this additional responsibility" }))) return;
         setIsSaving(true);
         await approveAdditionalResponsibility(modal.resp.id, modal.type === "approve" ? "Approved" : "Rejected", reason.trim() || undefined);
         await load();
@@ -113,7 +116,7 @@ export default function ResponsibilityApprovalsPage() {
                                 <div className="flex justify-between items-start gap-4">
                                     <div className="min-w-0 flex-1">
                                         <h4 className="text-xs font-bold text-white truncate" title={r.employeeName}>{r.employeeName} <span className="text-[10px] font-mono font-normal text-zinc-500">· {r.employeeId}</span></h4>
-                                        <p className="text-[10px] text-zinc-500">Submitted by <span className="text-zinc-300">{submittedBy(r)}</span>{submitterRole(r) ? ` (${submitterRole(r)})` : ""} · {r.date}</p>
+                                        <p className="text-[10px] text-zinc-500">Submitted by <span className="text-zinc-300">{submittedBy(r)}</span>{submitterRole(r) ? ` (${submitterRole(r)})` : ""} · {toDmy(r.date)}</p>
                                         <div className="mt-2 p-2 bg-zinc-800/50 rounded-lg border border-zinc-700/50">
                                             <p className="text-[11px] text-zinc-300 font-medium leading-relaxed break-words">
                                                 <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block mb-0.5">Responsibility:</span>

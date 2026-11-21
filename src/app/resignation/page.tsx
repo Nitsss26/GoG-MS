@@ -1,6 +1,8 @@
 // @ts-nocheck
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmy as toDmy } from "@/lib/date-display";
 import { useState } from "react";
 import { useAuth, ResignationRequest } from "@/context/AuthContext";
 import {
@@ -82,7 +84,7 @@ export default function ResignationPage() {
                                         </div>
                                         <div>
                                             <h4 className="text-sm font-bold text-white uppercase tracking-tight">{req.employeeName}</h4>
-                                            <p className="text-[10px] text-zinc-500">{req.submissionDate} · Ref: {req.id}</p>
+                                            <p className="text-[10px] text-zinc-500">{toDmy(req.submissionDate)} · Ref: {req.id}</p>
                                         </div>
                                     </div>
 
@@ -96,7 +98,7 @@ export default function ResignationPage() {
                                             <p className="text-xs font-bold text-white">{req.noticePeriodDays} Days</p>
                                         </div>
                                         <div className="flex gap-2">
-                                            <button onClick={() => approveResignation(req.id)} className="btn-primary py-2 px-6 text-[10px]">Verify & Approve</button>
+                                            <button onClick={async () => { if (await confirmAction({ action: "approve", what: "this resignation" })) approveResignation(req.id); }} className="btn-primary py-2 px-6 text-[10px]">Verify & Approve</button>
                                             <button className="btn-outline border-zinc-800 text-zinc-500 hover:text-red-500 hover:border-red-500/30 py-2 px-4 text-[10px]">Reject</button>
                                         </div>
                                     </div>
@@ -147,7 +149,7 @@ export default function ResignationPage() {
                                         {myRequest.status} Protocol
                                     </span>
                                     <h2 className="text-3xl font-bold text-white mt-4 italic">Transition In Progress</h2>
-                                    <p className="text-sm text-zinc-400 font-medium">Request submitted on {myRequest.submissionDate}</p>
+                                    <p className="text-sm text-zinc-400 font-medium">Request submitted on {toDmy(myRequest.submissionDate)}</p>
                                 </div>
                             </div>
 

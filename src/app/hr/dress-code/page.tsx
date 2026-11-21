@@ -1,4 +1,6 @@
 "use client";
+import { confirmAction } from "@/lib/confirm-action";
+import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
@@ -29,14 +31,14 @@ export default function DressCodeVerificationPage() {
 
     // Saved timestamps of the record, shown in the application time zone (never "now")
     const TZ = "Asia/Kolkata";
-    const fmtDate = (ymd?: string) => (ymd ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" }) : "—");
+    const fmtDate = (ymd?: string) => (ymd ? toDmy(ymd) : "—");
     const fmtTime = (hms?: string) => {
         if (!hms) return "—";
         const [h, m] = hms.split(":").map(Number);
         if (isNaN(h)) return hms;
         return `${((h + 11) % 12) + 1}:${String(m || 0).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
     };
-    const fmtTs = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-GB", { timeZone: TZ, day: "2-digit", month: "long", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }) : "—");
+    const fmtTs = (iso?: string) => (iso ? toDmyTime(iso, TZ) : "—");
 
     // Filter records that have images submitted
     const relevantRecords = attendanceRecords
@@ -213,7 +215,7 @@ export default function DressCodeVerificationPage() {
                                             <XCircle size={16} className="group-hover/btn:scale-110 transition-transform" /> Reject
                                         </button>
                                         <button
-                                            onClick={() => resolveDressCodeCheck(record.id || (record as any)._id, "Approved")}
+                                            onClick={async () => { if (await confirmAction({ action: "approve", what: `${emp?.name || "this employee"}'s dress code (${fmtDate(record.date)})` })) resolveDressCodeCheck(record.id || (record as any)._id, "Approved"); }}
                                             className="p-3 flex items-center justify-center gap-2 hover:bg-emerald-500/10 text-zinc-400 hover:text-emerald-400 transition-colors font-bold text-xs group/btn"
                                         >
                                             <CheckCircle size={16} className="group-hover/btn:scale-110 transition-transform" /> Approve

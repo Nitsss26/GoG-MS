@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
+import { dmyTime } from "@/lib/date-display";
 import { useCallback, useEffect, useState } from "react";
 import { Clock, Loader2, FileText, X, CheckCircle2, XCircle, AlertTriangle, ExternalLink, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -38,6 +40,7 @@ export default function LateJustificationsBoard() {
     const decide = async (action: "approve" | "reject") => {
         if (!open) return;
         if (action === "reject" && reason.trim().length < 3) { setError("Please give the reason for rejection."); return; }
+        if (!(await confirmAction({ action, what: `${open.employeeName}'s late clock-in justification` }))) return;
         setBusy(action); setError("");
         try {
             const r = await fetch("/api/hr/attendance/late-justifications", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: open.id, action, reason: reason.trim() || undefined }) });
@@ -167,7 +170,7 @@ export default function LateJustificationsBoard() {
                             <div className="rounded-xl border border-zinc-800 p-3 space-y-1" data-testid="lj-processed">
                                 {error && <p className="text-[11px] text-amber-300 flex items-center gap-1"><AlertTriangle size={12} /> {error}</p>}
                                 <p><span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full border", JUSTIFICATION_STYLE[open.justificationStatus])}>{JUSTIFICATION_LABEL[open.justificationStatus]}</span></p>
-                                <p className="text-zinc-300">By {open.reviewedByName} ({open.reviewedByRole}){open.reviewedAt ? ` · ${new Date(open.reviewedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}</p>
+                                <p className="text-zinc-300">By {open.reviewedByName} ({open.reviewedByRole}){open.reviewedAt ? ` · ${dmyTime(open.reviewedAt)}` : ""}</p>
                                 {open.rejectionReason && <p className="text-red-300">Reason: {open.rejectionReason}</p>}
                                 <p className="text-zinc-500">Original record: clock-in {t12(open.actualClockIn)}, scheduled {t12(open.scheduledClockIn)} — late {fmtMins(open.lateDurationMinutes)}.</p>
                             </div>

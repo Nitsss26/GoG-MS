@@ -12,10 +12,11 @@
  * A class record is a LectureReport document (existing model), linked to the sprint plan entry it came from.
  * Every role check is made here on the server, together with the college scope (Module 24).
  */
+import { dmyTime as toDmyTime } from "@/lib/date-display";
 import { LectureReport, SprintPlan, Employee, JobRun, Attendance } from '@/models/Schemas';
 import { planVisibleFor, planCollegeOf } from '@/lib/professor-routine';
 import {
-    getClassStatus, getPlanStatus, PROFESSOR_ROLES, CL_CH_ROLES, PROFESSOR_EDITABLE_CLASS_STATUSES,
+    getClassStatus, getPlanStatus, PROFESSOR_ROLES, CL_CH_ROLES, PROFESSOR_EDITABLE_CLASS_STATUSES, PROFESSOR_EDIT_BEFORE_OM_STATUS,
     CLASS_STATUS_LABEL, DEFAULT_CLASS_STRENGTH, roleShort, OM_TIME_GRACE_MINUTES, NOTES_GROUP_TYPES, notesGroupLabel,
 } from '@/lib/academic-status';
 import {
@@ -36,7 +37,7 @@ function historyItem(actor: Actor, action: string, fromStatus: string, toStatus:
 }
 /** Statuses in which CL / CH / HOI may do the final verification (PENDING_HOI = records CL/CH verified under the old flow) */
 const FINAL_PENDING = ['PENDING_CL_CH', 'PENDING_HOI'];
-const fmtIST = (iso?: string) => iso ? new Date(iso).toLocaleString('en-IN', { timeZone: process.env.ACADEMIC_TIMEZONE || 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '';
+const fmtIST = (iso?: string) => iso ? toDmyTime(iso, process.env.ACADEMIC_TIMEZONE || 'Asia/Kolkata') : '';
 const alreadyFinal = (rec: any) => {
     const f = rec?.finalVerification?.status === 'VERIFIED' ? rec.finalVerification : (rec?.hoiVerification?.status === 'VERIFIED' ? rec.hoiVerification : null);
     return f ? `Final verification was already done by ${roleShort(f.role)} (${f.byName}) on ${fmtIST(f.at)}.` : 'This class record is already completed.';
@@ -300,8 +301,10 @@ export async function submitClassRecord(actor: Actor, input: SubmitInput): Promi
     if (!record) return fail(404, 'Class not found.');
     const before = getClassStatus(record);
     const legacy = !record.pipelineStatus && record.status === 'Completed';
-    if (!PROFESSOR_EDITABLE_CLASS_STATUSES.includes(before) && !legacy) {
-        return fail(409, `This class record is already submitted (${CLASS_STATUS_LABEL[before]}). It can be changed only if it is reverted to you.`);
+    // submitted but not yet verified by the OM → the professor may still edit it (stays "Pending OM")
+    const isEdit = before === PROFESSOR_EDIT_BEFORE_OM_STATUS || legacy;
+    if (!PROFESSOR_EDITABLE_CLASS_STATUSES.includes(before) && !isEdit) {
+        return fail(409, `This class record is already ${before === 'PENDING_CL_CH' ? 'verified by the OM' : `with ${CLASS_STATUS_LABEL[before]}`} and cannot be edited now. It can be changed only if it is reverted to you.`);
     }
     // Class snapshots are compulsory (a new upload, or the ones already on this record when re-submitting)
     if (!snapshots.length && !(record.snapshotUrls || []).length && !record.classPhotoUrl) {
@@ -309,7 +312,7 @@ export async function submitClassRecord(actor: Actor, input: SubmitInput): Promi
     }
 
     const now = nowISO();
-    const isResubmit = (record.submissionCount || 0) > 0 || legacy;
+    const isResubmit = !isEdit && (record.submissionCount || 0) > 0;
     const hasAssignment = !!(assignmentUrl || input.hasAssignment && (input.assignmentTitle || input.assignmentDescription));
     const existingAssignment = record.assignment?.toObject ? record.assignment.toObject() : (record.assignment || {});
 
@@ -360,7 +363,8 @@ export async function submitClassRecord(actor: Actor, input: SubmitInput): Promi
         clVerificationStatus: 'Pending',
         auditStatus: 'Pending',
         pipelineStatus: 'PENDING_OM',
-        submittedAt: now,
+        // an edit before OM verification keeps the original submission time
+        submittedAt: isEdit && record.submittedAt ? record.submittedAt : now,
         omVerification: { status: 'PENDING' },
         clChVerification: { status: 'PENDING' },
         hoiVerification: { status: 'PENDING' },
@@ -368,7 +372,10 @@ export async function submitClassRecord(actor: Actor, input: SubmitInput): Promi
     const unset: any = {};
     if (!notesMissing) { delete set.notesReasonStatus; unset.notesReasonStatus = ''; }
 
-    const push: any = {
+    const push: any = isEdit ? {
+        pipelineHistory: historyItem(actor, 'Edited by Professor (before OM verification)', before, 'PENDING_OM',
+            notesMissing ? `Notes not submitted — reason: ${reason}` : `Attendance ${present}/${total}`),
+    } : {
         pipelineHistory: {
             $each: [
                 historyItem(actor, isResubmit ? 'Re-submitted by Professor' : 'Submitted by Professor', before, 'SUBMITTED',
@@ -379,20 +386,31 @@ export async function submitClassRecord(actor: Actor, input: SubmitInput): Promi
     };
 
     // Notes provided now → close open "notes pending" flags, keeping them as history
-    const updateOps: any = { $set: set, $push: push, $inc: { submissionCount: 1 } };
+    const updateOps: any = { $set: set, $push: push, ...(isEdit ? {} : { $inc: { submissionCount: 1 } }) };
     if (Object.keys(unset).length) updateOps.$unset = unset;
+    // atomic: an edit is saved only while the record is still "Pending OM" (if the OM verifies first, it is refused)
     let updated: any = await LectureReport.findOneAndUpdate(
-        { _id: record._id, $or: [{ pipelineStatus: { $in: PROFESSOR_EDITABLE_CLASS_STATUSES } }, { pipelineStatus: { $exists: false } }] },
+        { _id: record._id, $or: [{ pipelineStatus: { $in: [...PROFESSOR_EDITABLE_CLASS_STATUSES, ...(isEdit ? [PROFESSOR_EDIT_BEFORE_OM_STATUS] : [])] } }, { pipelineStatus: { $exists: false } }] },
         updateOps, { new: true }
     );
-    if (!updated) return fail(409, 'The class record was changed meanwhile. Refresh and try again.');
+    if (!updated) return fail(409, isEdit ? 'The OM has just verified (or reverted) this class record, so it can no longer be edited. Refresh to see it.' : 'The class record was changed meanwhile. Refresh and try again.');
     if (hasNotes && (updated.delayFlags || []).some((f: any) => f.status === 'OPEN')) {
         await resolveOpenFlags(updated, actor, 'Notes submitted with the class record');
         updated = await LectureReport.findById(updated._id);
     }
 
-    // Notifications: missing-notes reason → OM (email); every (re)submission → OM in-app
+    // Notifications: missing-notes reason → OM (email); every (re)submission → OM in-app; an edit → OM in-app only
     const oms = await omsOf(updated);
+    if (isEdit) {
+        await notifySafe({
+            recipients: oms, email: false,
+            title: `Class record edited — ${updated.facultyName}`,
+            message: `${shortClass(updated)} was edited by the professor and is still waiting for OM verification.`,
+            type: 'CLASS_SUBMITTED', link: `/academic/verification?record=${updated._id}`,
+            entityType: 'LectureReport', entityId: String(updated._id), college: updated.college, actor,
+        });
+        return { ok: true, record: updated, message: 'Class record updated. It is still waiting for OM verification.' };
+    }
     if (notesMissing) {
         await notifySafe({
             recipients: oms,

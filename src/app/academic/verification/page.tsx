@@ -238,7 +238,7 @@ export default function ClassVerificationPage() {
                             </div>
                             {r.virtual
                                 ? <p className="text-xs text-zinc-400">The professor has not submitted the class record for this class yet{r.classEnded ? "" : " (the class has not ended)"}.</p>
-                                : <ClassRecordDetails record={r} />}
+                                : <ClassRecordDetails record={r} plain hideOverview />}
                             <ClassRecordActions key={`${r._id}-${r.pipelineStatus}-${(r.pipelineHistory || []).length}`} record={r} role={role} userId={user.id} onDone={refreshAfterAction} />
                         </div>
                     );

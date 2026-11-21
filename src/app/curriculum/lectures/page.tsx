@@ -1,5 +1,6 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm-action";
 import { dmy as toDmy } from "@/lib/date-display";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
@@ -78,6 +79,8 @@ function QualityReview({ record, onDone }: { record: any; onDone: (msg: string) 
     const save = async () => {
         if (notes === "NEEDS_REVISION" && notesRemarks.trim().length < 5) return setError("Write what must change in the notes (at least 5 characters).");
         if (hasAsg && asg === "NEEDS_REVISION" && asgRemarks.trim().length < 5) return setError("Write what must change in the assignment (at least 5 characters).");
+        const allOk = notes === "VERIFIED" && (!hasAsg || asg === "VERIFIED");
+        if (!(await confirmAction({ action: allOk ? "approve" : "send back for revision", what: "this lecture's notes" + (hasAsg ? " and assignment" : "") }))) return;
         setBusy(true); setError("");
         try {
             let msg = "";
@@ -370,7 +373,7 @@ export default function CurriculumLecturesPage() {
                                             <p className="text-xs text-zinc-400 rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3">
                                                 Planned in the sprint plan · {CLASS_STATUS_LABEL[st]}. {r.classEnded ? "The class time is over and the professor has not submitted the class record yet." : "The class has not happened yet."}
                                             </p>
-                                        ) : <ClassRecordDetails record={{ ...r, college: collegeName(r.college) }} />}
+                                        ) : <ClassRecordDetails record={{ ...r, college: collegeName(r.college) }} plain />}
                                         <ClassRecordActions record={r} role={role} userId={user.id} onDone={afterAction} />
                                         {!isClCh && !["OM", "HOI"].includes(role) && (
                                             <p className="text-[10px] text-zinc-500">View only — verification is done by OM, CL, CH or HOI.</p>
