@@ -11,10 +11,12 @@
  * - Emails use the existing SMTP sender (src/lib/mail-server.ts). Delivery status is saved on the row; failed
  *   emails are retried (max 3 attempts) by the sweep, with an atomic claim so a mail is not sent twice.
  */
+import { dmy as toDmy } from "@/lib/date-display";
 import { isNewPolicy, lateLadder } from '@/lib/attendance-policy';
 import { randomBytes } from 'crypto';
 import { AttendanceViolation, Attendance, Employee, WorkSchedule } from '@/models/Schemas';
 import { FlagRemoval } from '@/models/SalaryModule';
+import { LateJustification } from '@/models/LateJustification';
 import { sendMailInternal } from '@/lib/mail-server';
 import { getExpectedTimingInternal } from '@/lib/attendance-utils';
 
@@ -50,7 +52,7 @@ export function fmt12(t?: string) {
     return `${String(((h + 11) % 12) + 1).padStart(2, '0')}:${String(mm).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 export const fmtDuration = (mins?: number) => (mins == null || isNaN(mins) ? '—' : mins >= 60 ? `${Math.floor(mins / 60)} hr ${mins % 60} min` : `${mins} min`);
-const fmtDate = (ymd: string) => ymd.split('-').reverse().join('-');
+const fmtDate = (ymd: string) => toDmy(ymd);
 const ordinal = (n: number) => { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
 
 /** Escalation for Late / Early by instance */
@@ -159,7 +161,7 @@ function renderText(name: string, empId: string, violation: string, m: Mail) {
  * (HR is copied on each one — with the same subject, mail apps put all employees' mails into one thread)
  */
 const subjectFor = (subject: string, v: any) => {
-    const d = /^\d{4}-\d{2}-\d{2}$/.test(String(v?.date || '')) ? new Date(`${v.date}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '';
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(String(v?.date || '')) ? toDmy(v.date) : '';
     return [subject, [v?.employeeName, v?.employeeId ? `(${v.employeeId})` : ''].filter(Boolean).join(' '), d].filter(Boolean).join(' — ');
 };
 
@@ -284,17 +286,69 @@ export async function missingOutNumbers(vs: any[]): Promise<Map<string, number>>
     }
     return out;
 }
-/** Flags / salary: Missing Clock-Outs that are not rejected are left out; rejected ones get their number */
-export async function applyMissingOutRule<T extends { type?: string; hrStatus?: string; id?: string; instance?: any }>(vs: T[]): Promise<T[]> {
-    if (!vs.some(v => v?.type === 'MISSING_OUT')) return vs;
-    const nums = await missingOutNumbers(vs);
-    return vs.filter(v => v.type !== 'MISSING_OUT' || v.hrStatus === 'Rejected').map(v => (v.type === 'MISSING_OUT' ? { ...v, instance: nums.get(String(v.id)) ?? null } : v));
+/**
+ * Late Clock-In / Early Clock-Out (from the policy date, POLICY_FROM): the number is counted again every time — its
+ * place among the month's flags of that type that still count (date order). A flag removed through Flag Removal,
+ * waived / approved by HR, or a Late Clock-In whose justification is still under HR review does not count and has no
+ * number, so when the 1st is removed the 2nd becomes the 1st. Same rule as the payable days (src/lib/payable-days.ts)
+ * and Email Management. Earlier months keep the number saved when the flag was raised.
+ */
+const RENUMBERED = ['LATE_IN', 'EARLY_OUT'];
+export async function lateEarlyNumbers(vs: any[]): Promise<Map<string, number | null>> {
+    const out = new Map<string, number | null>();
+    const keys = Array.from(new Set(vs.filter(v => RENUMBERED.includes(v?.type) && isNewPolicy(v.date)).map(v => `${v.employeeId}|${v.type}|${String(v.date).slice(0, 7)}`)));
+    for (const k of keys) {
+        const [employeeId, type, month] = k.split('|');
+        const date = { $gte: `${month}-01`, $lte: `${month}-31` };
+        const [all, rem, pend]: [any[], any[], any[]] = await Promise.all([
+            AttendanceViolation.find({ employeeId, type, date }).select('id date hrStatus').lean() as Promise<any[]>,
+            FlagRemoval.find({ employeeId, source: 'VIOLATION', flagType: type, flagDate: date }).select('sourceId').lean() as Promise<any[]>,
+            type === 'LATE_IN' ? LateJustification.find({ employeeId, date, justificationStatus: 'pending' }).select('date').lean() as Promise<any[]> : Promise.resolve([]),
+        ]);
+        const removed = new Set(rem.map(r => String(r.sourceId))), onHold = new Set(pend.map(j => String(j.date)));
+        let n = 0;
+        for (const x of all.sort((a, b) => String(a.date).localeCompare(String(b.date)))) {
+            const counts = !removed.has(String(x.id)) && !NOT_COUNTED.includes(String(x.hrStatus || '')) && !onHold.has(String(x.date));
+            out.set(String(x.id), counts ? ++n : null);
+        }
+    }
+    return out;
 }
-/** Lists (HR board, My Attendance Alerts): every alert stays listed; a Missing Clock-Out has a number only once rejected */
-export async function numberMissingOut<T extends { type?: string; hrStatus?: string; id?: string; instance?: any }>(vs: T[]): Promise<T[]> {
-    if (!vs.some(v => v?.type === 'MISSING_OUT')) return vs;
-    const nums = await missingOutNumbers(vs);
-    return vs.map(v => (v.type === 'MISSING_OUT' ? { ...v, instance: nums.get(String(v.id)) ?? null } : v));
+/** The flag with its counted number: level and proposed deduction follow the number (HR's own decision is kept) */
+function withLateEarlyNumber<T extends { type?: string; hrStatus?: string; id?: string; instance?: any; date?: string }>(v: T, nums: Map<string, number | null>): T {
+    if (!RENUMBERED.includes(String(v.type)) || !nums.has(String(v.id))) return v;
+    const n = nums.get(String(v.id)) ?? null;
+    if (n == null) return { ...v, instance: null };
+    const hr = String(v.hrStatus || '');
+    if (v.type === 'LATE_IN') {
+        const l = lateLadder(n);
+        // automatic statuses follow the number; a status HR set (rejected, on hold …) stays
+        return { ...v, instance: n, level: l.level, proposedDeduction: l.proposedDeduction, hrStatus: ['Not Required', 'Approved for Payroll', ''].includes(hr) ? l.hrStatus : hr };
+    }
+    const e = escalation(n);
+    return { ...v, instance: n, level: e.level, proposedDeduction: e.proposedDeduction, hrStatus: ['Not Required', 'Pending HR Verification', ''].includes(hr) ? e.hrStatus : hr };
+}
+async function numberLateEarly<T extends { type?: string; hrStatus?: string; id?: string; instance?: any; date?: string }>(vs: T[]): Promise<T[]> {
+    if (!vs.some(v => RENUMBERED.includes(String(v?.type)) && isNewPolicy(v.date))) return vs;
+    const nums = await lateEarlyNumbers(vs);
+    return vs.map(v => withLateEarlyNumber(v, nums));
+}
+
+/** Flags / salary: Missing Clock-Outs that are not rejected are left out; rejected ones get their number.
+ *  Late / Early Clock-Outs get their counted number (lateEarlyNumbers). */
+export async function applyMissingOutRule<T extends { type?: string; hrStatus?: string; id?: string; instance?: any; date?: string }>(vs: T[]): Promise<T[]> {
+    const le = await numberLateEarly(vs);
+    if (!le.some(v => v?.type === 'MISSING_OUT')) return le;
+    const nums = await missingOutNumbers(le);
+    return le.filter(v => v.type !== 'MISSING_OUT' || v.hrStatus === 'Rejected').map(v => (v.type === 'MISSING_OUT' ? { ...v, instance: nums.get(String(v.id)) ?? null } : v));
+}
+/** Lists (HR board, My Attendance Alerts): every alert stays listed; a Missing Clock-Out has a number only once rejected;
+ *  Late / Early Clock-Outs get their counted number */
+export async function numberMissingOut<T extends { type?: string; hrStatus?: string; id?: string; instance?: any; date?: string }>(vs: T[]): Promise<T[]> {
+    const le = await numberLateEarly(vs);
+    if (!le.some(v => v?.type === 'MISSING_OUT')) return le;
+    const nums = await missingOutNumbers(le);
+    return le.map(v => (v.type === 'MISSING_OUT' ? { ...v, instance: nums.get(String(v.id)) ?? null } : v));
 }
 
 export async function sendDecisionEmail(v: any, decision: string, remarks: string) {

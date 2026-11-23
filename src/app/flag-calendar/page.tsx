@@ -19,6 +19,7 @@ const istToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkat
 import { cn } from "@/lib/utils";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Flag, Search, X, Check, Clock, CalendarOff, Sun, UserCheck, CalendarDays, AlertTriangle, MapPin, LogIn, CheckCircle2, Edit2, RefreshCw } from "lucide-react";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -123,7 +124,7 @@ function formatDDMMYYYY(dateStr: string): string {
 }
 
 export default function FlagCalendarPage() {
-    const { user, attendanceRecords, holidays, employees, leaves, getReportees, updateSingleDaySchedule, colleges, getExpectedTiming, reloadHolidaysAndNotices } = useAuth();
+    const { user, attendanceRecords, holidays, employees, leaves, getReportees, updateSingleDaySchedule, colleges, getExpectedTiming, reloadHolidaysAndNotices, overrideAttendance } = useAuth();
     const router = useRouter();
     const now = new Date();
     const [month, setMonth] = useState(now.getMonth());
@@ -142,6 +143,18 @@ export default function FlagCalendarPage() {
     useEffect(() => { reloadHolidaysAndNotices(); }, [reloadHolidaysAndNotices]);
     // Active flags of the selected employee for the month (Late / Early / Missing Clock-Out, Dress Code)
     const [serverFlags, setServerFlags] = useState<ServerFlag[]>([]);
+    const [flagsRev, setFlagsRev] = useState(0);
+    // HR / HR Executive / Founder: Mark Present / Absent with a reason (as in the Attendance Log) and remove a flag (as in Flag Removal)
+    const [markDlg, setMarkDlg] = useState<{ date: string; status: "Present" | "Absent"; reason: string; busy: boolean; error: string } | null>(null);
+    const [removeDlg, setRemoveDlg] = useState<{ flag: ServerFlag; reason: string; busy: boolean; error: string } | null>(null);
+    const [notice, setNotice] = useState("");
+    // a date clicked → its Day Details open as a pop-up (Escape closes it; a Mark / Remove dialog on top closes first)
+    useEffect(() => {
+        if (!selectedDay) return;
+        const k = (e: KeyboardEvent) => { if (e.key === "Escape" && !markDlg && !removeDlg) setSelectedDay(null); };
+        window.addEventListener("keydown", k);
+        return () => window.removeEventListener("keydown", k);
+    }, [selectedDay, markDlg, removeDlg]);
     useEffect(() => {
         const emp = selectedEmployeeId || user?.id; if (!emp) return;
         let gone = false;
@@ -150,7 +163,7 @@ export default function FlagCalendarPage() {
             .then(r => (r.ok ? r.json() : { flags: [] })).then(d => { if (!gone) setServerFlags(Array.isArray(d.flags) ? d.flags : []); })
             .catch(() => { if (!gone) setServerFlags([]); });
         return () => { gone = true; };
-    }, [selectedEmployeeId, user?.id, year, month]);
+    }, [selectedEmployeeId, user?.id, year, month, flagsRev]);
 
     if (!user) return null;
 
@@ -172,6 +185,31 @@ export default function FlagCalendarPage() {
 
     const isManager = ["HOI", "AD", "HR", "FOUNDER"].includes(user.role);
     const isViewingReportee = selectedEmployeeId !== user.id;
+    // the same people the server allows (HR — HR Executive too — and Founders), never on one's own record
+    const canAct = (user.role === "HR" || user.role === "FOUNDER") && isViewingReportee;
+    const markerRole = (rec: any) => (rec?.markedByRole === "FOUNDER" ? "Founder" : rec?.markedByRole === "HR_EXECUTIVE" ? "HR Executive" : "HR");
+    const saveMark = async () => {
+        if (!markDlg) return;
+        const reason = markDlg.reason.trim();
+        if (!reason) { setMarkDlg({ ...markDlg, error: `Write the reason for marking ${selectedEmployee?.name} ${markDlg.status}.` }); return; }
+        setMarkDlg({ ...markDlg, busy: true, error: "" });
+        const r = await overrideAttendance(selectedEmployeeId, markDlg.date, markDlg.status, reason);
+        if (r?.ok) { setNotice(`${selectedEmployee?.name} marked ${markDlg.status} for ${formatDDMMYYYY(markDlg.date)}.`); setMarkDlg(null); setFlagsRev(v => v + 1); }
+        else setMarkDlg(d => d && { ...d, busy: false, error: r?.error || "Could not save." });
+    };
+    const removeFlag = async () => {
+        if (!removeDlg) return;
+        const reason = removeDlg.reason.trim();
+        if (reason.length < 5) { setRemoveDlg({ ...removeDlg, error: "Write the reason for removing the flag (at least 5 characters)." }); return; }
+        setRemoveDlg({ ...removeDlg, busy: true, error: "" });
+        try {
+            const res = await fetch("/api/hr/flag-removal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ flagId: removeDlg.flag.flagId, reason }) });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) { setRemoveDlg(x => x && { ...x, busy: false, error: d?.error || "Could not remove the flag." }); return; }
+            setNotice(d?.message || "Flag removed.");
+            setRemoveDlg(null); setFlagsRev(v => v + 1);
+        } catch { setRemoveDlg(x => x && { ...x, busy: false, error: "Could not remove the flag. Check the connection and try again." }); }
+    };
 
     // Helper for today's time check
     const currentTimeIST = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -204,7 +242,9 @@ export default function FlagCalendarPage() {
 
     const getFlags = (d: string) => {
         const rec = records.find(r => r.date === d);
-        let activeFlags = rec ? Object.entries(rec.flags || {}).filter(([k, v]) => v && k !== "shortLeave").map(([k]) => k) : []; // Short Leave is no longer used (old records keep the value, it is not shown)
+        // Short Leave is no longer used (old records keep the value, it is not shown); "overridden" only marks a day HR
+        // marked Present / Absent — not a flag (shown as "Marked by HR")
+        let activeFlags = rec ? Object.entries(rec.flags || {}).filter(([k, v]) => v && k !== "shortLeave" && k !== "overridden").map(([k]) => k) : [];
         // + flags raised by the attendance flag system on this date (no duplicates)
         serverFlags.filter(f => f.date === d).forEach(f => { const k = FLAG_KEY[f.type]; if (k && !activeFlags.includes(k)) activeFlags.push(k); });
 
@@ -476,6 +516,26 @@ export default function FlagCalendarPage() {
                                                 </div>
                                             )}
 
+                                            {/* Clocked in, no clock-out (a past day): shown, but not a flag — it becomes the
+                                                "Missing Clock-Out" flag only when HR rejects the explanation */}
+                                            {rec && rec.clockIn && !rec.clockOut && rec.status !== "Absent" && rec.status !== "On Leave" && ds < istToday() && !flags.includes("missingOut") && (
+                                                <div className="flex items-center gap-1 px-1.5 py-[3px] rounded-md bg-teal-500/10 border border-teal-500/20" data-testid="fc-grid-noclockout" title="No clock-out — not a flag (a Missing Clock-Out flag only if HR rejects the explanation)">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-teal-400 shrink-0" />
+                                                    <span className="text-[7px] font-bold text-teal-300 truncate leading-tight">No Clock-Out</span>
+                                                </div>
+                                            )}
+
+                                            {/* Marked by HR (Present / Absent with a reason) */}
+                                            {(rec as any)?.attendanceSource === "HR_MANUAL" && (rec?.status === "Present" || rec?.status === "Absent") && (
+                                                <div className={cn("flex items-center gap-1 px-1.5 py-[3px] rounded-md border", rec.status === "Present" ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20")} data-testid="fc-grid-marked">
+                                                    <Check size={8} className={cn("shrink-0", rec.status === "Present" ? "text-emerald-300" : "text-red-300")} />
+                                                    <span className={cn("text-[7px] font-bold truncate leading-tight", rec.status === "Present" ? "text-emerald-300" : "text-red-300")}
+                                                        title={`${rec.status} – Marked by ${markerRole(rec)}${(rec as any).markedByName ? ` · ${(rec as any).markedByName}` : ""}`}>
+                                                        {rec.status === "Present" ? "" : "Absent – "}Marked by {markerRole(rec)}{(rec as any).markedByName ? ` · ${String((rec as any).markedByName).split(" ")[0]}` : ""}
+                                                    </span>
+                                                </div>
+                                            )}
+
                                             {/* Absent Pill */}
                                             {flags.includes("absent") && (
                                                 <div className="flex items-center gap-1 px-1.5 py-[3px] rounded-md bg-red-500/10 border border-red-500/15">
@@ -654,8 +714,10 @@ export default function FlagCalendarPage() {
 
 
             {/* ─── Selected Day Details ─── */}
-            {selectedDay && (
-                <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl overflow-hidden">
+            {/* pop-ups go straight into <body>: outside the page's desktop zoom, so they cover and centre on the screen */}
+            {selectedDay && createPortal(
+                <div className="fixed inset-0 z-[110] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3" onClick={() => setSelectedDay(null)} data-testid="fc-day-popup">
+                <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" data-testid="fc-day-details">
                     {/* Detail Header */}
                     <div className="px-5 py-4 border-b border-zinc-800/50 flex items-center justify-between">
                         <div>
@@ -670,6 +732,27 @@ export default function FlagCalendarPage() {
                     </div>
 
                     <div className="p-5 space-y-4">
+                        {notice && <p className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 flex items-start gap-2" data-testid="fc-notice"><Check size={13} className="shrink-0 mt-px" /> <span className="[overflow-wrap:anywhere]">{notice}</span></p>}
+                        {/* HR / HR Executive / Founder: Mark Present / Absent with a reason (same as the Attendance Log) */}
+                        {canAct && selectedDay <= istToday() && (
+                            <div className="flex flex-wrap items-center gap-2" data-testid="fc-mark-actions">
+                                <button type="button" onClick={() => { setNotice(""); setMarkDlg({ date: selectedDay, status: "Present", reason: "", busy: false, error: "" }); }} data-testid="fc-mark-present"
+                                    className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 text-[11px] font-bold"><UserCheck size={13} /> Mark Present</button>
+                                <button type="button" onClick={() => { setNotice(""); setMarkDlg({ date: selectedDay, status: "Absent", reason: "", busy: false, error: "" }); }} data-testid="fc-mark-absent"
+                                    className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20 text-[11px] font-bold"><CalendarOff size={13} /> Mark Absent</button>
+                            </div>
+                        )}
+                        {/* a day HR marked: who marked it and the reason */}
+                        {(() => {
+                            const r: any = records.find(x => x.date === selectedDay);
+                            if (!r || r.attendanceSource !== "HR_MANUAL" || (r.status !== "Present" && r.status !== "Absent")) return null;
+                            return (
+                                <div className={cn("rounded-xl border p-3 text-[11px]", r.status === "Present" ? "border-emerald-500/20 bg-emerald-500/5" : "border-red-500/20 bg-red-500/5")} data-testid="fc-marked">
+                                    <p className={cn("font-bold", r.status === "Present" ? "text-emerald-300" : "text-red-300")}>{r.status} – Marked by {markerRole(r)}{r.markedByName ? ` · ${r.markedByName}` : ""}</p>
+                                    {r.hrRemarks && <p className="text-zinc-300 mt-0.5 [overflow-wrap:anywhere]" data-testid="fc-mark-reason">Reason: {r.hrRemarks}</p>}
+                                </div>
+                            );
+                        })()}
                         {/* Holiday pills */}
                         {getApprovedHolidays(selectedDay).map(h => (
                             <div key={h.id} className="flex items-center gap-2.5 p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl">
@@ -751,6 +834,11 @@ export default function FlagCalendarPage() {
                                         </div>
                                     </div>
 
+                                    {rec!.clockIn && !rec!.clockOut && rec!.status !== "Absent" && rec!.status !== "On Leave" && selectedDay < istToday() && !recFlags.includes("missingOut") && (
+                                        <p className="text-[11px] text-teal-200 bg-teal-500/10 border border-teal-500/20 rounded-lg px-3 py-2" data-testid="fc-noclockout-note">
+                                            <b>No Clock-Out</b> — not a flag yet. It becomes a Missing Clock-Out flag only if HR rejects the explanation.
+                                        </p>
+                                    )}
                                     {/* Flag pills */}
                                     {recFlags.length > 0 ? (
                                         <div className="space-y-2">
@@ -769,11 +857,17 @@ export default function FlagCalendarPage() {
                                             </div>
                                             {dayServerFlags.length > 0 && (
                                                 <div className="space-y-1" data-testid="fc-flag-details">
-                                                    {dayServerFlags.map(f => (
-                                                        <p key={f.flagId} className="text-[10px] text-zinc-400 [overflow-wrap:anywhere]">
-                                                            <b className="text-zinc-200">{f.typeLabel}</b>{f.instance ? <> · <b className="text-amber-200" data-testid="fc-instance">{ordinal(f.instance)} instance</b></> : null}{f.levelLabel ? ` · ${f.levelLabel}` : ""}{f.deduction && f.deduction !== "None" ? ` · ${f.deduction}` : ""}{f.hrStatus ? ` · ${f.hrStatus}` : ""}{f.detail ? ` — ${f.detail}` : ""}
-                                                        </p>
-                                                    ))}
+                                                    {dayServerFlags.map(f => {
+                                                        const line = <><b className="text-zinc-200">{f.typeLabel}</b>{f.instance ? <> · <b className="text-amber-200" data-testid="fc-instance">{ordinal(f.instance)} instance</b></> : null}{f.levelLabel ? ` · ${f.levelLabel}` : ""}{f.deduction && f.deduction !== "None" ? ` · ${f.deduction}` : ""}{f.hrStatus ? ` · ${f.hrStatus}` : ""}{f.detail ? ` — ${f.detail}` : ""}</>;
+                                                        // HR / HR Executive / Founder: click a flag → its details and "Remove this flag?"
+                                                        return canAct ? (
+                                                            <button key={f.flagId} type="button" onClick={() => { setNotice(""); setRemoveDlg({ flag: f, reason: "", busy: false, error: "" }); }} data-testid="fc-flag-row"
+                                                                className="w-full text-left text-[10px] text-zinc-400 [overflow-wrap:anywhere] rounded-lg border border-zinc-800 hover:border-red-500/40 hover:bg-red-500/5 px-2.5 py-1.5 flex items-start gap-2">
+                                                                <span className="flex-1 min-w-0">{line}</span>
+                                                                <span className="shrink-0 inline-flex items-center gap-1 text-red-300 font-bold"><X size={11} /> Remove</span>
+                                                            </button>
+                                                        ) : <p key={f.flagId} className="text-[10px] text-zinc-400 [overflow-wrap:anywhere]">{line}</p>;
+                                                    })}
                                                 </div>
                                             )}
                                         </div>
@@ -788,7 +882,65 @@ export default function FlagCalendarPage() {
                         })()}
                     </div>
                 </div>
-            )}
+                </div>
+            , document.body)}
+
+            {/* ─── Mark Present / Absent (reason required — same as the Attendance Log) ─── */}
+            {markDlg && createPortal(
+                <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3" onClick={() => !markDlg.busy && setMarkDlg(null)}>
+                    <div className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3 text-xs" onClick={ev => ev.stopPropagation()} data-testid="fc-mark-dialog" role="dialog" aria-modal="true">
+                        <h2 className="text-base font-black text-white">Mark {markDlg.status}</h2>
+                        <p className="text-zinc-300">Mark <b className="text-white">{selectedEmployee?.name}</b> as <b className={markDlg.status === "Present" ? "text-emerald-300" : "text-red-300"}>{markDlg.status}</b> for <b className="text-white">{formatDDMMYYYY(markDlg.date)}</b>?</p>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Reason *
+                            <textarea value={markDlg.reason} onChange={ev => setMarkDlg({ ...markDlg, reason: ev.target.value, error: "" })} rows={4} maxLength={500} autoFocus data-testid="fc-mark-reason-input"
+                                placeholder={markDlg.status === "Present" ? "e.g. Was present at the college; the clock-in failed because of a network issue (verified with the HOI)." : "e.g. Was not present at the college on this date (verified with the HOI)."}
+                                className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white normal-case tracking-normal font-normal" />
+                        </label>
+                        <p className="text-zinc-500">The reason is saved with the attendance record and shown here, in the roster and in the Attendance Log.</p>
+                        <p className="text-zinc-400 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2" data-testid="fc-mark-mail-note">✉ No email is sent for this.</p>
+                        {markDlg.error && <p className="text-red-400" data-testid="fc-mark-error">{markDlg.error}</p>}
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setMarkDlg(null)} disabled={markDlg.busy} className="px-4 py-2 rounded-lg font-bold text-zinc-400 hover:text-white">Cancel</button>
+                            <button onClick={saveMark} disabled={markDlg.busy || !markDlg.reason.trim()} data-testid="fc-mark-save"
+                                className={cn("px-5 py-2 rounded-lg text-white font-black uppercase tracking-wider disabled:opacity-50", markDlg.status === "Present" ? "bg-emerald-600 hover:bg-emerald-500" : "bg-red-600 hover:bg-red-500")}>{markDlg.busy ? "Saving…" : `Mark ${markDlg.status}`}</button>
+                        </div>
+                    </div>
+                </div>
+            , document.body)}
+
+            {/* ─── Remove a flag (same as Flag Removal: reason required, emails go out) ─── */}
+            {removeDlg && createPortal(
+                <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3" onClick={() => !removeDlg.busy && setRemoveDlg(null)}>
+                    <div className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-3 text-xs" onClick={ev => ev.stopPropagation()} data-testid="fc-remove-dialog" role="dialog" aria-modal="true">
+                        <h2 className="text-base font-black text-white">Remove this flag?</h2>
+                        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-lg border border-zinc-800 bg-zinc-950/50 p-3" data-testid="fc-remove-details">
+                            <dt className="text-zinc-500">Employee</dt><dd className="text-white font-bold [overflow-wrap:anywhere]">{selectedEmployee?.name} ({selectedEmployeeId})</dd>
+                            <dt className="text-zinc-500">Flag</dt><dd className="text-white font-bold">{removeDlg.flag.typeLabel}</dd>
+                            <dt className="text-zinc-500">Date</dt><dd className="text-white">{formatDDMMYYYY(removeDlg.flag.date)}</dd>
+                            {removeDlg.flag.instance ? <><dt className="text-zinc-500">Instance</dt><dd className="text-amber-200 font-bold">{ordinal(removeDlg.flag.instance)} this month</dd></> : null}
+                            {removeDlg.flag.levelLabel ? <><dt className="text-zinc-500">Level</dt><dd className="text-zinc-200">{removeDlg.flag.levelLabel}</dd></> : null}
+                            {removeDlg.flag.deduction && removeDlg.flag.deduction !== "None" ? <><dt className="text-zinc-500">Deduction</dt><dd className="text-zinc-200">{removeDlg.flag.deduction}</dd></> : null}
+                            {removeDlg.flag.detail ? <><dt className="text-zinc-500">Details</dt><dd className="text-zinc-300 [overflow-wrap:anywhere]">{removeDlg.flag.detail}</dd></> : null}
+                        </dl>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Reason for removal *
+                            <textarea value={removeDlg.reason} onChange={ev => setRemoveDlg({ ...removeDlg, reason: ev.target.value, error: "" })} rows={3} maxLength={3000} autoFocus data-testid="fc-remove-reason"
+                                placeholder="e.g. Clock-in was on time; the device clock was wrong (verified with the HOI)."
+                                className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white normal-case tracking-normal font-normal" />
+                        </label>
+                        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-amber-100/90 space-y-1" data-testid="fc-remove-mail-note">
+                            <p className="font-bold text-amber-200">✉ Emails will be sent</p>
+                            <p>To {selectedEmployee?.name} and the technical admin; copy to HR, HR Executive, Founders, the Tech Team{["PROFESSOR", "FACULTY"].includes(String(selectedEmployee?.role)) ? " and the professor's HOI" : ""}. {selectedEmployee?.name} also gets an in-app notice.</p>
+                            <p className="text-amber-100/60">The original record is kept; the flag moves to the removal history (Flag Removal → Removed).</p>
+                        </div>
+                        {removeDlg.error && <p className="text-red-400" data-testid="fc-remove-error">{removeDlg.error}</p>}
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setRemoveDlg(null)} disabled={removeDlg.busy} className="px-4 py-2 rounded-lg font-bold text-zinc-400 hover:text-white">No, Cancel</button>
+                            <button onClick={removeFlag} disabled={removeDlg.busy || removeDlg.reason.trim().length < 5} data-testid="fc-remove-yes"
+                                className="px-5 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-black uppercase tracking-wider disabled:opacity-50">{removeDlg.busy ? "Removing…" : "Yes, Remove"}</button>
+                        </div>
+                    </div>
+                </div>
+            , document.body)}
 
             {/* ─── Legend ─── */}
             <div className="bg-zinc-900/80 border border-zinc-800/50 rounded-2xl p-4">

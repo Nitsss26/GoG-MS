@@ -1,5 +1,5 @@
 "use client";
-import { ddmmyyyy, ddmmyyyyText } from "@/lib/date-display";
+import { ddmmyyyy, ddmmyyyyText, dmyTime as toDmyTime, weekdayDmy as toWeekdayDmy } from "@/lib/date-display";
 import { holidayForEmployee } from "@/lib/holiday-scope";
 import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect, useMemo } from "react";
@@ -262,7 +262,7 @@ export default function Home() {
     const welcomeText = useWelcomeText(user?.name);
     const headerBanner = useHeaderBanner();
 
-    useEffect(() => { setMounted(true); setTodayStr(new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })); }, []);
+    useEffect(() => { setMounted(true); setTodayStr(toWeekdayDmy(new Date())); }, []);
 
     // Manager/Reportee logic needed for stats filtering
     const isManagerRole = user?.role ? ["FOUNDER", "AD", "HOI", "OM", "MARKETING_TEAM", "TECH_TEAM", "PLACEMENT_INTERN_HEAD", "TECH_INTERN"].includes(user.role) : false;
@@ -329,33 +329,27 @@ export default function Home() {
 
     // Birthdays
     const today = new Date();
-    // Improved Birthday Logic (Handles Year Wrap and Multiple Formats)
+    // Birthday month / day: YYYY-MM-DD (also a timestamp) or DD-MM-YYYY / DD/MM/YYYY; dateOfBirth first, then the
+    // onboarding date_of_birth — the same rule as the Employee Birthday Directory
+    const dobMD = (e: any): { m: number; d: number } | null => {
+        const p = String(e?.dateOfBirth || e?.date_of_birth || "").trim().split(/[-/.]/);
+        if (p.length < 3) return null;
+        const [a, b, c] = p.map(x => parseInt(x, 10));
+        const [m, d] = p[0].trim().length === 4 ? [b, c] : [b, a];
+        return m >= 1 && m <= 12 && d >= 1 && d <= 31 ? { m, d } : null;
+    };
+    // next birthday date (today counts as today)
+    const nextBday = (e: any): Date | null => {
+        const md = dobMD(e); if (!md) return null;
+        const bday = new Date(today.getFullYear(), md.m - 1, md.d);
+        if (bday < today && !(bday.getDate() === today.getDate() && bday.getMonth() === today.getMonth())) bday.setFullYear(today.getFullYear() + 1);
+        return bday;
+    };
     const upcomingBirthdays = employees.filter(e => {
-        if (!e.dateOfBirth) return false;
-        const parts = e.dateOfBirth.split(/[-/]/);
-        if (parts.length < 2) return false;
-        const d = parseInt(parts[0]);
-        const m = parseInt(parts[1]);
-        if (isNaN(d) || isNaN(m)) return false;
-        
-        const dobDate = new Date(today.getFullYear(), m - 1, d);
-        if (dobDate < today) {
-            // Check if it's today (ignoring hours)
-            const isToday = dobDate.getDate() === today.getDate() && dobDate.getMonth() === today.getMonth();
-            if (!isToday) dobDate.setFullYear(today.getFullYear() + 1);
-        }
-        
-        const diff = (dobDate.getTime() - today.getTime()) / (1000 * 3600 * 24);
+        const bday = nextBday(e); if (!bday) return false;
+        const diff = (bday.getTime() - today.getTime()) / (1000 * 3600 * 24);
         return diff >= -1 && diff <= 30; // Include today and next 30 days
-    }).sort((a, b) => {
-        const partsA = a.dateOfBirth!.split(/[-/]/);
-        const partsB = b.dateOfBirth!.split(/[-/]/);
-        const nextA = new Date(today.getFullYear(), parseInt(partsA[1]) - 1, parseInt(partsA[0]));
-        if (nextA < today && (nextA.getDate() !== today.getDate() || nextA.getMonth() !== today.getMonth())) nextA.setFullYear(today.getFullYear() + 1);
-        const nextB = new Date(today.getFullYear(), parseInt(partsB[1]) - 1, parseInt(partsB[0]));
-        if (nextB < today && (nextB.getDate() !== today.getDate() || nextB.getMonth() !== today.getMonth())) nextB.setFullYear(today.getFullYear() + 1);
-        return nextA.getTime() - nextB.getTime();
-    });
+    }).sort((a, b) => nextBday(a)!.getTime() - nextBday(b)!.getTime());
 
     // Manager stats
     const pendingLeaves = leaves.filter(l => reporteeIds.includes(l.employeeId) && l.status === "Pending");
@@ -678,7 +672,7 @@ export default function Home() {
                                             {unread.length === 1 ? "SOP Updated!" : `${unread.length} SOP Changes!`}
                                         </p>
                                         <p className="text-[9px] text-amber-400/70 mt-0.5">
-                                            {latest.title} {latest.changeType === "updated" ? "was modified" : latest.changeType === "new" ? "was added" : "was removed"} by {latest.changedBy} &middot; {latest.changedAt}
+                                            {latest.title} {latest.changeType === "updated" ? "was modified" : latest.changeType === "new" ? "was added" : "was removed"} by {latest.changedBy} &middot; {toDmyTime(latest.changedAt)}
                                         </p>
                                         {latest.changelog && <p className="text-[8px] text-amber-500/60 mt-0.5 truncate">{latest.changelog}</p>}
                                         <p className="text-[8px] text-amber-400 font-bold mt-1">Click to view changes →</p>
@@ -715,14 +709,8 @@ export default function Home() {
                     <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
                         {upcomingBirthdays.length === 0 ? <p className="text-[10px] text-zinc-500 italic">No upcoming birthdays</p> :
                             upcomingBirthdays.map(e => {
-                                const parts = e.dateOfBirth!.split(/[-/]/);
-                                const d = parseInt(parts[0]);
-                                const m = parseInt(parts[1]);
-                                const bday = new Date(today.getFullYear(), m - 1, d);
-                                if (bday < today) {
-                                    const isToday = bday.getDate() === today.getDate() && bday.getMonth() === today.getMonth();
-                                    if (!isToday) bday.setFullYear(today.getFullYear() + 1);
-                                }
+                                const { d, m } = dobMD(e)!;
+                                const bday = nextBday(e)!;
                                 const daysUntil = Math.ceil((bday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
                                 return (
                                     <div key={e.id} className="flex items-center gap-3 p-2.5 bg-zinc-800/30 rounded-xl">
