@@ -56,7 +56,7 @@ export async function stepFor(person: { id: string; role: string; employee?: any
     if (LEAVE_FINAL_ROLES.includes(person.role) || person.role === HR_EXECUTIVE_ROLE) return 'final';
     // AD: final decision for a direct reportee (e.g. an HOI reporting to the AD)
     if (await adCanDecideFinally(person, leave)) return 'final';
-    if (LEAVE_MANAGER_ROLES.includes(person.role) && leave.status === 'Pending HOI Approval' && (await managerCanDecide(person, leave))) return 'hoi';
+    if (leave.status === 'Pending HOI Approval' && (await managerCanDecide(person, leave))) return 'hoi';
     return null;
 }
 
@@ -104,6 +104,10 @@ export async function sendLeaveApplicationEmails(leave: any, recipients: string[
     if (plain.length) {
         const { subject, html } = getLeaveTemplate(leave, status, { employee: applicant || {} });
         results.push(await sendMailInternal({ to: plain, subject, html, ccExclude: personal.map(p => p.email) }));
+    } else if (personal.length) {
+        // every addressee got a personal link: the Tech Team still gets its copy (without the links) — nobody else is added
+        const { subject, html } = getLeaveTemplate(leave, status, { employee: applicant || {} });
+        results.push(await sendMailInternal({ to: [], subject, html, noAutoCc: true, ccExclude: personal.map(p => p.email) }));
     }
     // personal copies, a few at a time
     for (let i = 0; i < personal.length; i += 5) {
@@ -111,7 +115,7 @@ export async function sendLeaveApplicationEmails(leave: any, recipients: string[
             const token = createActionToken(leave.id, p.approver.id);
             const { subject, html } = getLeaveTemplate(leave, status, { employee: applicant || {}, actions: { approveUrl: actionUrl(base, token, 'approve'), rejectUrl: actionUrl(base, token, 'reject') } });
             // personal link: only to its approver (a copy would let others decide); the CC copies go with the plain mail
-            return sendMailInternal({ to: p.email, subject, html, noAutoCc: true });
+            return sendMailInternal({ to: p.email, subject, html, noCopies: true });
         })));
     }
     await LeaveEmailAction.updateOne({ key: `mail:${leave.id}` }, { $set: { actionLinks: personal.length } }).catch(() => {});

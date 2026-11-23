@@ -29,8 +29,11 @@ interface MailOptions {
     attachments?: any[];
     inReplyTo?: string;
     references?: string | string[];
-    /** true for mails that must reach only their addressee (e.g. a personal one-click leave Accept / Reject link) */
+    /** true for mails with their own CC list: HR / HR Executive / AD are not added — the Tech Team (and tech@) still is */
     noAutoCc?: boolean;
+    /** true only for a personal one-click link (leave Accept / Reject): reaches its addressee alone, no copy at all
+     *  (a copy would let others decide) — the Tech Team gets the plain copy of that mail without the links */
+    noCopies?: boolean;
     /** addresses that already got their own copy (left out of the standard CC) */
     ccExclude?: string[];
 }
@@ -47,12 +50,12 @@ const AUTO_CC_ROLES = ['HR', 'HR_EXECUTIVE', 'AD'];
 const TECH_TEAM_ROLE = 'TECH_TEAM';
 const INACTIVE_STATUS = /^(inactive|removed|terminated|resigned|exited|relieved)$/i;
 const EMAIL_RE = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
-const ccCache: { at: number; list: string[] } = ((globalThis as any).__gogAutoCc ||= { at: 0, list: [] });
+const ccCache: { at: number; list: string[]; tech?: string[] } = ((globalThis as any).__gogAutoCc ||= { at: 0, list: [] });
 const copiedRecently: Map<string, number> = ((globalThis as any).__gogAutoCcSent ||= new Map<string, number>());
 
 async function autoCcList(): Promise<string[]> {
-    if (Date.now() - ccCache.at < 5 * 60000 && ccCache.list.length) return ccCache.list;
-    let list = [MAIN_ADMIN_EMAIL];
+    if (Date.now() - ccCache.at < 5 * 60000 && ccCache.list.length && ccCache.tech) return ccCache.list;
+    let list = [MAIN_ADMIN_EMAIL], tech = [MAIN_ADMIN_EMAIL];
     try {
         await dbConnect();
         const rows: any[] = await Employee.find({ role: { $in: [...AUTO_CC_ROLES, TECH_TEAM_ROLE] }, isRemoved: { $ne: true } }).select('email role status').lean();
@@ -60,10 +63,13 @@ async function autoCcList(): Promise<string[]> {
         const keep = rows.filter(r => r.role !== TECH_TEAM_ROLE || !INACTIVE_STATUS.test(String(r.status || '').trim()));
         if (!keep.some(r => r.role === TECH_TEAM_ROLE)) console.warn('[mail] no active Tech Team member found for the CC list');
         list = [MAIN_ADMIN_EMAIL, ...keep.map(r => String(r.email || '').trim().toLowerCase())];
+        tech = [MAIN_ADMIN_EMAIL, ...keep.filter(r => r.role === TECH_TEAM_ROLE).map(r => String(r.email || '').trim().toLowerCase())];
     } catch (e: any) {
         console.error('[mail] could not load the CC list:', e?.message);
     }
-    ccCache.list = Array.from(new Set(list.filter(e => EMAIL_RE.test(e) && !e.endsWith('@gog.com'))));
+    const clean = (l: string[]) => Array.from(new Set(l.filter(e => EMAIL_RE.test(e) && !e.endsWith('@gog.com'))));
+    ccCache.list = clean(list);
+    ccCache.tech = clean(tech);
     ccCache.at = Date.now();
     return ccCache.list;
 }
@@ -122,15 +128,18 @@ const MAIL_RETRY_WAIT_MS = [2000, 5000];
 const asList = (v?: string | string[]) => (Array.isArray(v) ? v : v ? String(v).split(',') : []).map(e => e.trim()).filter(Boolean);
 
 /** to / cc with the standard copies added */
+/** tech@ + every active Tech Team member (copied on every mail, also on one with its own CC list) */
+async function techCcList(): Promise<string[]> { await autoCcList(); return ccCache.tech || [MAIN_ADMIN_EMAIL]; }
+
 async function withAutoCc(o: MailOptions) {
-    if (o.noAutoCc) return { to: o.to, cc: o.cc };
+    if (o.noCopies) return { to: o.to, cc: o.cc };
     // the same mail (same subject + body) sent to many people one by one → the copies go with the first one only
     const key = crypto.createHash('sha1').update(`${o.subject}\n${o.html}`).digest('hex');
     const now = Date.now();
     for (const [k, t] of copiedRecently) if (now - t > 15 * 60000) copiedRecently.delete(k);
     if (copiedRecently.has(key)) return { to: o.to, cc: o.cc };
     const present = new Set([...asList(o.to), ...asList(o.cc), ...(o.ccExclude || [])].map(e => e.toLowerCase()));
-    const extra = (await autoCcList()).filter(e => !present.has(e));
+    const extra = (o.noAutoCc ? await techCcList() : await autoCcList()).filter(e => !present.has(e));
     if (!extra.length) return { to: o.to, cc: o.cc };
     copiedRecently.set(key, now);
     return { to: o.to, cc: [...asList(o.cc), ...extra] };
