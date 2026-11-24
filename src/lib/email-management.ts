@@ -133,18 +133,21 @@ function dressMail(row: any): { subject: string; html: string; text: string; sto
  */
 function noClockInMail(row: any) {
     const date = longDate(row.date);
-    const subject = `Attendance Warning — Failure to Clock In — ${row.employeeName}${row.employeeId ? ` (${row.employeeId})` : ''} — ${date}`;
+    // which failure this is in the month ("1st", "2nd" …) — days whose attendance was corrected / approved do not count
+    const n = Number(row.details?.instance || 0);
+    const nth = n ? `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'} ` : '';
+    const subject = `Attendance Warning — ${nth}Failure to Clock In — ${row.employeeName}${row.employeeId ? ` (${row.employeeId})` : ''} — ${date}`;
     const P = (s: string) => `<p>${s}</p>`;
+    const A = (e: string) => `<a href="mailto:${e}">${e}</a>`;
     const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#18181b;line-height:1.55;max-width:620px">
 ${P(`Dear ${esc(row.employeeName)},`)}
 ${P(`This email serves as a formal warning regarding your failure to clock in through the GoG OMS attendance system on <b>${esc(date)}</b>.`)}
 ${P(`<b>If you were present on campus but failed to clock in</b>, you must immediately inform your respective Head of Institution (HOI) and request them to verify your presence.`)}
-${P(`Once your HOI confirms that you were present on campus, they must send an official email to the Associate Director (AD), confirming your attendance and requesting approval.`)}
 ${P(`<b>Attendance Approval Process:</b>`)}
-${P(`<b>1. HOI Verification:</b> Inform your HOI about your campus presence. Your HOI must verify your attendance and email the AD for approval.`)}
+${P(`<b>1. HOI Verification:</b> Inform your HOI about your campus presence. Your HOI must verify your attendance and email the AD for approval keeping HR (${A('hr@geeksofgurukul.com')}), HR Executive (${A('aastha.chourasiya@geeksofgurukul.com')}), Aayushi Gaur (${A('aayushi.gaur@geeksofgurukul.com')}) and you in CC.`)}
 ${P(`<b>2. AD Approval:</b> The AD will review the HOI's confirmation and approve or reject the request.`)}
-${P(`<b>3. HR Final Approval:</b> Only after AD approval will the request be forwarded to the HR Team for final review and approval.`)}
-${P(`<b>Your attendance will be considered a payable day only after receiving final approval from the HR Team.</b> Until then, the attendance discrepancy will remain unresolved.`)}
+${P(`<b>3. HR team Final Approval:</b> Only after AD approval will the request be forwarded to the HR Team for final review and approval.`)}
+${P(`<b>Your attendance will be considered a payable day only after receiving final approval from the HR Team.</b> Until then, the attendance discrepancy will remain unresolved and will be marked as absent.`)}
 ${P(`<b>Unauthorized Absence:</b>`)}
 ${P(`If you were absent without prior intimation or approved leave, the day will be treated as unauthorized absence, resulting in applicable pay deduction and an additional ₹500 penalty, subject to company policy and applicable law.`)}
 ${P(`Please ensure timely clock-in and clock-out to avoid further attendance discrepancies and disciplinary warnings.`)}
@@ -153,12 +156,11 @@ ${P(`Please ensure timely clock-in and clock-out to avoid further attendance dis
         `Dear ${row.employeeName},`, '',
         `This email serves as a formal warning regarding your failure to clock in through the GoG OMS attendance system on ${date}.`, '',
         'If you were present on campus but failed to clock in, you must immediately inform your respective Head of Institution (HOI) and request them to verify your presence.', '',
-        'Once your HOI confirms that you were present on campus, they must send an official email to the Associate Director (AD), confirming your attendance and requesting approval.', '',
         'Attendance Approval Process:', '',
-        '1. HOI Verification: Inform your HOI about your campus presence. Your HOI must verify your attendance and email the AD for approval.', '',
+        '1. HOI Verification: Inform your HOI about your campus presence. Your HOI must verify your attendance and email the AD for approval keeping HR (hr@geeksofgurukul.com), HR Executive (aastha.chourasiya@geeksofgurukul.com), Aayushi Gaur (aayushi.gaur@geeksofgurukul.com) and you in CC.', '',
         "2. AD Approval: The AD will review the HOI's confirmation and approve or reject the request.", '',
-        '3. HR Final Approval: Only after AD approval will the request be forwarded to the HR Team for final review and approval.', '',
-        'Your attendance will be considered a payable day only after receiving final approval from the HR Team. Until then, the attendance discrepancy will remain unresolved.', '',
+        '3. HR team Final Approval: Only after AD approval will the request be forwarded to the HR Team for final review and approval.', '',
+        'Your attendance will be considered a payable day only after receiving final approval from the HR Team. Until then, the attendance discrepancy will remain unresolved and will be marked as absent.', '',
         'Unauthorized Absence:', '',
         'If you were absent without prior intimation or approved leave, the day will be treated as unauthorized absence, resulting in applicable pay deduction and an additional ₹500 penalty, subject to company policy and applicable law.', '',
         'Please ensure timely clock-in and clock-out to avoid further attendance discrepancies and disciplinary warnings.', '',

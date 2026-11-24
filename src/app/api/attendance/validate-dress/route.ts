@@ -7,6 +7,11 @@ import { parseDressRejection } from '@/lib/email-management';
 export async function PATCH(req: Request) {
     try {
         await dbConnect();
+        // only HR (HR Executive too — role HR in the session) and Founders approve / reject a dress code;
+        // HOIs see their team's dress code on the Dress Code page but cannot verify or reject it
+        const actor: any = await getSessionUser().catch(() => null);
+        if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!['HR', 'FOUNDER'].includes(actor.role)) return NextResponse.json({ error: 'Only HR, HR Executive or Founders can approve or reject a dress code.' }, { status: 403 });
         const { attendanceId, status, validatorId, rejection } = await req.json();
         // Rejection: reason(s) are required (Footwear / Blazer / Waistcoat / Grooming / Full Attire / Other + text)
         const parsed = status === "Rejected" ? parseDressRejection(rejection) : null;

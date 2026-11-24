@@ -11,7 +11,7 @@ import SendEmailButton from "@/components/email-management/SendEmailButton";
 import { dressReasonText } from "@/lib/dress-code-reasons";
 
 export default function DressCodeVerificationPage() {
-    const { user, attendanceRecords, employees, resolveDressCodeCheck } = useAuth();
+    const { user, attendanceRecords, employees, resolveDressCodeCheck, getReportees } = useAuth();
     const today = new Date().toISOString().split("T")[0];
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState<"All" | "Pending" | "Approved" | "Rejected">("Pending");
@@ -27,7 +27,10 @@ export default function DressCodeVerificationPage() {
             .then(r => (r.ok ? r.json() : null)).then(d => { if (d?.statuses) setEmailStatus(d.statuses); }).catch(() => {});
     }, [rejectedIds, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    if (!user || (user.role !== "HR" && user.role !== "FOUNDER")) return null;
+    // HOI: view only — the dress code of the OMs and professors under them (the same people as in their team)
+    const isHoi = user?.role === "HOI";
+    if (!user || (user.role !== "HR" && user.role !== "FOUNDER" && !isHoi)) return null;
+    const myPeople = isHoi ? new Set(getReportees(user.id).filter(e => ["OM", "PROFESSOR", "FACULTY"].includes(e.role)).map(e => e.id)) : null;
 
     // Saved timestamps of the record, shown in the application time zone (never "now")
     const TZ = "Asia/Kolkata";
@@ -50,6 +53,7 @@ export default function DressCodeVerificationPage() {
             return statusMatch && dateMatch;
         })
         .filter(r => {
+            if (myPeople && !myPeople.has(r.employeeId)) return false;
             const emp = employees.find(e => e.id === r.employeeId);
             if (!emp) return false;
             return emp.name.toLowerCase().includes(searchQuery.toLowerCase()) || emp.id.toLowerCase().includes(searchQuery.toLowerCase());
@@ -67,6 +71,7 @@ export default function DressCodeVerificationPage() {
                             {statusFilter === "Pending" ? "Pending Dress Code Verification" : `Dress Code Verification: ${dateFilter}`}
                         </h1>
                     </div>
+                    {isHoi && <p className="text-[11px] text-sky-300" data-testid="dress-hoi-note">Your OMs and professors · view only</p>}
                     <p className="text-xs text-zinc-400">
                         {statusFilter === "Pending" 
                             ? "Reviewing all pending clock-in photos across all dates." 
@@ -195,18 +200,18 @@ export default function DressCodeVerificationPage() {
                                             {reasons.length > 0 && <p className="text-zinc-300"><span className="text-zinc-500">Reason:</span> <span data-testid="dress-rejection-reason">{dressReasonText(reasons, (record as any).dressCodeRejectionOther)}</span></p>}
                                             {(record as any).dressCodeRejectionRemarks && <p className="text-zinc-400"><span className="text-zinc-500">Remarks:</span> {(record as any).dressCodeRejectionRemarks}</p>}
                                             {(record as any).dressCodeRejectionPhoto && <a href={(record as any).dressCodeRejectionPhoto} target="_blank" rel="noreferrer" className="text-emerald-400 underline" data-testid="dress-rejection-photo">Rejection photo</a>}
-                                            <div className="flex items-center justify-between gap-2 pt-1">
+                                            {!isHoi && <div className="flex items-center justify-between gap-2 pt-1">
                                                 <span className="text-zinc-500 flex items-center gap-1"><Mail size={11} /> Email: <span className="text-zinc-300" data-testid="dress-email-status">{st === "auto" ? "Sent (automatic)" : st === "sent" ? `Sent${es?.by ? ` by ${es.by} (${es.role})` : ""}` : st === "failed" ? "Failed" : st === "sending" ? "Sending" : "Not Sent"}</span></span>
-                                                {st !== "auto" && <SendEmailButton small category="dress_code" relatedRecordId={rid} status={st} onDone={r => {
+                                                {st !== "auto" && !isHoi && <SendEmailButton small category="dress_code" relatedRecordId={rid} status={st} onDone={r => {
                                                     setEmailMsg(r.ok ? (r.message || "Email sent.") : (r.error || "Email could not be sent."));
                                                     if (r.row) setEmailStatus(p => ({ ...p, [rid]: { emailStatus: r.row.status, by: r.row.sentBy, role: r.row.sentByRole } }));
                                                 }} />}
-                                            </div>
+                                            </div>}
                                         </div>
                                     );
                                 })()}
 
-                                {record.dressCodeStatus === "Pending" && (
+                                {record.dressCodeStatus === "Pending" && !isHoi && (
                                     <div className="grid grid-cols-2 divide-x divide-zinc-800 border-t border-zinc-800">
                                         <button
                                             onClick={() => setRejecting({ id: record.id || (record as any)._id, name: emp?.name, date: record.date })}

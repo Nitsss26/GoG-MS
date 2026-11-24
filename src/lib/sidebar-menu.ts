@@ -43,6 +43,8 @@ export const managerMenu = [
     { label: "Weekly Calendar", icon: CalendarDays, path: "/academic/weekly-calendar", roles: ["OM", "HOI", "AD", "FOUNDER"] as Role[] },
     { label: "Class Verification", icon: BadgeCheck, path: "/academic/verification", roles: ["OM", "HOI", "AD", "FOUNDER"] as Role[] },
     { label: "Full Attire", icon: Shirt, path: "/full-attire", roles: ["OM"] as Role[] },
+    // HOI: dress code of the OMs and professors under them (view only)
+    { label: "Dress Code", icon: Shirt, path: "/hr/dress-code", roles: ["HOI"] as Role[] },
     { label: "Location Justifications", icon: MapPin, path: "/attendance/location-justifications", roles: ["HOI", "AD"] as Role[] },
     { label: "Sprint Plan Audit", icon: CalendarCheck, path: "/curriculum/sprint-plans", roles: ["HOI"] as Role[] },
     { label: "Leave Approval", icon: CalendarCheck, path: "/manager/leave-approval", hideFor: ["OM"] as Role[] },
