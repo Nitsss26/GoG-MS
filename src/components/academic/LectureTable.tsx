@@ -10,6 +10,7 @@
  * by each page, so permissions stay exactly where they were.
  */
 
+import { dmy as toDmy } from "@/lib/date-display";
 import { useEffect, useMemo, useState, type ReactNode, type MouseEvent } from "react";
 import {
     Search, ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, SlidersHorizontal,
@@ -257,7 +258,7 @@ const typeCls = (t?: string) => {
 
 // ───────────────────────────── helpers ─────────────────────────────
 
-export const fmtDate = (ymd?: string) => ymd ? new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+export const fmtDate = (ymd?: string) => ymd ? toDmy(ymd) : "—";
 export const fmtDay = (ymd?: string) => ymd ? new Date(ymd + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short" }) : "";
 const semLine = (r: LectureRow) => [r.semester ? (/^sem/i.test(r.semester) ? r.semester : `Sem ${r.semester}`) : "", r.year].filter(Boolean).join(" · ");
 
@@ -403,9 +404,11 @@ interface LectureTableProps {
     /** Page controls inside the table toolbar: a row above the search line, and filters left of the search */
     toolbarTop?: ReactNode;
     toolbarStart?: ReactNode;
+    /** Optional: gets every row that passes the table's search / filters, in the shown order (all pages) — e.g. for a download */
+    onFilteredChange?: (rows: LectureRow[]) => void;
 }
 
-export default function LectureTable({ rows, loading, showProfessor, showQuick = true, renderActions, onOpen, activeKey, emptyText = "No lectures in this range.", toolbarExtra, resetKey, defaultSort, itemLabel = "Lecture", variant = "default", showPlanDetails = false, board = true, viewKey = "default", toolbarTop, toolbarStart }: LectureTableProps) {
+export default function LectureTable({ rows, loading, showProfessor, showQuick = true, renderActions, onOpen, activeKey, emptyText = "No lectures in this range.", toolbarExtra, resetKey, defaultSort, itemLabel = "Lecture", variant = "default", showPlanDetails = false, board = true, viewKey = "default", toolbarTop, toolbarStart, onFilteredChange }: LectureTableProps) {
     const [view, setView] = useState<"sheet" | "board">("sheet");
     useEffect(() => { try { if (localStorage.getItem(`oms.lectureTable.view.${viewKey}`) === "board") setView("board"); } catch { /* storage unavailable */ } }, [viewKey]);
     const changeView = (v: "sheet" | "board") => { setView(v); try { localStorage.setItem(`oms.lectureTable.view.${viewKey}`, v); } catch { /* ignore */ } };
@@ -464,6 +467,8 @@ export default function LectureTable({ rows, loading, showProfessor, showQuick =
         };
         return [...list].sort((a, b) => cmp(a, b) * sort.dir);
     }, [rows, search, quick, f, sort]);
+
+    useEffect(() => { onFilteredChange?.(filtered); }, [filtered]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
     const cur = Math.min(page, pages);

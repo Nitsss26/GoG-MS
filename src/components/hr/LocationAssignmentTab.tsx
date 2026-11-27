@@ -1,5 +1,6 @@
 "use client";
 
+import { dmyTime as toDmyTime } from "@/lib/date-display";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Search, Trash2, Save, Loader2, CheckCircle2, AlertTriangle, Building2, Navigation } from "lucide-react";
@@ -242,13 +243,13 @@ export default function LocationAssignmentTab({ mode = "hr" }: { mode?: "hr" | "
                                         ))}
                                         {!locations.length && <p className="px-2 py-3 text-[11px] text-zinc-500">No locations yet — add them on the Locations page first.</p>}
                                     </div>
-                                    <p className="text-[9px] text-zinc-500 italic">{editing.role === "OM" ? "The OM clocks in and clocks out once a day, like everyone else. The clock-in is expected at the college scheduled for that day (Work Location schedule); clocking in at another ticked college needs a location justification, and outside the ticked colleges the clock-in is blocked. Original Location is not changed. None ticked = existing behaviour." : "The HOI clocks in and clocks out once a day, like everyone else. The clock-in is expected at the college scheduled for that day (Work Location schedule); clocking in at another ticked college needs a location justification, and outside the ticked colleges the clock-in is blocked. Original Location is not changed. None ticked = existing behaviour."} This does not change HOI mappings or which colleges the HOI manages.</p>
+                                    <p className="text-[9px] text-zinc-500 italic">{editing.role === "OM" ? "The OM clocks in and clocks out once a day, like everyone else. The clock-in is expected at the college scheduled for that day (Work Location schedule); clocking in at another ticked college needs a location justification, and outside the ticked colleges the clock-in is blocked. Original Location is not changed. None ticked = existing behaviour." : "The HOI clocks in and clocks out once a day, like everyone else. The clock-in is expected at the college scheduled for that day (Work Location schedule); clocking in at another ticked college needs a location justification, and outside the ticked colleges the clock-in is blocked. Original Location is not changed. None ticked = existing behaviour."} {editing.role === "HOI" ? "The ticked colleges also come under this HOI in Academic Management (classes, sprint plans, weekly calendar, verification)." : "This does not change HOI mappings."}</p>
                                     {!!editing.attendanceLocationLog?.length && (
                                         <div className="pt-1 border-t border-sky-500/10 space-y-0.5" data-testid="loc-att-history">
                                             <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Assignment history</p>
                                             {editing.attendanceLocationLog.slice(-5).reverse().map((h, i) => (
                                                 <p key={i} className="text-[9px] text-zinc-400">
-                                                    {h.at ? new Date(h.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }) : "—"} · {h.byName || "HR"}: {(h.from || []).length} → {(h.to || []).map(id => locations.find(l => l.id === id)?.name || id).join(", ") || "none"}
+                                                    {h.at ? toDmyTime(h.at) : "—"} · {h.byName || "HR"}: {(h.from || []).length} → {(h.to || []).map(id => locations.find(l => l.id === id)?.name || id).join(", ") || "none"}
                                                 </p>
                                             ))}
                                         </div>

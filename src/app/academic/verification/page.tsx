@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { ShieldCheck, RefreshCw, Flag, AlertTriangle, CheckCircle2, Filter, Eye } from "lucide-react";
+import { ShieldCheck, RefreshCw, Flag, AlertTriangle, CheckCircle2, Filter, Eye, Download } from "lucide-react";
+import { dmy, dmyTime } from "@/lib/date-display";
 import { ClassRecordDetails, ClassRecordActions } from "@/components/academic/ClassRecordDetails";
-import LectureTable, { LectureDrawer, RowButton, toLectureRow } from "@/components/academic/LectureTable";
+import LectureTable, { LectureDrawer, RowButton, toLectureRow, REPORT_META, type LectureRow } from "@/components/academic/LectureTable";
 import { VERIFICATION_ROLES, CLASS_STATUS_LABEL, FINAL_VERIFIER_ROLES, FINAL_PENDING_CLASS_STATUSES } from "@/lib/academic-status";
 
 /**
@@ -109,6 +110,8 @@ export default function ClassVerificationPage() {
     // Table rows (same records, nothing changed) + the record open in the drawer
     const rows = useMemo(() => visible.map(r => toLectureRow(r, "record")), [visible]);
     const openRow = open ? rows.find(r => r.key === open) || null : null;
+    // rows that pass every filter on screen (Date / College / Professor / Status above + the table's search and Filters), all pages
+    const [shownRows, setShownRows] = useState<LectureRow[]>([]);
     const inMyQueue = (r: any) => !!queue && (queue.keys.includes(r.pipelineStatus) || (FINAL_VERIFIER_ROLES.includes(role) && assignmentPending(r)));
 
     const refreshAfterAction = async (msg: string) => {
@@ -116,6 +119,45 @@ export default function ClassVerificationPage() {
         setDeepRecord(null);
         await load();
         setTimeout(() => setMessage(""), 4000);
+    };
+
+    /** Download Excel: one sheet, every class that matches the filters on screen (not only the current page) */
+    const downloadExcel = async () => {
+        if (!shownRows.length) { setMessage("Nothing to download for these filters."); setTimeout(() => setMessage(""), 4000); return; }
+        const collegeName = (v?: string) => { if (!v) return ""; const c = colleges.find((x: any) => x.id === v || (x.keys || []).includes(v)); return c?.name || v; };
+        const step = (s?: string) => s === "VERIFIED" ? "Verified" : s === "REVERTED" ? "Sent back" : s === "PENDING" ? "Pending" : s === "WAITING_OM" ? "Waiting for OM" : "—";
+        const when = (v?: string) => (v ? dmyTime(v) : "");
+        const out = shownRows.map(row => {
+            const r = row.raw || {};
+            const om = r.omVerification || {};
+            const fin = r.finalVerification?.status ? r.finalVerification : r.hoiVerification?.status === "VERIFIED" ? { ...r.hoiVerification, role: r.hoiVerification.role || "HOI" } : {};
+            const sentBack = r.pipelineStatus === "OM_REVERTED" ? om.comment : r.pipelineStatus === "CL_CH_REVERTED" ? (fin.comment || r.clRemarks) : "";
+            return {
+                "Date": dmy(row.date), "Day": row.day || "", "Time": [row.timeStart, row.timeStop].filter(Boolean).join(" - "), "Lecture #": row.lectureNumber ?? "",
+                "College": collegeName(row.college), "Professor": row.facultyName || "",
+                "Subject": row.subject === "—" ? "" : row.subject, "Subject Code": row.subjectCode || "", "Topic": row.topic || "",
+                "Class / Course": row.course || "", "Stream": row.stream || "", "Year": row.year || "", "Semester": row.semester || "", "Section": row.section || "",
+                "Lecture Type": row.type || "", "Unit": row.unit || "",
+                "Attendees": row.present ?? "", "Total Students": row.total ?? "",
+                "Report": REPORT_META[row.report]?.label || row.report,
+                "Status": CLASS_STATUS_LABEL[row.pipelineStatus || ""] || row.pipelineStatus || "",
+                "OM Verification": step(row.omState), "OM Verified By": om.byName || "", "OM Time": om.status && om.status !== "PENDING" ? when(om.at) : "", "OM Comment": om.status && om.status !== "PENDING" ? om.comment || "" : "",
+                "Final Verification (CL / CH / HOI)": step(row.finalState), "Final By": fin.status && fin.status !== "PENDING" ? [fin.role, fin.byName ? `(${fin.byName})` : ""].filter(Boolean).join(" ") : "",
+                "Final Time": fin.status && fin.status !== "PENDING" ? when(fin.at) : "", "Final Comment": fin.status && fin.status !== "PENDING" ? fin.comment || "" : "",
+                "Sent Back Reason": sentBack || "",
+                "Notes": row.notesUrl || (row.notes === "MISSING" ? `Not submitted${r.notesMissingReason ? `: ${r.notesMissingReason}` : ""}` : row.notes === "PENDING" ? "Pending" : ""),
+                "Assignment": row.assignmentUrl || (row.assignment === "UPLOADED" ? "Uploaded" : ""),
+                "Open Delay Flags": (r.delayFlags || []).filter((x: any) => x.status === "OPEN").length || "",
+            };
+        });
+        // file name: the chosen college and / or professor (else "All Colleges"), then the dates
+        const range = tab === "QUEUE" ? `${queue?.label || "Queue"}` : `${dmy(from)} to ${dmy(to)}`;
+        const prof = facultyId !== "All" ? professors.find((p: any) => p.id === facultyId)?.name || facultyId : "";
+        const col = college !== "All" ? collegeName(college) : "";
+        const who = [col, prof].filter(Boolean).join(" - ") || (colleges.length === 1 ? colleges[0].name : "All Colleges");
+        const safe = `${who} - Class Verification - ${range}`.replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim();
+        try { await saveColourSheet(out, `${who} — Class Verification`, `${range} · ${out.length} class${out.length === 1 ? "" : "es"} · Downloaded ${dmyTime(new Date().toISOString())}`, `${safe}.xlsx`); }
+        catch { setError("Could not create the Excel file. Please try again."); }
     };
 
     if (!user) return null;
@@ -202,6 +244,12 @@ export default function ClassVerificationPage() {
                 )}
                 </>}
                 rows={rows}
+                onFilteredChange={setShownRows}
+                toolbarExtra={
+                    <button onClick={downloadExcel} disabled={loading} data-testid="cv-download" title="Download every class matching these filters as one Excel sheet"
+                        className="shrink-0 h-8 px-3 rounded-lg border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-800 text-zinc-200 text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-50">
+                        <Download size={13} /> <span className="hidden sm:inline">Download Excel</span>
+                    </button>}
                 loading={loading}
                 showProfessor
                 showQuick={false}
@@ -246,4 +294,66 @@ export default function ClassVerificationPage() {
             </LectureDrawer>
         </div>
     );
+}
+// ───────────── colourful Excel (ExcelJS, already a dependency; loaded only when downloading) ─────────────
+const COL_GROUP: [RegExp, string][] = [
+    [/^(Attendees|Total Students)$/, "FF0369A1"],                       // attendance — blue
+    [/^(Report|Status)$/, "FF4338CA"],                                  // report — indigo
+    [/^OM /, "FFB45309"],                                               // OM step — amber
+    [/^Final/, "FF7E22CE"],                                             // final step — purple
+    [/^Sent Back Reason$/, "FFB91C1C"],                                 // sent back — red
+    [/^(Notes|Assignment|Open Delay Flags)$/, "FF047857"],              // material — green
+];
+const headColour = (k: string) => COL_GROUP.find(([re]) => re.test(k))?.[1] || "FF0F766E"; // class details — teal
+/** light fill + dark text by meaning: green = done, amber = waiting, red = sent back, orange = report due, blue = submitted */
+const valueColour = (v: string): [string, string] | null => {
+    if (/^(Verified|Completed)$/.test(v)) return ["FFDCFCE7", "FF166534"];
+    if (/^(Sent back|Reverted)|Reverted/.test(v)) return ["FFFEE2E2", "FF991B1B"];
+    if (/^Report Pending$|^Pending Professor$/.test(v)) return ["FFFFEDD5", "FF9A3412"];
+    if (/^(Pending|Waiting for OM)|Pending/.test(v)) return ["FFFEF3C7", "FF92400E"];
+    if (/^Submitted$/.test(v)) return ["FFDBEAFE", "FF1E40AF"];
+    return null;
+};
+const COLOURED = new Set(["Report", "Status", "OM Verification", "Final Verification (CL / CH / HOI)"]);
+async function saveColourSheet(out: Record<string, any>[], title: string, subtitle: string, fileName: string) {
+    const mod: any = await import("exceljs"); const ExcelJS: any = mod.default || mod;
+    const wb = new ExcelJS.Workbook(); wb.creator = "GOG OMS";
+    const keys = Object.keys(out[0]);
+    const ws = wb.addWorksheet("Class Verification", { views: [{ state: "frozen", ySplit: 3, xSplit: 0 }] });
+    const thin = { style: "thin", color: { argb: "FFD4D4D8" } };
+    const box = { top: thin, bottom: thin, left: thin, right: thin };
+    // row 1: title band · row 2: dates / count · row 3: header
+    ws.mergeCells(1, 1, 1, keys.length); ws.mergeCells(2, 1, 2, keys.length);
+    const t = ws.getCell(1, 1); t.value = title; t.font = { bold: true, size: 14, color: { argb: "FFFFFFFF" } };
+    t.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF065F46" } }; t.alignment = { vertical: "middle", indent: 1 }; ws.getRow(1).height = 26;
+    const s = ws.getCell(2, 1); s.value = subtitle; s.font = { italic: true, size: 10, color: { argb: "FF065F46" } };
+    s.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD1FAE5" } }; s.alignment = { vertical: "middle", indent: 1 }; ws.getRow(2).height = 18;
+    const head = ws.getRow(3); head.height = 30;
+    keys.forEach((k, i) => {
+        const c = head.getCell(i + 1); c.value = k;
+        c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: headColour(k) } };
+        c.alignment = { vertical: "middle", horizontal: "center", wrapText: true }; c.border = box;
+    });
+    out.forEach((o, n) => {
+        const row = ws.getRow(4 + n);
+        keys.forEach((k, i) => {
+            const c = row.getCell(i + 1); const v = o[k];
+            c.value = typeof v === "string" && /^https?:\/\//.test(v) ? { text: v, hyperlink: v } : v === "" ? null : v;
+            c.border = box; c.alignment = { vertical: "top", wrapText: true };
+            const vc = COLOURED.has(k) && typeof v === "string" ? valueColour(v) : null;
+            if (vc) { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: vc[0] } }; c.font = { bold: true, color: { argb: vc[1] } }; }
+            else if (typeof v === "string" && /^https?:\/\//.test(v)) c.font = { color: { argb: "FF2563EB" }, underline: true };
+            else if (n % 2 === 1) c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF4F4F5" } };
+            if (k === "Professor" || k === "College") c.font = { ...(c.font || {}), bold: true };
+        });
+    });
+    keys.forEach((k, i) => { ws.getColumn(i + 1).width = Math.min(45, Math.max(k.length > 14 ? 14 : k.length + 2, ...out.map(o => String(o[k] ?? "").length + 2))); });
+    ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3 + out.length, column: keys.length } };
+    // printing / PDF: landscape A4, all columns on one page width, title + header repeated on every page
+    ws.pageSetup = { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 } };
+    ws.pageSetup.printTitlesRow = "1:3";
+    const buf = await wb.xlsx.writeBuffer();
+    const url = URL.createObjectURL(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    const a = document.createElement("a"); a.href = url; a.download = fileName; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
 }

@@ -178,11 +178,14 @@ export async function getAcademicScope(user: { role: string; employee?: any; del
 
     const location = user.employee?.location;
     if (role === 'HOI') {
-        // Own campus + every campus this HOI heads (Location.hoiId)
+        // Own campus + every campus this HOI heads (Location.hoiId) + every clock-in college HR ticked for this HOI
+        // (Employee.attendanceLocations — Work Location / Locations → Allowed Clock-In Locations), the same as for an OM
         const own = await resolveCollege(location);
         const headed: any[] = user.employee?.id ? await Location.find({ hoiId: user.employee.id }).lean() : [];
+        const ticked: College[] = [];
+        for (const v of (Array.isArray(user.employee?.attendanceLocations) ? user.employee.attendanceLocations : []).filter(Boolean)) { const c = await resolveCollege(v); if (c) ticked.push(c); }
         const colleges: College[] = [];
-        [...(own ? [own] : []), ...headed.map(collegeFromLocation)].forEach(c => { if (!colleges.some(x => x.id === c.id)) colleges.push(c); });
+        [...(own ? [own] : []), ...headed.map(collegeFromLocation), ...ticked].forEach(c => { if (!colleges.some(x => x.id === c.id)) colleges.push(c); });
         // + professors appointed under this HOI (reporting hierarchy), on any campus
         const facultyIds = user.employee?.id
             ? (await reporteeTree(user.employee.id)).filter((e: any) => PROFESSOR_ROLES.includes(e.role)).map((e: any) => String(e.id))
@@ -395,6 +398,6 @@ export async function notifySafe(input: NotifyInput) {
 }
 
 export function weekLabel(start: string, end?: string) {
-    const fmt = (s: string) => { const [y, m, d] = s.split('-'); return `${d}-${m}-${y}`; };
+    const fmt = (s: string) => { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
     return end ? `${fmt(start)} to ${fmt(end)}` : fmt(start);
 }

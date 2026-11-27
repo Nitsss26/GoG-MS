@@ -1,4 +1,5 @@
 "use client";
+import { dmyTime as toDmyTime } from "@/lib/date-display";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { MapPin, Save, Search, Briefcase, Building2, Navigation, ChevronDown, X } from "lucide-react";
@@ -252,8 +253,8 @@ export default function HRWorkLocationPage() {
                             </div>
                             {existingSchedule && (existingSchedule.assignedByName || existingSchedule.hrReadByName) && (
                                 <p className="text-[9px] text-zinc-500">
-                                    {existingSchedule.assignedByName ? `Last changed by ${existingSchedule.assignedByName}${existingSchedule.changedAt ? ` on ${new Date(existingSchedule.changedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}` : ""}
-                                    {existingSchedule.approvedByHR && existingSchedule.hrReadByName ? ` · Read by ${existingSchedule.hrReadByName} (HR)${existingSchedule.hrReadAt ? ` on ${new Date(existingSchedule.hrReadAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}` : ""}
+                                    {existingSchedule.assignedByName ? `Last changed by ${existingSchedule.assignedByName}${existingSchedule.changedAt ? ` on ${toDmyTime(existingSchedule.changedAt)}` : ""}` : ""}
+                                    {existingSchedule.approvedByHR && existingSchedule.hrReadByName ? ` · Read by ${existingSchedule.hrReadByName} (HR)${existingSchedule.hrReadAt ? ` on ${toDmyTime(existingSchedule.hrReadAt)}` : ""}` : ""}
                                 </p>
                             )}
                             {(selectedEmployee?.role === "HOI" || selectedEmployee?.role === "OM") && (
@@ -271,7 +272,7 @@ export default function HRWorkLocationPage() {
                                             </label>
                                         ))}
                                     </div>
-                                    <p className="text-[9px] text-zinc-500 italic">{selectedEmployee?.role === "OM" ? "The OM clocks in and clocks out once a day, like everyone else. The clock-in is expected at the college scheduled for that day (Work Location schedule); clocking in at another ticked college needs a location justification, and outside the ticked colleges the clock-in is blocked. Original Location is not changed. None ticked = existing behaviour." : "The HOI clocks in and clocks out once a day, like everyone else. The clock-in is expected at the college scheduled for that day (Work Location schedule); clocking in at another ticked college needs a location justification, and outside the ticked colleges the clock-in is blocked. Original Location is not changed. None ticked = existing behaviour."}</p>
+                                    <p className="text-[9px] text-zinc-500 italic">{selectedEmployee?.role === "OM" ? "The OM clocks in and clocks out once a day, like everyone else. The clock-in is expected at the college scheduled for that day (Work Location schedule); clocking in at another ticked college needs a location justification, and outside the ticked colleges the clock-in is blocked. Original Location is not changed. None ticked = existing behaviour." : "The HOI clocks in and clocks out once a day, like everyone else. The clock-in is expected at the college scheduled for that day (Work Location schedule); clocking in at another ticked college needs a location justification, and outside the ticked colleges the clock-in is blocked. Original Location is not changed. None ticked = existing behaviour. The ticked colleges also come under this HOI in Academic Management (classes, sprint plans, weekly calendar, verification)."}</p>
                                 </div>
                             )}
                             <div className="space-y-2">
