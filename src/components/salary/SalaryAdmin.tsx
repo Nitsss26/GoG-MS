@@ -889,7 +889,8 @@ function TicketReview({ t, canEdit, onClose, onChanged, onOpenEmployee }: { t: a
         const d = await res.json().catch(() => ({})); if (res.ok) setRec(d);
     }, [t.employeeId, t.month]);
     useEffect(() => { loadRec(); }, [loadRec]);
-    const own = rec?.self;
+    // HR / HR Executive may act on their own ticket too: `own` blocks only when the server says view only
+    const own = rec?.self && !canEdit;
     const closed = ["Resolved", "Rejected"].includes(t.status);
     const days = (rec?.calc?.days || []).filter((d: any) => (t.affectedDates || []).length ? t.affectedDates.includes(d.date) : (d.correctable || d.correction));
     const send = async (body: any) => {

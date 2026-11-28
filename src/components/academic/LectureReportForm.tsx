@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import { Upload, Camera, FileText, Mic, Users, X, Loader2, BookOpen, ClipboardList, CheckCircle2 } from "lucide-react";
 import { uploadToCloudinary } from "@/lib/cloudinary";
-import { DEFAULT_CLASS_STRENGTH } from "@/lib/academic-status";
+import { DEFAULT_CLASS_STRENGTH, isExamDuty } from "@/lib/academic-status";
 
 export interface ReportLecture {
     _id?: string;
@@ -171,7 +171,39 @@ export default function LectureReportForm({ lecture, facultyId, fallbackDate, on
         }
     };
 
+    // Exam Duty slot: one Submit — optional note + optional photo; no attendance, notes or topic coverage
+    const duty = isExamDuty(lecture.lectureType);
+    const submitDuty = async (lec: Lecture) => {
+        setUploading(true); setMessage(null);
+        try {
+            let classPhotoUrl = "";
+            if (photoFile) {
+                setUploadLabel("Uploading Photo..."); setUploadProgress(0);
+                const result = await uploadToCloudinary(photoFile, (p) => setUploadProgress(p));
+                classPhotoUrl = result.secure_url;
+            }
+            setUploadLabel("Submitting..."); setUploadProgress(100);
+            const res = await fetch("/api/faculty/lectures", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    facultyId, date: lec.date || fallbackDate, lectureNumber: lec.lectureNumber, sprintEntryId: lec.sprintEntryId, sprintPlanId: lec.sprintPlanId,
+                    courseName: lec.courseName, topicsCovered: reportData.topicsCovered, stream: lec.stream, year: lec.year, semester: lec.semester,
+                    numberOfAttendees: 0, totalStudents: 0, topicFullyCovered: true, notesMissing: false, snapshotUrls: [],
+                    issuesFaced: reportData.issuesFaced.trim(),
+                    classPhotoUrl: classPhotoUrl || undefined, classPhotoLat: photoCoords?.lat, classPhotoLng: photoCoords?.lng,
+                    scheduledDuration: lec.scheduledDuration,
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || "Could not submit");
+            resetReportForm();
+            onSubmitted(data.message || "Exam Duty submitted. It now goes to OM for verification.");
+        } catch (e: any) { setMessage({ type: "error", text: e.message }); }
+        finally { setUploading(false); setUploadProgress(0); setUploadLabel(""); }
+    };
+
     const submitReport = async (lec: Lecture) => {
+        if (duty) return submitDuty(lec);
         // Attendance: 0 ≤ present ≤ total (checked again on the server)
         const total = parseInt(reportData.totalStudents);
         const present = parseInt(reportData.numberOfAttendees);
@@ -381,6 +413,26 @@ export default function LectureReportForm({ lecture, facultyId, fallbackDate, on
 
                         {/* Body */}
                         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-5 sm:px-6 py-5 space-y-4" style={{ scrollbarGutter: "stable" }}>
+                            {duty ? (
+                                <ReportSection step={1} accent="violet" icon={<ClipboardList size={14} className="text-violet-400/80" />} title="Exam Duty" tag="Just submit">
+                                    <div className="space-y-3" data-testid="duty-report">
+                                        <p className="text-xs text-zinc-400">No attendance, notes or topic needed for Exam Duty. Add a note or a photo if you like, then press Submit.</p>
+                                        {reportData.topicsCovered && reportData.topicsCovered !== "Exam Duty" && <p className="text-sm text-zinc-200 [overflow-wrap:anywhere]"><span className="text-zinc-500">Details: </span>{reportData.topicsCovered}</p>}
+                                        <div>
+                                            <FieldLabel htmlFor="duty-note">Note (optional)</FieldLabel>
+                                            <textarea id="duty-note" value={reportData.issuesFaced} onChange={e => setReportData(p => ({ ...p, issuesFaced: e.target.value }))}
+                                                placeholder="e.g. Invigilation in Hall B, 2 papers" className={REPORT_TEXTAREA} data-testid="duty-note" />
+                                        </div>
+                                        <div>
+                                            <FieldLabel>Duty letter / photo (optional)</FieldLabel>
+                                            <label className="min-h-[44px] flex items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-700 text-xs text-zinc-400 cursor-pointer px-3 py-2">
+                                                <Camera size={14} /> <span className="truncate">{photoFile ? photoFile.name : reportLec?.report?.classPhotoUrl ? "Photo attached — choose to replace" : "Attach a photo"}</span>
+                                                <input type="file" accept="image/*" className="hidden" data-testid="duty-photo" onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoSelect(f); }} />
+                                            </label>
+                                        </div>
+                                    </div>
+                                </ReportSection>
+                            ) : (<>
 
                             <ReportSection step={1} accent="indigo" icon={<BookOpen size={14} className="text-indigo-400/80" />} title="Topics Covered" tag="From lecture plan">
                                 <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap break-words">
@@ -588,6 +640,7 @@ export default function LectureReportForm({ lecture, facultyId, fallbackDate, on
                                     </div>
                                 )}
                             </ReportSection>
+                            </>)}
                         </div>
 
                         {/* Footer */}

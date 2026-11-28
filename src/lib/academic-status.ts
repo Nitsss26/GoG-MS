@@ -190,7 +190,11 @@ export function planApproval(plan: any): { type: string; label: string; byId?: s
 }
 
 // ── Lecture plan master values (no master collection exists in the project for these) ──
-export const LECTURE_TYPES = ["Theory", "Practical / Lab", "Tutorial", "Revision", "Assessment / Test", "Doubt Session", "Project"];
+export const LECTURE_TYPES = ["Theory", "Practical / Lab", "Tutorial", "Revision", "Assessment / Test", "Doubt Session", "Project", "Exam Duty"];
+/** Exam Duty slot: planned in the sprint plan like a class (time required; no subject / topic / unit). Its report is one
+ *  Submit (optional note + optional photo) — no attendance, notes or topic coverage; OM → CL / CH / HOI verify it as usual. */
+export const EXAM_DUTY = "Exam Duty";
+export const isExamDuty = (lectureType?: string | null) => String(lectureType || "").trim() === EXAM_DUTY;
 export const UNIT_NUMBERS = ["1", "2", "3", "4", "5", "6", "7", "8"];
 
 /** Default class strength when the project has no stored strength for that class (Module 7) */

@@ -17,11 +17,11 @@ import { LectureReport, SprintPlan, Employee, JobRun, Attendance } from '@/model
 import { planVisibleFor, planCollegeOf } from '@/lib/professor-routine';
 import {
     getClassStatus, getPlanStatus, PROFESSOR_ROLES, CL_CH_ROLES, PROFESSOR_EDITABLE_CLASS_STATUSES, PROFESSOR_EDIT_BEFORE_OM_STATUS,
-    CLASS_STATUS_LABEL, DEFAULT_CLASS_STRENGTH, roleShort, OM_TIME_GRACE_MINUTES, NOTES_GROUP_TYPES, notesGroupLabel,
+    CLASS_STATUS_LABEL, DEFAULT_CLASS_STRENGTH, roleShort, OM_TIME_GRACE_MINUTES, NOTES_GROUP_TYPES, notesGroupLabel, isExamDuty,
 } from '@/lib/academic-status';
 import {
 
-    getAcademicScope, scopeAllowsProfessor, collegeRecipients, employeesByIds, notifySafe, nowISO, newId,
+    getAcademicScope, scopeAllowsProfessor, collegeRecipients, employeesByIds, academicNotifySafe as notifySafe, nowISO, newId,
     hasClassEnded, dayCodeOf, collegeName, AcademicScope,
 } from '@/lib/academic';
 
@@ -266,26 +266,32 @@ export async function submitClassRecord(actor: Actor, input: SubmitInput): Promi
     if (!plan || !entry) return fail(404, 'This class is not in your submitted sprint plan for that date.');
     if (!hasClassEnded(date, entry.timeStop)) return fail(400, `You can complete the class record after the class ends (${entry.timeStop}).`);
 
+    // Exam Duty slot: no attendance, notes or topic coverage — one Submit (optional note + optional photo)
+    const examDuty = isExamDuty(entry.lectureType);
+
     // Attendance (Module 7)
-    const strength = await classStrength(actor.id, entry);
-    const total = input.totalStudents === undefined || input.totalStudents === '' || input.totalStudents === null ? strength : Number(input.totalStudents);
-    const present = Number(input.numberOfAttendees);
-    if (!Number.isInteger(total) || total < 1 || total > 1000) return fail(400, 'Total students must be a whole number between 1 and 1000.');
-    if (input.numberOfAttendees === '' || input.numberOfAttendees === undefined || !Number.isInteger(present) || present < 0 || present > total) {
-        return fail(400, `Students present must be a whole number from 0 to ${total}.`);
+    const strength = examDuty ? 0 : await classStrength(actor.id, entry);
+    const total = examDuty ? 0 : input.totalStudents === undefined || input.totalStudents === '' || input.totalStudents === null ? strength : Number(input.totalStudents);
+    const present = examDuty ? 0 : Number(input.numberOfAttendees);
+    if (!examDuty) {
+        if (!Number.isInteger(total) || total < 1 || total > 1000) return fail(400, 'Total students must be a whole number between 1 and 1000.');
+        if (input.numberOfAttendees === '' || input.numberOfAttendees === undefined || !Number.isInteger(present) || present < 0 || present > total) {
+            return fail(400, `Students present must be a whole number from 0 to ${total}.`);
+        }
     }
 
     // Notes (Module 8): an uploaded document or a link — otherwise a reason is mandatory
-    const notesUrl = String(input.notesUrl || '').trim();
-    const notesFileUrl = String(input.notesFileUrl || '').trim();
+    const notesUrl = examDuty ? '' : String(input.notesUrl || '').trim();
+    const notesFileUrl = examDuty ? '' : String(input.notesFileUrl || '').trim();
     if (notesUrl && !isUrl(notesUrl)) return fail(400, 'The notes link must start with http:// or https://');
     if (notesFileUrl && !isUrl(notesFileUrl)) return fail(400, 'The uploaded notes file has an invalid address.');
     const hasNotes = !!(notesUrl || notesFileUrl);
-    const notesMissing = !hasNotes;
+    const notesMissing = !hasNotes && !examDuty;
     const reason = String(input.notesMissingReason || '').trim();
     if (notesMissing && !input.notesMissing) return fail(400, 'Upload the notes or add a notes link. If you cannot, choose "Unable to Submit Notes" and give the reason.');
     if (notesMissing && reason.length < 10) return fail(400, 'Please explain why the notes could not be submitted (at least 10 characters).');
     // Topic coverage: Yes / No is required; for No, the topics still left
+    if (examDuty) input.topicFullyCovered = true;
     if (typeof input.topicFullyCovered !== 'boolean') return fail(400, 'Choose whether the topic was fully covered (Yes / No).');
     const topicsLeft = String(input.topicsLeft || '').trim();
     if (input.topicFullyCovered === false && topicsLeft.length < 5) return fail(400, 'Write which topics are still left (at least 5 characters).');
@@ -306,8 +312,8 @@ export async function submitClassRecord(actor: Actor, input: SubmitInput): Promi
     if (!PROFESSOR_EDITABLE_CLASS_STATUSES.includes(before) && !isEdit) {
         return fail(409, `This class record is already ${before === 'PENDING_CL_CH' ? 'verified by the OM' : `with ${CLASS_STATUS_LABEL[before]}`} and cannot be edited now. It can be changed only if it is reverted to you.`);
     }
-    // Class snapshots are compulsory (a new upload, or the ones already on this record when re-submitting)
-    if (!snapshots.length && !(record.snapshotUrls || []).length && !record.classPhotoUrl) {
+    // Class snapshots are compulsory (a new upload, or the ones already on this record when re-submitting); optional for Exam Duty
+    if (!examDuty && !snapshots.length && !(record.snapshotUrls || []).length && !record.classPhotoUrl) {
         return fail(400, 'Upload at least one class snapshot (photo of the class) before submitting.');
     }
 
@@ -513,7 +519,7 @@ export async function performClassAction(actor: Actor, record: any, input: Actio
             // Notes must be shared to the students' group before forwarding (not needed when notes were not submitted — reason verified)
             // read the raw stored value too (works even if the running server still has an older LectureReport schema)
             const groupType = record.submittedToGroupType || (record.toObject ? record.toObject() : record).submittedToGroupType || '';
-            if (!record.notesMissing && (!record.submittedToGroup || !groupType)) return fail(409, 'Tick "Notes Submitted to Groups" and choose the group (Telegram / WhatsApp) before forwarding.');
+            if (!record.notesMissing && !isExamDuty(record.lectureType) && (!record.submittedToGroup || !groupType)) return fail(409, 'Tick "Notes Submitted to Groups" and choose the group (Telegram / WhatsApp) before forwarding.');
             // Verify & Forward: the entry / exit details may come with this request; both times are required
             const c = omCheckFrom(record, input, actor);
             if ('error' in c) return fail(400, c.error);

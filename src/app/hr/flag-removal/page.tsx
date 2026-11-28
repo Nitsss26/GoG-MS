@@ -1,5 +1,6 @@
 "use client";
 
+import { dmyTime as toDmyTime, dmy as toDmy } from "@/lib/date-display";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Flag, Shirt, LogIn, LogOut, History, Search, X, Upload, Loader2, AlertTriangle, CheckCircle2, RotateCcw, Eye, ChevronLeft, ChevronRight, Trash2, Mail } from "lucide-react";
@@ -14,8 +15,8 @@ const TABS = [
     { key: "CLOCK_OUT", label: "Clock-Out", icon: LogOut },
     { key: "REMOVED", label: "Removed Flags", icon: History },
 ];
-const dmy = (ymd?: string) => (ymd ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }) : "");
-const dt = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }) : "");
+const dmy = (ymd?: string) => (ymd ? toDmy(ymd) : "");
+const dt = (iso?: string) => (iso ? toDmyTime(iso) : "");
 
 export default function FlagRemovalPage() {
     const wide = useMinWidth(1280); // table on laptop / desktop, cards on phone / tablet
@@ -70,7 +71,7 @@ export default function FlagRemovalPage() {
     // View / Remove / Retry Email — same buttons in the table (desktop) and the cards (phone / tablet)
     const rowActions = (r: any) => (<>
                                                 <button onClick={() => setView(r)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[10px] font-black uppercase" data-testid="fr-view"><Eye size={12} /> View</button>
-                                                {r.status === "Active" && r.employeeId !== user.id && (
+                                                {r.status === "Active" && (r.employeeId !== user.id || user.role === "HR") && (
                                                     <button onClick={() => setRemoving({ row: r, reason: "", imageUrl: "", busy: false, uploading: false, error: "" })} data-testid="fr-remove"
                                                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 text-[10px] font-black uppercase"><Trash2 size={12} /> Remove</button>
                                                 )}

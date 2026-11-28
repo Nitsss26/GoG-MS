@@ -16,7 +16,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { validateSprintEntries, isValidTimeFormat } from "@/lib/time-utils";
 import SprintPlanWorkflowPanel from "@/components/academic/SprintPlanWorkflowPanel";
-import { getPlanStatus, LOCKED_PLAN_STATUSES, LECTURE_TYPES, UNIT_NUMBERS } from "@/lib/academic-status";
+import { getPlanStatus, LOCKED_PLAN_STATUSES, LECTURE_TYPES, UNIT_NUMBERS, EXAM_DUTY, isExamDuty } from "@/lib/academic-status";
 import { useMinWidth } from "@/components/academic/LectureTable";
 
 /** The professor's college for each day (HR work-location routine) — from GET /api/faculty/sprint-plan */
@@ -766,6 +766,9 @@ export default function SprintPlanPage() {
         if (!f) return f;
         const d = { ...f.data, [field]: value };
         if (field === "subjectCode" && facultySubjects[value]) d.subjectName = facultySubjects[value];
+        // Exam Duty: no subject / topic / unit (the subject shows as "Exam Duty"); switching back clears them for a class
+        if (field === "lectureType" && isExamDuty(value) && !isExamDuty(f.data.lectureType)) { d.subjectCode = ""; d.subjectName = EXAM_DUTY; d.topics = ""; d.unitNumber = ""; }
+        if (field === "lectureType" && !isExamDuty(value) && isExamDuty(f.data.lectureType)) { d.subjectCode = ""; d.subjectName = ""; d.topics = ""; d.unitNumber = "1"; }
         if (field === "stream" || field === "year" || field === "section") d.className = autoClassName(d);
         return { ...f, data: d };
     });
@@ -775,7 +778,8 @@ export default function SprintPlanPage() {
         if (!isValidTimeFormat(d.timeStart) || !isValidTimeFormat(d.timeStop)) { setSlotError("Pick a valid start and end time."); return; }
         if (d.timeStart >= d.timeStop) { setSlotError("The end time must be after the start time."); return; }
         if (lockedFor(d.date)) { setLockInfo(d.date); return; }
-        const row = { ...d, className: autoClassName(d) };
+        const duty = isExamDuty(d.lectureType);
+        const row = { ...d, className: autoClassName(d), ...(duty ? { subjectCode: "", subjectName: EXAM_DUTY, unitNumber: "", topics: String(d.topics || "").trim() || EXAM_DUTY } : {}) };
         if (slotForm.idx < 0) setEntries([...entries, row]);
         else setEntries(entries.map((e, i) => (i === slotForm.idx ? row : e)));
         setInvalidIndices(list => list.filter(i => i !== slotForm.idx));
@@ -1136,6 +1140,12 @@ export default function SprintPlanPage() {
                                             <div className="min-w-0"><span className={lbl}>End Time *</span>
                                                 <button type="button" onClick={() => setActiveTimePicker({ idx: -1, field: "timeStop" })} className={`${fieldCls} text-left flex items-center gap-2`} data-testid="f-end"><Clock size={13} className="text-zinc-500" /> {to12(d.timeStop)}</button>
                                             </div>
+                                            {isExamDuty(d.lectureType) ? (
+                                                <label className="col-span-2 min-w-0" data-testid="f-duty"><span className={lbl}>Exam Duty details (optional)</span>
+                                                    <input value={d.topics === EXAM_DUTY ? "" : d.topics} onChange={ev => updateSlotForm("topics", ev.target.value)} placeholder="e.g. Sem 3 exam, Hall B" className={fieldCls} data-testid="f-duty-note" />
+                                                    <span className="block text-[10.5px] text-zinc-500 mt-1">Exam Duty needs only the time. The report will be a single Submit (no attendance, notes or topic).</span>
+                                                </label>
+                                            ) : <>
                                             <label className="col-span-2 min-w-0"><span className={lbl}>Subject *</span>
                                                 <div className="flex gap-1.5">
                                                     <select value={d.subjectCode} onChange={ev => updateSlotForm("subjectCode", ev.target.value)} className={fieldCls} data-testid="f-subject">
@@ -1148,6 +1158,7 @@ export default function SprintPlanPage() {
                                             <label className="col-span-2 min-w-0"><span className={lbl}>Topic *</span>
                                                 <input value={d.topics} onChange={ev => updateSlotForm("topics", ev.target.value)} placeholder="Topic of the class" className={fieldCls} data-testid="f-topic" />
                                             </label>
+                                            </>}
                                             <label className="min-w-0"><span className={lbl}>Branch / Stream *</span>
                                                 <div className="flex gap-1.5">
                                                     <select value={d.stream} onChange={ev => updateSlotForm("stream", ev.target.value)} className={fieldCls} data-testid="f-stream">
@@ -1170,11 +1181,11 @@ export default function SprintPlanPage() {
                                                     <option value="">-- Type --</option>{LECTURE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                                                 </select>
                                             </label>
-                                            <label className="min-w-0"><span className={lbl}>Unit</span>
+                                            {!isExamDuty(d.lectureType) && <label className="min-w-0"><span className={lbl}>Unit</span>
                                                 <select value={d.unitNumber || ""} onChange={ev => updateSlotForm("unitNumber", ev.target.value)} className={fieldCls} data-testid="f-unit">
                                                     <option value="">Unit</option>{UNIT_NUMBERS.map(u => <option key={u} value={u}>Unit {u}</option>)}
                                                 </select>
-                                            </label>
+                                            </label>}
                                             <div className="col-span-2 min-w-0">
                                                 {/* Class: filled automatically from Stream, Year and Section (as before, not editable) */}
                                                 <div className="w-full px-2.5 py-2 bg-zinc-900/60 border border-dashed border-zinc-700 rounded-lg text-xs text-zinc-300 truncate" title="Class (filled automatically from Stream, Year and Section)" data-testid="plan-class-auto">

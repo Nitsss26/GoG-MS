@@ -23,7 +23,8 @@ export async function POST(req: Request) {
         const employeeId = String(b.employeeId || ''), date = String(b.date || '');
         if (!isYmd(date)) return NextResponse.json({ error: 'Choose a valid date.' }, { status: 400 });
         if (date > istToday()) return NextResponse.json({ error: 'A future date cannot be corrected.' }, { status: 400 });
-        if (employeeId === actor.id) return NextResponse.json({ error: 'You cannot correct your own payable days.' }, { status: 403 });
+        // HR / HR Executive may correct their own payable days too
+        if (employeeId === actor.id && actor.role !== 'HR') return NextResponse.json({ error: 'You cannot correct your own payable days.' }, { status: 403 });
         const direction = b.direction === 'TO_NON_PAYABLE' ? 'TO_NON_PAYABLE' : 'TO_PAYABLE';
         const toPay = direction === 'TO_PAYABLE';
         const half = b.payableType === 'HALF';

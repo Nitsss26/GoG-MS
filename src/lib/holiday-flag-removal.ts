@@ -32,8 +32,8 @@ export async function removeFlagsForHolidays(days: any[], actor: any): Promise<{
         for (const r of rows) {
             const h = list.find(x => x.date === r.date && holidayCoversEmployee(x, { id: r.employeeId, location: r.location }));
             if (!h) continue;
-            // same rule as manual Flag Removal: nobody removes their own flag
-            if (actor?.id && r.employeeId === actor.id) { out.skippedOwn++; continue; }
+            // same rule as manual Flag Removal: HR / HR Executive may remove their own flag, nobody else may
+            if (actor?.id && r.employeeId === actor.id && actor.role !== 'HR') { out.skippedOwn++; continue; }
             const found = await resolveFlag(r.flagId);
             if (!found || found.row.status !== 'Active') continue;
             const doc = {

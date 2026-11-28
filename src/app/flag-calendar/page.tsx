@@ -185,8 +185,8 @@ export default function FlagCalendarPage() {
 
     const isManager = ["HOI", "AD", "HR", "FOUNDER"].includes(user.role);
     const isViewingReportee = selectedEmployeeId !== user.id;
-    // the same people the server allows (HR — HR Executive too — and Founders), never on one's own record
-    const canAct = (user.role === "HR" || user.role === "FOUNDER") && isViewingReportee;
+    // the same people the server allows: HR and HR Executive (their own record too), Founders (not their own record)
+    const canAct = user.role === "HR" || (user.role === "FOUNDER" && isViewingReportee);
     const markerRole = (rec: any) => (rec?.markedByRole === "FOUNDER" ? "Founder" : rec?.markedByRole === "HR_EXECUTIVE" ? "HR Executive" : "HR");
     const saveMark = async () => {
         if (!markDlg) return;

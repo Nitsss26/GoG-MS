@@ -339,6 +339,7 @@ export type NotifyInput = {
     listItems?: string[];
     note?: string;
     email?: boolean;                       // default true
+    noHrCc?: boolean;                      // academic mails: HR / HR Executive not copied
 };
 
 /**
@@ -379,13 +380,16 @@ export async function notify(input: NotifyInput) {
                 await Notification.updateOne({ id: docs[i].id }, { $set: { emailStatus: 'SKIPPED', emailError: 'No valid email address' } });
                 return;
             }
-            const res: any = await sendMailInternal({ to: email, subject: tpl.subject, html: tpl.html });
+            const res: any = await sendMailInternal({ to: email, subject: tpl.subject, html: tpl.html, ...(input.noHrCc ? { noHrCc: true } : {}) });
             if (res?.success) emailed++;
             await Notification.updateOne({ id: docs[i].id }, { $set: res?.success ? { emailStatus: 'SENT' } : { emailStatus: 'FAILED', emailError: String(res?.error || 'Unknown error').slice(0, 300) } });
         }));
     }
     return { notified: docs.length, emailed };
 }
+
+/** Sprint plan / class record / weekly-deadline mails: HR and HR Executive are not copied (admin, AD, Tech Team still are) */
+export const academicNotifySafe = (input: NotifyInput) => notifySafe({ ...input, noHrCc: true });
 
 /** Never let a notification problem undo a workflow step that already succeeded */
 export async function notifySafe(input: NotifyInput) {

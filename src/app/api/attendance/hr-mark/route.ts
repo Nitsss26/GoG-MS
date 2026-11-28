@@ -27,7 +27,8 @@ export async function POST(req: Request) {
         const { employeeId, date, status, clockIn, clockOut, location, remarks } = await req.json().catch(() => ({}));
         if (!employeeId || !YMD.test(String(date || ''))) return NextResponse.json({ error: 'Employee and date are required.' }, { status: 400 });
         if (status !== 'Present' && status !== 'Absent') return NextResponse.json({ error: 'Status must be Present or Absent.' }, { status: 400 });
-        if (employeeId === actor.id) return NextResponse.json({ error: 'You cannot mark your own attendance.' }, { status: 403 });
+        // HR / HR Executive may mark their own attendance too (Founders still may not)
+        if (employeeId === actor.id && actor.role !== 'HR') return NextResponse.json({ error: 'You cannot mark your own attendance.' }, { status: 403 });
         const reason = String(remarks || '').trim().replace(/\s+/g, ' ').slice(0, 500);
         if (!reason) return NextResponse.json({ error: `Write the reason for marking the employee ${status}.` }, { status: 400 });
         const emp: any = await Employee.findOne({ id: employeeId }).select('id location').lean();

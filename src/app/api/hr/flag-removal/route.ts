@@ -71,7 +71,8 @@ export async function POST(req: Request) {
         const found = await resolveFlag(String(b.flagId || ''));
         if (!found) return NextResponse.json({ error: 'Flag not found.' }, { status: 404 });
         if (found.row.status !== 'Active') return NextResponse.json({ error: 'This flag is already removed.' }, { status: 409 });
-        if (found.row.employeeId === actor.id) return NextResponse.json({ error: 'You cannot remove your own flag.' }, { status: 403 });
+        // HR / HR Executive may remove their own flags too (Founders still may not)
+        if (found.row.employeeId === actor.id && actor.role !== 'HR') return NextResponse.json({ error: 'You cannot remove your own flag.' }, { status: 403 });
         if (found.row.source === 'VIOLATION' && ['Waived', 'Approved'].includes(found.snapshot.hrStatus)) return NextResponse.json({ error: 'This flag is already closed by HR.' }, { status: 409 });
 
         const me: any = actor.employee || {};

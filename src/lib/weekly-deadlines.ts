@@ -15,7 +15,9 @@
  * Triggered by src/lib/scheduler.ts (in-process, every minute) and /api/cron/weekly-deadlines (hosting cron).
  */
 import { Employee, SprintPlan, LectureReport, JobRun, ReminderLog } from '@/models/Schemas';
-import { zonedNow, addDays, dayCodeOf, nowISO, notify, weekLabel, ACADEMIC_TZ } from '@/lib/academic';
+import { zonedNow, addDays, dayCodeOf, nowISO, notify as notifyAll, weekLabel, ACADEMIC_TZ, type NotifyInput } from '@/lib/academic';
+// sprint plan / assignment reminders: HR and HR Executive are not copied
+const notify = (input: NotifyInput) => notifyAll({ ...input, noHrCc: true });
 import { getPlanStatus, PROFESSOR_ROLES } from '@/lib/academic-status';
 import { effectiveEntries, classesOfDay } from '@/lib/class-record-workflow';
 

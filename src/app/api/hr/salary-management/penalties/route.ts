@@ -60,7 +60,8 @@ export async function POST(req: Request) {
             if (!isYmd(date)) return NextResponse.json({ error: 'Choose a valid date.' }, { status: 400 });
             if (date > istToday()) return NextResponse.json({ error: 'A penalty cannot be applied to a future date.' }, { status: 400 });
         }
-        if (employeeId === actor.id) return NextResponse.json({ error: 'You cannot apply a penalty to your own salary.' }, { status: 403 });
+        // HR / HR Executive may apply penalties to their own salary too
+        if (employeeId === actor.id && actor.role !== 'HR') return NextResponse.json({ error: 'You cannot apply a penalty to your own salary.' }, { status: 403 });
         const f = readFields(b);
         if ('error' in f) return NextResponse.json({ error: f.error }, { status: 400 });
         const emp: any = await Employee.findOne({ id: employeeId }).lean();
@@ -105,7 +106,7 @@ export async function PATCH(req: Request) {
         const b = await req.json().catch(() => ({}));
         const p: any = await HrMonetaryPenalty.findOne({ id: String(b.id || '') }).lean();
         if (!p) return NextResponse.json({ error: 'Penalty not found.' }, { status: 404 });
-        if (p.employeeId === actor.id) return NextResponse.json({ error: 'You cannot change your own salary adjustments.' }, { status: 403 });
+        if (p.employeeId === actor.id && actor.role !== 'HR') return NextResponse.json({ error: 'You cannot change your own salary adjustments.' }, { status: 403 });
         if (p.status !== 'ACTIVE') return NextResponse.json({ error: 'This penalty is already reversed.' }, { status: 409 });
         const emp: any = await Employee.findOne({ id: p.employeeId }).lean();
         const now = nowIso(), role = actorRoleLabel(actor);

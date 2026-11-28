@@ -25,7 +25,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         const b = await req.json().catch(() => ({}));
         const t: any = await CorrectionTicket.findOne({ id }).lean();
         if (!t) return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
-        if (t.employeeId === actor.id) return NextResponse.json({ error: 'You cannot review your own correction ticket.' }, { status: 403 });
+        // HR / HR Executive may review their own correction ticket too (Founders still may not)
+        if (t.employeeId === actor.id && actor.role !== 'HR') return NextResponse.json({ error: 'You cannot review your own correction ticket.' }, { status: 403 });
         const now = nowIso();
         const role = actorRoleLabel(actor);
 

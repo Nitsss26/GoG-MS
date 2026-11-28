@@ -22,26 +22,27 @@
  * Every step is written to plan.history; every submission keeps a copy of the entries in plan.revisions.
  * Transitions are atomic (the update only matches when the plan is still in the expected status).
  */
+import { dmy as toDmy, dmyTime as toDmyTime } from "@/lib/date-display";
 import { SprintPlan } from '@/models/Schemas';
 import {
     getPlanStatus, PLAN_STATUS_LABEL, PLAN_AUTHORITY_ROLES, PROFESSOR_ROLES, LOCKED_PLAN_STATUSES,
     approvalTypeForRole, APPROVAL_LABEL,
 } from '@/lib/academic-status';
 import {
-    getAcademicScope, scopeAllowsProfessor, collegeRecipients, employeesByIds, notifySafe, nowISO, weekLabel, collegeName,
+    getAcademicScope, scopeAllowsProfessor, collegeRecipients, employeesByIds, academicNotifySafe as notifySafe, nowISO, weekLabel, collegeName,
 } from '@/lib/academic';
 import { Employee } from '@/models/Schemas';
 import { validateSprintEntries } from '@/lib/time-utils';
 import { checkEntries, collegeOfEmployee, diffEntries, fmtDate } from '@/lib/sprint-plan-rules';
 import { professorRoutine, routineCollege, dayEditable, lockedDayMessage, planIsFor, planCollegeOf, weekDates } from '@/lib/professor-routine';
 
-/** "26 October – 1 November 2026" (Mon–Sun) */
+/** "26/10/2026 – 01/11/2026" (Mon–Sun) */
 function weekText(start: string, end?: string) {
-    const f = (ymd: string, y: boolean) => new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', ...(y ? { year: 'numeric' } : {}), timeZone: 'UTC' });
+    const f = (ymd: string, _y: boolean) => toDmy(ymd);
     const sunday = (() => { const d = new Date(`${start}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 6); return d.toISOString().slice(0, 10); })();
     return `${f(start, false)} – ${f(end && end > sunday ? end : sunday, true)}`;
 }
-const istTime = (iso: string) => new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+const istTime = (iso: string) => toDmyTime(iso);
 const plainEntries = (plan: any) => (plan?.entries || []).map((e: any) => (e.toObject ? e.toObject() : e));
 /** HOI (campus + reporting line) — and CL / CH when `withClCh` */
 async function planRecipients(plan: any, withClCh: boolean) {
@@ -155,7 +156,7 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
                 link: `/curriculum/sprint-plans?week=${plan.weekStartDate}&plan=${plan._id}`,
                 entityType: 'SprintPlan', entityId: String(plan._id), college: planCollegeOf(plan, subProf?.location),
                 actor,
-                rows: [...(await planDetails(plan)), { label: 'Submitted At', value: new Date(now).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) }],
+                rows: [...(await planDetails(plan)), { label: 'Submitted At', value: toDmyTime(now) }],
             });
             return { ok: true, plan: updated, message: to === 'SUBMITTED' ? 'Sprint plan submitted for locking.' : 'Revised sprint plan re-submitted for locking.' };
         }
@@ -262,7 +263,7 @@ export async function performPlanAction(actor: Actor, planId: string, action: st
                 actor,
                 rows: [
                     ...(await planDetails(plan)),
-                    { label: 'Requested At', value: new Date(now).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) },
+                    { label: 'Requested At', value: toDmyTime(now) },
                     { label: 'Reason for Unlock', value: reason },
                     { label: 'Details', value: comment },
                 ],

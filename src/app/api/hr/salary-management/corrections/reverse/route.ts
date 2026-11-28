@@ -19,7 +19,8 @@ export async function POST(req: Request) {
         if (!meaningfulReason(reason)) return NextResponse.json({ error: 'Write a proper reversal reason (at least 20 characters, a full sentence).' }, { status: 400 });
         const c: any = await PayableCorrection.findOne({ id: String(b.correctionId || '') }).lean();
         if (!c) return NextResponse.json({ error: 'Correction not found.' }, { status: 404 });
-        if (c.employeeId === actor.id) return NextResponse.json({ error: 'You cannot change your own payable days.' }, { status: 403 });
+        // HR / HR Executive may reverse their own corrections too
+        if (c.employeeId === actor.id && actor.role !== 'HR') return NextResponse.json({ error: 'You cannot change your own payable days.' }, { status: 403 });
         if (c.status !== 'ACTIVE') return NextResponse.json({ error: 'This correction is already reversed.' }, { status: 409 });
         const emp: any = await Employee.findOne({ id: c.employeeId }).lean();
         const before = emp ? await payableDaysFor(emp, c.month) : null;

@@ -10,10 +10,11 @@
  *    Different professors teaching different classes at the same time is fine.
  *  - Change summaries: classes added / changed / removed between two versions of a plan.
  */
+import { dmy as toDmy } from "@/lib/date-display";
 import { Employee, SprintPlan } from '@/models/Schemas';
 import { CollegeTiming } from '@/models/CollegeTiming';
 import { resolveCollege } from '@/lib/academic';
-import { PROFESSOR_ROLES } from '@/lib/academic-status';
+import { PROFESSOR_ROLES, isExamDuty } from '@/lib/academic-status';
 
 export const HM_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;
 export const toMin = (t?: string) => { if (!t || !HM_RE.test(t)) return NaN; const [h, m] = t.split(':').map(Number); return h * 60 + m; };
@@ -25,7 +26,7 @@ export const fmt12 = (t?: string) => {
 };
 /** "2026-10-29" → "29 Oct 2026" */
 export const fmtDate = (ymd?: string) => (ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd)
-    ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }) : ymd || '');
+    ? toDmy(ymd) : ymd || '');
 
 /** Class / section identity used for clash checks and the class filter: the class name (stream + year + section) */
 export const classKeyOf = (e: any) => String(e?.className || [e?.stream, e?.year, e?.section].filter(Boolean).join(' ')).trim().toLowerCase();
@@ -81,7 +82,8 @@ export async function checkEntries(input: { facultyId: string; college: CollegeR
         }
     }
     // 3. the same class + section taught by another professor of the college at the same time
-    const withSection = entries.map((x, i) => ({ x, i })).filter(({ x }) => String(x.section || '').trim() && classKeyOf(x));
+    // an Exam Duty slot is not a class of that section (the professor invigilates), so it never clashes with one
+    const withSection = entries.map((x, i) => ({ x, i })).filter(({ x }) => !isExamDuty(x.lectureType) && String(x.section || '').trim() && classKeyOf(x));
     if (withSection.length) {
         const ids = (await collegeProfessorIds(college.keys)).filter(id => id !== facultyId);
         {

@@ -8,7 +8,7 @@ import {
     Building2, BookOpen, Cpu, GraduationCap, Monitor, CalendarDays, Calendar, CalendarCheck, Info, Check,
     Eye, LogIn, LogOut, MoreHorizontal,
 } from "lucide-react";
-import { CLASS_STATUS_LABEL, CLASS_STATUS_STYLE, roleShort, PROFESSOR_ROLES, CL_CH_ROLES, FINAL_PENDING_CLASS_STATUSES, finalVerificationText, OM_TIME_GRACE_MINUTES, LATE_ENTRY_REASONS, EARLY_EXIT_REASONS, NOTES_GROUP_TYPES, notesGroupLabel } from "@/lib/academic-status";
+import { CLASS_STATUS_LABEL, CLASS_STATUS_STYLE, roleShort, PROFESSOR_ROLES, CL_CH_ROLES, FINAL_PENDING_CLASS_STATUSES, finalVerificationText, OM_TIME_GRACE_MINUTES, LATE_ENTRY_REASONS, EARLY_EXIT_REASONS, NOTES_GROUP_TYPES, notesGroupLabel, isExamDuty } from "@/lib/academic-status";
 
 const fmt = (iso?: string) => {
     if (!iso) return "";
@@ -268,7 +268,7 @@ function ClassRecordBody({ record, plain, hideOverview }: { record: any; plain: 
                             <div className="flex flex-col items-center text-center gap-2">
                                 <AttendanceRing present={present} total={total} />
                                 <div className="min-w-0">
-                                    <p className="text-sm font-bold text-white leading-snug">{total ? <>{present} present <span className="whitespace-nowrap">out of {total}</span></> : "Not entered"}</p>
+                                    <p className="text-sm font-bold text-white leading-snug">{total ? <>{present} present <span className="whitespace-nowrap">out of {total}</span></> : isExamDuty(record.lectureType) ? "Exam Duty — no attendance" : "Not entered"}</p>
                                     {pct && <p className="text-xs text-zinc-400 mt-0.5">{pct}% Attendance</p>}
                                 </div>
                             </div>
@@ -284,7 +284,7 @@ function ClassRecordBody({ record, plain, hideOverview }: { record: any; plain: 
                     <div className="flex items-center gap-4">
                         <AttendanceRing present={present} total={total} />
                         <div className="min-w-0">
-                            <p className="text-base font-bold text-white leading-snug">{total ? <>{present} present <span className="whitespace-nowrap">out of {total}</span></> : "Not entered"}</p>
+                            <p className="text-base font-bold text-white leading-snug">{total ? <>{present} present <span className="whitespace-nowrap">out of {total}</span></> : isExamDuty(record.lectureType) ? "Exam Duty — no attendance" : "Not entered"}</p>
                             {pct && <p className="text-[13px] text-zinc-400 mt-0.5">{pct}% Attendance</p>}
                         </div>
                     </div>
@@ -414,7 +414,7 @@ function ClassRecordBody({ record, plain, hideOverview }: { record: any; plain: 
                         <CheckItem ok={!!record.actualOutTime}>Exit time marked <span className="text-emerald-400">(OM)</span></CheckItem>
                         <CheckItem ok={!!notesLink}>Notes submitted</CheckItem>
                         <CheckItem ok={hasAssignment}>Assignment submitted</CheckItem>
-                        <CheckItem ok={!!record.submittedToGroup}>Notes shared to group</CheckItem>
+                        {!isExamDuty(record.lectureType) && <CheckItem ok={!!record.submittedToGroup}>Notes shared to group</CheckItem>}
                     </div>
                 </Card>
             </div>
@@ -545,7 +545,9 @@ export function ClassRecordActions({ record, role, userId, onDone }: { record: a
         } catch (e: any) { setGroups(before); setError(e.message); }
         finally { setGroupBusy(false); }
     };
-    const groupsRequired = !record.notesMissing;
+    // Exam Duty: no notes, so "Notes Submitted to Groups" is not needed (the card is hidden)
+    const examDuty = isExamDuty(record.lectureType);
+    const groupsRequired = !record.notesMissing && !examDuty;
     const groupsBlock = groupsRequired && (!groups.done || !groups.type) ? "Tick \"Notes Submitted to Groups\" and choose the group first" : "";
     const [asg, setAsg] = useState({ title: "", assignmentUrl: "" });
     const [notesUrl, setNotesUrl] = useState("");
@@ -632,8 +634,8 @@ export function ClassRecordActions({ record, role, userId, onDone }: { record: a
                             : `Full class — left at ${to12h(record.timeStop)}`} />
                     {isEarlyExit && !exitBeforeEntry && <ReasonPicker label="Why did the professor leave early?" testId="om-early-reason" options={EARLY_EXIT_REASONS} value={early} onChange={setEarly} />}
 
-                    {/* Notes Submitted to Groups — required before Verify & Forward */}
-                    <div className={`rounded-xl border p-3 space-y-2.5 ${groups.done && groups.type ? "border-emerald-500/30 bg-emerald-500/[0.05]" : "border-sky-500/25 bg-sky-500/[0.04]"}`} data-testid="groups-card">
+                    {/* Notes Submitted to Groups — required before Verify & Forward (not for Exam Duty) */}
+                    {!examDuty && <div className={`rounded-xl border p-3 space-y-2.5 ${groups.done && groups.type ? "border-emerald-500/30 bg-emerald-500/[0.05]" : "border-sky-500/25 bg-sky-500/[0.04]"}`} data-testid="groups-card">
                         <div className="flex items-center justify-between gap-2">
                             <p className="text-xs font-bold text-white flex items-center gap-2"><Send size={13} className="text-sky-400" /> Notes Submitted to Groups {groupsRequired && <span className="text-red-400">*</span>}</p>
                             {groupBusy ? <span className="text-[10px] text-zinc-400">Saving…</span> : groupMsg ? <span className="text-[10px] text-emerald-400">{groupMsg}</span> : null}
@@ -653,7 +655,7 @@ export function ClassRecordActions({ record, role, userId, onDone }: { record: a
                             </label>
                         </div>
                         {!groups.type && !groups.done && <p className="text-[10px] text-zinc-500">Choose the group first, then tick the box.</p>}
-                    </div>
+                    </div>}
 
                     <textarea value={times.omRemarks} onChange={e => setTimes(t => ({ ...t, omRemarks: e.target.value }))} placeholder="Verification remarks (required to revert)" data-testid="om-remarks"
                         className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white placeholder:text-zinc-600 outline-none focus:border-emerald-500/50 resize-none h-16" />

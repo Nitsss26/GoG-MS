@@ -36,6 +36,8 @@ interface MailOptions {
     noCopies?: boolean;
     /** addresses that already got their own copy (left out of the standard CC) */
     ccExclude?: string[];
+    /** true for academic mails (sprint plan / class report): HR and HR Executive are not copied — admin, AD and the Tech Team still are */
+    noHrCc?: boolean;
 }
 
 /**
@@ -50,12 +52,12 @@ const AUTO_CC_ROLES = ['HR', 'HR_EXECUTIVE', 'AD'];
 const TECH_TEAM_ROLE = 'TECH_TEAM';
 const INACTIVE_STATUS = /^(inactive|removed|terminated|resigned|exited|relieved)$/i;
 const EMAIL_RE = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
-const ccCache: { at: number; list: string[]; tech?: string[] } = ((globalThis as any).__gogAutoCc ||= { at: 0, list: [] });
+const ccCache: { at: number; list: string[]; tech?: string[]; hr?: string[] } = ((globalThis as any).__gogAutoCc ||= { at: 0, list: [] });
 const copiedRecently: Map<string, number> = ((globalThis as any).__gogAutoCcSent ||= new Map<string, number>());
 
 async function autoCcList(): Promise<string[]> {
-    if (Date.now() - ccCache.at < 5 * 60000 && ccCache.list.length && ccCache.tech) return ccCache.list;
-    let list = [MAIN_ADMIN_EMAIL], tech = [MAIN_ADMIN_EMAIL];
+    if (Date.now() - ccCache.at < 5 * 60000 && ccCache.list.length && ccCache.tech && ccCache.hr) return ccCache.list;
+    let list = [MAIN_ADMIN_EMAIL], tech = [MAIN_ADMIN_EMAIL], hr: string[] = [];
     try {
         await dbConnect();
         const rows: any[] = await Employee.find({ role: { $in: [...AUTO_CC_ROLES, TECH_TEAM_ROLE] }, isRemoved: { $ne: true } }).select('email role status').lean();
@@ -64,12 +66,15 @@ async function autoCcList(): Promise<string[]> {
         if (!keep.some(r => r.role === TECH_TEAM_ROLE)) console.warn('[mail] no active Tech Team member found for the CC list');
         list = [MAIN_ADMIN_EMAIL, ...keep.map(r => String(r.email || '').trim().toLowerCase())];
         tech = [MAIN_ADMIN_EMAIL, ...keep.filter(r => r.role === TECH_TEAM_ROLE).map(r => String(r.email || '').trim().toLowerCase())];
+        hr = keep.filter(r => r.role === 'HR' || r.role === 'HR_EXECUTIVE').map(r => String(r.email || '').trim().toLowerCase());
     } catch (e: any) {
         console.error('[mail] could not load the CC list:', e?.message);
     }
     const clean = (l: string[]) => Array.from(new Set(l.filter(e => EMAIL_RE.test(e) && !e.endsWith('@gog.com'))));
     ccCache.list = clean(list);
     ccCache.tech = clean(tech);
+    // HR / HR Executive addresses (left out of academic mails); tech@ / admin / Tech Team never are
+    ccCache.hr = clean(hr).filter(e => !ccCache.tech!.includes(e));
     ccCache.at = Date.now();
     return ccCache.list;
 }
@@ -139,7 +144,9 @@ async function withAutoCc(o: MailOptions) {
     for (const [k, t] of copiedRecently) if (now - t > 15 * 60000) copiedRecently.delete(k);
     if (copiedRecently.has(key)) return { to: o.to, cc: o.cc };
     const present = new Set([...asList(o.to), ...asList(o.cc), ...(o.ccExclude || [])].map(e => e.toLowerCase()));
-    const extra = (o.noAutoCc ? await techCcList() : await autoCcList()).filter(e => !present.has(e));
+    const base = o.noAutoCc ? await techCcList() : await autoCcList();
+    const noHr = o.noHrCc ? new Set(ccCache.hr || []) : null;
+    const extra = base.filter(e => !present.has(e) && !(noHr && noHr.has(e)));
     if (!extra.length) return { to: o.to, cc: o.cc };
     copiedRecently.set(key, now);
     return { to: o.to, cc: [...asList(o.cc), ...extra] };

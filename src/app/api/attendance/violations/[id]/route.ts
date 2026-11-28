@@ -41,7 +41,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         }
 
         if (!isHr) return NextResponse.json({ error: 'Only HR can do this.' }, { status: 403 });
-        if (v.employeeId === actor.id && action !== 'resend') return NextResponse.json({ error: 'You cannot decide your own attendance action.' }, { status: 403 });
+        // HR / HR Executive may decide their own attendance actions too (Founders still may not)
+        if (v.employeeId === actor.id && action !== 'resend' && actor.role !== 'HR') return NextResponse.json({ error: 'You cannot decide your own attendance action.' }, { status: 403 });
 
         if (action === 'resend') {
             if (MANUAL_EMAIL_TYPES.includes(v.type)) return NextResponse.json({ error: 'Send this email from HR → Email Management.' }, { status: 400 });

@@ -48,7 +48,7 @@ export async function GET(req: Request) {
             tickets: (tickets as any[]).map(({ _id, __v, ...t }) => t),
             penalties: (penalties as any[]).map(({ _id, __v, activeKey, history, ...p }) => ({ ...p, history: (history || []).map(({ _id, ...h }: any) => h) })),
             halfDayReasons: HALF_DAY_REASONS, penaltyReasons: PENALTY_REASONS, maxPenalty: MAX_PENALTY_AMOUNT,
-            categories: CORRECTION_CATEGORIES, nonPayableCategories: NON_PAYABLE_CATEGORIES, canEdit: canCorrectPayable(actor) && id !== actor.id, self: id === actor.id,
+            categories: CORRECTION_CATEGORIES, nonPayableCategories: NON_PAYABLE_CATEGORIES, canEdit: canCorrectPayable(actor) && (id !== actor.id || actor.role === 'HR'), self: id === actor.id,
         });
     } catch (e: any) {
         console.error('salary-management employee GET', e);
